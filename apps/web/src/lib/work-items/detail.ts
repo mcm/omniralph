@@ -81,7 +81,7 @@ export async function workItemRoute(deps: {
   const base = { outcome, repository: repositoryRef(repository), by: route.by } as const;
   if (route.chosen) return { ...base, via: { kind: "choice", label: "your choice" } };
   if (route.rule !== undefined) {
-    return { ...base, via: { kind: "rule", label: `rule ${route.rule}` } };
+    return { ...base, via: { kind: "rule", label: `Rule ${route.rule}` } };
   }
   if (route.defaultRule === 2) {
     const parent = own?.parent?.identifier ?? own?.issue.parent ?? "its parent";

@@ -88,6 +88,13 @@ export const FIXTURE_DESIRED_VERSION = "1.8.0";
  */
 const ONLINE_HEARTBEAT = new Date("2099-01-01T00:00:00Z");
 
+/**
+ * An online agent: the frozen heartbeat (claims and Repos read it) and announced online
+ * (`live_online`, which Fleet's status reads), so Fleet shows its intended states instead of
+ * "Offline" while the agent runs work.
+ */
+const ONLINE = { lastHeartbeatAt: ONLINE_HEARTBEAT, liveOnline: true } as const;
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
@@ -394,7 +401,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
           startsSincePending: 0,
           error: null,
         },
-        lastHeartbeatAt: ONLINE_HEARTBEAT,
+        ...ONLINE,
         enrolledBy: U.admin,
         createdAt: ago(60 * DAY),
       },
@@ -420,7 +427,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         reportedAcceptedTaskTypes: allTypes,
         reportedVersion: "1.6.2",
         selfUpdate: "unsupported",
-        lastHeartbeatAt: ONLINE_HEARTBEAT,
+        ...ONLINE,
         enrolledBy: U.admin,
         createdAt: ago(40 * DAY),
       },
@@ -440,7 +447,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
           error: null,
         },
         failedVersions: ["1.7.1"],
-        lastHeartbeatAt: ONLINE_HEARTBEAT,
+        ...ONLINE,
         enrolledBy: U.admin,
         createdAt: ago(30 * DAY),
       },
@@ -581,7 +588,7 @@ function poolAgents(allTypes: string[], now: Date): (typeof agents.$inferInsert)
     reportedAcceptedTaskTypes: taskTypes[i % taskTypes.length],
     reportedVersion: FIXTURE_DESIRED_VERSION,
     selfUpdate: "supported" as const,
-    lastHeartbeatAt: i % 5 === 4 ? ago((i + 1) * HOUR) : ONLINE_HEARTBEAT,
+    ...(i % 5 === 4 ? { lastHeartbeatAt: ago((i + 1) * HOUR) } : ONLINE),
     enrolledBy: U.admin,
     createdAt: ago((20 - (i % 20)) * DAY),
   }));

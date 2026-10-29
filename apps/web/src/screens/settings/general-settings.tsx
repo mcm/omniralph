@@ -41,7 +41,7 @@ export function generalChanges(saved: GeneralDraft, draft: GeneralDraft): Staged
 export const LEAVE_DESCRIPTION = "You lose access to its repos, runs and agents.";
 
 /**
- * The General card: the organization's name (required, at most
+ * The Organization card (the page is General, so the card names what it holds): the organization's name (required, at most
  * `MAX_ORGANIZATION_NAME_LENGTH`), staged in its save bar and saved in one
  * `PATCH /api/ui/organization`. The answer is written into the organization's cached
  * settings, which the page, Settings' badge and the organization picker all read
@@ -51,7 +51,7 @@ function GeneralCard({ settings }: { settings: OrganizationSettings }) {
   const { organization, isAdmin } = settings;
   const saved = useMemo<GeneralDraft>(() => ({ name: organization.name }), [organization.name]);
   const card = useStagedCard<GeneralDraft, MutationResult>({
-    label: "General",
+    label: "Organization",
     saved,
     toChanges: generalChanges,
     save: useStagedSave({
@@ -72,14 +72,13 @@ function GeneralCard({ settings }: { settings: OrganizationSettings }) {
         ),
       success: "Renamed",
     }),
-    onDirtyChange: useUnsavedCard("General"),
+    onDirtyChange: useUnsavedCard("Organization"),
   });
 
   return (
     <Card
-      title="General"
-      titleId="general"
-
+      title="Organization"
+      titleId="organization"
       titleAddon={<ChangeHistoryPopover section="organization" latest={settings.history} />}
     >
       <Field label="Name" htmlFor="organization-name">

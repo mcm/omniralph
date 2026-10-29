@@ -104,6 +104,30 @@ describe("SectionNav", () => {
     expect(general.hasAttribute("aria-label")).toBe(false);
   });
 
+  it("draws an entry's brand mark before its label, out of its name", () => {
+    render(
+      <SectionNav
+        title="Settings"
+        currentPath="/settings/general"
+        groups={[
+          {
+            label: "Connections",
+            items: [
+              { label: "GitHub", href: "/settings/connections/github/1", brand: "github" },
+              { label: "Add connection", href: "/settings/connections/new" },
+            ],
+          },
+        ]}
+      />,
+    );
+    const github = screen.getByRole("link", { name: "GitHub" });
+    const mark = github.querySelector(".or-subnav__mark")!;
+    expect(mark.getAttribute("aria-hidden")).toBe("true");
+    expect(mark.querySelector("svg.or-brand-mark")).toBeTruthy();
+    expect(mark.nextElementSibling!.textContent).toBe("GitHub");
+    expect(screen.getByRole("link", { name: "Add connection" }).querySelector("svg")).toBeNull();
+  });
+
   it("names entries with sectionNavItemName", () => {
     expect(sectionNavItemName({ label: "GitLab" })).toBe("GitLab");
     expect(

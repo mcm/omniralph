@@ -58,6 +58,26 @@ describe("runActivity", () => {
     ]);
   });
 
+  it("numbers a repeated label by its attempt, oldest first, and leaves a unique one plain", () => {
+    const detail = runDetail(null, {
+      status: "running",
+      createdAt: NOW_AT(-60),
+      attempts: [
+        attempt("third", { finishedAt: NOW_AT(-10), label: "Built FIX-107" }),
+        attempt("first", { finishedAt: NOW_AT(-50), label: "Built FIX-107" }),
+        attempt("other", { finishedAt: NOW_AT(-40), label: "Built FIX-108" }),
+        attempt("second", { finishedAt: NOW_AT(-30), label: "Built FIX-107" }),
+      ],
+    });
+    expect(runActivity(detail, null).map((entry) => entry.text)).toEqual([
+      "Built FIX-107 (attempt 3)",
+      "Built FIX-107 (attempt 2)",
+      "Built FIX-108",
+      "Built FIX-107 (attempt 1)",
+      "Epic started from Linear",
+    ]);
+  });
+
   it("adds the current reason of a waiting, stopped or failed run", () => {
     for (const status of ["waiting", "stopped", "failed"] as const) {
       const detail = runDetail(null, { status, finishedAt: NOW_AT(-5) });

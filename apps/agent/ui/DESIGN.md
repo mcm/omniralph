@@ -10,7 +10,7 @@ token and component. This file records only where the local UI departs from it.
   address only. Fonts are self-hosted through `@omniralph/ui/fonts.css`, so it works offline.
 - **No account.** The theme preference (System, Dark or Light) is kept in this browser
   (`src/theme.ts`), not saved per user.
-- **Its own navigation.** A section nav (`src/nav.ts`: Agent, Settings and Machine groups)
+- **Its own navigation.** A section nav (`src/nav.ts`: Activity, Settings and Machine groups)
   takes the place of the control panel's sidebar, icon rail and tab bar; a section gets a
   coral dot only for its problem (rules 9 and 15).
 - **No canvas board.** The screens are held to the Design rules and the `@omniralph/ui`

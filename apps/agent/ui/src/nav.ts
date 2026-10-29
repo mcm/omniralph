@@ -1,5 +1,6 @@
 /**
- * The agent page's sections, in the section nav's three groups. A section gets a coral dot
+ * The agent page's sections, in the section nav's three groups (Activity, Settings, Machine;
+ * none is called "Agent", which is the nav's own title). A section gets a coral dot
  * only for its problem in `/api/state` (Design rules 9 and 15), with the reason in its
  * accessible name ("Claude, not signed in").
  */
@@ -12,15 +13,15 @@ export const INDEX_PATH = "/";
 export interface AgentSection {
   label: string;
   href: string;
-  group: "Agent" | "Settings" | "Machine";
+  group: "Activity" | "Settings" | "Machine";
   /** The problem that puts a dot on its nav entry. */
   problem?: NavProblemSection;
 }
 
 export const AGENT_SECTIONS = {
   // Overview has its own path: at narrow widths `/` is the section list.
-  overview: { label: "Overview", href: "/overview", group: "Agent", problem: "overview" },
-  logs: { label: "Logs", href: "/logs", group: "Agent" },
+  overview: { label: "Overview", href: "/overview", group: "Activity", problem: "overview" },
+  logs: { label: "Logs", href: "/logs", group: "Activity" },
   capacity: { label: "Capacity", href: "/capacity", group: "Settings" },
   packages: { label: "Packages", href: "/packages", group: "Settings" },
   hostTools: { label: "Host tools", href: "/host-tools", group: "Settings", problem: "host_tools" },
@@ -31,7 +32,7 @@ export const AGENT_SECTIONS = {
 
 export type AgentSectionKey = keyof typeof AGENT_SECTIONS;
 
-const GROUPS: readonly AgentSection["group"][] = ["Agent", "Settings", "Machine"];
+const GROUPS: readonly AgentSection["group"][] = ["Activity", "Settings", "Machine"];
 
 export function agentNavGroups(problems: readonly NavProblem[]): SectionNavGroup[] {
   const sections: readonly AgentSection[] = Object.values(AGENT_SECTIONS);

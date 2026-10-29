@@ -51,6 +51,11 @@
   margin: 0;
 }
 
+/* The Repo picker fits a repo path, not the whole view. */
+.or-ask-new__repo {
+  max-width: 480px;
+}
+
 .or-ask-new__note {
   margin: 0;
   color: var(--or-sec);

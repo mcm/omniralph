@@ -29,6 +29,8 @@ import {
   IconSparkles,
   IconTrash,
   IconArrowBackUp,
+  IconRoute,
+  IconUserCheck,
 } from "@tabler/icons-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState, type ReactNode } from "react";
@@ -90,7 +92,19 @@ export interface WorkItemDetailViewProps {
 }
 
 /**
- * "Routes to <repo> via <source>" (the source a `MetaBadge` with the tracker mark), or, while
+ * The routes line's source: a routing rule carries the route icon and the user's choice a
+ * person, while tracker facts (project, team, label, parent, follow-up) carry the tracker mark.
+ */
+function ViaBadge({ via }: { via: NonNullable<WorkItemRoute["via"]> }) {
+  if (via.kind === "rule") return <MetaBadge icon={IconRoute} text={via.label} />;
+  if (via.kind === "choice") return <MetaBadge icon={IconUserCheck} text={via.label} />;
+  return (
+    <MetaBadge mark={<BrandMark brand="linear" className="or-ref__icon" />} text={via.label} />
+  );
+}
+
+/**
+ * "Routes to <repo> via <source>" (the source a `MetaBadge`, see `ViaBadge`), or, while
  * routing asks, "Routes to no repo yet" with "Choose a repo" (opens Change repo…).
  */
 export function WorkItemRoutesLine({
@@ -115,10 +129,7 @@ export function WorkItemRoutesLine({
           {route.via ? (
             <>
               <span>via</span>
-              <MetaBadge
-                mark={<BrandMark brand="linear" className="or-ref__icon" />}
-                text={route.via.label}
-              />
+              <ViaBadge via={route.via} />
             </>
           ) : null}
         </>

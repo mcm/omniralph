@@ -144,6 +144,20 @@
   cursor: pointer;
 }
 
+.or-select__control--leading {
+  padding-left: 32px;
+}
+
+.or-select__leading {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  display: inline-flex;
+  color: var(--or-sec);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
 .or-select__chevron {
   position: absolute;
   top: 50%;

@@ -362,8 +362,9 @@ is any row whose rule is a detector rule (not `decided:`, not `<check>: <rule>`)
 that rule's findings that name something its Scope cell names in backticks: a class selector
 (`` `.or-ref` ``; every class of `` `.a.b` ``, as whole class names), a file
 (`` `packages/ui/styles/refs.css` ``, for a source scan), a custom property (`` `--or-glow` ``)
-or a color (`` `#f5f3ee` ``, also matched as `rgb(245, 243, 238)`). A row naming none of these
-ignores nothing and is reported (`scripts/screens/ignore.ts`). A `decided:` row names an item,
+or a color (`` `#f5f3ee` ``, also matched as `rgb(245, 243, 238)`), or the captures of a route
+(`` `route: <name glob>` ``, for a page-wide finding whose snippet names no element, such as
+`em-dash-overuse`). A row naming none of these ignores nothing and is reported (`scripts/screens/ignore.ts`). A `decided:` row names an item,
 not a detector rule, so a detect finding that a Decided item rejects gets its own row naming
 what it rejects (e.g. `dark-glow` on `.or-btn--primary`, "Rejected: rule 15").
 

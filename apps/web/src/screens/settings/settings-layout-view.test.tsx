@@ -198,7 +198,10 @@ const group = (name: string) => within(sectionNav()).queryByRole("list", { name 
 const entries = (name: string) =>
   within(group(name)!)
     .getAllByRole("link")
-    .map((link) => [link.textContent, link.getAttribute("href")]);
+    .map((link) => [
+      link.querySelector(".or-subnav__label")!.textContent,
+      link.getAttribute("href"),
+    ]);
 const connectionRequests = () =>
   seen.filter((request) => request.method === "GET" && request.path === "/api/ui/connections");
 
@@ -229,6 +232,13 @@ describe("the section nav", () => {
       ["Linear", `/settings/connections/linear/${LINEAR_ID}`],
       ["Add connection", "/settings/connections/new"],
     ]);
+    // Each connection carries its provider's mark (Design rule 1); Add connection has none.
+    const marks = within(group("Connections")!)
+      .getAllByRole("link")
+      .map(
+        (link) => link.querySelector(".or-subnav__mark svg")?.getAttribute("aria-label") ?? null,
+      );
+    expect(marks).toEqual(["GitHub", "GitLab", "Linear", null]);
     expect(entries("You")).toEqual([
       ["Profile & theme", "/settings/profile"],
       ["Linked chat accounts", "/settings/linked-accounts"],
@@ -274,7 +284,7 @@ describe("the section nav", () => {
       within(sectionNav())
         .getAllByRole("link")
         .filter((link) => link.getAttribute("aria-current") === "page")
-        .map((link) => link.textContent);
+        .map((link) => link.querySelector(".or-subnav__label")!.textContent);
     expect(current()).toEqual(["GitLab"]);
   });
 

@@ -40,6 +40,15 @@
   font-weight: 600;
 }
 
+/* Every group's table has the same fixed Key column, so the keys line up across sections. */
+.or-help__table .or-tbl {
+  table-layout: fixed;
+}
+
+.or-help__table .or-help__key-col {
+  width: 200px;
+}
+
 .or-help__key {
   display: inline-block;
   min-width: 20px;

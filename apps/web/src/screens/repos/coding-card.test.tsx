@@ -287,7 +287,7 @@ describe("the Coding card", () => {
       within(card).getByText("Routing rules also send work here (they run before matches):"),
     ).toBeTruthy();
     expect(
-      [...card.querySelectorAll(".or-repo-match__rule")].map((rule) => rule.textContent),
+      [...card.querySelectorAll(".or-repo-match__rule")].map((rule) => rule.textContent?.trim()),
     ).toEqual(["Rule 1Label is security", "Rule 4Team is SOC and project is Portal"]);
     const requests = within(card).getByRole("group", { name: "Merge requests" });
     expect(
@@ -640,7 +640,7 @@ describe("the Coding card", () => {
       within(card).getByText("Routing rules also send work here (they run before matches):"),
     ).toBeTruthy();
     expect(
-      [...card.querySelectorAll(".or-repo-match__rule")].map((rule) => rule.textContent),
+      [...card.querySelectorAll(".or-repo-match__rule")].map((rule) => rule.textContent?.trim()),
     ).toEqual(["Rule 2Label is security"]);
   });
 

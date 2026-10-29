@@ -117,12 +117,6 @@ const ALLOWED: Allowed[] = [
     selector: CORAL_STATES,
     reason: "failed states, errors, invalid fields and destructive actions (and removed lines)",
   },
-  {
-    family: "coral",
-    file: "apps/agent/ui/src/styles.css",
-    selector: /^\.agent-log__line--(?:warn|error|fatal) \.agent-log__level$/,
-    reason: "the log level of warning lines, which say something went wrong on the agent",
-  },
 ];
 
 function files(dir: string): string[] {

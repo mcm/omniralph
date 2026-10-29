@@ -349,6 +349,12 @@ describe("the Advanced section", () => {
     // The Danger zone comes last.
     const regions = within(advanced()).getAllByRole("region");
     expect(regions).toEqual([card, dangerZone()]);
+    // Both cards sit under the section's h2 (WCAG 1.3.1).
+    expect(within(advanced()).getByRole("heading", { level: 2, name: "Advanced" })).toBeTruthy();
+    expect(within(card).getByRole("heading", { level: 3, name: "Playbooks" })).toBeTruthy();
+    expect(
+      within(dangerZone()!).getByRole("heading", { level: 3, name: "Danger zone" }),
+    ).toBeTruthy();
 
     const user = userEvent.setup();
     await user.selectOptions(within(card).getByRole("combobox", { name: "Stories" }), "pb-careful");

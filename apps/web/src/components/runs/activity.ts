@@ -62,7 +62,8 @@ const REASON_STATUSES: readonly RunDetail["status"][] = ["waiting", "stopped", "
 /**
  * A run's activity, newest first (Design rule 4: sentences, never job types): its start and
  * routing ("Routed by team `SOC` and label `product:portal` to customer-portal"), each
- * finished attempt's `label` at its finish (a failed one adds its error's first line), and,
+ * finished attempt's `label` at its finish (numbered "(attempt 2)" when the label repeats; a
+ * failed one adds its error's first line), and,
  * for a waiting, stopped or failed run, the current `reason`.
  */
 export function runActivity(detail: RunDetail, reason: string | null): RunActivityEntry[] {
@@ -78,17 +79,28 @@ export function runActivity(detail: RunDetail, reason: string | null): RunActivi
       text: `Routed by ${detail.details.routedBy} to ${repoName(repository.fullPath)}`,
     });
   }
-  const finished = detail.attempts
+  const done = detail.attempts
     .filter((attempt) => attempt.finishedAt !== null)
-    .map((attempt) => {
-      const error = attempt.status === "failed" ? firstLine(attempt.error) : null;
-      return {
-        id: `attempt:${attempt.id}`,
-        at: attempt.finishedAt!,
-        text: error ? `${attempt.label}: ${error}` : attempt.label,
-      };
-    })
-    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+    .sort((a, b) => Date.parse(a.finishedAt!) - Date.parse(b.finishedAt!));
+  // A label that repeats ("Built FIX-107" three times) carries its attempt's number, so the
+  // lines say which try each was (Design rule 4).
+  const repeats = new Map<string, number>();
+  for (const attempt of done) repeats.set(attempt.label, (repeats.get(attempt.label) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  const finished = done.map((attempt) => {
+    const number = (seen.get(attempt.label) ?? 0) + 1;
+    seen.set(attempt.label, number);
+    const label =
+      (repeats.get(attempt.label) ?? 0) > 1
+        ? `${attempt.label} (attempt ${number})`
+        : attempt.label;
+    const error = attempt.status === "failed" ? firstLine(attempt.error) : null;
+    return {
+      id: `attempt:${attempt.id}`,
+      at: attempt.finishedAt!,
+      text: error ? `${label}: ${error}` : label,
+    };
+  });
   entries.push(...finished);
   if (reason && REASON_STATUSES.includes(detail.status)) {
     entries.push({ id: "reason", at: detail.finishedAt ?? detail.updatedAt, text: reason });

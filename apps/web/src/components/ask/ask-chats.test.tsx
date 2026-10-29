@@ -450,6 +450,20 @@ describe("AskNewChat", () => {
     expect(composer().placeholder).toBe("Ask about your repos…");
   });
 
+  it("leads the picker with the chosen repo's host mark (Design rule 1)", async () => {
+    const gitlab = repository({ id: "repo-3", fullPath: "acme/infra", provider: "gitlab" });
+    mockFetch({ [REPOS_PATH]: { repositories: [...REPOS, gitlab] } });
+    renderNewChat({}, { pageRepositoryId: "repo-3" });
+    await waitFor(() => expect(selectedLabel()).toBe("acme/infra"));
+    const leading = () => picker().parentElement!.querySelector(".or-select__leading")!;
+    expect(leading().getAttribute("aria-hidden")).toBe("true");
+    expect(leading().querySelector(".or-brand-mark")!.getAttribute("aria-label")).toBe("GitLab");
+
+    await userEvent.setup().selectOptions(picker(), "All repos");
+    expect(leading().querySelector(".or-brand-mark")).toBeNull();
+    expect(leading().querySelector("svg")).toBeTruthy();
+  });
+
   it('falls back to "All repos" when the page\'s repo has Ask off', async () => {
     // repo-off isn't offered: Ask is off (or it's disconnected).
     mockFetch({ [REPOS_PATH]: { repositories: REPOS } });

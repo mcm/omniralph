@@ -47,7 +47,7 @@ export function connectionLabels(connections: readonly Connection[]): Map<string
 
 /**
  * The Settings section nav (Design board Settings): Organization, Connections (one entry
- * per connection, then "Add connection"), You and, only when the user shows advanced
+ * per connection with its provider's mark, then "Add connection"), You and, only when the user shows advanced
  * settings, Advanced. The Advanced pages open by URL either way. A connection with failed
  * deliveries not yet replayed (`failedDeliveries`, the nav indicators) has a coral dot
  * labeled "{n} failed deliveries".
@@ -68,6 +68,7 @@ export function settingsNavGroups({
     return {
       label: labels.get(connection.id)!,
       href: connectionHref(connection),
+      brand: connection.provider,
       ...(count > 0 && { indicator: { tone: "fail", label: failedDeliveriesLabel(count) } }),
     };
   });

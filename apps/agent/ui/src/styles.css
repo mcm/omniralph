@@ -374,10 +374,14 @@ body,
   overflow-wrap: anywhere;
 }
 
-.agent-log__line--warn .agent-log__level,
-.agent-log__line--error .agent-log__level,
-.agent-log__line--fatal .agent-log__level {
+/* Errors are failures (coral); a warning is emphasized, never a failure color (rule 15). */
+.agent-log__line--fail .agent-log__level {
   color: var(--or-fail);
+}
+
+.agent-log__line--warn .agent-log__level {
+  color: var(--or-text);
+  font-weight: 600;
 }
 
 /* Logs: the toolbar, then the lines in their own scroll area (oldest at the top). */
@@ -461,6 +465,11 @@ body,
 
 .agent-logs__line--fail .agent-logs__level {
   color: var(--or-fail);
+}
+
+.agent-logs__line--warn .agent-logs__level {
+  color: var(--or-text);
+  font-weight: 600;
 }
 
 .agent-logs__msg {

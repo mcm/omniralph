@@ -324,11 +324,13 @@ body {
   gap: 8px;
   margin-bottom: 20px;
 }
+/* The page's title outweighs the PRD's own H1 (20 px, 600) under it. */
 .share-title {
   margin: 0;
   color: var(--or-text);
-  font-size: 22px;
-  line-height: 1.3;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.25;
 }
 .share-prd {
   color: var(--or-text);
@@ -342,6 +344,7 @@ body {
   margin: 0 0 8px;
   color: var(--or-text);
   font-size: 16px;
+  font-weight: 600;
 }
 .share-stories ul {
   margin: 0;

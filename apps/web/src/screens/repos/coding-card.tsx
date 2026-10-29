@@ -19,6 +19,7 @@ import {
   useStagedCard,
   type StagedChange,
 } from "@omniralph/ui";
+import { IconRoute } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useId, useMemo, useState } from "react";
 import type { z } from "zod";
@@ -628,7 +629,7 @@ export function CodingCard({ detail, titleId }: { detail: RepositoryDetail; titl
               <ul className="or-repo-match__rule-list">
                 {detail.coding.routingRules.map((rule) => (
                   <li key={rule.position} className="or-repo-match__rule">
-                    <MetaBadge text={`Rule ${rule.position}`} />
+                    <MetaBadge icon={IconRoute} text={`Rule ${rule.position}`} />
                     <span>{rule.description}</span>
                   </li>
                 ))}
