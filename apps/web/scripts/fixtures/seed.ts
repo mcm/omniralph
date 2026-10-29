@@ -17,8 +17,11 @@ import {
   agents,
   agentRepoPins,
   chatConnections,
+  chatRequestDrafts,
+  chatThreadRuns,
   chatThreads,
   chatWebMessages,
+  inboxItemStates,
   integrations,
   jobs,
   organizationEmailDomains,
@@ -42,14 +45,32 @@ import {
   WEB_CHAT_CONNECTION_NAME,
   webChatChannelId,
   webChatExternalThreadId,
+  webhookEvents,
+  workItemMatches,
   workItemShareLinks,
   type Database,
 } from "@omniralph/db";
 import { getBuiltinPlaybook, playbookRequirements } from "@omniralph/tasks";
-import { REVIEW_DEPTHS, type ReviewDepth } from "@omniralph/shared";
+import {
+  CHAT_ASK_JOB_TYPE,
+  RALPH_REQUEST_JOB_TYPE,
+  REVIEW_DEPTHS,
+  type ReviewDepth,
+} from "@omniralph/shared";
 import { createHash } from "node:crypto";
 import { inArray, sql } from "drizzle-orm";
-import { FIXTURE_EMAILS, FIXTURE_IDS, FIXTURE_SHARE_TOKENS, fixtureId } from "./ids";
+import {
+  FIXTURE_EMAILS,
+  FIXTURE_IDS,
+  FIXTURE_INBOX_KEYS,
+  FIXTURE_SANDBOX_LINEAR_TOKEN,
+  FIXTURE_SHARE_TOKENS,
+  fixedJobId,
+  fixtureId,
+  laneId,
+  storyAttemptId,
+  storyId,
+} from "./ids";
 
 /** Fake, fixed `ENCRYPTION_KEY` the fixture credentials are encrypted with (hex of "fixture…"). */
 export const FIXTURE_ENCRYPTION_KEY = Buffer.from("fixture-key-not-a-secret-32bytes").toString(
@@ -89,12 +110,14 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
     await clearFixtures(tx);
 
     // ── People and organizations ─────────────────────────────────────────
+    // No saved theme (System): a capture's emulated color scheme decides the theme.
     await tx.insert(users).values([
       {
         id: U.admin,
         name: "Ada Admin",
         email: FIXTURE_EMAILS.admin,
         emailVerified: ago(90 * DAY),
+        theme: null,
         createdAt: ago(90 * DAY),
       },
       {
@@ -102,6 +125,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         name: "Max Member",
         email: FIXTURE_EMAILS.member,
         emailVerified: ago(60 * DAY),
+        theme: null,
         createdAt: ago(60 * DAY),
       },
     ]);
@@ -113,6 +137,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
       { organizationId: O.main, userId: U.admin, role: "admin", createdAt: ago(90 * DAY) },
       { organizationId: O.main, userId: U.member, role: "member", createdAt: ago(60 * DAY) },
       { organizationId: O.sandbox, userId: U.admin, role: "admin", createdAt: ago(30 * DAY) },
+      { organizationId: O.sandbox, userId: U.member, role: "member", createdAt: ago(25 * DAY) },
     ]);
     await tx
       .update(users)
@@ -235,7 +260,13 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         webhookId: "fixture-hook-301",
         createdAt: ago(60 * DAY),
       },
-      { ...githubRepo("fixture-labs/docs", 4), id: R.docs, reviewsEnabled: false },
+      // Reviews, Coding and Ask all off, and no work item match.
+      {
+        ...githubRepo("fixture-labs/docs", 4),
+        id: R.docs,
+        reviewsEnabled: false,
+        askEnabled: false,
+      },
       {
         ...githubRepo("fixture-labs/legacy-dashboard", 5),
         id: R.legacy,
@@ -243,6 +274,23 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
         disconnectedAt: ago(20 * DAY),
       },
     ]);
+    // Work item matches: Coding on needs one. The GitLab API has one with Coding off; docs none.
+    const match = (repositoryId: string, team: string, project: string | null) => ({
+      repositoryId,
+      organizationId: O.main,
+      tracker: "linear" as const,
+      team,
+      project,
+      createdBy: U.admin,
+      updatedBy: U.admin,
+    });
+    await tx
+      .insert(workItemMatches)
+      .values([
+        match(R.controlPanel, "FIX", "Control panel"),
+        match(R.agent, "FIX", "Agent"),
+        match(R.platformApi, "OPS", null),
+      ]);
     // Settings › Routing: labels, then project, then team. "legacy-api" isn't in the fixture
     // Linear workspace: the Routing page shows it as stale.
     await tx.insert(routingRules).values([
@@ -284,6 +332,8 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
       installedByUserId: U.admin,
       createdAt: ago(75 * DAY),
     });
+
+    await seedSandbox(tx, now);
 
     // Review links of FIX-101 (`/share/{token}`): one open, one with a password
     // (`FIXTURE_SHARE_PASSWORD`, hashed as `hashSharePassword` does with a fixed salt).
@@ -449,11 +499,67 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
     });
     await tx.insert(agentAudit).values(audit);
 
+    await seedAsk(tx, now);
     await seedRalph(tx, now);
+    await seedRequests(tx, now);
     await seedReviews(tx, now);
     await seedOtherJobs(tx, now);
     await seedTriage(tx, now);
-    await seedAsk(tx, now);
+    await seedInboxStates(tx, now);
+    await seedWebhookEvents(tx, now);
+  });
+}
+
+/**
+ * The sandbox organization: a GitHub connection with one repo (Coding on) and its own Linear
+ * workspace (`FIXTURE_SANDBOX_LINEAR_TOKEN`), but no agents and no runs. Its Inbox is empty and
+ * its Backlog isn't, so the empty Inbox shows Up next (board InboxEmpty).
+ */
+async function seedSandbox(tx: Tx, now: Date): Promise<void> {
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+  const key = FIXTURE_ENCRYPTION_KEY;
+  await tx.insert(scmConnections).values({
+    id: FIXTURE_IDS.scmConnections.sandboxGithub,
+    organizationId: O.sandbox,
+    provider: "github",
+    name: "fixture-sandbox",
+    baseUrl: "https://api.github.com",
+    externalId: "fixture-installation-2",
+    encryptedCredentials: encrypt("{}", key),
+    createdBy: U.admin,
+    createdAt: ago(29 * DAY),
+  });
+  await tx.insert(repositories).values({
+    id: R.sandboxPlayground,
+    organizationId: O.sandbox,
+    provider: "github",
+    externalId: "fixture-repo-6",
+    fullPath: "fixture-sandbox/playground",
+    connectionId: FIXTURE_IDS.scmConnections.sandboxGithub,
+    codingEnabled: true,
+    createdAt: ago(28 * DAY),
+  });
+  await tx.insert(workItemMatches).values({
+    repositoryId: R.sandboxPlayground,
+    organizationId: O.sandbox,
+    tracker: "linear",
+    team: "SBX",
+    project: null,
+    createdBy: U.admin,
+    updatedBy: U.admin,
+  });
+  await tx.insert(integrations).values({
+    id: FIXTURE_IDS.integrations.sandboxLinear,
+    organizationId: O.sandbox,
+    provider: "linear",
+    externalId: "fixture-linear-sandbox-workspace",
+    name: "Fixture Sandbox",
+    encryptedCredentials: encrypt(
+      JSON.stringify({ accessToken: FIXTURE_SANDBOX_LINEAR_TOKEN }),
+      key,
+    ),
+    installedByUserId: U.admin,
+    createdAt: ago(28 * DAY),
   });
 }
 
@@ -494,13 +600,37 @@ async function clearFixtures(tx: Tx): Promise<void> {
 
 // ── Ask ─────────────────────────────────────────────────────────────────────
 
-/** The admin's web chat about the control panel: a question and Om's answer. */
+/** The web chat connection of the main organization (one per organization). */
+const WEB_CHAT_CONNECTION_ID = fixtureId("chatConnection", 1);
+
+interface AskSpec {
+  runId: string;
+  /** The ask run's attempt (`chat.ask` job). */
+  jobId: string;
+  status: "queued" | "running" | "completed" | "failed" | "canceled" | "skipped";
+  question: string;
+  /** Om's reply: its Markdown, and whether it is still streaming. */
+  answer?: { markdown: string; streaming?: boolean; draftId?: string };
+  error?: string;
+}
+
+interface ChatSpec {
+  id: string;
+  repositoryId: string | null;
+  startedAgo: number;
+  asks: AskSpec[];
+}
+
+/**
+ * The admin's web chats: answered, answered with a drafted Request, being answered, waiting
+ * for an agent, and older questions whose ask runs failed, were stopped and were skipped.
+ */
 async function seedAsk(tx: Tx, now: Date): Promise<void> {
   const ago = (ms: number) => new Date(now.getTime() - ms);
-  const chatId = FIXTURE_IDS.askChats.controlPanel;
-  const connectionId = fixtureId("chatConnection", 1);
+  const C = FIXTURE_IDS.askChats;
+  const A = FIXTURE_IDS.askRuns;
   await tx.insert(chatConnections).values({
-    id: connectionId,
+    id: WEB_CHAT_CONNECTION_ID,
     organizationId: O.main,
     platform: "web",
     externalId: O.main,
@@ -508,44 +638,217 @@ async function seedAsk(tx: Tx, now: Date): Promise<void> {
     encryptedCredentials: null,
     createdAt: ago(10 * DAY),
   });
-  await tx.insert(chatThreads).values({
-    id: chatId,
-    organizationId: O.main,
-    connectionId,
-    platform: "web",
-    externalThreadId: webChatExternalThreadId(O.main, chatId),
-    channelId: webChatChannelId(O.main),
-    startedByExternalUserId: U.admin,
-    startedByUserId: U.admin,
-    title: "Where does the sign-in form post to?",
-    repositoryId: R.controlPanel,
-    branch: "main",
-    createdAt: ago(2 * HOUR),
-    updatedAt: ago(2 * HOUR - MINUTE),
-  });
-  await tx.insert(chatWebMessages).values([
+  const chats: ChatSpec[] = [
     {
-      id: fixtureId("chatWebMessage", 1),
-      organizationId: O.main,
-      threadId: chatId,
-      author: "user",
-      userId: U.admin,
-      markdown: "Where does the sign-in form post to?",
-      createdAt: ago(2 * HOUR),
-      updatedAt: ago(2 * HOUR),
+      id: C.controlPanel,
+      repositoryId: R.controlPanel,
+      startedAgo: 2 * HOUR,
+      asks: [
+        {
+          runId: A.completed,
+          jobId: fixedJobId(101),
+          status: "completed",
+          question: "Where does the sign-in form post to?",
+          answer: {
+            markdown:
+              "The sign-in form posts to `/api/auth/signin/email`, which sends the magic link. " +
+              "The dev sign-in (`/sign-in/dev`) skips the email in development.",
+          },
+        },
+      ],
     },
     {
-      id: fixtureId("chatWebMessage", 2),
-      organizationId: O.main,
-      threadId: chatId,
-      author: "om",
-      markdown:
-        "The sign-in form posts to `/api/auth/signin/email`, which sends the magic link. " +
-        "The dev sign-in (`/sign-in/dev`) skips the email in development.",
-      createdAt: ago(2 * HOUR - MINUTE),
-      updatedAt: ago(2 * HOUR - MINUTE),
+      id: C.requestDraft,
+      repositoryId: R.controlPanel,
+      startedAgo: 50 * MINUTE,
+      asks: [
+        {
+          runId: A.drafted,
+          jobId: fixedJobId(102),
+          status: "completed",
+          question: "Can members export the Runs list?",
+          answer: {
+            markdown:
+              "Not yet: the Runs list has no export. It needs a code change, so I drafted a " +
+              "request for it.",
+            draftId: FIXTURE_IDS.requestDrafts.pending,
+          },
+        },
+      ],
     },
-  ]);
+    {
+      id: C.answering,
+      repositoryId: R.agent,
+      startedAgo: 3 * MINUTE,
+      asks: [
+        {
+          runId: A.running,
+          jobId: fixedJobId(103),
+          status: "running",
+          question: "Which agents can run reviews?",
+          answer: {
+            markdown: "Agents take reviews when `review` is one of their accepted task types.",
+            streaming: true,
+          },
+        },
+      ],
+    },
+    {
+      id: C.waiting,
+      repositoryId: null,
+      startedAgo: MINUTE,
+      asks: [
+        {
+          runId: A.queued,
+          jobId: fixedJobId(104),
+          status: "queued",
+          question: "What does the GitLab token warning mean?",
+        },
+      ],
+    },
+    {
+      id: C.older,
+      repositoryId: R.platformApi,
+      startedAgo: 6 * DAY,
+      asks: [
+        {
+          runId: A.failed,
+          jobId: fixedJobId(105),
+          status: "failed",
+          question: "How does the API paginate merge requests?",
+          error: "The agent lost its session (exit code 137).",
+        },
+        {
+          runId: A.stopped,
+          jobId: fixedJobId(106),
+          status: "canceled",
+          question: "Can you check the pagination again?",
+        },
+        {
+          runId: A.skipped,
+          jobId: fixedJobId(107),
+          status: "skipped",
+          question: "Can you check the pagination again?",
+        },
+      ],
+    },
+  ];
+
+  const repoPath: Record<string, string> = {
+    [R.controlPanel]: "fixture-labs/control-panel",
+    [R.agent]: "fixture-labs/agent",
+    [R.platformApi]: "fixture-labs/platform/api",
+  };
+  let messageN = 0;
+  for (const chat of chats) {
+    const started = ago(chat.startedAgo);
+    const last = chat.asks.length - 1;
+    await tx.insert(chatThreads).values({
+      id: chat.id,
+      organizationId: O.main,
+      connectionId: WEB_CHAT_CONNECTION_ID,
+      platform: "web",
+      externalThreadId: webChatExternalThreadId(O.main, chat.id),
+      channelId: webChatChannelId(O.main),
+      startedByExternalUserId: U.admin,
+      startedByUserId: U.admin,
+      title: chat.asks[0]!.question,
+      repositoryId: chat.repositoryId,
+      branch: chat.repositoryId ? "main" : null,
+      createdAt: started,
+      updatedAt: new Date(started.getTime() + (last * 10 + 1) * MINUTE),
+    });
+    for (const [i, ask] of chat.asks.entries()) {
+      const askedAt = new Date(started.getTime() + i * 10 * MINUTE);
+      const answeredAt = new Date(askedAt.getTime() + MINUTE);
+      const done = ask.status !== "queued" && ask.status !== "running";
+      const repositoryId = chat.repositoryId ?? R.controlPanel;
+      await tx.insert(jobs).values({
+        id: ask.jobId,
+        organizationId: O.main,
+        type: CHAT_ASK_JOB_TYPE,
+        taskType: "query",
+        taskId: "builtin:ask-about-code",
+        payload: {
+          trigger: {
+            kind: "chat.request",
+            context: { repository: repoPath[repositoryId], question: ask.question },
+          },
+        },
+        status: ask.status,
+        repositoryId,
+        agentId: ask.status === "queued" ? null : H.online,
+        deliveryCount: ask.status === "queued" ? 0 : 1,
+        cancelRequested: ask.status === "canceled",
+        leaseExpiresAt: ask.status === "running" ? new Date(now.getTime() + 10 * MINUTE) : null,
+        result:
+          ask.status === "completed"
+            ? {
+                outcome: "answered",
+                answer: ask.answer?.markdown ?? null,
+                references: [],
+                usage: { inputTokens: 31_000, outputTokens: 1_200 },
+                durationMs: 55_000,
+              }
+            : null,
+        error: ask.error ?? null,
+        createdAt: askedAt,
+        startedAt: ask.status === "queued" ? null : new Date(askedAt.getTime() + 5_000),
+        finishedAt: done ? answeredAt : null,
+      });
+      await tx.insert(chatThreadRuns).values({
+        id: ask.runId,
+        organizationId: O.main,
+        chatThreadId: chat.id,
+        kind: "query",
+        jobId: ask.jobId,
+        createdAt: askedAt,
+      });
+      await tx.insert(chatWebMessages).values({
+        id: fixtureId("chatWebMessage", ++messageN),
+        organizationId: O.main,
+        threadId: chat.id,
+        author: "user",
+        userId: U.admin,
+        markdown: ask.question,
+        createdAt: askedAt,
+        updatedAt: askedAt,
+      });
+      if (!ask.answer) continue;
+      if (ask.answer.draftId) {
+        await tx.insert(chatRequestDrafts).values({
+          id: ask.answer.draftId,
+          organizationId: O.main,
+          threadId: chat.id,
+          requestedByUserId: U.admin,
+          requestedByExternalUserId: U.admin,
+          repositoryId,
+          title: "Export the Runs list as CSV",
+          request: [
+            "Add an **Export** action to the Runs list that downloads the filtered runs as CSV:",
+            "one row per run with its kind, status, repo, start time and duration.",
+          ].join("\n"),
+          status: "pending",
+          messageId: fixtureId("chatWebMessage", messageN + 1),
+          expiresAt: new Date(now.getTime() + 6 * DAY),
+          createdAt: answeredAt,
+          updatedAt: answeredAt,
+        });
+      }
+      await tx.insert(chatWebMessages).values({
+        id: fixtureId("chatWebMessage", ++messageN),
+        organizationId: O.main,
+        threadId: chat.id,
+        author: "om",
+        markdown: ask.answer.markdown,
+        status: ask.answer.streaming ? "streaming" : "complete",
+        cardRef: ask.answer.draftId ? { kind: "request_draft", draftId: ask.answer.draftId } : null,
+        threadRunId: ask.runId,
+        createdAt: answeredAt,
+        updatedAt: answeredAt,
+      });
+    }
+  }
 }
 
 // ── Ralph ───────────────────────────────────────────────────────────────────
@@ -583,6 +886,11 @@ interface RunSpec {
   lane?: Partial<typeof ralphLanes.$inferInsert>;
   pendingElicitation?: (typeof ralphRuns.$inferInsert)["pendingElicitation"];
 }
+
+/** The PR of `ralphRuns.pullRequestWaiting`, which the featured review reviewed. */
+const FEATURED_PR = 421;
+/** The GitLab MR of `ralphRuns.mergeRequestWaiting`, which the second review reviewed. */
+const MERGE_REQUEST_IID = 58;
 
 let jobCounter = 0;
 /** The next fixture job ID (reset per seed). */
@@ -783,7 +1091,9 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
       title: "Experiment: streaming review summaries",
       status: "stopped",
       repositoryId: R.agent,
-      createdDaysAgo: 20,
+      // Within the Inbox's 14 days: "Stopped" under Needs you.
+      createdDaysAgo: 3,
+      error: "Stopped by Ada Admin.",
       stories: [
         {
           title: "Stream summaries to the sticky comment",
@@ -805,6 +1115,57 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
       kind: "single",
       pendingElicitation: { kind: "repository", repositoryIds: [R.controlPanel, R.agent] },
       stories: [],
+    },
+    {
+      // Done; its PR waits on a person, who asked for changes. The AI review has open findings.
+      id: RR.pullRequestWaiting,
+      n: 7,
+      identifier: "FIX-160",
+      title: "Show agent capacity on Fleet",
+      status: "completed",
+      repositoryId: R.controlPanel,
+      createdDaysAgo: 1,
+      lane: {
+        prNumber: FEATURED_PR,
+        prUrl: `https://github.com/fixture-labs/control-panel/pull/${FEATURED_PR}`,
+        prReviewState: "changes_requested",
+        prStateUpdatedAt: ago(3 * HOUR),
+        reviewRounds: 1,
+      },
+      stories: [
+        { title: "Report slots per agent", status: "completed", attempts: 1, result: "complete" },
+        {
+          title: "Show free slots in the agent panel",
+          status: "completed",
+          attempts: 2,
+          result: "complete",
+        },
+      ],
+    },
+    {
+      // Done; its GitLab MR waits on a person to merge it after approving. The AI review is clean.
+      id: RR.mergeRequestWaiting,
+      n: 8,
+      identifier: "FIX-170",
+      title: "Retry failed deliveries from the log",
+      status: "completed",
+      repositoryId: R.platformApi,
+      createdDaysAgo: 2,
+      kind: "single",
+      lane: {
+        prNumber: MERGE_REQUEST_IID,
+        prUrl: `https://gitlab.fixtures.example/fixture-labs/platform/api/-/merge_requests/${MERGE_REQUEST_IID}`,
+        prReviewState: "approved",
+        prStateUpdatedAt: ago(5 * HOUR),
+      },
+      stories: [
+        {
+          title: "Retry failed deliveries from the log",
+          status: "completed",
+          attempts: 1,
+          result: "complete",
+        },
+      ],
     },
   ];
 
@@ -837,9 +1198,9 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
     });
     if (!run.repositoryId) continue;
 
-    const laneId = fixtureId("ralphLane", run.n);
+    const lane = laneId(run.n);
     await tx.insert(ralphLanes).values({
-      id: laneId,
+      id: lane,
       runId: run.id,
       repositoryId: run.repositoryId,
       branch: `omniralph/${run.identifier.toLowerCase()}`,
@@ -851,10 +1212,39 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
     let minute = 5;
     for (const [position, story] of run.stories.entries()) {
       const identifier = `${run.identifier.split("-")[0]}-${Number(run.identifier.split("-")[1]) + position + 1}`;
+      const ralphStoryId = storyId(run.n, position);
       let lastJobId: string | null = null;
       const attempts = story.attempts ?? 0;
+      // The story first, so its attempts link to it; its last attempt is set after them.
+      await tx.insert(ralphStories).values({
+        id: ralphStoryId,
+        runId: run.id,
+        linearIssueId: `fixture-linear-issue-${identifier}`,
+        identifier,
+        title: story.title,
+        position,
+        status: story.status,
+        attempts: story.running ? attempts - 1 : attempts,
+        rounds: story.rounds ?? 0,
+        roundMetrics: story.rounds
+          ? {
+              name: "critique score",
+              direction: "higher",
+              target: 32,
+              values: [
+                { round: 1, value: 22, at: at(60).toISOString() },
+                { round: 2, value: 27, at: at(120).toISOString() },
+              ],
+            }
+          : null,
+        lastFeedback: story.lastFeedback ?? null,
+        commitSha: story.status === "completed" ? sha(run.n * 100 + position) : null,
+        laneId: story.elsewhere ? null : lane,
+        elsewhere: story.elsewhere ?? null,
+        createdAt: created,
+      });
       for (let attempt = 1; attempt <= attempts; attempt++) {
-        const id = nextJobId();
+        const id = storyAttemptId(run.n, position, attempt);
         const last = attempt === attempts;
         const running = last && story.running === true;
         const resultStatus = last ? story.result : "incomplete";
@@ -879,6 +1269,7 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
           agentId: H.online,
           targetAgentId: H.online,
           ralphRunId: run.id,
+          ralphStoryId,
           deliveryCount: 1,
           leaseExpiresAt: running ? new Date(now.getTime() + 10 * MINUTE) : null,
           result:
@@ -908,34 +1299,12 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
         lastJobId = id;
         if (running) runningJobId = id;
       }
-      await tx.insert(ralphStories).values({
-        id: fixtureId("ralphStory", run.n * 100 + position),
-        runId: run.id,
-        linearIssueId: `fixture-linear-issue-${identifier}`,
-        identifier,
-        title: story.title,
-        position,
-        status: story.status,
-        attempts: story.running ? attempts - 1 : attempts,
-        rounds: story.rounds ?? 0,
-        roundMetrics: story.rounds
-          ? {
-              name: "critique score",
-              direction: "higher",
-              target: 32,
-              values: [
-                { round: 1, value: 22, at: at(60).toISOString() },
-                { round: 2, value: 27, at: at(120).toISOString() },
-              ],
-            }
-          : null,
-        lastFeedback: story.lastFeedback ?? null,
-        commitSha: story.status === "completed" ? sha(run.n * 100 + position) : null,
-        lastJobId,
-        laneId: story.elsewhere ? null : laneId,
-        elsewhere: story.elsewhere ?? null,
-        createdAt: created,
-      });
+      if (lastJobId) {
+        await tx
+          .update(ralphStories)
+          .set({ lastJobId })
+          .where(sql`${ralphStories.id} = ${ralphStoryId}`);
+      }
     }
 
     if (run.status === "completed") {
@@ -988,6 +1357,226 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
       createdAt: new Date(now.getTime() - 5 * MINUTE),
     },
   ]);
+
+  // Transcripts: the last of three attempts at a story, and a running attempt.
+  const { completedWithTranscript, runningWithTranscript } = FIXTURE_IDS.attempts;
+  const transcript: [string, "thought" | "action", string, string | null][] = [
+    [completedWithTranscript, "thought", "The last attempt failed the email domain check.", null],
+    [completedWithTranscript, "action", "Read", "src/lib/invitations/email-domain.ts"],
+    [completedWithTranscript, "thought", "Domains are compared case-sensitively.", null],
+    [completedWithTranscript, "action", "Edit", "src/lib/invitations/email-domain.ts"],
+    [completedWithTranscript, "action", "Bash", "pnpm turbo run typecheck lint test"],
+    [completedWithTranscript, "thought", "The gates pass. Committing the story.", null],
+    [runningWithTranscript, "thought", "Looking for the existing GitLab connection form.", null],
+    [runningWithTranscript, "action", "Grep", "GitLabConnectionForm"],
+    [runningWithTranscript, "action", "Read", "src/screens/settings/add-connection-settings.tsx"],
+  ];
+  const attemptStart = new Map<string, Date>();
+  for (const id of [completedWithTranscript, runningWithTranscript]) {
+    const [row] = await tx
+      .select({ startedAt: jobs.startedAt })
+      .from(jobs)
+      .where(sql`${jobs.id} = ${id}`);
+    attemptStart.set(id, row!.startedAt!);
+  }
+  await tx.insert(runActivities).values(
+    transcript.map(([jobId, type, body, parameter], i) => ({
+      id: fixtureId("runActivity", 100 + i),
+      jobId,
+      organizationId: O.main,
+      type,
+      body,
+      parameter,
+      createdAt: new Date(attemptStart.get(jobId)!.getTime() + (i + 1) * 40_000),
+    })),
+  );
+}
+
+// ── Requests ────────────────────────────────────────────────────────────────
+
+interface RequestSpec {
+  id: string;
+  n: number;
+  identifier: string;
+  title: string;
+  status: (typeof ralphRuns.$inferInsert)["status"];
+  repositoryId: string;
+  /** Its one attempt's status (`ralph.request` job). */
+  attempt: "queued" | "running" | "completed" | "failed" | "canceled";
+  createdAgo: number;
+  /** Started from a web chat (origin `chat`) rather than a Linear mention. */
+  chatThreadId?: string;
+  lane?: Partial<typeof ralphLanes.$inferInsert>;
+  error?: string;
+}
+
+/** Request runs (a mention's or a chat's one change), one in every status. */
+async function seedRequests(tx: Tx, now: Date): Promise<void> {
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+  const Q = FIXTURE_IDS.requestRuns;
+  const requests: RequestSpec[] = [
+    {
+      id: Q.queued,
+      n: 21,
+      identifier: "FIX-201",
+      title: "Rename the Retry button on failed syncs",
+      status: "pending",
+      repositoryId: R.controlPanel,
+      attempt: "queued",
+      createdAgo: 2 * MINUTE,
+    },
+    {
+      id: Q.running,
+      n: 22,
+      identifier: "FIX-202",
+      title: "Fix the flaky heartbeat test",
+      status: "running",
+      repositoryId: R.agent,
+      attempt: "running",
+      createdAgo: 12 * MINUTE,
+    },
+    {
+      id: Q.waiting,
+      n: 23,
+      identifier: "FIX-203",
+      title: "Address the review comments on the claim query",
+      status: "waiting",
+      repositoryId: R.controlPanel,
+      attempt: "completed",
+      createdAgo: 5 * HOUR,
+      lane: {
+        prNumber: 430,
+        prUrl: "https://github.com/fixture-labs/control-panel/pull/430",
+        prDraft: true,
+      },
+    },
+    {
+      id: Q.completed,
+      n: 24,
+      identifier: "FIX-204",
+      title: "Point the sign-in docs at the email route",
+      status: "completed",
+      repositoryId: R.controlPanel,
+      attempt: "completed",
+      createdAgo: 90 * MINUTE,
+      chatThreadId: FIXTURE_IDS.askChats.controlPanel,
+      lane: {
+        prNumber: 431,
+        prUrl: "https://github.com/fixture-labs/control-panel/pull/431",
+        prClosed: true,
+        prMerged: true,
+        mergeSha: sha(431),
+      },
+    },
+    {
+      id: Q.failed,
+      n: 25,
+      identifier: "FIX-205",
+      title: "Bump the GitLab client's retry limit",
+      status: "failed",
+      repositoryId: R.platformApi,
+      attempt: "failed",
+      createdAgo: 2 * DAY,
+      error: "The request ran out of attempts: `pnpm test` timed out twice.",
+    },
+    {
+      id: Q.stopped,
+      n: 26,
+      identifier: "FIX-206",
+      title: "Try a smaller review model",
+      status: "stopped",
+      repositoryId: R.agent,
+      attempt: "canceled",
+      createdAgo: 4 * DAY,
+      error: "Stopped by Max Member.",
+    },
+  ];
+  for (const request of requests) {
+    const created = ago(request.createdAgo);
+    const fromChat = !!request.chatThreadId;
+    const active = request.status === "pending" || request.status === "running";
+    const finishedAt = new Date(created.getTime() + 20 * MINUTE);
+    await tx.insert(ralphRuns).values({
+      id: request.id,
+      organizationId: O.main,
+      origin: fromChat ? "chat" : "linear",
+      chatThreadId: request.chatThreadId ?? null,
+      ...(!fromChat && {
+        linearIssueId: `fixture-linear-issue-${request.identifier}`,
+        linearIdentifier: request.identifier,
+        linearUrl: `https://linear.app/fixture-labs/issue/${request.identifier}`,
+        linearAgentSessionId: `fixture-agent-session-${request.n}`,
+      }),
+      linearTitle: request.title,
+      kind: "single",
+      mode: "request",
+      repositoryId: request.repositoryId,
+      routedBy: fromChat ? "your selection" : "team `FIX`",
+      agentId: request.attempt === "queued" ? null : H.online,
+      status: request.status,
+      iterations: 1,
+      error: request.error ?? null,
+      createdAt: created,
+      updatedAt: active ? ago(MINUTE) : finishedAt,
+    });
+    await tx.insert(ralphLanes).values({
+      id: laneId(request.n),
+      runId: request.id,
+      repositoryId: request.repositoryId,
+      branch: `omniralph/${request.identifier.toLowerCase()}`,
+      baseBranch: "main",
+      createdAt: created,
+      ...request.lane,
+    });
+    const done = request.attempt !== "queued" && request.attempt !== "running";
+    await tx.insert(jobs).values({
+      id: fixedJobId(200 + request.n),
+      organizationId: O.main,
+      type: RALPH_REQUEST_JOB_TYPE,
+      taskType: "coding",
+      taskId: "builtin:handle-request",
+      payload: {
+        trigger: {
+          kind: fromChat ? "chat.request" : "linear.mention",
+          context: { request: request.title },
+        },
+      },
+      status: request.attempt,
+      repositoryId: request.repositoryId,
+      agentId: request.attempt === "queued" ? null : H.online,
+      targetAgentId: H.online,
+      ralphRunId: request.id,
+      deliveryCount: request.attempt === "queued" ? 0 : 1,
+      cancelRequested: request.attempt === "canceled",
+      leaseExpiresAt: request.attempt === "running" ? new Date(now.getTime() + 10 * MINUTE) : null,
+      result:
+        request.attempt === "completed"
+          ? {
+              summary: `Done: ${request.title}.`,
+              error: null,
+              sessionId: `fixture-session-request-${request.n}`,
+              commitSha: sha(request.n),
+              pushed: true,
+              usage: { inputTokens: 64_000, outputTokens: 4_800 },
+              durationMs: 14 * MINUTE,
+            }
+          : null,
+      error: request.attempt === "failed" ? "`pnpm test` timed out after 20 minutes." : null,
+      createdAt: created,
+      startedAt: request.attempt === "queued" ? null : new Date(created.getTime() + 30_000),
+      finishedAt: done ? finishedAt : null,
+    });
+    if (fromChat) {
+      await tx.insert(chatThreadRuns).values({
+        id: fixtureId("chatThreadRun", request.n),
+        organizationId: O.main,
+        chatThreadId: request.chatThreadId!,
+        kind: "coding",
+        ralphRunId: request.id,
+        createdAt: created,
+      });
+    }
+  }
 }
 
 // ── Reviews ─────────────────────────────────────────────────────────────────
@@ -1073,7 +1662,13 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
   for (let i = 0; i < COUNT; i++) {
     const n = i + 1;
     const featured = n === 1;
-    const repositoryId = featured ? R.controlPanel : repos[i % repos.length]!;
+    // The first two review the PR and the MR waiting in the Inbox.
+    const mergeRequest = n === 2;
+    const repositoryId = featured
+      ? R.controlPanel
+      : mergeRequest
+        ? R.platformApi
+        : repos[i % repos.length]!;
     const depth = DEPTH_BY_REPO[repositoryId]!;
     const createdAt = ago(Math.floor((i * 40 * DAY) / COUNT) + (i % 5) * HOUR + 2 * HOUR);
     const status =
@@ -1085,7 +1680,11 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
             ? "completed"
             : REVIEW_STATUSES[i % REVIEW_STATUSES.length]!;
     const done = status !== "running" && status !== "queued";
-    const prNumber = 300 + ((i * 7) % 60);
+    const prNumber = featured
+      ? FEATURED_PR
+      : mergeRequest
+        ? MERGE_REQUEST_IID
+        : 300 + ((i * 7) % 60);
     const agentId = status === "queued" ? null : agentCycle[i % agentCycle.length]!;
     const budget = REVIEW_DEPTHS[depth].maxTokensPerReview;
     const tokensIn =
@@ -1128,6 +1727,7 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
       taskType: "review",
       taskId: "builtin:review-pr",
       payload: { prNumber },
+      reviewRunId,
       status:
         status === "budget_exhausted" ? "completed" : status === "skipped" ? "skipped" : status,
       repositoryId,
@@ -1149,7 +1749,11 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
       taskId: "builtin:review-pr",
       repositoryId,
       prNumber,
-      prTitle: PR_TITLES[i % PR_TITLES.length]!,
+      prTitle: featured
+        ? "Show agent capacity on Fleet"
+        : mergeRequest
+          ? "Retry failed deliveries from the log"
+          : PR_TITLES[i % PR_TITLES.length]!,
       headSha: head,
       baseSha: base,
       trigger: i % 6 === 0 ? "mention" : i % 9 === 0 ? "manual" : "webhook",
@@ -1388,12 +1992,74 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
       createdAt: ago(4 * MINUTE),
       updatedAt: ago(3 * MINUTE),
     },
+    {
+      // FIX-101 (on the Backlog) as a PRD with no open questions, not started since.
+      id: T.prdReady,
+      organizationId: O.main,
+      linearIssueId: "fixture-issue-fix-101",
+      linearAgentSessionId: "fixture-session-triage-4",
+      trigger: "label",
+      status: "completed",
+      lastResult: {
+        summary: "Rewrote **FIX-101** as a PRD (size M). It's ready to start.",
+        error: null,
+        outcome: {
+          outcome: "prd",
+          size: "M",
+          title: "Export runs as CSV",
+          description: [
+            "## Introduction",
+            "",
+            "Members want the Runs list in a spreadsheet: one row per run, with its repo, status and duration.",
+          ].join("\n"),
+          openQuestions: [],
+          stories: [
+            {
+              title: "Export the filtered list",
+              body: "As a member, I want to download the runs I filtered as CSV.\n\n## Acceptance Criteria\n\n- [ ] The Runs list has an Export action",
+              priority: 2,
+              dependsOn: [],
+              manual: false,
+            },
+          ],
+          subIssueUpdates: [],
+        },
+        usage,
+        durationMs: 2 * MINUTE + 40_000,
+      },
+      createdAt: ago(6 * HOUR),
+      updatedAt: ago(6 * HOUR - 4 * MINUTE),
+    },
+    {
+      // Waiting for an agent: FIX-102 shows as being triaged on the Backlog.
+      id: T.queued,
+      organizationId: O.main,
+      linearIssueId: "fixture-issue-fix-102",
+      linearAgentSessionId: "fixture-session-triage-5",
+      trigger: "mention",
+      status: "queued",
+      createdAt: ago(MINUTE),
+      updatedAt: ago(MINUTE),
+    },
+    {
+      id: T.stopped,
+      organizationId: O.main,
+      linearIssueId: "fixture-issue-triage-6",
+      linearAgentSessionId: "fixture-session-triage-6",
+      trigger: "label",
+      status: "stopped",
+      createdAt: ago(3 * DAY),
+      updatedAt: ago(3 * DAY - 2 * MINUTE),
+    },
   ]);
 
   const firstJob = nextJobId();
   const replyJob = nextJobId();
-  const failedJob = nextJobId();
+  const failedJob = FIXTURE_IDS.jobs.failedTriage;
   const runningJob = nextJobId();
+  const prdReadyJob = FIXTURE_IDS.jobs.prdReadyTriage;
+  const queuedJob = fixedJobId(3);
+  const stoppedJob = fixedJobId(4);
   const query = {
     organizationId: O.main,
     type: "triage.run",
@@ -1403,6 +2069,7 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
     {
       ...query,
       id: firstJob,
+      triageRunId: T.completed,
       payload: triagePayload(T.completed, "FIX-310", "CSV export of findings", { branch: "main" }),
       status: "completed",
       repositoryId: R.controlPanel,
@@ -1415,6 +2082,7 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
     {
       ...query,
       id: replyJob,
+      triageRunId: T.completed,
       payload: triagePayload(T.completed, "FIX-310", "CSV export of findings", {
         branch: "main",
         reply: "Make it an epic: the docs need their own story.",
@@ -1430,6 +2098,7 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
     {
       ...query,
       id: failedJob,
+      triageRunId: T.failed,
       payload: triagePayload(T.failed, "FIX-322", "Faster agent startup"),
       status: "completed",
       agentId: H.online,
@@ -1441,6 +2110,7 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
     {
       ...query,
       id: runningJob,
+      triageRunId: T.running,
       payload: triagePayload(T.running, "FIX-331", "GitLab merge request templates", {
         branch: "main",
       }),
@@ -1452,11 +2122,49 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
       createdAt: ago(4 * MINUTE),
       startedAt: ago(3 * MINUTE),
     },
+    {
+      ...query,
+      id: prdReadyJob,
+      triageRunId: T.prdReady,
+      payload: triagePayload(T.prdReady, "FIX-101", "Export runs as CSV", { branch: "main" }),
+      status: "completed",
+      repositoryId: R.controlPanel,
+      agentId: H.online,
+      deliveryCount: 1,
+      createdAt: ago(6 * HOUR),
+      startedAt: ago(6 * HOUR - 20_000),
+      finishedAt: ago(6 * HOUR - 4 * MINUTE),
+    },
+    {
+      ...query,
+      id: queuedJob,
+      triageRunId: T.queued,
+      payload: triagePayload(T.queued, "FIX-102", "Explain why a review was skipped"),
+      status: "queued",
+      createdAt: ago(MINUTE),
+    },
+    {
+      ...query,
+      id: stoppedJob,
+      triageRunId: T.stopped,
+      payload: triagePayload(T.stopped, "FIX-340", "Group findings by file"),
+      status: "canceled",
+      agentId: H.online,
+      deliveryCount: 1,
+      cancelRequested: true,
+      createdAt: ago(3 * DAY),
+      startedAt: ago(3 * DAY - 10_000),
+      finishedAt: ago(3 * DAY - 2 * MINUTE),
+    },
   ]);
   await tx
     .update(triageRuns)
     .set({ currentJobId: runningJob })
     .where(sql`${triageRuns.id} = ${T.running}`);
+  await tx
+    .update(triageRuns)
+    .set({ currentJobId: queuedJob })
+    .where(sql`${triageRuns.id} = ${T.queued}`);
 
   const activities: [string, "thought" | "action", string, string | null][] = [
     [replyJob, "thought", "Reading the issue and the review pages it mentions.", null],
@@ -1558,6 +2266,165 @@ async function seedOtherJobs(tx: Tx, now: Date): Promise<void> {
       createdAt: ago(5 * HOUR),
       startedAt: ago(5 * HOUR),
       finishedAt: ago(5 * HOUR - MINUTE),
+    },
+  ]);
+}
+
+// ── Inbox: Done and Snooze ──────────────────────────────────────────────────
+
+/** Both users snoozed the failed triage run until a day after seeding. */
+async function seedInboxStates(tx: Tx, now: Date): Promise<void> {
+  await tx.insert(inboxItemStates).values(
+    [U.admin, U.member].map((userId) => ({
+      userId,
+      organizationId: O.main,
+      itemKey: FIXTURE_INBOX_KEYS.snoozed,
+      state: "snoozed" as const,
+      snoozedUntil: new Date(now.getTime() + DAY),
+      updatedAt: new Date(now.getTime() - HOUR),
+    })),
+  );
+}
+
+// ── Webhook deliveries ──────────────────────────────────────────────────────
+
+/** The delivery log: every outcome on the GitHub connection (and a replay), and a few others. */
+async function seedWebhookEvents(tx: Tx, now: Date): Promise<void> {
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+  const W = FIXTURE_IDS.webhookEvents;
+  const github = { organizationId: O.main, provider: "github" as const };
+  const pullRequest = (action: string, number: number) => ({
+    action,
+    number,
+    pull_request: { number, title: "Show agent capacity on Fleet", draft: false },
+    repository: { full_name: "fixture-labs/control-panel" },
+  });
+  await tx.insert(webhookEvents).values([
+    {
+      ...github,
+      id: W.startedRun,
+      scmConnectionId: FIXTURE_IDS.scmConnections.github,
+      repositoryId: R.controlPanel,
+      deliveryId: "fixture-delivery-1",
+      event: "pull_request.opened",
+      payload: pullRequest("opened", FEATURED_PR),
+      outcome: "started_run",
+      runId: FIXTURE_IDS.reviewRuns.pullRequest,
+      runKind: "review",
+      receivedAt: ago(3 * HOUR),
+    },
+    {
+      ...github,
+      id: W.updatedRun,
+      scmConnectionId: FIXTURE_IDS.scmConnections.github,
+      repositoryId: R.controlPanel,
+      deliveryId: "fixture-delivery-2",
+      event: "pull_request_review.submitted",
+      payload: pullRequest("submitted", FEATURED_PR),
+      outcome: "updated_run",
+      runId: RR.pullRequestWaiting,
+      runKind: "epic",
+      receivedAt: ago(3 * HOUR - 20 * MINUTE),
+    },
+    {
+      ...github,
+      id: W.ignored,
+      scmConnectionId: FIXTURE_IDS.scmConnections.github,
+      repositoryId: R.docs,
+      deliveryId: "fixture-delivery-3",
+      event: "pull_request.opened",
+      payload: { ...pullRequest("opened", 12), repository: { full_name: "fixture-labs/docs" } },
+      outcome: "ignored",
+      reasonCode: "repository_disabled",
+      reason: "Reviews are off for fixture-labs/docs.",
+      receivedAt: ago(2 * HOUR),
+    },
+    {
+      ...github,
+      id: W.failed,
+      scmConnectionId: FIXTURE_IDS.scmConnections.github,
+      repositoryId: R.agent,
+      deliveryId: "fixture-delivery-4",
+      event: "pull_request.synchronize",
+      payload: {
+        ...pullRequest("synchronize", 88),
+        repository: { full_name: "fixture-labs/agent" },
+      },
+      outcome: "failed",
+      reasonCode: "handler_failed",
+      reason: "The database didn't answer in time.",
+      receivedAt: ago(90 * MINUTE),
+    },
+    {
+      ...github,
+      id: W.duplicate,
+      scmConnectionId: FIXTURE_IDS.scmConnections.github,
+      repositoryId: R.controlPanel,
+      deliveryId: "fixture-delivery-1",
+      event: "pull_request.opened",
+      payload: pullRequest("opened", FEATURED_PR),
+      outcome: "duplicate",
+      receivedAt: ago(3 * HOUR - MINUTE),
+    },
+    {
+      ...github,
+      id: W.replay,
+      scmConnectionId: FIXTURE_IDS.scmConnections.github,
+      repositoryId: R.agent,
+      deliveryId: "fixture-delivery-4",
+      event: "pull_request.synchronize",
+      // Over the size limit: kept without its body.
+      payload: null,
+      payloadTruncated: true,
+      outcome: "started_run",
+      runId: fixtureId("reviewRun", 5),
+      runKind: "review",
+      replayOfId: W.failed,
+      replayedBy: U.admin,
+      receivedAt: ago(80 * MINUTE),
+    },
+    {
+      organizationId: O.main,
+      provider: "gitlab",
+      id: fixtureId("webhookEvent", 7),
+      scmConnectionId: FIXTURE_IDS.scmConnections.gitlab,
+      repositoryId: R.platformApi,
+      deliveryId: "fixture-delivery-gitlab-1",
+      event: "merge_request.open",
+      payload: {
+        object_kind: "merge_request",
+        object_attributes: { iid: MERGE_REQUEST_IID, action: "open" },
+      },
+      outcome: "started_run",
+      runId: FIXTURE_IDS.reviewRuns.mergeRequest,
+      runKind: "review",
+      receivedAt: ago(5 * HOUR),
+    },
+    {
+      organizationId: O.main,
+      provider: "linear",
+      id: fixtureId("webhookEvent", 8),
+      integrationId: FIXTURE_IDS.integrations.linear,
+      deliveryId: "fixture-delivery-linear-1",
+      event: "AgentSessionEvent.created",
+      payload: { type: "AgentSessionEvent", action: "created" },
+      outcome: "started_run",
+      runId: RR.running,
+      runKind: "epic",
+      receivedAt: ago(2 * DAY),
+    },
+    {
+      organizationId: O.main,
+      provider: "linear",
+      id: fixtureId("webhookEvent", 9),
+      integrationId: FIXTURE_IDS.integrations.linear,
+      deliveryId: "fixture-delivery-linear-2",
+      event: "Issue.update",
+      payload: { type: "Issue", action: "update" },
+      outcome: "ignored",
+      reasonCode: "no_run",
+      reason: "No run is working on this work item.",
+      receivedAt: ago(40 * MINUTE),
     },
   ]);
 }

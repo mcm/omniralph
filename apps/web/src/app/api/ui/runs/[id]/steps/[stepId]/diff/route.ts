@@ -3,6 +3,7 @@ import type { StoryDiff } from "@/lib/api/runs";
 import { requireRunAccess } from "@/lib/api/scope";
 import { getDb } from "@/lib/db";
 import { loadStoryDiff } from "@/lib/runs/diff";
+import { fixtureDiffAdapterFor, fixtureScmEnabled } from "@/lib/scm/fixture-diff";
 
 type Params = { id: string; stepId: string };
 
@@ -18,6 +19,11 @@ export const GET = apiHandler<"member", undefined, undefined, Params>(
     const { run } = await requireRunAccess(user, params.id, {
       notFoundMessage: "That run doesn't exist.",
     });
-    return loadStoryDiff(getDb(), run, params.stepId);
+    return loadStoryDiff(
+      getDb(),
+      run,
+      params.stepId,
+      fixtureScmEnabled() ? fixtureDiffAdapterFor : undefined,
+    );
   },
 );

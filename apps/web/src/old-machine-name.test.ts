@@ -89,6 +89,11 @@ const ALLOWED: Allowed[] = [
     reason: "the Copy rule names the old word so critiques flag it in visible text",
   },
   {
+    paths: ["apps/web/scripts/fixtures/seed.test.ts"],
+    text: /"harness"|\|harness\)/g,
+    reason: "the fixture seed's test checks no seeded value shows users the old word",
+  },
+  {
     paths: [
       "apps/web/src/app/api/agent/agent-auth.test.ts",
       "apps/web/src/app/api/agent/routes.test.ts",
