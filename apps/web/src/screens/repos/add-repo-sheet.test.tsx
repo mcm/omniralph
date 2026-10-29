@@ -499,7 +499,7 @@ describe("the picker", () => {
       within(sheet()).getByRole("link", { name: "Manage access on GitHub" }).getAttribute("href"),
     ).toBe("https://github.com/settings/installations/42");
     expect(within(sheet()).queryByText(/Showing the first/)).toBeNull();
-    const add = within(sheet()).getByRole("button", { name: "Add 0 repos" }) as HTMLButtonElement;
+    const add = within(sheet()).getByRole("button", { name: "Add repos" }) as HTMLButtonElement;
     expect(add.disabled).toBe(true);
     expect(add.className).toContain("or-btn--solid");
 

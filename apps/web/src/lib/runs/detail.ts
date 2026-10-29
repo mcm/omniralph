@@ -453,6 +453,8 @@ export async function loadRunDetail(
       type: attempt.type,
       status: attempt.status,
       context: { ...facts.labelContext(attempt), agent: attempt.agent?.name ?? null },
+      // A story attempt that ended without finishing its story reads "Tried to build …".
+      unfinished: attempt.storyResult !== null && attempt.storyResult !== "complete",
     }),
     type: attempt.type,
     status: attempt.status,

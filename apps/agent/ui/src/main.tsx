@@ -2,6 +2,7 @@
  * The agent page's entry: the providers around the app, mounted on `#root`. Fonts and
  * styles are bundled (no CDN, no inline styles), so the page works offline under its CSP.
  */
+import "./zod-config.js";
 import "@omniralph/ui/fonts.css";
 import "@omniralph/ui/styles.css";
 import "./styles.css";

@@ -653,11 +653,10 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     expect(linear.issueUpdates).toEqual([]);
     expect(responses(sessionId)[0]).toMatchObject({ type: "error" });
     expect((await getTriageRun(db, run.id))?.status).toBe("failed");
-    expect(await getJob(db, job.id)).toMatchObject({ status: "failed", error: problem });
-    expect((await getTriageRun(db, run.id))?.lastResult).toMatchObject({
-      error: problem,
-      outcome: null,
-    });
+    // The run's page says what happened and what to do, without the outcome code.
+    const error = "Om ran out of its token budget before the PRD was done. Retry the triage.";
+    expect(await getJob(db, job.id)).toMatchObject({ status: "failed", error });
+    expect((await getTriageRun(db, run.id))?.lastResult).toMatchObject({ error, outcome: null });
   });
 
   it("marks the run running when its job starts, and skips a job that isn't current", async () => {

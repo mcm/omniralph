@@ -1216,14 +1216,14 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       {
         kind: "attempt",
         id: first.id,
-        label: `Worked on a request in ${run.linearIdentifier}`,
+        label: `Worked on ${run.linearIdentifier}`,
         status: "completed",
         durationMs: 120_000,
       },
       {
         kind: "attempt",
         id: second.id,
-        label: `Couldn't work on a request in ${run.linearIdentifier}`,
+        label: `Stopped working on ${run.linearIdentifier}`,
         status: "canceled",
         durationMs: null,
       },
@@ -1456,7 +1456,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       kind: "ask",
       status: "stopped",
       title: "Where is auth handled?",
-      steps: [{ kind: "attempt", id: askJob!.id, label: "Couldn't answer a question about api" }],
+      steps: [{ kind: "attempt", id: askJob!.id, label: "Stopped answering a question about api" }],
     });
     expect(askJob).toMatchObject({ type: "chat.ask", status: "canceled", step: askJob!.id });
     expect(askView.details).toMatchObject({

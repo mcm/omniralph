@@ -1,7 +1,7 @@
 "use client";
 
-import { BrandMark, Field, Menu, type MenuAction, type MenuItem } from "@omniralph/ui";
-import { IconBooks, IconChevronDown } from "@tabler/icons-react";
+import { BrandMark, EmptyState, Field, Menu, type MenuAction, type MenuItem } from "@omniralph/ui";
+import { IconBooks, IconChevronDown, IconMessage } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { useCurrentUser, type SessionUser } from "@/components/current-user";
@@ -278,7 +278,17 @@ export function AskNewChat({
             Couldn&apos;t load the repos. {repositories.error.message}
           </p>
         ) : null}
-        {sending !== null ? <UserBubble text={sending} /> : null}
+        {sending !== null ? (
+          <UserBubble text={sending} />
+        ) : (
+          <EmptyState
+            className="or-ask-new__empty"
+            icon={IconMessage}
+            headingLevel={headingLevel === 1 ? 2 : 3}
+            title="Ask Om about your code"
+            description={`Om reads ${repository ? repoShortName(repository.fullPath) : "your repos"} and answers, citing the files it used.`}
+          />
+        )}
       </div>
       <AskComposer
         value={draft}

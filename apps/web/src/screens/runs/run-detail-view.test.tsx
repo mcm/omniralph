@@ -754,9 +754,9 @@ describe("live updates", () => {
     await waitFor(() => expect(statusLine().textContent).toBe("Failed"));
     expect(within(selected()!).getByRole("img").getAttribute("aria-label")).toBe("Failed");
     const activity = within(pane()).getByRole("list", { name: "Run activity" });
-    expect(within(activity).getAllByRole("listitem")[0]!.textContent).toContain(
-      "The run failed. Out of turns.",
-    );
+    // Activity records the event; the header says why, so the error shows once there.
+    expect(within(activity).getAllByRole("listitem")[0]!.textContent).toContain("The run failed");
+    expect(activity.textContent).not.toContain("Out of turns.");
   });
 });
 

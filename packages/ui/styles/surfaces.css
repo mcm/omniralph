@@ -522,6 +522,12 @@
   overflow: hidden;
 }
 
+/* A modal leaves the body without pointer events; the scrim takes them back so a click on it
+   closes the modal. */
+.or-scrim {
+  pointer-events: auto;
+}
+
 /*
  * Sheet: a side flow from the right, 480 px wide; full screen at 768 px and narrower. Above
  * the shell's drawer, below menus, tooltips and confirm dialogs opened from inside it.

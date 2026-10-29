@@ -1733,6 +1733,9 @@ async function seedReviews(tx: Tx, now: Date): Promise<void> {
           : null,
       error: status === "failed" ? "The agent lost its session (exit code 137)." : null,
       createdAt,
+      // A finished run last changed when its job finished, so the Inbox's "Failed … ago"
+      // matches the attempt's date in Activity.
+      updatedAt: done ? new Date(createdAt.getTime() + 4 * MINUTE) : createdAt,
     });
     await tx.insert(jobs).values({
       id: jobId,
@@ -1986,8 +1989,8 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
       trigger: "label",
       status: "failed",
       lastResult: {
-        summary: "the triage ended without a result (max_turns)",
-        error: "the triage ended without a result (max_turns)",
+        summary: "Om ran out of its token budget before the PRD was done. Retry the triage.",
+        error: "Om ran out of its token budget before the PRD was done. Retry the triage.",
         outcome: null,
         usage: { inputTokens: 91_400, outputTokens: 12_050 },
         durationMs: 9 * MINUTE,
@@ -2116,7 +2119,7 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
       payload: triagePayload(T.failed, "FIX-322", "Faster agent startup"),
       // Its result had no PRD, so applying it failed the job (as `applyTriageJob` does).
       status: "failed",
-      error: "the triage ended without a result (max_turns)",
+      error: "Om ran out of its token budget before the PRD was done. Retry the triage.",
       agentId: H.online,
       deliveryCount: 1,
       createdAt: ago(5 * HOUR),

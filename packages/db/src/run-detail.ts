@@ -66,6 +66,8 @@ export interface RunAttemptEntry {
   error: string | null;
   /** The ralph story it works on. */
   storyId: string | null;
+  /** A `ralph.story` attempt's result status (`complete`, `incomplete`, …); null otherwise. */
+  storyResult: string | null;
   /** The review (pass) a review task (or legacy `review.run`) job ran. */
   reviewId: string | null;
   /** Its transcript's length (`run_activities`). */
@@ -94,6 +96,7 @@ export async function listRunAttempts(
     tokens_out: string;
     error: string | null;
     ralph_story_id: string | null;
+    story_result: string | null;
     review_id: string | null;
     activities: string;
     waiting_reason: JobWaitingReason | null;
@@ -104,6 +107,7 @@ export async function listRunAttempts(
       coalesce((j.result -> 'usage' ->> 'inputTokens')::bigint, 0)::text as tokens_in,
       coalesce((j.result -> 'usage' ->> 'outputTokens')::bigint, 0)::text as tokens_out,
       j.error, j.ralph_story_id,
+      (case when j.type = 'ralph.story' then j.result ->> 'status' end) as story_result,
       -- Legacy review.run jobs carry the review ID at the payload's top level.
       (case when j.type in ('review.task', 'review.run')
         then coalesce(j.payload -> 'trigger' -> 'context' ->> 'reviewId', j.payload ->> 'reviewId')
@@ -127,6 +131,7 @@ export async function listRunAttempts(
     tokens: { in: Number(row.tokens_in), out: Number(row.tokens_out) },
     error: row.error,
     storyId: row.ralph_story_id,
+    storyResult: row.story_result,
     reviewId: row.review_id,
     transcriptEvents: Number(row.activities),
     waitingReason: row.waiting_reason,

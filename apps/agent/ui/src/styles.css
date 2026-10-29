@@ -271,6 +271,14 @@ body,
   list-style: none;
 }
 
+/* The organization's version policy: its words, then its version as a badge. */
+.agent-version-policy {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
 /* A badge in the fail tone. */
 .agent-badge--fail {
   border-color: var(--or-fail);

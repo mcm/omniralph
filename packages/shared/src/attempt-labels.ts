@@ -62,6 +62,11 @@ export type AttemptLabelInput = {
   type: string;
   status: AttemptStatus;
   context?: AttemptLabelContext;
+  /**
+   * A completed attempt that didn't finish its work (a story attempt whose result isn't
+   * `complete`): it reads "Tried to build X", not "Built X".
+   */
+  unfinished?: boolean;
 };
 
 /** One activity in its three forms: "build X" / "Building X" / "Built X". */
@@ -134,8 +139,9 @@ const PHRASES: Record<string, (context: AttemptLabelContext) => Phrase> = {
       "work on",
       "Working on",
       "Worked on",
-      // A request from a chat has no work item: it names its repo.
-      `a request in ${present(c.workItem) ?? repositoryName(c.repository) ?? RUN_FALLBACK}`,
+      // A request names its work item ("Worked on FIX-203"); one from a chat has none, so it
+      // names its repo ("Worked on a request in control-panel").
+      present(c.workItem) ?? `a request in ${repositoryName(c.repository) ?? RUN_FALLBACK}`,
     ),
   [RALPH_DESCRIBE_PR_JOB_TYPE]: (c) =>
     phrase(
@@ -199,24 +205,36 @@ const UNKNOWN: Phrase = phrase("run", "Running", "Ran", "a background job");
 /** Job types with their own sentence; any other type reads "Ran a background job". */
 export const LABELED_JOB_TYPES: readonly string[] = Object.keys(PHRASES);
 
+/** "Building X" → "building X". */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
 /**
- * A sentence for an attempt: past tense once completed, present progressive
- * while queued or running, "Couldn't …" when failed, canceled or expired, and
+ * A sentence for an attempt: past tense once completed ("Tried to …" when it
+ * didn't finish its work), present progressive while queued or running,
+ * "Couldn't …" when failed, "Stopped …" when canceled or expired, and
  * "Didn't need to …" when skipped (nothing to do).
  */
-export function describeAttempt({ type, status, context = {} }: AttemptLabelInput): string {
+export function describeAttempt({
+  type,
+  status,
+  context = {},
+  unfinished = false,
+}: AttemptLabelInput): string {
   const forms = Object.hasOwn(PHRASES, type) ? PHRASES[type]!(context) : UNKNOWN;
   switch (status) {
     case "queued":
     case "running":
       return forms.progressive;
     case "completed":
-      return forms.past;
+      return unfinished ? `Tried to ${forms.base}` : forms.past;
     case "skipped":
       return `Didn't need to ${forms.base}`;
     case "failed":
+      return `Couldn't ${forms.base}`;
     case "canceled":
     case "expired":
-      return `Couldn't ${forms.base}`;
+      return `Stopped ${lowerFirst(forms.progressive)}`;
   }
 }

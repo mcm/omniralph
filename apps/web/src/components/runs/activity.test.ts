@@ -78,20 +78,41 @@ describe("runActivity", () => {
     ]);
   });
 
-  it("adds the current reason of a waiting, stopped or failed run", () => {
-    for (const status of ["waiting", "stopped", "failed"] as const) {
-      const detail = runDetail(null, { status, finishedAt: NOW_AT(-5) });
-      expect(runActivity(detail, "The run failed. Out of disk.")[0]).toEqual({
-        id: "reason",
-        at: NOW_AT(-5),
-        text: "The run failed. Out of disk.",
-      });
-    }
+  it("adds the current reason of a waiting run, and only the event of a stopped or failed one", () => {
+    const failed = runDetail(null, { status: "failed", finishedAt: NOW_AT(-5) });
+    expect(runActivity(failed, "The run failed. Out of disk.")[0]).toEqual({
+      id: "reason",
+      at: NOW_AT(-5),
+      text: "The run failed",
+    });
+    const stopped = runDetail(null, { status: "stopped", finishedAt: NOW_AT(-5) });
+    expect(runActivity(stopped, "The epic was stopped. By hand.")[0]?.text).toBe(
+      "The epic was stopped",
+    );
     const waiting = runDetail(null, { status: "waiting", finishedAt: null, updatedAt: NOW_AT(-2) });
-    expect(runActivity(waiting, "Om is waiting on you.")[0]).toMatchObject({
+    expect(runActivity(waiting, "Om is waiting on you.")[0]).toEqual({
       id: "reason",
       at: NOW_AT(-2),
+      text: "Om is waiting on you.",
     });
+  });
+
+  it("leaves out a failed attempt's error when the reason already says it", () => {
+    const detail = runDetail(null, {
+      status: "failed",
+      finishedAt: NOW_AT(-5),
+      attempts: [
+        attempt("failed", {
+          status: "failed",
+          finishedAt: NOW_AT(-10),
+          label: "Couldn't triage FIX-322",
+          error: "Om ran out of its token budget.",
+        }),
+      ],
+    });
+    expect(
+      runActivity(detail, "The run failed. Om ran out of its token budget.").map((e) => e.text),
+    ).toEqual(["The run failed", "Couldn't triage FIX-322", "Epic started from Linear"]);
   });
 
   it("leaves the reason out of a running or finished run, or without one", () => {
