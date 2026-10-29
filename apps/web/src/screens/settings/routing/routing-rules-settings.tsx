@@ -179,9 +179,9 @@ function RuleSheet({
     >
       <div className="or-routing-sheet">
         <section className="or-routing-sheet__section" aria-labelledby={`${repoId}-condition`}>
-          <h3 id={`${repoId}-condition`} className="or-routing-sheet__heading">
+          <p id={`${repoId}-condition`} className="or-routing-sheet__label">
             Condition
-          </h3>
+          </p>
           <LinearNote linear={linear} />
           <ConditionBuilder
             query={rule.query}

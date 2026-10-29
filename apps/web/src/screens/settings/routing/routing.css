@@ -124,11 +124,13 @@
   gap: 8px;
 }
 
-.or-routing-sheet__heading {
+/* Labels the condition builder in the Repo field's label type, not as a heading below body size. */
+.or-routing-sheet__label {
   margin: 0;
   color: var(--or-text);
   font-size: 13px;
   font-weight: 500;
+  line-height: 1.4;
 }
 
 /* react-querybuilder's own markup (its standard class names), laid out without its stylesheet. */

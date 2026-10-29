@@ -39,11 +39,11 @@
 }
 
 /*
- * The page title the detail carries while it shows alone: hidden, but in the page title's type
- * (as `.or-subnav__title`), so the heading levels keep their scale for tools that measure them.
+ * The page title the detail carries while it shows alone: hidden, but a step above the detail's
+ * own 20px h2, so the heading levels keep their scale for tools that measure them.
  */
 .or-split__title {
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 600;
   line-height: 1.3;
 }
