@@ -91,7 +91,7 @@ export function runDetail(question: RunQuestion | null, overrides: Partial<RunDe
     branch: null,
     pullRequest: null,
     agent: null,
-    progress: { done: 0, total: 2 },
+    progress: { done: 0, total: 2, running: null },
     tokens: { in: 0, out: 0 },
     createdAt: at(-60),
     startedAt: at(-60),
@@ -174,7 +174,7 @@ export function attempt(id: string, overrides: Partial<Attempt> = {}): Attempt {
 export function epicRunDetail(overrides: Partial<RunDetail> = {}): RunDetail {
   return runDetail(null, {
     status: "running",
-    progress: { done: 1, total: 3 },
+    progress: { done: 1, total: 3, running: 2 },
     steps: [
       storyStep("1", "completed", 13 * MINUTE_MS),
       storyStep("2", "running", 5 * MINUTE_MS),

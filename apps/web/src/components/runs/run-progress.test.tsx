@@ -37,7 +37,7 @@ describe("RunProgress in link mode", () => {
     expect(within(card).getByRole("link", { name: "Open run" }).getAttribute("href")).toBe(
       "/runs/run-3",
     );
-    expect(within(card).getByText("1 of 3 done · 2 running · 45s")).toBeTruthy();
+    expect(within(card).getByText("1 of 3 done · 1 running · 45s")).toBeTruthy();
     expect(stepTexts(card)).toEqual(["Security45s", "Correctness", "Merge the passes' findings"]);
   });
 });

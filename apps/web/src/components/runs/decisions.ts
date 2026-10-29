@@ -18,7 +18,9 @@ export interface InboxDecision {
 
 type Kind = InboxItem["kind"];
 
-type DecisionItem = Pick<InboxItem, "kind" | "actions" | "workItem" | "pullRequest">;
+type DecisionItem = Pick<InboxItem, "kind" | "actions" | "workItem" | "pullRequest"> & {
+  run?: Pick<NonNullable<InboxItem["run"]>, "status"> | null;
+};
 
 const SNOOZE: [InboxAction, string] = ["snooze", "Snooze"];
 const DONE: [InboxAction, string] = ["done", "Done"];
@@ -26,6 +28,18 @@ const DONE: [InboxAction, string] = ["done", "Done"];
 /** "Open pull request", or "Open merge request" on GitLab. */
 export function openChangeLabel(item: Pick<InboxItem, "pullRequest">): string {
   return item.pullRequest?.provider === "gitlab" ? "Open merge request" : "Open pull request";
+}
+
+/**
+ * A decision's label: its kind's, except a PR/MR's Open merge request on GitLab, and a manual
+ * story's Done while its epic still runs ("Mark story done": there is nothing to resume).
+ */
+function decisionLabel(item: DecisionItem, action: InboxDecisionAction, label: string): string {
+  if (action === "open_change") return openChangeLabel(item);
+  if (item.kind === "manual_story" && action === "done" && item.run?.status === "running") {
+    return "Mark story done";
+  }
+  return label;
 }
 
 /** Whether the item offers a decision of its own (one that isn't an Inbox action). */
@@ -60,7 +74,7 @@ export function inboxDecisions(item: DecisionItem): InboxDecision[] {
     .filter(([action]) => offers(item, action))
     .map(([action, label], index) => ({
       action,
-      label: action === "open_change" ? openChangeLabel(item) : label,
+      label: decisionLabel(item, action, label),
       variant: index === 0 ? "primary" : "outline",
     }));
 }

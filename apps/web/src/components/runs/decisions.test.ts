@@ -17,7 +17,7 @@ const pullRequest = (provider: "github" | "gitlab", url: string | null = "https:
 const buttons = (
   kind: InboxItem["kind"],
   actions: InboxItem["actions"] = ALL,
-  refs: Partial<Pick<InboxItem, "workItem" | "pullRequest">> = {},
+  refs: Partial<Pick<InboxItem, "workItem" | "pullRequest" | "run">> = {},
 ) =>
   inboxDecisions({ kind, actions, workItem: null, pullRequest: null, ...refs }).map(
     ({ label, action, variant }) => [label, action, variant],
@@ -30,6 +30,18 @@ describe("inboxDecisions", () => {
       ["Skip story", "skip", "outline"],
       ["Snooze", "snooze", "outline"],
     ]);
+  });
+
+  it("a manual story of an epic that still runs: Mark story done (nothing to resume)", () => {
+    const run = { id: "r1", kind: "epic", status: "running" } as const;
+    expect(buttons("manual_story", ALL, { run })).toEqual([
+      ["Mark story done", "done", "primary"],
+      ["Skip story", "skip", "outline"],
+      ["Snooze", "snooze", "outline"],
+    ]);
+    expect(buttons("manual_story", ALL, { run: { ...run, status: "waiting" } })[0]![0]).toBe(
+      "Done, resume epic",
+    );
   });
 
   it("a blocked epic: Start anyway · Done · Snooze", () => {

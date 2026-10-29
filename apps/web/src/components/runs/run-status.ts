@@ -24,3 +24,16 @@ export const RUN_STATUS_TONES: Record<RunStatus, StatusTone> = {
   stopped: "need",
   skipped: "neutral",
 };
+
+/**
+ * "Running · story 3 of 9" for a running epic while one of its stories runs: the running
+ * story's place in the epic (as the Fleet's "Story 3 of 9" counts it), never the count of
+ * finished ones. Null for any other run, or while no story runs.
+ */
+export function runningStoryLabel(
+  run: Pick<RunDetail, "kind" | "status" | "progress">,
+): string | null {
+  const { progress } = run;
+  if (run.kind !== "epic" || run.status !== "running" || progress?.running == null) return null;
+  return `Running · story ${progress.running} of ${progress.total}`;
+}

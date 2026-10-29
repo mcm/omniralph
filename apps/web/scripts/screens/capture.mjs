@@ -174,7 +174,13 @@ async function capture(context, route, viewportName, viewport, theme) {
   };
   const page = await context.newPage();
   page.on("console", (message) => {
-    if (message.type() === "error") result.consoleErrors.push(message.text().slice(0, 500));
+    if (message.type() !== "error") return;
+    // "Failed to load resource" doesn't say which: its location is the resource.
+    const { url } = message.location();
+    const text = message.text().startsWith("Failed to load resource") && url
+      ? `${message.text()} (${new URL(url).pathname})`
+      : message.text();
+    result.consoleErrors.push(text.slice(0, 500));
   });
   page.on("pageerror", (error) => result.consoleErrors.push(String(error).slice(0, 500)));
   try {

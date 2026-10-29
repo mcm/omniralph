@@ -172,8 +172,8 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       .from(ralphStories)
       .where(eq(ralphStories.linearIssueId, "story-manual"));
     ids.manualStory = manual!.id;
-    // A manual story of a running epic (no item; the run is under Running), whose live
-    // session asks to use a tool (a question).
+    // A manual story of a running epic (an item: it waits on a person while the epic goes
+    // on), whose live session asks to use a tool (a question).
     await ralphRun("running", {
       status: "running",
       createdAt: ago(10),
@@ -186,13 +186,17 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
         expiresAt: new Date(now.getTime() + 10 * 60_000).toISOString(),
       },
     });
-    await db.insert(ralphStories).values({
-      runId: ids.running!,
-      linearIssueId: "story-run-manual",
-      identifier: "ENG-21",
-      title: "Manual",
-      status: "manual",
-    });
+    const [runningManual] = await db
+      .insert(ralphStories)
+      .values({
+        runId: ids.running!,
+        linearIssueId: "story-run-manual",
+        identifier: "ENG-21",
+        title: "Manual",
+        status: "manual",
+      })
+      .returning();
+    ids.runningManualStory = runningManual!.id;
     // Blockers ignored ("start anyway"), an answered permission, a preparation being run.
     await ralphRun("startAnyway", {
       status: "waiting",
@@ -563,6 +567,7 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
     ).toEqual(
       [
         `manual_story:${ids.manualStory}`,
+        `manual_story:${ids.runningManualStory}`,
         `blocked:${ids.waiting}:blocker-1,blocker-2`,
         `question:${ids.waiting}:preparation:<at>`,
         `question:${ids.running}:permission:<at>`,

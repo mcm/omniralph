@@ -294,7 +294,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       repository: { id: repoId, provider: "github", fullPath: "acme/web" },
       pullRequest: null,
       agent: null,
-      reason: "ENG-11 is a manual story: a person has to do it before the epic goes on.",
+      reason: "ENG-11 is a manual story: a person has to do it before the epic can finish.",
       reasonLink: null,
       since: expect.any(String),
       actions: ["done", "skip", "snooze"],

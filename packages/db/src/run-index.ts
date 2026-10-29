@@ -364,8 +364,12 @@ export interface RunListEntry extends RunIndexEntry {
   branch: string | null;
   pullRequest: { number: number; url: string | null } | null;
   agent: { id: string; name: string } | null;
-  /** Steps done of all (an epic's stories, a multi-pass review's passes); null for single-step runs. */
-  progress: { done: number; total: number } | null;
+  /**
+   * Steps done of all (an epic's stories, a multi-pass review's passes), and `running`, the
+   * running story's place among an epic's stories (1-based, in the epic's order, as the
+   * Fleet's "Story N of M"; null while none runs or for a review); null for single-step runs.
+   */
+  progress: { done: number; total: number; running: number | null } | null;
   tokens: { in: number; out: number };
   /** When its first attempt started. */
   startedAt: Date | null;
@@ -444,6 +448,7 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
       pr_url: string | null;
       stories_total: string;
       stories_done: string;
+      story_running: string | null;
       first_request: string | null;
     }>(sql`
       select r.id, r.mode, r.linear_issue_id, r.linear_identifier, r.linear_title, r.linear_url,
@@ -452,7 +457,11 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
           order by m.created_at, m.id limit 1) as first_request,
         (select count(*) from ralph_stories s where s.run_id = r.id)::text as stories_total,
         (select count(*) from ralph_stories s
-          where s.run_id = r.id and s.status in ('completed', 'canceled'))::text as stories_done
+          where s.run_id = r.id and s.status in ('completed', 'canceled'))::text as stories_done,
+        (select p.place from (
+            select s.status, row_number() over (order by s.position, s.created_at, s.id) as place
+            from ralph_stories s where s.run_id = r.id
+          ) p where p.status = 'running' order by p.place limit 1)::text as story_running
       from ralph_runs r
       left join ralph_lanes l on l.run_id = r.id and l.repository_id = r.repository_id
       where r.id in (${list(ids)})`),
@@ -476,7 +485,11 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
       // A request does what it was asked in one step; an epic builds its stories.
       progress:
         row.mode === "epic"
-          ? { done: Number(row.stories_done), total: Number(row.stories_total) }
+          ? {
+              done: Number(row.stories_done),
+              total: Number(row.stories_total),
+              running: row.story_running === null ? null : Number(row.story_running),
+            }
           : null,
       tokens: { in: stat?.tokensIn ?? 0, out: stat?.tokensOut ?? 0 },
       startedAt: stat?.startedAt ?? null,
@@ -529,7 +542,7 @@ async function reviewFacts(db: Queryable, ids: string[]): Promise<Map<string, Fa
       workItem: null,
       branch: null,
       pullRequest: { number: row.pr_number, url: null },
-      progress: total > 1 ? { done, total } : null,
+      progress: total > 1 ? { done, total, running: null } : null,
       tokens: {
         in: Number(row.tokens_in) + (stat?.tokensIn ?? 0),
         out: Number(row.tokens_out) + (stat?.tokensOut ?? 0),

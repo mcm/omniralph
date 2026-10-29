@@ -176,6 +176,7 @@ describe("View PRD in the run ⋯ menu", () => {
     expect(items.map((entry) => entry.textContent)).toEqual([
       VIEW_PRD,
       "Open in Linear",
+      "Copy link",
       "Stop run",
     ]);
   });

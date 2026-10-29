@@ -76,8 +76,13 @@ export const runRowSchema = z.object({
   branch: z.string().nullable(),
   pullRequest: pullRequestRefSchema.nullable(),
   agent: agentRefSchema.nullable(),
-  /** Steps done of all; null for single-step runs. */
-  progress: z.object({ done: z.number(), total: z.number() }).nullable(),
+  /**
+   * Steps done of all, and the running story's place among an epic's stories (1-based, in
+   * the epic's order; null while none runs, and for other kinds); null for single-step runs.
+   */
+  progress: z
+    .object({ done: z.number(), total: z.number(), running: z.number().nullable() })
+    .nullable(),
   tokens: z.object({ in: z.number(), out: z.number() }),
   createdAt: isoDate,
   startedAt: isoDate.nullable(),

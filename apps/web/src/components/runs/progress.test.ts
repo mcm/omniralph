@@ -18,7 +18,8 @@ describe("stepState", () => {
     ["manual", "waiting"],
     ["waiting", "waiting"],
     ["running", "running"],
-    ["queued", "running"],
+    // Waiting for an agent isn't running: a queued run's bar stays empty.
+    ["queued", "pending"],
     ["failed", "failed"],
     ["exhausted", "failed"],
     ["budget_exhausted", "failed"],
@@ -77,7 +78,7 @@ describe("stepsToProgress", () => {
       { id: "5", label: "Story 5", state: "canceled" },
       { id: "p", label: "Security", state: "failed" },
       { id: "c", label: "Merge the findings", state: "canceled" },
-      { id: "t", label: "Answered the question", state: "running" },
+      { id: "t", label: "Answered the question", state: "pending" },
     ]);
   });
 
