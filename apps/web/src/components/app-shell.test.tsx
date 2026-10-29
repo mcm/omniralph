@@ -382,13 +382,29 @@ describe("AppShell shortcuts", () => {
     expect(screen.queryByRole("complementary", { name: "Ask" })).toBeNull();
   });
 
-  it("opens Help with ? and New work item with n, from any page", async () => {
+  it("opens Help with ?", async () => {
     renderShell("/analytics");
-    const user = userEvent.setup();
-    await user.keyboard("?");
+    await userEvent.setup().keyboard("?");
     expect(nav.router.push).toHaveBeenLastCalledWith("/help");
+  });
+
+  it("opens the New work item sheet with n over the page, without navigating", async () => {
+    renderShell("/analytics");
+    nav.router.push.mockClear();
+    const user = userEvent.setup();
     await user.keyboard("n");
-    expect(nav.router.push).toHaveBeenLastCalledWith("/backlog?new=1");
+    expect(screen.getByRole("dialog", { name: "New work item" })).toBeTruthy();
+    // The page stays rendered under the sheet.
+    expect(screen.getByText("Page content")).toBeTruthy();
+    expect(nav.router.push).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "New work item" })).toBeNull();
+  });
+
+  it("leaves n to the Backlog's own + on a Backlog page", async () => {
+    renderShell("/backlog/linear-issue-1");
+    await userEvent.setup().keyboard("n");
+    expect(screen.queryByRole("dialog", { name: "New work item" })).toBeNull();
   });
 });
 

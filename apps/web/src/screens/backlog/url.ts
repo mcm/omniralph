@@ -56,30 +56,3 @@ export function backlogItemHref(
 ): string {
   return `/backlog/${encodeURIComponent(workItemId)}${search(filters, tab)}`;
 }
-
-/** The search param that opens the New work item sheet on the Backlog (`?new=1`). */
-export const NEW_WORK_ITEM_PARAM = "new";
-
-/** Whether the URL opens the New work item sheet. */
-export function isNewWorkItemOpen(params: Pick<URLSearchParams, "get">): boolean {
-  return params.get(NEW_WORK_ITEM_PARAM) === "1";
-}
-
-/**
- * Where New work item goes from `pathname` and `search`: on a Backlog page, the same URL with
- * `?new=1` (keeping the filters and the open item); anywhere else, `/backlog?new=1`.
- */
-export function newWorkItemHref(pathname: string, search: string): string {
-  const onBacklog = pathname === "/backlog" || pathname.startsWith("/backlog/");
-  const params = new URLSearchParams(onBacklog ? search : "");
-  params.set(NEW_WORK_ITEM_PARAM, "1");
-  return `${onBacklog ? pathname : "/backlog"}?${params.toString()}`;
-}
-
-/** The URL with the New work item sheet closed: `?new=` removed. */
-export function closedNewWorkItemHref(pathname: string, search: string): string {
-  const params = new URLSearchParams(search);
-  params.delete(NEW_WORK_ITEM_PARAM);
-  const text = params.toString();
-  return text ? `${pathname}?${text}` : pathname;
-}
