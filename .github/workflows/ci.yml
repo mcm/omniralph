@@ -10,7 +10,9 @@ concurrency:
   cancel-in-progress: true
 
 # Every job runs in parallel on its own runner, so the run takes as long as the slowest one.
-# The web and agent suites are the long ones, so they're split into shards.
+# The web and agent suites are the long ones, so they're split into shards. Shards still run
+# through turbo, whose strict env mode keeps the runner's environment out of the tests: called
+# directly, vitest lost the snapshot state of some web test files on the runner.
 jobs:
   check:
     name: Format, typecheck and lint
@@ -49,14 +51,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: web 1/6, run: pnpm --filter @omniralph/web exec vitest run --shard=1/6 }
-          - { name: web 2/6, run: pnpm --filter @omniralph/web exec vitest run --shard=2/6 }
-          - { name: web 3/6, run: pnpm --filter @omniralph/web exec vitest run --shard=3/6 }
-          - { name: web 4/6, run: pnpm --filter @omniralph/web exec vitest run --shard=4/6 }
-          - { name: web 5/6, run: pnpm --filter @omniralph/web exec vitest run --shard=5/6 }
-          - { name: web 6/6, run: pnpm --filter @omniralph/web exec vitest run --shard=6/6 }
-          - { name: agent 1/2, run: pnpm --filter @omniralph/agent exec vitest run --shard=1/2 }
-          - { name: agent 2/2, run: pnpm --filter @omniralph/agent exec vitest run --shard=2/2 }
+          - { name: web 1/6, run: pnpm turbo run test --filter=@omniralph/web -- --shard=1/6 }
+          - { name: web 2/6, run: pnpm turbo run test --filter=@omniralph/web -- --shard=2/6 }
+          - { name: web 3/6, run: pnpm turbo run test --filter=@omniralph/web -- --shard=3/6 }
+          - { name: web 4/6, run: pnpm turbo run test --filter=@omniralph/web -- --shard=4/6 }
+          - { name: web 5/6, run: pnpm turbo run test --filter=@omniralph/web -- --shard=5/6 }
+          - { name: web 6/6, run: pnpm turbo run test --filter=@omniralph/web -- --shard=6/6 }
+          - { name: agent 1/2, run: pnpm turbo run test --filter=@omniralph/agent -- --shard=1/2 }
+          - { name: agent 2/2, run: pnpm turbo run test --filter=@omniralph/agent -- --shard=2/2 }
           - name: packages
             run: pnpm turbo run test --filter=!@omniralph/web --filter=!@omniralph/agent
     steps:
