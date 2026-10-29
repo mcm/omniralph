@@ -26,6 +26,11 @@ export interface AgentScreenRoute {
   viewportOnly?: boolean;
   /** Only these viewports. */
   viewports?: readonly ("desktop" | "rail" | "phone")[];
+  /**
+   * A detail view (an attempt): its header must hold a toolbar of icon buttons, and its phone
+   * Details load collapsed (`verify:screens`' Decided checks).
+   */
+  detail?: true;
 }
 
 /** The section nav, with the state's problem dot (Host tools: terraform is missing). */
@@ -54,6 +59,7 @@ export const AGENT_SCREEN_ROUTES: readonly AgentScreenRoute[] = [
   },
   {
     name: "agent-attempt-running",
+    detail: true,
     path: `/attempts/${FIXTURE_ATTEMPTS.runningStory}`,
     page: "pages/overview/attempt-page.tsx",
     waitFor: ['[aria-label="Transcript"]', ".or-more-info__summary"],
@@ -62,6 +68,7 @@ export const AGENT_SCREEN_ROUTES: readonly AgentScreenRoute[] = [
   },
   {
     name: "agent-attempt-failed",
+    detail: true,
     path: `/attempts/${FIXTURE_ATTEMPTS.failedStory}`,
     page: "pages/overview/attempt-page.tsx",
     waitFor: ['[aria-label="Transcript"]', ".or-more-info__summary"],

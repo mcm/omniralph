@@ -5,6 +5,9 @@ import { parseScreensOptions, VIEWPORT_NAMES } from "./options";
 import {
   CANVAS_BOARDS,
   capturedAt,
+  DETAIL_PAGES,
+  LIST_PAGES,
+  opensInboxItem,
   PHONE_BOARDS,
   routeBoards,
   routeMatches,
@@ -161,6 +164,85 @@ describe("SCREEN_ROUTES states", () => {
       expect(route.viewports, route.name).not.toEqual([]);
       for (const viewport of route.viewports) expect(VIEWPORT_NAMES).toContain(viewport);
     }
+  });
+});
+
+// What the Decided checks (`decided-page.mjs`) expect of each route.
+describe("SCREEN_ROUTES kinds", () => {
+  it("names pages that exist", () => {
+    for (const page of [...LIST_PAGES, ...DETAIL_PAGES]) {
+      expect(
+        SCREEN_ROUTES.some((route) => route.page === page),
+        page,
+      ).toBe(true);
+    }
+  });
+
+  it("marks every route of a list page as a list, and no other", () => {
+    const wrong = SCREEN_ROUTES.filter(
+      (route) => (route.list === true) !== (LIST_PAGES as readonly string[]).includes(route.page),
+    ).map((route) => route.name);
+    expect(wrong).toEqual([]);
+  });
+
+  it("marks every detail view as a detail: a detail page, or an Inbox item", () => {
+    const wrong = SCREEN_ROUTES.filter(
+      (route) =>
+        (route.detail === true) !==
+        ((DETAIL_PAGES as readonly string[]).includes(route.page) || opensInboxItem(route)),
+    ).map((route) => route.name);
+    expect(wrong).toEqual([]);
+    expect(SCREEN_ROUTES.filter((route) => route.detail).length).toBeGreaterThan(20);
+  });
+
+  it("marks the Inbox items, which show a needs-you decision, as needs-you", () => {
+    const needsYou = SCREEN_ROUTES.filter((route) => route.needsYou).map((route) => route.name);
+    expect(needsYou).toEqual(
+      SCREEN_ROUTES.filter((route) => opensInboxItem(route)).map((route) => route.name),
+    );
+    expect(needsYou).toEqual(expect.arrayContaining(["inbox-manual-story", "inbox-question"]));
+  });
+
+  it("captures every list page and the main detail views under All organizations", () => {
+    const all = SCREEN_ROUTES.filter((route) => route.org === "all");
+    for (const page of LIST_PAGES) {
+      expect(
+        all.some((route) => route.page === page && route.list),
+        page,
+      ).toBe(true);
+    }
+    for (const page of [
+      "(app)/runs/[id]/page.tsx",
+      "(app)/backlog/[id]/page.tsx",
+      "(app)/repos/[id]/page.tsx",
+      "(app)/fleet/[id]/page.tsx",
+    ]) {
+      expect(
+        all.some((route) => route.page === page && route.detail),
+        page,
+      ).toBe(true);
+    }
+    expect(all.some((route) => opensInboxItem(route))).toBe(true);
+    for (const route of all) {
+      expect(route.list || route.detail, route.name).toBe(true);
+      expect(route.auth, route.name).toBe("signed-in");
+      expect(route.as, route.name).toBeUndefined();
+      expect(route.organization, route.name).toBeUndefined();
+    }
+  });
+
+  it("recognizes an Inbox item by its URL or by the row its step clicks", () => {
+    const route = (path: string, selector?: string): ScreenRoute => ({
+      name: "probe",
+      path,
+      page: "(app)/page.tsx",
+      auth: "signed-in",
+      ...(selector && { steps: [{ action: "click", selector }] }),
+    });
+    expect(opensInboxItem(route("/?tab=needs-you&item=manual%3A1"))).toBe(true);
+    expect(opensInboxItem(route("/", '.or-inbox a[href*="item=question%3A"]'))).toBe(true);
+    expect(opensInboxItem(route("/?tab=problems"))).toBe(false);
+    expect(opensInboxItem(route("/", ".or-topbar__menu"))).toBe(false);
   });
 });
 

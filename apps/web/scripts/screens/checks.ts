@@ -5,6 +5,15 @@ import {
   type AccessibilityFinding,
   type AccessibilityIgnoreEntry,
 } from "./ignore";
+import {
+  AGO,
+  BANNED_HINTS,
+  DOCUMENT_REVISION_DATE,
+  LIVE_INDICATOR_ALLOWED,
+  LIVE_INDICATORS,
+  patternSources,
+  REFRESH_CONTROL,
+} from "../../src/lib/copy/banned-hints";
 import type { Surface } from "./options";
 import type { ScreenRoute } from "./routes";
 
@@ -51,6 +60,107 @@ export interface CaptureResult {
   axeFile: string | null;
   /** `<screen>.aria.yml`: the page's ARIA snapshot. */
   ariaFile: string | null;
+  // The Decided checks (`decided-page.mjs`, DESIGN.md "Decided — never flag, never undo"); each
+  // a list of findings. Missing from captures made before they existed.
+  /** Hint text about where things are (rule 3). */
+  hintText?: string[];
+  /** A "Live" or "Updated" indicator (rules 9 and 22). */
+  liveIndicator?: string[];
+  /** Detail actions not in a toolbar of icon buttons and a ⋯ menu (rules 5 and 6). */
+  detailToolbar?: string[];
+  /** Metadata shown on its own instead of as a badge (rules 1 and 2). */
+  bareMetadata?: string[];
+  /** A list row with a summary, reason or stats line (rule 8). */
+  rowSummary?: string[];
+  /** A Details disclosure expanded on load at phone width (rule 16). */
+  phoneExpanded?: string[];
+  /** The organization badge not first under All organizations, or shown for one (rule 13). */
+  orgFirst?: string[];
+}
+
+/**
+ * The capture checks that guard the Decided items, as `results.json` names them: `kbdCount`
+ * (TOOL-734) and those of `decided-page.mjs`. `verify.ts` reports each in its "Decided"
+ * section; DESIGN.md's Decided items name them as their guards.
+ */
+export const DECIDED_CHECKS = [
+  "kbdCount",
+  "hintText",
+  "liveIndicator",
+  "detailToolbar",
+  "bareMetadata",
+  "rowSummary",
+  "phoneExpanded",
+  "orgFirst",
+] as const;
+export type DecidedCheck = (typeof DECIDED_CHECKS)[number];
+
+/** What each Decided check looks for, as `verify.ts` titles it. */
+export const DECIDED_CHECK_TITLES: Record<DecidedCheck, string> = {
+  kbdCount: "Keyboard-shortcut indicators outside the panel's Help page (rule 7)",
+  hintText: "Hint text about where things are (rule 3)",
+  liveIndicator: 'A "Live" or "Updated" indicator (rules 9 and 22)',
+  detailToolbar: "Detail actions: icon buttons with tooltips and a ⋯ menu (rules 5 and 6)",
+  bareMetadata: "Metadata shown on its own, not as a badge (rules 1 and 2)",
+  rowSummary: "A list row with more than its kind and state, title and badges (rule 8)",
+  phoneExpanded: "A Details disclosure expanded on load at phone width (rule 16)",
+  orgFirst: "The organization badge first under All organizations, none for one (rule 13)",
+};
+
+/** A finding of a Decided check. */
+export interface DecidedFinding {
+  check: DecidedCheck;
+  finding: string;
+}
+
+/** Every Decided finding of a capture. */
+export function decidedFindings(
+  result: CaptureResult,
+  route: Pick<ScreenRoute, "page"> | undefined,
+): DecidedFinding[] {
+  return DECIDED_CHECKS.flatMap((check): DecidedFinding[] => {
+    if (check === "kbdCount") {
+      return showsShortcutIndicators(result, route)
+        ? [{ check, finding: `${result.kbdCount} visible kbd` }]
+        : [];
+    }
+    return (result[check] ?? []).map((finding) => ({ check, finding }));
+  });
+}
+
+/** The route fields the Decided checks read (the agent page's routes have some of them). */
+export type DecidedRoute = Partial<Pick<ScreenRoute, "detail" | "needsYou" | "list" | "as">> & {
+  surface?: Surface;
+};
+
+/**
+ * The options of `decidedInPage` for a route: the banned copy (`src/lib/copy/banned-hints.ts`),
+ * the fixture's metadata names, and what the route is (a list, a detail, a needs-you decision,
+ * its organization scope: `"all"`, `"single"`, or `null` where there is none).
+ */
+export function decidedOptions(
+  route: DecidedRoute,
+  { names, org }: { names: readonly string[]; org: "all" | "single" | null },
+) {
+  return {
+    hints: patternSources(BANNED_HINTS),
+    indicators: patternSources(LIVE_INDICATORS),
+    indicatorAllowed: [
+      ...LIVE_INDICATOR_ALLOWED,
+      [DOCUMENT_REVISION_DATE.source, DOCUMENT_REVISION_DATE.flags] as [string, string],
+    ],
+    ago: [AGO.source, AGO.flags] as [string, string],
+    refresh: [REFRESH_CONTROL.source, REFRESH_CONTROL.flags] as [string, string],
+    names: [...names],
+    detail: route.detail === true,
+    needsYou: route.needsYou === true,
+    // The member's read-only view of a detail may have no actions at all.
+    requireToolbar: route.as !== "member",
+    // The agent page's detail (an attempt) has one action and nothing for a ⋯ menu.
+    requireMenu: route.surface !== "agent",
+    rows: route.list === true || route.detail === true,
+    org,
+  };
 }
 
 /** A finding of an accessibility check, with the check that found it. */
@@ -85,8 +195,9 @@ export function showsShortcutIndicators(
 }
 
 /**
- * Why a capture fails the run; empty when it passes. `--strict` also fails on overflow and on
- * every accessibility finding that no entry of `ignore` (ignore.md) matches.
+ * Why a capture fails the run; empty when it passes. `--strict` also fails on overflow, on
+ * every Decided finding, and on every accessibility finding that no entry of `ignore`
+ * (ignore.md) matches.
  */
 export function captureFailures(
   result: CaptureResult,
@@ -99,6 +210,11 @@ export function captureFailures(
   if (result.notRendered) failures.push(`not rendered: ${result.notRendered}`);
   if (showsShortcutIndicators(result, route)) {
     failures.push(`shows ${result.kbdCount} keyboard-shortcut indicator(s) (rule 7)`);
+  }
+  if (strict) {
+    for (const { check, finding } of decidedFindings(result, route)) {
+      if (check !== "kbdCount") failures.push(`decided ${check}: ${finding}`);
+    }
   }
   for (const text of result.retiredWording) failures.push(`retired wording: …${text}…`);
   if (strict && result.overflow) {

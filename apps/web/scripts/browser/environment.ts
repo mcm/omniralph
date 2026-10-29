@@ -256,6 +256,8 @@ export interface AgentScreenRoute {
   )[];
   viewportOnly?: boolean;
   viewports?: readonly string[];
+  /** An attempt's detail view (the Decided checks' `detail`). */
+  detail?: true;
 }
 
 export interface AgentPageFixture {
@@ -264,6 +266,8 @@ export interface AgentPageFixture {
   /** The path (with its token) that signs a browser in. */
   signInPath: string;
   routes: AgentScreenRoute[];
+  /** The fixture's agent and repo names, which the page must show as badges. */
+  metadataNames: string[];
 }
 
 /** The env var the agent page's fixture mode needs. */
@@ -317,13 +321,19 @@ export async function startAgentPageFixture(
       reject(new Error(`The agent page's fixture mode exited with ${code}`));
     });
   });
-  const started = JSON.parse(first) as { url: string; link: string; routes: AgentScreenRoute[] };
+  const started = JSON.parse(first) as {
+    url: string;
+    link: string;
+    routes: AgentScreenRoute[];
+    metadataNames: string[];
+  };
   const link = new URL(started.link);
   log(`Agent page on ${started.url}.`);
   return {
     browserBaseUrl: containerUrl(started.url, host).replace(/\/$/, ""),
     signInPath: link.pathname + link.search,
     routes: started.routes,
+    metadataNames: started.metadataNames,
   };
 }
 

@@ -263,3 +263,21 @@ export const FIXTURE_EMAILS = {
   admin: "admin@fixtures.example",
   member: "member@fixtures.example",
 } as const;
+
+/**
+ * Names the fixture shows as metadata: its organizations, repos and agents. `verify:screens`
+ * finds any of them shown on its own instead of as a badge (`bareMetadata`, rule 1);
+ * `seed.test.ts` checks each is seeded.
+ */
+export const FIXTURE_METADATA_NAMES = {
+  organizations: ["Fixture Labs", "Fixture Sandbox"],
+  repositories: [
+    "fixture-labs/control-panel",
+    "fixture-labs/agent",
+    "fixture-labs/platform/api",
+    "fixture-labs/docs",
+    "fixture-labs/legacy-dashboard",
+    "fixture-sandbox/playground",
+  ],
+  agents: ["build-01", "build-02", "build-03", "ada-laptop", "old-runner"],
+} as const;

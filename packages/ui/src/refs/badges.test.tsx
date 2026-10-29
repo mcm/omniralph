@@ -17,6 +17,7 @@ import {
   SizeBadge,
 } from "./badges.js";
 import { BrandMark } from "./brand-mark.js";
+import * as refs from "./index.js";
 
 /**
  * The text assistive tech reads for an element's content: images contribute their
@@ -213,6 +214,47 @@ describe("reference badges", () => {
     const badge = badgeOf(container);
     expect(within(badge).getByRole("img", { name: "Linear" })).toBeTruthy();
     expect(badge.textContent).toContain("Portal project");
+  });
+});
+
+/**
+ * Every badge, by its `data-or-badge` kind: the screenshot checks read it to tell a badge from
+ * bare metadata and to find the organization badge (Decided items 2, 3 and 11).
+ */
+const KINDS: Record<string, { element: ReactElement; kind: string }> = {
+  OrgBadge: { element: <OrgBadge name="Acme" />, kind: "org" },
+  RepoBadge: { element: <RepoBadge host="github" name="acme/web" />, kind: "repo" },
+  IssueBadge: { element: <IssueBadge tracker="linear" id="TOOL-590" />, kind: "issue" },
+  BranchBadge: { element: <BranchBadge name="feat/badges" />, kind: "branch" },
+  ChangeBadge: { element: <ChangeBadge host="gitlab" number={42} />, kind: "change" },
+  AgentBadge: { element: <AgentBadge name="build-box-1" />, kind: "agent" },
+  MetaBadge: { element: <MetaBadge text="opus" />, kind: "meta" },
+  SizeBadge: { element: <SizeBadge size="M" />, kind: "size" },
+  FileBadge: { element: <FileBadge path="src/app/page.tsx" />, kind: "file" },
+  RefBadge: { element: <refs.RefBadge kind="model" text="opus" />, kind: "model" },
+};
+
+describe("data-or-badge", () => {
+  it("covers every badge the package exports", () => {
+    const exported = Object.keys(refs).filter((name) => /^[A-Z]\w*Badge$/.test(name));
+    expect(exported.sort()).toEqual(Object.keys(KINDS).sort());
+  });
+
+  it.each(Object.entries(KINDS))(
+    "%s renders data-or-badge with its kind",
+    (_name, { element, kind }) => {
+      const { container } = render(element);
+      const badges = container.querySelectorAll("[data-or-badge]");
+      expect(badges).toHaveLength(1);
+      expect(badges[0]!.getAttribute("data-or-badge")).toBe(kind);
+      // The badge holds all of its visible text.
+      expect(badges[0]!.textContent).toBe(container.textContent);
+    },
+  );
+
+  it("keeps data-or-badge on a linked badge", () => {
+    const { container } = render(<OrgBadge name="Acme" href="/settings" />);
+    expect(container.querySelector("a")!.getAttribute("data-or-badge")).toBe("org");
   });
 });
 

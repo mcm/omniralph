@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { DECIDED_CHECKS } from "./checks";
 import { ACCESSIBILITY_CHECKS } from "./ignore";
 import { SCREEN_ROUTES } from "./routes";
 
@@ -46,14 +47,25 @@ function tableRows(markdown: string): string[][] {
     );
 }
 
-/** A decided item: `` N. `slug` (rule N): what is decided. _Why:_ reason `` (the rule optional). */
-const DECIDED_ITEM = /^`([a-z0-9-]+)`(?: \(rules? [^)]+\))?: (.+?) _Why:_ (.+)$/;
+/**
+ * A decided item: `` N. `slug` (rule N): what is decided. _Why:_ reason Guard: guards. `` (the
+ * rule optional). The guards are test files (paths from the repository root) and capture
+ * checks (`capture check \`name\``).
+ */
+const DECIDED_ITEM = /^`([a-z0-9-]+)`(?: \(rules? [^)]+\))?: (.+?) _Why:_ (.+?) Guard: (.+)$/;
 
 function decidedItems() {
   return numberedItems(section(DESIGN, "Decided — never flag, never undo")).map((item) => {
     const match = DECIDED_ITEM.exec(item.text);
-    if (!match) throw new Error(`Decided item ${item.number} is not "\`slug\`: … _Why:_ …"`);
-    return { number: item.number, slug: match[1]!, reason: match[3]! };
+    if (!match) {
+      throw new Error(`Decided item ${item.number} is not "\`slug\`: … _Why:_ … Guard: …"`);
+    }
+    const guard = match[4]!;
+    const captureChecks = [...guard.matchAll(/capture check `([^`]+)`/g)].map((m) => m[1]!);
+    const files = [...guard.replace(/capture check `[^`]+`/g, "").matchAll(/`([^`]+)`/g)].map(
+      (m) => m[1]!,
+    );
+    return { number: item.number, slug: match[1]!, reason: match[3]!, files, captureChecks };
   });
 }
 
@@ -76,6 +88,24 @@ describe("DESIGN.md", () => {
     const items = decidedItems();
     expect(items.map((item) => item.number)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
     expect(new Set(items.map((item) => item.slug)).size).toBe(12);
+  });
+
+  it("names each Decided item's guards: test files that exist, capture checks verify reports", () => {
+    for (const item of decidedItems()) {
+      expect([...item.files, ...item.captureChecks], item.slug).not.toEqual([]);
+      for (const file of item.files) {
+        expect(file, item.slug).toMatch(/\.test\.tsx?$/);
+        expect(() => readFileSync(join(WEB, "../..", file)), `${item.slug}: ${file}`).not.toThrow();
+      }
+      for (const check of item.captureChecks) {
+        expect(DECIDED_CHECKS as readonly string[], `${item.slug}: ${check}`).toContain(check);
+      }
+    }
+  });
+
+  it("guards every Decided check verify reports with at least one Decided item", () => {
+    const named = new Set(decidedItems().flatMap((item) => item.captureChecks));
+    expect(DECIDED_CHECKS.filter((check) => !named.has(check))).toEqual([]);
   });
 
   it("maps every canvas board to routes the screenshot matrix captures", () => {

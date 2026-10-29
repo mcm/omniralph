@@ -6,12 +6,13 @@
  *
  * (no package script: the published package.json must not name it).
  * Needs the built page (`pnpm --filter @omniralph/agent build:ui`). Prints one JSON line on
- * stdout, `{ url, link, routes }` (`link` signs a browser in, `routes` are the screens
- * `verify:screens` captures), and logs to stderr.
+ * stdout, `{ url, link, routes, metadataNames }` (`link` signs a browser in, `routes` are the
+ * screens `verify:screens` captures, `metadataNames` the names it checks are badges), and logs
+ * to stderr.
  */
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { startAgentUiFixture } from "./fixture.js";
+import { FIXTURE_METADATA_NAMES, startAgentUiFixture } from "./fixture.js";
 import { AGENT_SCREEN_ROUTES } from "./routes.js";
 
 const { values } = parseArgs({
@@ -29,7 +30,12 @@ try {
     allowedHosts: values["allowed-host"] ?? [],
   });
   process.stdout.write(
-    `${JSON.stringify({ url: fixture.server.url, link: fixture.link, routes: AGENT_SCREEN_ROUTES })}\n`,
+    `${JSON.stringify({
+      url: fixture.server.url,
+      link: fixture.link,
+      routes: AGENT_SCREEN_ROUTES,
+      metadataNames: FIXTURE_METADATA_NAMES,
+    })}\n`,
   );
   const stop = () => void fixture.close().then(() => process.exit(0));
   process.once("SIGINT", stop);
