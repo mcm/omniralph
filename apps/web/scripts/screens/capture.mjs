@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { chromium } from "playwright-core";
 
 const config = JSON.parse(await readFile(process.argv[2], "utf8"));
-const { baseUrl, signInPath, routes, themes, viewports, outDir } = config;
+const { baseUrl, signInPaths, organizationCookie, routes, themes, viewports, outDir } = config;
 const NAVIGATION_TIMEOUT_MS = 180_000; // `next dev` compiles each route on its first visit.
 // Pages load their data from `/api/ui` after rendering (skeletons are `aria-busy`), and keep
 // polling it, so the network never goes idle: wait for the skeletons to go instead.
@@ -20,11 +20,19 @@ await mkdir(outDir, { recursive: true });
 const browser = await chromium.launch();
 const results = [];
 try {
-  const signedIn = await signIn();
+  // Who each route is captured as: nobody (signed out), the admin, or the member (`as`).
+  const userOf = (route) => (route.auth === "signed-out" ? null : (route.as ?? "admin"));
+  const sessions = {};
+  for (const user of new Set(routes.map(userOf))) {
+    if (user) sessions[user] = await signIn(signInPaths[user]);
+  }
   for (const [viewportName, viewport] of Object.entries(viewports)) {
     for (const theme of themes) {
-      for (const auth of ["signed-out", "signed-in"]) {
-        const group = routes.filter((route) => route.auth === auth);
+      for (const user of [null, "admin", "member"]) {
+        const group = routes.filter(
+          (route) =>
+            userOf(route) === user && (!route.viewports || route.viewports.includes(viewportName)),
+        );
         if (group.length === 0) continue;
         const context = await browser.newContext({
           baseURL: baseUrl,
@@ -33,7 +41,7 @@ try {
           ...(viewportName === "phone"
             ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true }
             : {}),
-          ...(auth === "signed-in" ? { storageState: signedIn } : {}),
+          ...(user ? { storageState: sessions[user] } : {}),
         });
         context.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
         for (const route of group) {
@@ -48,8 +56,8 @@ try {
   await writeFile(join(outDir, "results.json"), JSON.stringify(results, null, 2));
 }
 
-/** Signs in with the dev sign-in once; returns the session's storage state. */
-async function signIn() {
+/** Signs in with the dev sign-in once per user; returns the session's storage state. */
+async function signIn(signInPath) {
   const context = await browser.newContext({ baseURL: baseUrl });
   const response = await context.request.get(signInPath, {
     maxRedirects: 0,
@@ -69,6 +77,7 @@ async function capture(context, route, viewportName, viewport, theme) {
     route: route.name,
     path: route.path,
     auth: route.auth,
+    as: route.auth === "signed-out" ? null : (route.as ?? "admin"),
     viewport: viewportName,
     width: viewport.width,
     theme,
@@ -76,6 +85,7 @@ async function capture(context, route, viewportName, viewport, theme) {
     finalPath: null,
     scrollWidth: null,
     overflow: false,
+    kbdCount: 0,
     retiredWording: [],
     themeForced: false,
     consoleErrors: [],
@@ -91,6 +101,13 @@ async function capture(context, route, viewportName, viewport, theme) {
   });
   page.on("pageerror", (error) => result.consoleErrors.push(String(error).slice(0, 500)));
   try {
+    // Another organization than the user's active one: the organization cookie, for this page.
+    await context.clearCookies({ name: organizationCookie });
+    if (route.organization) {
+      await context.addCookies([
+        { name: organizationCookie, value: route.organization, url: baseUrl },
+      ]);
+    }
     const response = await page.goto(route.path, { waitUntil: "load" });
     result.status = response?.status() ?? null;
     const loaded = await page
@@ -110,6 +127,7 @@ async function capture(context, route, viewportName, viewport, theme) {
       result.notRendered = "the page's error boundary (render error)";
     }
     await page.addStyleTag({ content: HIDE_DEV_UI });
+    if (route.waitFor) await page.locator(route.waitFor).first().waitFor({ timeout: 30_000 });
     for (const step of route.steps ?? []) {
       const target = page.locator(step.selector).first();
       // Typing before React hydrates the element is lost or doubled: wait for its props.
@@ -137,14 +155,24 @@ async function capture(context, route, viewportName, viewport, theme) {
     result.finalPath = url.pathname + url.search;
     result.scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     result.overflow = result.scrollWidth > viewport.width;
-    // The product says "Coding", never "Ralph" (TOOL-419): the visible text around each "Ralph".
-    // Identifiers shown as data keep the old word: job types (`ralph.story`) and the
+    // Rule 7: no keyboard-shortcut indicators outside the Help page. The visible `kbd`s.
+    result.kbdCount = await page.$$eval(
+      "kbd",
+      (elements) =>
+        elements.filter(
+          (element) =>
+            element.checkVisibility({ opacityProperty: true, visibilityProperty: true }) &&
+            element.getClientRects().length > 0,
+        ).length,
+    );
+    // The product says "Om" and "agent", never "Ralph" or "harness": the visible text around
+    // each. Identifiers shown as data keep the old word: job types (`ralph.story`) and the
     // `ralph-run` sink of a task definition.
     result.retiredWording = await page.evaluate(() => {
       const text = document.body.innerText.replace(/\bralph(\.[a-z-]+|-run)\b/gi, (word) =>
         "_".repeat(word.length),
       );
-      return [...text.matchAll(/\bralph\b/gi)].map((match) =>
+      return [...text.matchAll(/\b(ralph|harness)\b/gi)].map((match) =>
         text
           .slice(Math.max(0, match.index - 40), match.index + 45)
           .replace(/\s+/g, " ")
@@ -170,7 +198,8 @@ async function capture(context, route, viewportName, viewport, theme) {
     result.notRendered ? `not rendered: ${result.notRendered}` : null,
     result.loadErrors.length > 0 ? `${result.loadErrors.length} load error(s)` : null,
     result.overflow ? `overflow ${result.scrollWidth}px` : null,
-    result.retiredWording.length > 0 ? `shows "Ralph"` : null,
+    result.kbdCount > 0 ? `${result.kbdCount} kbd` : null,
+    result.retiredWording.length > 0 ? "retired wording" : null,
   ].filter(Boolean);
   console.log(`${base} ${result.status ?? "-"}${flags.length ? ` (${flags.join(", ")})` : ""}`);
   return result;

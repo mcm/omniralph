@@ -3,11 +3,18 @@ import { parseArgs } from "node:util";
 export const THEMES = ["dark", "light"] as const;
 export type Theme = (typeof THEMES)[number];
 
+/**
+ * The three layouts (DESIGN.md, "Widths and accessibility"): the full sidebar (1200px and
+ * wider), the 64px icon rail (769–1199px) and the phone's top bar and tab bar (768px and
+ * narrower).
+ */
 export const VIEWPORTS = {
   desktop: { width: 1440, height: 900 },
+  rail: { width: 1024, height: 768 },
   phone: { width: 390, height: 844 },
 } as const;
 export type ViewportName = keyof typeof VIEWPORTS;
+export const VIEWPORT_NAMES = Object.keys(VIEWPORTS) as ViewportName[];
 
 export interface ScreensOptions {
   /** `--routes`: comma-separated globs over route names and paths. */
@@ -24,15 +31,16 @@ export interface ScreensOptions {
 export const USAGE = `Usage: pnpm --filter @omniralph/web verify:screens [options]
 
 Screenshots every panel route (scripts/screens/routes.ts) against the fixture
-database, at 1440px and 390px, in the dark and light themes.
+database, at 1440px (sidebar), 1024px (icon rail) and 390px (phone), in the dark
+and light themes.
 
 Options:
   --routes <glob>     Only routes whose name or path matches (comma-separated;
                       * within a path segment, ** across), e.g. "settings-*"
                       or "/runs/**"
   --theme <themes>    dark, light or both (comma-separated; default both)
-  --viewport <names>  desktop (1440px), phone (390px) or both (comma-separated;
-                      1440 and 390 also work; default both)
+  --viewport <names>  desktop (1440px), rail (1024px) or phone (390px)
+                      (comma-separated; 1440, 1024 and 390 also work; default all)
   --strict            Exit non-zero when a route is wider than its viewport
   --skip-build        Don't build the workspace packages the panel imports
   --help              Show this help
@@ -57,7 +65,7 @@ export function parseScreensOptions(argv: string[]): ScreensOptions {
     themes: parseList(values.theme, "--theme", (item) =>
       (THEMES as readonly string[]).includes(item) ? (item as Theme) : null,
     ) ?? [...THEMES],
-    viewports: parseList(values.viewport, "--viewport", parseViewport) ?? ["desktop", "phone"],
+    viewports: parseList(values.viewport, "--viewport", parseViewport) ?? [...VIEWPORT_NAMES],
     strict: values.strict,
     skipBuild: values["skip-build"],
     help: values.help,
@@ -65,7 +73,7 @@ export function parseScreensOptions(argv: string[]): ScreensOptions {
 }
 
 function parseViewport(item: string): ViewportName | null {
-  if (item === "desktop" || item === "phone") return item;
+  if ((VIEWPORT_NAMES as string[]).includes(item)) return item as ViewportName;
   for (const [name, { width }] of Object.entries(VIEWPORTS)) {
     if (item === String(width) || item === `${width}px`) return name as ViewportName;
   }

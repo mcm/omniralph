@@ -89,6 +89,16 @@ const ALLOWED: Allowed[] = [
     reason: "the Copy rule names the old word so critiques flag it in visible text",
   },
   {
+    paths: [
+      "apps/web/scripts/screens/capture.mjs",
+      "apps/web/scripts/screens/checks.ts",
+      "apps/web/scripts/screens/verify.ts",
+      "apps/web/README.md",
+    ],
+    text: /"Ralph" or "harness"|\(ralph\|harness\)/g,
+    reason: "the screenshot check that fails a capture whose visible text says the old word",
+  },
+  {
     paths: ["apps/web/scripts/fixtures/seed.test.ts"],
     text: /"harness"|\|harness\)/g,
     reason: "the fixture seed's test checks no seeded value shows users the old word",
