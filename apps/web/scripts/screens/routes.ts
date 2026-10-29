@@ -76,6 +76,12 @@ export interface ScreenRoute {
   needsYou?: true;
   /** Captured with "All organizations" selected (the organization scope cookie). */
   org?: "all";
+  /**
+   * What the route fails to load on purpose (a load-error fixture), so `--strict` doesn't fail
+   * on it: in-place load errors by their starting text, failed API responses by a part of their
+   * `METHOD /path: HTTP …` line. Any other load error or failed response fails `--strict`.
+   */
+  expectedFailures?: { loadErrors?: readonly string[]; responses?: readonly string[] };
 }
 
 /** The list screens' pages: every route of one sets `list`. */

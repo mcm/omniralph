@@ -42,8 +42,16 @@ export interface CaptureResult {
   consoleErrors: string[];
   /** Why the page never showed its content (still loading, or its error boundary). */
   notRendered: string | null;
-  /** The in-place errors on the page (failed loads), e.g. a code host the fixtures can't reach. */
+  /**
+   * The in-place errors on the page (failed loads, `load-errors-page.mjs`), e.g. "Couldn't load
+   * the transcript. The server sent an unexpected response."
+   */
   loadErrors: string[];
+  /**
+   * The page's API calls that failed (`/api/ui/…` on the panel, `/api/…` on the agent page): an
+   * error status, or a body that isn't JSON. Missing from captures made before it existed.
+   */
+  failedResponses?: string[];
   error: string | null;
   screenshot: string | null;
   html: string | null;
@@ -212,15 +220,39 @@ export function showsShortcutIndicators(
   return result.kbdCount > 0 && !(result.surface === "panel" && route?.page === HELP_PAGE);
 }
 
+/** What a route declares it fails to load on purpose (`ScreenRoute.expectedFailures`). */
+export type ExpectedFailures = ScreenRoute["expectedFailures"];
+
+/**
+ * The capture's load errors and failed API responses that its route doesn't expect: a load
+ * error expected by its starting text, a response by a part of its `METHOD /path: HTTP …` line.
+ */
+export function unexpectedLoadFailures(
+  result: Pick<CaptureResult, "loadErrors" | "failedResponses">,
+  expected: ExpectedFailures,
+): string[] {
+  const loadErrors = expected?.loadErrors ?? [];
+  const responses = expected?.responses ?? [];
+  return [
+    ...result.loadErrors
+      .filter((text) => !loadErrors.some((start) => text.startsWith(start)))
+      .map((text) => `load error: ${text}`),
+    ...(result.failedResponses ?? [])
+      .filter((line) => !responses.some((part) => line.includes(part)))
+      .map((line) => `failed API response: ${line}`),
+  ];
+}
+
 /**
  * Why a capture fails the run; empty when it passes. `--strict` also fails on overflow, on
+ * in-place load errors and failed API responses the route doesn't expect, on
  * every Decided finding, on every accessibility finding that no entry of `ignore` (ignore.md)
  * matches, and on `impeccable detect` failing on the snapshot or finding something no entry of
  * `detectIgnore` matches.
  */
 export function captureFailures(
   result: CaptureResult,
-  route: Pick<ScreenRoute, "page"> | undefined,
+  route: (Pick<ScreenRoute, "page"> & Pick<Partial<ScreenRoute>, "expectedFailures">) | undefined,
   {
     strict,
     ignore = [],
@@ -244,6 +276,7 @@ export function captureFailures(
     }
   }
   for (const text of result.retiredWording) failures.push(`retired wording: …${text}…`);
+  if (strict) failures.push(...unexpectedLoadFailures(result, route?.expectedFailures));
   if (strict && result.overflow) {
     failures.push(`wider than the viewport: ${result.scrollWidth}px > ${result.width}px`);
   }
