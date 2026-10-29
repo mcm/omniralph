@@ -60,6 +60,14 @@ ui_bytes="$(node -e '
 (( ui_bytes < 3 * 1024 * 1024 )) || fail "dist/ui is $ui_bytes bytes, over 3 MB"
 echo "Agent page: $ui_bytes bytes"
 
+# The agent page's fixture mode (apps/agent/scripts/ui-fixture) is for screenshots only: no
+# file of the package may carry it, or the env var that turns it on.
+mkdir "$work/unpacked"
+tar -xzf "$tarball" -C "$work/unpacked"
+fixture_files="$(grep -rlE 'OMNIRALPH_AGENT_UI_FIXTURE|ui-fixture' "$work/unpacked" || true)"
+[[ -z "$fixture_files" ]] ||
+  fail "the agent page's fixture mode ships in the package:"$'\n'"$fixture_files"
+
 manifest="$(tar -xOzf "$tarball" package/package.json)"
 if grep -q 'workspace:' <<<"$manifest"; then
   fail "packed package.json still references workspace: packages"

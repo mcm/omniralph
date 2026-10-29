@@ -197,11 +197,12 @@ describe("routeMatches", () => {
 });
 
 describe("parseScreensOptions", () => {
-  it("defaults to every theme and viewport", () => {
+  it("defaults to every theme, viewport and surface", () => {
     expect(parseScreensOptions([])).toEqual({
       routes: null,
       themes: ["dark", "light"],
       viewports: ["desktop", "rail", "phone"],
+      surfaces: ["panel", "agent"],
       strict: false,
       skipBuild: false,
       help: false,
@@ -215,12 +216,15 @@ describe("parseScreensOptions", () => {
       "--theme",
       "light",
       "--viewport=390",
+      "--surface",
+      "agent",
       "--strict",
     ]);
     expect(options).toMatchObject({
       routes: "settings-*",
       themes: ["light"],
       viewports: ["phone"],
+      surfaces: ["agent"],
       strict: true,
     });
     expect(parseScreensOptions(["--viewport", "1440px,phone"]).viewports).toEqual([
@@ -234,6 +238,7 @@ describe("parseScreensOptions", () => {
   it("rejects unknown values and flags", () => {
     expect(() => parseScreensOptions(["--theme", "sepia"])).toThrow(/--theme/);
     expect(() => parseScreensOptions(["--viewport", "800"])).toThrow(/--viewport/);
+    expect(() => parseScreensOptions(["--surface", "fleet"])).toThrow(/--surface/);
     expect(() => parseScreensOptions(["--theme", ""])).toThrow(/--theme/);
     expect(() => parseScreensOptions(["--nope"])).toThrow();
   });

@@ -237,20 +237,23 @@ loads in development only.
 the dev-only sign-in.
 
 `verify:screens` screenshots every screen and state of the panel, signed in against the fixture
-database, at the three layouts of DESIGN.md ("Widths and accessibility") in the dark and light
-themes: `desktop` 1440×900 (the full sidebar), `rail` 1024×768 (the 64px icon rail) and `phone`
-390×844 (top bar and tab bar; a mobile, touch, 2× device):
+database, and of the agent's local page in its fixture mode (below), at the three layouts of
+DESIGN.md ("Widths and accessibility") in the dark and light themes: `desktop` 1440×900 (the full
+sidebar), `rail` 1024×768 (the 64px icon rail) and `phone` 390×844 (top bar and tab bar; a mobile,
+touch, 2× device):
 
 ```sh
 pnpm --filter @omniralph/web verify:screens
 pnpm --filter @omniralph/web verify:screens --routes "settings-*,/runs/**" --theme dark --viewport 390
+pnpm --filter @omniralph/web verify:screens --surface agent --strict
 ```
 
 **Prerequisites:** Docker only (a local or remote daemon). No secrets, no OAuth, no browser on
 the host. It runs unattended:
 
-1. builds the workspace packages the panel imports (`--skip-build` skips it);
-2. starts the fixture database and `next dev` on a free port;
+1. builds the workspace packages the panel imports and the agent page (`apps/agent/dist/ui`)
+   (`--skip-build` skips it);
+2. starts the agent page's fixture mode, and the fixture database and `next dev` on a free port;
 3. runs `scripts/screens/capture.mjs` in `mcr.microsoft.com/playwright:v<version>-noble`, the
    version of the `playwright-core` dev dependency, with `--network host`. The script and
    `playwright-core` go in, and the screenshots come out, with `docker cp` (no bind mounts).
@@ -264,7 +267,7 @@ the host. It runs unattended:
    instead until no skeleton (`[aria-busy="true"]`) is left, up to 60s;
 5. runs `impeccable detect --json` on each page's HTML snapshot, if the CLI is available
    (`$IMPECCABLE_CLI`, `impeccable` on `PATH`, or the Claude Code plugin's launcher);
-6. stops the panel and removes the fixture database.
+6. stops the panel and the agent page, and removes the fixture database.
 
 Output goes to `apps/web/.screens/<timestamp>/` (gitignored), one set per route, viewport and
 theme: `<route>.<desktop|rail|phone>.<dark|light>.png` (full page), `.html` (DOM with styles
@@ -278,6 +281,7 @@ the summary to stderr.
 | `--routes <glob>`   | Routes whose name or path matches (comma-separated; `*`, `**`)        |
 | `--theme <list>`    | `dark`, `light` (default both)                                        |
 | `--viewport <list>` | `desktop`/`1440`, `rail`/`1024`, `phone`/`390` (default all three)    |
+| `--surface <list>`  | `panel`, `agent` (default both)                                       |
 | `--strict`          | Exit non-zero when a route is wider than its viewport (`scrollWidth`) |
 | `--skip-build`      | Don't build the workspace packages first                              |
 
@@ -287,7 +291,7 @@ Every capture is checked for the Design rules a machine can check (the logic is
 - a failed capture, or a page still loading after 60s or showing its error boundary
   (`(app)/error.tsx`);
 - `kbdCount`: visible `kbd` elements, i.e. keyboard-shortcut indicators (rule 7), on any page but
-  Help (`/help`), which lists every key;
+  the panel's Help (`/help`), which lists every key (the agent page has no Help page);
 - `retiredWording`: visible text saying "Ralph" or "harness" (`document.body.innerText`,
   case-insensitive); the product says "Om" for the AI and "agent" for the machine (see
   `src/user-facing-wording.test.ts` for the source-level check). Job types (`ralph.story`) and
@@ -309,6 +313,35 @@ run in order before the screenshot (e.g. `fleet-agent-revoke`). A route may also
 | `organization` | Opens it in that organization (the organization cookie), e.g. the empty Inbox of the sandbox organization                                                                                   |
 | `viewports`    | Only at these widths, for states that exist at some only (the phone menu; the Ask panel beside the sidebar and rail)                                                                        |
 | `waitFor`      | A CSS selector to wait for first, for content that loads without a skeleton (Up next in the empty Inbox)                                                                                    |
+
+### The agent's local page
+
+The agent page (`apps/agent/ui`) is captured the same way, with the same container and
+`capture.mjs`, against its fixture mode: `apps/agent/scripts/ui-fixture/fixture.ts` serves the
+built page with the agent's real page server and API routes over seeded local state with stable
+names (`FIXTURE_ATTEMPTS`, `FIXTURE_INSTALLS`, …): settings with slots, pool limits, accepted
+kinds, host tool paths (`terraform` configured at a missing path, which a playbook requires) and a
+version pin; installables installed, updating and failed; workspace and disk usage; Claude
+signed in with its models; log lines; a running attempt with its live transcript and log tail;
+finished attempts; and repos whose last sync failed for one. Saves work (a saved host tool path
+is checked as the next heartbeat would), and installs finish a moment later without running npm.
+
+It starts only with `OMNIRALPH_AGENT_UI_FIXTURE=1`, and lives outside `apps/agent/src`, so the
+published package never has it (`scripts/smoke-agent-package.sh` checks the tarball). To open it
+in a browser:
+
+```sh
+pnpm --filter @omniralph/agent build:ui
+OMNIRALPH_AGENT_UI_FIXTURE=1 pnpm --filter @omniralph/agent exec \
+  tsx --conditions=@omniralph/source scripts/ui-fixture/serve.ts
+```
+
+It prints `{ url, link, routes }`; open `link`, which signs the browser in. Its screens are
+`apps/agent/scripts/ui-fixture/routes.ts` (every name starts with `agent-`, so
+`--routes "agent-*"` works too), each with `waitFor` selectors (the page renders nothing until
+its data loads) and, where needed, `steps` (the running attempt opens its Log). A test
+(`apps/agent/ui/src/screens.test.ts`) checks they cover every section of the page's nav. The
+agent page's "Can't load …" states count as in-place load errors.
 
 ## End-to-end tests
 

@@ -4,6 +4,7 @@ import { captureFailures, HELP_PAGE, type CaptureResult } from "./checks";
 const clean: CaptureResult = {
   route: "runs",
   path: "/runs",
+  surface: "panel",
   as: "admin",
   viewport: "rail",
   width: 1024,
@@ -35,6 +36,10 @@ describe("captureFailures", () => {
       "shows 2 keyboard-shortcut indicator(s) (rule 7)",
     ]);
     expect(captureFailures(withKbd, { page: HELP_PAGE }, false)).toEqual([]);
+    // The agent page has no Help page: a `kbd` anywhere on it fails.
+    expect(captureFailures({ ...withKbd, surface: "agent" }, { page: HELP_PAGE }, false)).toEqual([
+      "shows 2 keyboard-shortcut indicator(s) (rule 7)",
+    ]);
   });
 
   it("fails on each piece of retired wording", () => {

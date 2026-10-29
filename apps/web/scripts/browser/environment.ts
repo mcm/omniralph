@@ -15,6 +15,7 @@ import { startFixtures } from "../fixtures/start";
 export const run = promisify(execFile);
 export const WEB_DIR = resolve(__dirname, "../..");
 export const REPO_ROOT = resolve(WEB_DIR, "../..");
+export const AGENT_DIR = resolve(REPO_ROOT, "apps/agent");
 const SERVER_START_TIMEOUT_MS = 180_000;
 
 // How the Playwright container reaches the panel on the host. With `--network host` on Linux
@@ -132,6 +133,11 @@ async function dockerOperatingSystem(): Promise<string> {
   return stdout.trim();
 }
 
+/** The host name the Playwright container reaches the host on, for this Docker daemon. */
+export async function dockerBrowserHost(): Promise<string> {
+  return browserHost(await dockerOperatingSystem());
+}
+
 export interface FixturePanel {
   /** The fixture database's environment (`DATABASE_URL`, `AUTH_SECRET`, …). */
   fixtureEnv: Record<string, string>;
@@ -160,7 +166,7 @@ export async function startFixturePanel(cleanups: Cleanups): Promise<FixturePane
     const path = join(WEB_DIR, file);
     if (!existsSync(path)) cleanups.push(() => rm(path, { force: true }));
   }
-  const host = browserHost(await dockerOperatingSystem());
+  const host = await dockerBrowserHost();
   const port = await freePort();
   const baseUrl = `http://localhost:${port}`;
   log(`Starting the panel on ${baseUrl}…`);
@@ -228,22 +234,117 @@ async function waitForPanel(baseUrl: string, server: ChildProcess): Promise<void
 
 async function stopPanel(server: ChildProcess): Promise<void> {
   if (server.exitCode !== null || server.pid === undefined) return;
-  const exited = new Promise((r) => server.once("exit", r));
+  await stopProcessGroup(server);
+  log("Panel stopped.");
+}
+
+/** Builds the agent's local page (`apps/agent/dist/ui`), which its fixture mode serves. */
+export async function buildAgentPage(): Promise<void> {
+  log("Building the agent page…");
+  await runInherited("pnpm", ["--filter", "@omniralph/agent", "run", "build:ui"], REPO_ROOT);
+}
+
+/** One screen of the agent page (`apps/agent/scripts/ui-fixture/routes.ts`). */
+export interface AgentScreenRoute {
+  name: string;
+  path: string;
+  page: string;
+  waitFor: readonly string[];
+  steps?: readonly (
+    | { action: "fill"; selector: string; value: string }
+    | { action: "click"; selector: string }
+  )[];
+  viewportOnly?: boolean;
+  viewports?: readonly string[];
+}
+
+export interface AgentPageFixture {
+  /** The page's URL from the Playwright container. */
+  browserBaseUrl: string;
+  /** The path (with its token) that signs a browser in. */
+  signInPath: string;
+  routes: AgentScreenRoute[];
+}
+
+/** The env var the agent page's fixture mode needs. */
+export const AGENT_UI_FIXTURE_ENV = "OMNIRALPH_AGENT_UI_FIXTURE";
+
+/**
+ * Serves the agent page in its fixture mode (`apps/agent/scripts/ui-fixture/serve.ts`) on
+ * 127.0.0.1, answering to `host` too (the name the Playwright container opens it on); stopped
+ * by `cleanups`. Its first stdout line says where it is and which screens to capture.
+ */
+export async function startAgentPageFixture(
+  cleanups: Cleanups,
+  host: string,
+): Promise<AgentPageFixture> {
+  log("Starting the agent page in fixture mode…");
+  const tsx = createRequire(join(AGENT_DIR, "package.json")).resolve("tsx/cli");
+  const child = spawn(
+    process.execPath,
+    [
+      tsx,
+      "--conditions=@omniralph/source",
+      "scripts/ui-fixture/serve.ts",
+      ...(host === "localhost" ? [] : ["--allowed-host", host]),
+    ],
+    {
+      cwd: AGENT_DIR,
+      env: { ...process.env, [AGENT_UI_FIXTURE_ENV]: "1" },
+      stdio: ["ignore", "pipe", "inherit"],
+      detached: true,
+    },
+  );
+  cleanups.push(async () => {
+    await stopProcessGroup(child);
+    log("Agent page stopped.");
+  });
+  const first = await new Promise<string>((resolvePromise, reject) => {
+    let buffered = "";
+    const timeout = setTimeout(
+      () => reject(new Error("The agent page's fixture mode didn't start in 60s")),
+      60_000,
+    );
+    child.stdout!.on("data", (chunk: Buffer) => {
+      buffered += chunk.toString();
+      const newline = buffered.indexOf("\n");
+      if (newline < 0) return;
+      clearTimeout(timeout);
+      resolvePromise(buffered.slice(0, newline));
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timeout);
+      reject(new Error(`The agent page's fixture mode exited with ${code}`));
+    });
+  });
+  const started = JSON.parse(first) as { url: string; link: string; routes: AgentScreenRoute[] };
+  const link = new URL(started.link);
+  log(`Agent page on ${started.url}.`);
+  return {
+    browserBaseUrl: containerUrl(started.url, host).replace(/\/$/, ""),
+    signInPath: link.pathname + link.search,
+    routes: started.routes,
+  };
+}
+
+/** SIGTERM to a detached child's process group, SIGKILL after 10s. */
+async function stopProcessGroup(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.pid === undefined) return;
+  const exited = new Promise((r) => child.once("exit", r));
   try {
-    process.kill(-server.pid, "SIGTERM");
+    process.kill(-child.pid, "SIGTERM");
   } catch {
     return;
   }
   const timeout = setTimeout(() => {
     try {
-      process.kill(-server.pid!, "SIGKILL");
+      process.kill(-child.pid!, "SIGKILL");
     } catch {
       // already gone
     }
   }, 10_000);
   await exited;
   clearTimeout(timeout);
-  log("Panel stopped.");
 }
 
 /**
