@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { captureFailures, HELP_PAGE, type CaptureResult } from "./checks";
+import {
+  captureFailures,
+  DECIDED_CHECKS,
+  decidedFindings,
+  decidedOptions,
+  HELP_PAGE,
+  type CaptureResult,
+} from "./checks";
 import { parseIgnoreList } from "./ignore";
 
 const clean: CaptureResult = {
@@ -107,5 +114,62 @@ describe("captureFailures", () => {
     expect(
       captureFailures({ ...clean, checkErrors: ["axe: boom"] }, runsPage, { strict: false }),
     ).toEqual(["check failed: axe: boom"]);
+  });
+});
+
+describe("the Decided checks", () => {
+  const findings = {
+    hintText: ['"Finished work is in Runs" in p'],
+    liveIndicator: ['"Live" in div'],
+    detailToolbar: ['"Run actions": no "More actions" (⋯) menu (rule 5)'],
+    bareMetadata: ['"FIX-101" in span'],
+    rowSummary: ['"Fix it": "3 of 5 stories" in span.or-row__stats'],
+    phoneExpanded: ['"Details" is expanded on load'],
+    orgFirst: ['row "Fix it": the first badge is issue "FIX-101", not the organization'],
+  };
+
+  it("fails on each Decided finding only with --strict", () => {
+    const failing = { ...clean, ...findings };
+    expect(captureFailures(failing, runsPage, { strict: false })).toEqual([]);
+    expect(captureFailures(failing, runsPage, { strict: true })).toEqual([
+      'decided hintText: "Finished work is in Runs" in p',
+      'decided liveIndicator: "Live" in div',
+      'decided detailToolbar: "Run actions": no "More actions" (⋯) menu (rule 5)',
+      'decided bareMetadata: "FIX-101" in span',
+      'decided rowSummary: "Fix it": "3 of 5 stories" in span.or-row__stats',
+      'decided phoneExpanded: "Details" is expanded on load',
+      'decided orgFirst: row "Fix it": the first badge is issue "FIX-101", not the organization',
+    ]);
+  });
+
+  it("lists the shortcut indicators among them, by check, and reads old results as clean", () => {
+    const failing = { ...clean, ...findings, kbdCount: 1 };
+    expect(decidedFindings(failing, runsPage).map((finding) => finding.check)).toEqual([
+      ...DECIDED_CHECKS,
+    ]);
+    expect(decidedFindings({ ...failing, kbdCount: 1 }, { page: HELP_PAGE })[0]?.check).toBe(
+      "hintText",
+    );
+    expect(decidedFindings(clean, runsPage)).toEqual([]);
+  });
+
+  it("asks for a ⋯ menu on the panel's details, checks rows on lists and details", () => {
+    const names = ["build-01"];
+    expect(decidedOptions({ detail: true }, { names, org: "single" })).toMatchObject({
+      detail: true,
+      requireMenu: true,
+      rows: true,
+      needsYou: false,
+      org: "single",
+    });
+    expect(decidedOptions({ detail: true, surface: "agent" }, { names, org: null })).toMatchObject({
+      requireMenu: false,
+      org: null,
+    });
+    expect(decidedOptions({ list: true }, { names, org: "all" })).toMatchObject({
+      detail: false,
+      rows: true,
+    });
+    expect(decidedOptions({}, { names, org: "all" }).rows).toBe(false);
   });
 });

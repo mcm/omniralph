@@ -11,7 +11,10 @@ export interface BadgeLinkProps {
 
 interface RefBadgeProps
   extends BadgeLinkProps, Omit<HTMLAttributes<HTMLElement>, "title" | "className"> {
-  /** Modifier for the badge kind, e.g. `repo` → `.or-ref--repo`. */
+  /**
+   * Modifier for the badge kind, e.g. `repo` → `.or-ref--repo`; also its `data-or-badge`, which
+   * the screenshot checks read (Decided items 2, 3 and 11: bare metadata, the organization first).
+   */
   kind: string;
   /** The leading icon or mark. */
   icon?: ReactNode;
@@ -86,13 +89,20 @@ export function RefBadge({
         href={href}
         className={classes}
         title={title}
+        data-or-badge={kind}
       >
         {content}
       </LinkComponent>
     );
   }
   return (
-    <span {...dom} ref={ref as Ref<HTMLSpanElement>} className={classes} title={title}>
+    <span
+      {...dom}
+      ref={ref as Ref<HTMLSpanElement>}
+      className={classes}
+      title={title}
+      data-or-badge={kind}
+    >
       {content}
     </span>
   );

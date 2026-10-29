@@ -3,8 +3,9 @@
 // viewport and theme into `config.outDir`, with an HTML snapshot (styles inlined, for
 // `impeccable detect`) and `results.json`. Routes are the panel's, or the agent page's
 // (`surface: "agent"`, served by its fixture mode at `config.agent.baseUrl`). After each
-// screenshot it runs the accessibility checks (`a11y-page.mjs`): axe-core, the ARIA snapshot
-// and landmarks, the Escape check on overlays the steps opened, and the keyboard walk.
+// screenshot it runs the Decided checks (`decided-page.mjs`, with each route's `decided`
+// options) and the accessibility checks (`a11y-page.mjs`): axe-core, the ARIA snapshot and
+// landmarks, the Escape check on overlays the steps opened, and the keyboard walk.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -17,10 +18,20 @@ import {
   overlaysInPage,
   walkKeyboard,
 } from "./a11y-page.mjs";
+import { decidedInPage, expandedInPage } from "./decided-page.mjs";
 
 const config = JSON.parse(await readFile(process.argv[2], "utf8"));
-const { baseUrl, signInPaths, organizationCookie, routes, themes, viewports, outDir, agent } =
-  config;
+const {
+  baseUrl,
+  signInPaths,
+  organizationCookie,
+  organizationScopeCookie,
+  routes,
+  themes,
+  viewports,
+  outDir,
+  agent,
+} = config;
 const NAVIGATION_TIMEOUT_MS = 180_000; // `next dev` compiles each route on its first visit.
 // Pages load their data from `/api/ui` after rendering (skeletons are `aria-busy`), and keep
 // polling it, so the network never goes idle: wait for the skeletons to go instead.
@@ -35,6 +46,17 @@ const AXE_SOURCE = await readFile(
   createRequire(import.meta.url).resolve("axe-core/axe.min.js"),
   "utf8",
 );
+/** The Decided checks' fields of a result (decided-page.mjs, and `phoneExpanded`). */
+const DECIDED_FIELDS = [
+  "hintText",
+  "liveIndicator",
+  "detailToolbar",
+  "bareMetadata",
+  "rowSummary",
+  "phoneExpanded",
+  "orgFirst",
+];
+
 // How long an overlay may take to close after Escape (exit animations).
 const CLOSE_TIMEOUT_MS = 2_000;
 
@@ -140,6 +162,14 @@ async function capture(context, route, viewportName, viewport, theme) {
     checkErrors: [],
     axeFile: null,
     ariaFile: null,
+    // The Decided checks (decided-page.mjs).
+    hintText: [],
+    liveIndicator: [],
+    detailToolbar: [],
+    bareMetadata: [],
+    rowSummary: [],
+    phoneExpanded: [],
+    orgFirst: [],
   };
   const page = await context.newPage();
   page.on("console", (message) => {
@@ -147,7 +177,7 @@ async function capture(context, route, viewportName, viewport, theme) {
   });
   page.on("pageerror", (error) => result.consoleErrors.push(String(error).slice(0, 500)));
   try {
-    const { overlays } = await openRoute(context, page, route, theme, result);
+    const { overlays } = await openRoute(context, page, route, theme, result, viewportName);
     await page.evaluate(() => document.fonts.ready);
     const url = new URL(page.url());
     result.finalPath = url.pathname + url.search;
@@ -187,11 +217,16 @@ async function capture(context, route, viewportName, viewport, theme) {
     result.html = `${base}.html`;
     await writeFile(join(outDir, result.html), await snapshotHtml(page));
 
+    if (route.decided) {
+      await check(result, "decided", async () => {
+        Object.assign(result, await page.evaluate(decidedInPage, route.decided));
+      });
+    }
     await checkAccessibility(page, base, viewportName, result);
     if (overlays.length > 0) {
       await check(result, "escape", () => checkEscape(page, overlays, result));
       // Escape closed the overlay: open it again, so the walk covers what it holds.
-      await openRoute(context, page, route, theme, { loadErrors: [] });
+      await openRoute(context, page, route, theme, { loadErrors: [] }, viewportName);
     }
     await check(result, "keyboard", () => checkKeyboard(page, result));
   } catch (error) {
@@ -211,6 +246,7 @@ async function capture(context, route, viewportName, viewport, theme) {
     findings("keyboard", result.keyboard),
     findings("escape", result.escape),
     findings("landmarks", result.landmarks),
+    ...DECIDED_FIELDS.map((field) => findings(field, result[field])),
     result.checkErrors.length > 0 ? `${result.checkErrors.length} check error(s)` : null,
   ].filter(Boolean);
   console.log(`${base} ${result.status ?? "-"}${flags.length ? ` (${flags.join(", ")})` : ""}`);
@@ -218,18 +254,25 @@ async function capture(context, route, viewportName, viewport, theme) {
 }
 
 /**
- * Opens `route` in `page`: its organization, the page, its content (skeletons gone, `waitFor`),
- * its steps and the theme. Records the status and what didn't render in `record`. Returns the
- * overlays the steps opened (`overlaysInPage`); the target of each click step is marked as a
- * possible opener for the Escape check.
+ * Opens `route` in `page`: its organization (and "All organizations" with `org: "all"`), the
+ * page, its content (skeletons gone, `waitFor`), its steps and the theme. Records the status
+ * and what didn't render in `record`, and (a detail at phone width) the Details expanded on
+ * load, before the steps. Returns the overlays the steps opened (`overlaysInPage`); the target
+ * of each click step is marked as a possible opener for the Escape check.
  */
-async function openRoute(context, page, route, theme, record) {
+async function openRoute(context, page, route, theme, record, viewportName) {
   // Another organization than the user's active one: the organization cookie, for this page.
-  if (route.surface !== "agent") await context.clearCookies({ name: organizationCookie });
+  if (route.surface !== "agent") {
+    await context.clearCookies({ name: organizationCookie });
+    await context.clearCookies({ name: organizationScopeCookie });
+  }
   if (route.organization) {
     await context.addCookies([
       { name: organizationCookie, value: route.organization, url: baseUrl },
     ]);
+  }
+  if (route.org === "all") {
+    await context.addCookies([{ name: organizationScopeCookie, value: "all", url: baseUrl }]);
   }
   const response = await page.goto(route.path, { waitUntil: "load" });
   record.status = response?.status() ?? null;
@@ -268,6 +311,10 @@ async function openRoute(context, page, route, theme, record) {
   }
   const missing = waited.filter(Boolean);
   if (missing.length > 0) record.notRendered ??= `never showed ${missing.join(", ")}`;
+  // Rule 16: a detail loads with its Details collapsed on a phone (before any step opens one).
+  if (viewportName === "phone" && route.detail) {
+    record.phoneExpanded = await page.evaluate(expandedInPage);
+  }
   // The agent page has no dev overlay, and its CSP refuses inline styles.
   if (route.surface !== "agent") await page.addStyleTag({ content: HIDE_DEV_UI });
   const before = new Set(

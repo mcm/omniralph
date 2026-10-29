@@ -50,7 +50,12 @@ import { loadStoryDiff } from "@/lib/runs/diff";
 import { fixtureDiffAdapterFor } from "@/lib/scm/fixture-diff";
 import { loadOrganizationBacklog } from "@/lib/work-items/backlog";
 import { getWorkItemTracker } from "@/lib/work-items/get-tracker";
-import { FIXTURE_IDS, FIXTURE_INBOX_KEYS, FIXTURE_SANDBOX_LINEAR_TOKEN } from "./ids";
+import {
+  FIXTURE_IDS,
+  FIXTURE_INBOX_KEYS,
+  FIXTURE_METADATA_NAMES,
+  FIXTURE_SANDBOX_LINEAR_TOKEN,
+} from "./ids";
 import { FIXTURE_ENCRYPTION_KEY, seedFixtures } from "./seed";
 
 vi.mock("server-only", () => ({}));
@@ -333,6 +338,20 @@ describe("seedFixtures", () => {
     expect(diff.provider).toBe("github");
     expect(diff.files.length).toBeGreaterThan(0);
     expect(diff.url).toMatch(/^https:\/\/github\.com\/fixture-labs\/control-panel\/commit\//);
+  });
+
+  it("seeds the names verify:screens looks for as bare metadata", async () => {
+    const column = async (query: ReturnType<typeof sql>) =>
+      (await db.execute<{ name: string }>(query)).rows.map((row) => row.name);
+    expect(await column(sql`select name from organizations`)).toEqual(
+      expect.arrayContaining([...FIXTURE_METADATA_NAMES.organizations]),
+    );
+    expect(await column(sql`select full_path as name from repositories`)).toEqual(
+      expect.arrayContaining([...FIXTURE_METADATA_NAMES.repositories]),
+    );
+    expect(await column(sql`select name from agents`)).toEqual(
+      expect.arrayContaining([...FIXTURE_METADATA_NAMES.agents]),
+    );
   });
 
   it("has repos with Reviews, Coding and Ask each on and off", async () => {

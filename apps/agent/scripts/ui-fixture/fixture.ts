@@ -282,6 +282,15 @@ const REPO = {
   docs: { provider: "github" as const, fullPath: "acme/docs-site" },
 };
 
+/**
+ * Names the page shows as metadata: the agent's and its repos'. `verify:screens` finds any of
+ * them shown on its own instead of as a badge (rule 1).
+ */
+export const FIXTURE_METADATA_NAMES: readonly string[] = [
+  FIXTURE_AGENT.name,
+  ...Object.values(REPO).map((repo) => repo.fullPath),
+];
+
 function attempt(
   now: number,
   fields: {

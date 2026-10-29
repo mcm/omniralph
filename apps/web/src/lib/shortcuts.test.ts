@@ -8,6 +8,8 @@ import { SHORTCUTS, type ShortcutId } from "./shortcuts";
 
 const WEB_SRC = path.resolve(__dirname, "..");
 const UI_SRC = path.resolve(WEB_SRC, "../../../packages/ui/src");
+/** The agent's local page, which has no Help page and so no `<kbd>` at all. */
+const AGENT_UI_SRC = path.resolve(WEB_SRC, "../../agent/ui/src");
 
 /** The key events a definition answers: its normalized key, and whether Mod is held. */
 const eventOf = (definition: Pick<ShortcutDefinition, "key" | "mod">) =>
@@ -138,10 +140,12 @@ describe("one listener", () => {
 });
 
 describe("shortcut hints", () => {
-  it("renders <kbd> only in the Help view", () => {
-    const offenders = ALL_SOURCES.filter(
-      (file) => file.endsWith(".tsx") && /<kbd\b/.test(readFileSync(file, "utf8")),
-    ).map(relative);
+  it("renders <kbd> only in the Help view (the panel, @omniralph/ui and the agent's page)", () => {
+    const scanned = [...ALL_SOURCES, ...sources(AGENT_UI_SRC)];
+    expect(scanned.map(relative)).toContain("apps/agent/ui/src/shell.tsx");
+    const offenders = scanned
+      .filter((file) => file.endsWith(".tsx") && /<kbd\b/.test(readFileSync(file, "utf8")))
+      .map(relative);
     expect(offenders).toEqual(["apps/web/src/screens/help/help-view.tsx"]);
   });
 });

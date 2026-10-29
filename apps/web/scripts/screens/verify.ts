@@ -27,12 +27,15 @@ import {
   type AgentScreenRoute,
   type Cleanups,
 } from "../browser/environment";
-import { ORGANIZATION_COOKIE } from "../../src/lib/auth/routes";
-import { FIXTURE_EMAILS } from "../fixtures/ids";
+import { ORGANIZATION_COOKIE, ORGANIZATION_SCOPE_COOKIE } from "../../src/lib/auth/routes";
+import { FIXTURE_EMAILS, FIXTURE_METADATA_NAMES } from "../fixtures/ids";
 import {
   accessibilityFindings,
   captureFailures,
-  showsShortcutIndicators,
+  DECIDED_CHECK_TITLES,
+  DECIDED_CHECKS,
+  decidedFindings,
+  decidedOptions,
   type CaptureResult,
 } from "./checks";
 import {
@@ -105,10 +108,13 @@ async function main(cleanups: Cleanups): Promise<number> {
         member: devSignInPath(FIXTURE_EMAILS.member),
       },
       organizationCookie: ORGANIZATION_COOKIE,
+      organizationScopeCookie: ORGANIZATION_SCOPE_COOKIE,
       agent: agent && { baseUrl: agent.browserBaseUrl, signInPath: agent.signInPath },
       routes: [
-        ...routes.map(
-          ({ name, path, auth, steps, viewportOnly, as, organization, viewports, waitFor }) => ({
+        ...routes.map((route) => {
+          const { name, path, auth, steps, viewportOnly, as, organization, viewports, waitFor } =
+            route;
+          return {
             name,
             path,
             surface: "panel",
@@ -119,17 +125,31 @@ async function main(cleanups: Cleanups): Promise<number> {
             organization,
             viewports,
             waitFor,
-          }),
-        ),
-        ...agentRoutes.map(({ name, path, steps, viewportOnly, viewports, waitFor }) => ({
-          name,
-          path,
+            detail: route.detail,
+            org: route.org,
+            // The Decided checks' options (decided-page.mjs). Signed out, there's no
+            // organization scope; signed in, it's "All organizations" or one.
+            decided: decidedOptions(route, {
+              names: Object.values(FIXTURE_METADATA_NAMES).flat(),
+              org: auth === "signed-out" ? null : route.org === "all" ? "all" : "single",
+            }),
+          };
+        }),
+        ...agentRoutes.map((route) => ({
+          name: route.name,
+          path: route.path,
           surface: "agent",
           auth: "signed-in",
-          steps,
-          viewportOnly,
-          viewports,
-          waitFor,
+          steps: route.steps,
+          viewportOnly: route.viewportOnly,
+          viewports: route.viewports,
+          waitFor: route.waitFor,
+          detail: route.detail,
+          // The agent page belongs to one agent: no organization badge to check.
+          decided: decidedOptions(
+            { ...route, surface: "agent" },
+            { names: agent?.metadataNames ?? [], org: null },
+          ),
         })),
       ],
       themes: options.themes,
@@ -167,7 +187,7 @@ async function capture({
   config: Record<string, unknown>;
 }): Promise<void> {
   const work = await stageWorkDir(cleanups, "omniralph-screens");
-  for (const script of ["capture.mjs", "a11y-page.mjs"]) {
+  for (const script of ["capture.mjs", "a11y-page.mjs", "decided-page.mjs"]) {
     await cp(join(__dirname, script), join(work, script));
   }
   for (const name of ["playwright-core", "axe-core"]) {
@@ -270,9 +290,6 @@ async function report(
   const routeOf = new Map(routes.map((route) => [route.name, route]));
   const failed = results.filter((r) => r.error);
   const overflowing = results.filter((r) => r.overflow);
-  const shortcutIndicators = results.filter((r) =>
-    showsShortcutIndicators(r, routeOf.get(r.route)),
-  );
   const retired = results.filter((r) => r.retiredWording.length > 0);
   const serverErrors = results.filter((r) => r.status !== null && r.status >= 500);
   const redirected = results.filter((r) => r.finalPath && r.finalPath !== r.path);
@@ -292,16 +309,6 @@ async function report(
     }
   } else {
     summary.push("No route is wider than its viewport.");
-  }
-  if (shortcutIndicators.length > 0) {
-    summary.push(
-      `\nShows keyboard-shortcut indicators (rule 7: only the panel's Help page lists keys):`,
-    );
-    for (const r of shortcutIndicators) {
-      summary.push(`  ${r.route} ${r.viewport} ${r.theme}: ${r.kbdCount} visible kbd`);
-    }
-  } else {
-    summary.push("No route outside Help shows a keyboard-shortcut indicator.");
   }
   if (retired.length > 0) {
     summary.push(`\nShows "Ralph" or "harness" (say "Om" for the AI, "agent" for the machine):`);
@@ -337,6 +344,7 @@ async function report(
         summary.push(`  ${r.route} ${r.viewport} ${r.theme}: ${text}`);
     }
   }
+  summary.push(...decidedReport(results, routeOf, strict));
   summary.push(...accessibilityReport(results, ignore.entries));
   if (ignore.problems.length > 0) {
     summary.push(
@@ -355,6 +363,36 @@ async function report(
     (r) => captureFailures(r, routeOf.get(r.route), { strict, ignore: ignore.entries }).length > 0,
   );
   return failing.length > 0 ? 1 : 0;
+}
+
+/**
+ * The "Decided" section: each capture check that guards a Decided item (DESIGN.md), with its
+ * findings by route, viewport and theme. `--strict` fails on every one (the shortcut
+ * indicators always).
+ */
+function decidedReport(
+  results: CaptureResult[],
+  routeOf: Map<string, Pick<ScreenRoute, "page">>,
+  strict: boolean,
+): string[] {
+  const lines = [
+    `\nDecided (DESIGN.md "Decided — never flag, never undo")${strict ? "" : ": fails only with --strict, but the shortcut indicators"}:`,
+  ];
+  const findings = results.flatMap((result) =>
+    decidedFindings(result, routeOf.get(result.route)).map((finding) => ({ result, ...finding })),
+  );
+  for (const check of DECIDED_CHECKS) {
+    const own = findings.filter((finding) => finding.check === check);
+    if (own.length === 0) {
+      lines.push(`  ${check}: no findings. ${DECIDED_CHECK_TITLES[check]}`);
+      continue;
+    }
+    lines.push(`  ${check}: ${own.length} finding(s). ${DECIDED_CHECK_TITLES[check]}`);
+    for (const { result, finding } of own) {
+      lines.push(`    ${result.route} ${result.viewport} ${result.theme}: ${finding}`);
+    }
+  }
+  return lines;
 }
 
 const CHECK_TITLES: Record<AccessibilityCheck, string> = {

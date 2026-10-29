@@ -76,20 +76,22 @@ The user reversed impeccable's earlier advice on these. No critique round flags 
 fix proposes, files or makes a change to one; only the user changes an item, by editing this
 list. Each has a `decided:` row in `.impeccable/critique/ignore.md` with the same reason, which
 suppresses critique and `impeccable detect` findings only, never an axe, keyboard, Escape or
-landmark finding.
+landmark finding. Each ends with its guards: the tests (`pnpm turbo run test`) and the capture
+checks of `verify:screens` (`--strict` fails on them, in its "Decided" section) that fail when
+a change brings it back.
 
-1. `detail-actions-toolbar` (rule 5): Detail actions are icon buttons with tooltips plus a ⋯ menu, even where impeccable advises otherwise. _Why:_ The user: "I genuinely don't care" if it goes against impeccable.
-2. `metadata-is-a-badge` (rule 1): All standalone metadata (issue IDs, repos, branches, organizations, sizes, versions) is a badge. _Why:_ A badge with its icon says what kind of thing a value is at a glance, so nobody guesses at a bare name.
-3. `icon-badge-text` (rule 2): Icon > badge > text; PRD and size are shown as badges or icons, never as words. _Why:_ Dense rows scan faster with icons and badges than with words.
-4. `no-location-hints` (rule 3): No hint text about where things are, e.g. "Problems and running work have their own tabs". _Why:_ If the layout needs a hint, the layout is wrong.
-5. `no-shortcut-indicators` (rule 7): No keyboard-shortcut indicators outside the Help page. _Why:_ Shortcuts are one key per action across the app, and the Help page lists every one.
-6. `no-live-indicator` (rules 9 and 22): No "Live" or "Updated" indicator. _Why:_ The whole UI is live, so only a stop in live updates is worth a notice.
-7. `no-row-status-summaries` (rules 8 and 9): No status summaries in list rows, and no stats lines on Inbox or Runs. _Why:_ Reasons, summaries and counts live in the detail, and status shows only when something is abnormal.
-8. `light-phone-layout` (rule 16): The phone layout is deliberately light: fewer sections, details collapsed. _Why:_ A phone visit is a quick check or a decision, so the phone carries less.
-9. `static-glyph`: The glyph is static: no animated or "live" logo. _Why:_ The logo decision keeps the Cursor still at every size.
-10. `no-persona-framing`: No "Morning-after operator" or other persona framing in `PRODUCT.md`. _Why:_ The users are the organization's members, described by what they do, not by a persona.
-11. `organization-badge-first` (rule 13): The organization badge comes first under "All organizations". _Why:_ Across organizations, which one an item belongs to is the first thing to know.
-12. `mint-and-lavender` (rule 15): Mint means good or running; lavender is only for needs-you. _Why:_ Lavender stays rare so that it always means the screen needs you.
+1. `detail-actions-toolbar` (rule 5): Detail actions are icon buttons with tooltips plus a ⋯ menu, even where impeccable advises otherwise. _Why:_ The user: "I genuinely don't care" if it goes against impeccable. Guard: `packages/ui/src/actions/toolbar.test.tsx`, `packages/ui/src/actions/icon-button.test.tsx`, `apps/web/scripts/screens/routes.test.ts`, capture check `detailToolbar`.
+2. `metadata-is-a-badge` (rule 1): All standalone metadata (issue IDs, repos, branches, organizations, sizes, versions) is a badge. _Why:_ A badge with its icon says what kind of thing a value is at a glance, so nobody guesses at a bare name. Guard: `packages/ui/src/refs/badges.test.tsx`, capture check `bareMetadata`.
+3. `icon-badge-text` (rule 2): Icon > badge > text; PRD and size are shown as badges or icons, never as words. _Why:_ Dense rows scan faster with icons and badges than with words. Guard: `packages/ui/src/refs/badges.test.tsx`, capture check `bareMetadata`.
+4. `no-location-hints` (rule 3): No hint text about where things are, e.g. "Problems and running work have their own tabs". _Why:_ If the layout needs a hint, the layout is wrong. Guard: `apps/web/src/user-facing-wording.test.ts`, capture check `hintText`.
+5. `no-shortcut-indicators` (rule 7): No keyboard-shortcut indicators outside the Help page. _Why:_ Shortcuts are one key per action across the app, and the Help page lists every one. Guard: `apps/web/src/lib/shortcuts.test.ts`, `packages/ui/src/actions/no-shortcuts.test.tsx`, capture check `kbdCount`.
+6. `no-live-indicator` (rules 9 and 22): No "Live" or "Updated" indicator. _Why:_ The whole UI is live, so only a stop in live updates is worth a notice. Guard: `apps/web/src/user-facing-wording.test.ts`, `apps/web/src/live-data.test.ts`, `apps/web/src/screens/inbox/inbox-view.test.tsx`, `apps/web/src/screens/runs/runs-view.test.tsx`, capture check `liveIndicator`.
+7. `no-row-status-summaries` (rules 8 and 9): No status summaries in list rows, and no stats lines on Inbox or Runs. _Why:_ Reasons, summaries and counts live in the detail, and status shows only when something is abnormal. Guard: `packages/ui/src/lists/list-row.test.tsx`, `apps/web/src/screens/inbox/inbox-view.test.tsx`, `apps/web/src/screens/runs/runs-view.test.tsx`, capture check `rowSummary`.
+8. `light-phone-layout` (rule 16): The phone layout is deliberately light: fewer sections, details collapsed. _Why:_ A phone visit is a quick check or a decision, so the phone carries less. Guard: capture check `phoneExpanded`.
+9. `static-glyph`: The glyph is static: no animated or "live" logo. _Why:_ The logo decision keeps the Cursor still at every size. Guard: `packages/ui/src/brand/glyph.test.tsx`.
+10. `no-persona-framing`: No "Morning-after operator" or other persona framing in `PRODUCT.md`. _Why:_ The users are the organization's members, described by what they do, not by a persona. Guard: `apps/web/scripts/screens/design-context.test.ts`.
+11. `organization-badge-first` (rule 13): The organization badge comes first under "All organizations". _Why:_ Across organizations, which one an item belongs to is the first thing to know. Guard: `apps/web/scripts/screens/routes.test.ts`, capture check `orgFirst`.
+12. `mint-and-lavender` (rule 15): Mint means good or running; lavender is only for needs-you. _Why:_ Lavender stays rare so that it always means the screen needs you. Guard: `apps/web/src/decided-colors.test.ts`.
 
 ## Canvas boards
 

@@ -276,18 +276,19 @@ theme: `<route>.<desktop|rail|phone>.<dark|light>.png` (full page), `.html` (DOM
 inlined), `.impeccable.json` (detect findings), `.axe.json` (axe-core's violations) and
 `.aria.yml` (the ARIA snapshot), plus `results.json` (per capture: who it was captured as, HTTP
 status, final path, `scrollWidth`, `kbdCount`, `retiredWording`, console errors, in-place load
-errors, why a page didn't render, and the accessibility findings: `axe`, `keyboard`,
-`keyboardStops`, `escape`, `landmarks`, `checkErrors`). The screenshot paths go to stdout, the
-summary to stderr.
+errors, why a page didn't render, the Decided checks' findings: `hintText`, `liveIndicator`,
+`detailToolbar`, `bareMetadata`, `rowSummary`, `phoneExpanded`, `orgFirst`, and the
+accessibility findings: `axe`, `keyboard`, `keyboardStops`, `escape`, `landmarks`,
+`checkErrors`). The screenshot paths go to stdout, the summary to stderr.
 
-| Option              | Effect                                                                                                                            |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `--routes <glob>`   | Routes whose name or path matches (comma-separated; `*`, `**`)                                                                    |
-| `--theme <list>`    | `dark`, `light` (default both)                                                                                                    |
-| `--viewport <list>` | `desktop`/`1440`, `rail`/`1024`, `phone`/`390` (default all three)                                                                |
-| `--surface <list>`  | `panel`, `agent` (default both)                                                                                                   |
-| `--strict`          | Exit non-zero when a route is wider than its viewport (`scrollWidth`), or on any accessibility finding `ignore.md` doesn't ignore |
-| `--skip-build`      | Don't build the workspace packages first                                                                                          |
+| Option              | Effect                                                                                                                                                    |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--routes <glob>`   | Routes whose name or path matches (comma-separated; `*`, `**`)                                                                                            |
+| `--theme <list>`    | `dark`, `light` (default both)                                                                                                                            |
+| `--viewport <list>` | `desktop`/`1440`, `rail`/`1024`, `phone`/`390` (default all three)                                                                                        |
+| `--surface <list>`  | `panel`, `agent` (default both)                                                                                                                           |
+| `--strict`          | Exit non-zero when a route is wider than its viewport (`scrollWidth`), on any Decided finding, or on any accessibility finding `ignore.md` doesn't ignore |
+| `--skip-build`      | Don't build the workspace packages first                                                                                                                  |
 
 Every capture is checked for the Design rules a machine can check (the logic is
 `scripts/screens/checks.ts`). These always exit non-zero:
@@ -304,6 +305,26 @@ Every capture is checked for the Design rules a machine can check (the logic is
 Routes wider than their viewport (`scrollWidth`, at every width including `rail`) are always
 reported, and exit non-zero with `--strict`. In-place load errors (e.g. the GitHub picker, which
 can't reach GitHub with fixture credentials) are listed.
+
+#### Decided checks
+
+The Decided items of `DESIGN.md` ("Decided — never flag, never undo") that a capture can show
+are checked on every capture, on the panel and the agent page (where the item applies). The
+in-page logic is `scripts/screens/decided-page.mjs` (tested in jsdom by `decided-page.test.ts`),
+with each route's options from `decidedOptions` in `checks.ts`. The summary's "Decided" section
+lists each check's findings by route, viewport and theme, and `--strict` fails on every one
+(`kbdCount` fails every run). There are no exceptions: a finding is fixed, or the check is wrong.
+
+| Check           | What it reports                                                                                                                                                                                                                                                                                                                  |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kbdCount`      | Visible `kbd` outside the panel's Help page (rule 7)                                                                                                                                                                                                                                                                             |
+| `hintText`      | Text about where things are (rule 3), from `src/lib/copy/banned-hints.ts`'s `BANNED_HINTS`, read per block of text                                                                                                                                                                                                               |
+| `liveIndicator` | "Live", "Updated …" or "Last updated" (`LIVE_INDICATORS`), or "… ago" beside a refresh control (rules 9 and 22); only `LiveNotice`'s text and the legal pages' revision date are allowed                                                                                                                                         |
+| `bareMetadata`  | A text node that is exactly an issue ID, a version, an Omniralph branch, a fixture organization, repo or agent name (`FIXTURE_METADATA_NAMES`), "PRD", "Small", "Medium", "Large" or "Size …", outside a badge (`[data-or-badge]`) and not in a sentence (rules 1 and 2). Titles, controls, `time`, code and Markdown are exempt |
+| `rowSummary`    | A `ListRow` with more than its kind and state line, title and badges (rule 8)                                                                                                                                                                                                                                                    |
+| `detailToolbar` | On `detail` routes: no `role="toolbar"`, a toolbar button with visible text, without a name or without a tooltip, no "More actions" menu (the panel), or a text-labeled button in the header outside `needsYou` routes (rules 5 and 6)                                                                                           |
+| `phoneExpanded` | On `detail` routes at `phone`: a `details[open]` or `aria-expanded="true"` disclosure on load, before the steps (rule 16)                                                                                                                                                                                                        |
+| `orgFirst`      | On the panel's `list` and `detail` routes: under All organizations (`org: "all"`), a row or detail header whose first badge isn't `data-or-badge="org"`; with one organization, one that shows it (rule 13)                                                                                                                      |
 
 #### Accessibility checks
 
@@ -354,6 +375,10 @@ run in order before the screenshot (e.g. `fleet-agent-revoke`). A route may also
 | `organization` | Opens it in that organization (the organization cookie), e.g. the empty Inbox of the sandbox organization                                                                                   |
 | `viewports`    | Only at these widths, for states that exist at some only (the phone menu; the Ask panel beside the sidebar and rail)                                                                        |
 | `waitFor`      | A CSS selector to wait for first, for content that loads without a skeleton (Up next in the empty Inbox)                                                                                    |
+| `list`         | A list screen (`LIST_PAGES`): its rows are checked by `orgFirst`. A test checks every route of a list page sets it                                                                          |
+| `detail`       | A detail view (`DETAIL_PAGES`, or an Inbox item): checked by `detailToolbar`, `phoneExpanded` and `orgFirst`. A test checks every detail view sets it                                       |
+| `needsYou`     | The detail shows a needs-you decision (the Inbox items), whose labeled buttons may sit in its header                                                                                        |
+| `org: "all"`   | Captured with "All organizations" selected (the organization scope cookie); `all-orgs-*` covers every list screen and the main detail views                                                 |
 
 ### The agent's local page
 

@@ -202,6 +202,7 @@ export function SizeBadge({ size, className }: SizeBadgeProps) {
         className={className ? `or-size or-mono ${className}` : "or-size or-mono"}
         role="img"
         aria-label={label}
+        data-or-badge="size"
       >
         {size}
       </span>
