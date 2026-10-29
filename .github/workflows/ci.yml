@@ -10,9 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 # Every job runs in parallel on its own runner, so the run takes as long as the slowest one.
-# The web and agent suites are the long ones, so they're split into shards. Shards still run
-# through turbo, whose strict env mode keeps the runner's environment out of the tests: called
-# directly, vitest lost the snapshot state of some web test files on the runner.
+# The web and agent suites are the long ones, so they're split into shards.
 jobs:
   check:
     name: Format, typecheck and lint
