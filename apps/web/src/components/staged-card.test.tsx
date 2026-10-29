@@ -74,6 +74,7 @@ function ThingCard({ saved }: { saved: Thing }) {
       <button type="button" onClick={card.submit}>
         Save
       </button>
+      {/* oxlint-disable-next-line nextjs/no-html-link-for-pages -- a plain link, as the guard sees it */}
       <a href="/elsewhere">Elsewhere</a>
     </section>
   );

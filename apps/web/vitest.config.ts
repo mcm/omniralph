@@ -10,7 +10,7 @@ export default mergeConfig(
     },
     test: {
       // The fixture seed (`scripts/fixtures`) and the local lint rules are tested too.
-      include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.ts", "eslint-rules/**/*.test.ts"],
+      include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.ts", "lint-rules/**/*.test.ts"],
       // `ai` imports `@opentelemetry/api`, whose "module" build (picked by Vite's
       // conditions) has extensionless imports Node can't load; let Vite load `ai`.
       server: { deps: { inline: [/\/node_modules\/ai\//] } },

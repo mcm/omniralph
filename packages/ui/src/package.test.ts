@@ -1,7 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ESLint } from "eslint";
 import { describe, expect, it } from "vitest";
 
 const packageDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -61,16 +60,5 @@ describe("@omniralph/ui package", () => {
       /\bkbd\b|⌘/i.test(readFileSync(path.join(packageDir, file), "utf8")),
     );
     expect(offenders).toEqual([]);
-  });
-
-  it.each([
-    'import Link from "next/link";\n\nexport const X = Link;\n',
-    'import { cookies } from "next";\n\nexport const X = cookies;\n',
-    'import { Button } from "@iamthemcmaster/ui";\n\nexport const X = Button;\n',
-  ])("lint forbids %s", async (source) => {
-    const eslint = new ESLint({ cwd: packageDir });
-    const [result] = await eslint.lintText(source, { filePath: "src/x.tsx" });
-    const rules = result!.messages.map((message) => message.ruleId);
-    expect(rules).toContain("no-restricted-imports");
   });
 });

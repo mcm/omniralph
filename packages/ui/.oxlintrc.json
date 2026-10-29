@@ -1,0 +1,46 @@
+{
+  "$schema": "../../node_modules/oxlint/configuration_schema.json",
+  "extends": [
+    "../../.oxlintrc.json"
+  ],
+  "overrides": [
+    {
+      "files": [
+        "**/*.{js,ts,tsx}"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "next",
+                "message": "@omniralph/ui must not depend on Next.js."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "next/*"
+                ],
+                "message": "@omniralph/ui must not depend on Next.js."
+              },
+              {
+                "group": [
+                  "@tanstack/*"
+                ],
+                "message": "@omniralph/ui has no data layer: apps bring their own (props and callbacks)."
+              },
+              {
+                "group": [
+                  "@iamthemcmaster/*"
+                ],
+                "message": "@omniralph/ui must not depend on @iamthemcmaster packages."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

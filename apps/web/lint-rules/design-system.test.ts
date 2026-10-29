@@ -1,5 +1,4 @@
-import { RuleTester } from "eslint";
-import tseslint from "typescript-eslint";
+import { RuleTester } from "oxlint/plugins-dev";
 import { describe, expect, it } from "vitest";
 import {
   findRawColor,
@@ -14,10 +13,7 @@ RuleTester.it = it;
 RuleTester.itOnly = it.only;
 
 const ruleTester = new RuleTester({
-  languageOptions: {
-    parser: tseslint.parser,
-    parserOptions: { ecmaFeatures: { jsx: true } },
-  },
+  languageOptions: { parserOptions: { lang: "tsx" } },
 });
 
 describe("findRawColor", () => {

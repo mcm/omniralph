@@ -26,7 +26,7 @@ reads and writes through Route Handlers under `src/app/api/ui/**/route.ts` with 
 No page reads the database and there are no server actions: `(app)/layout.tsx` only gates the
 session and hands the user (and their organizations) to `AppShell`, which provides the
 `QueryClient` (`QueryProvider`). The `data-path/no-server-data` lint rule
-(`eslint-rules/data-path.mjs`) enforces it for every file under `src/app/(app)`, tests included:
+(`lint-rules/data-path.mjs`) enforces it for every file under `src/app/(app)`, tests included:
 no `"use server"`, no `revalidatePath`/`revalidateTag`, no `@omniralph/db` or `@/lib/db` imports,
 except in the layout. Route handlers that aren't the panel's API (the GitHub App's install and
 callback under `src/app/(oauth)`, OAuth connects under `src/app/api/integrations`) live outside

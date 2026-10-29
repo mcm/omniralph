@@ -107,7 +107,7 @@ const toolResultsOf = (call: LanguageModelV2CallOptions) =>
 /** The JSON the turn's tool call returned to the model (the last tool result it saw). */
 const toolOutput = (call: LanguageModelV2CallOptions) => {
   const result = toolResultsOf(call).at(-1);
-  return (result?.output as { type: string; value: unknown }).value as Record<string, unknown>;
+  return (result!.output as { type: string; value: unknown }).value as Record<string, unknown>;
 };
 
 const REQUEST =
@@ -835,7 +835,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
       const [completion] = (await listRunEvents(db, orgId, chatThread.id)).filter(
         (e) => e.kind === "completion",
       );
-      expect((completion?.body as { text: string }).text).toContain(
+      expect((completion!.body as { text: string }).text).toContain(
         "Fixed the typo in the README.",
       );
     });

@@ -29,7 +29,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsrs --noEmit",
-    "lint": "eslint .",
+    "lint": "oxlint",
     "test": "vitest run",
     "generate": "drizzle-kit generate",
     "migrate": "tsx scripts/migrate.ts"
