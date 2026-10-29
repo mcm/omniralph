@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import "@/components/pickers/test-dom";
 import type * as OmniralphUi from "@omniralph/ui";
-import { UiProvider, type LinkProps } from "@omniralph/ui";
+import { UiProvider, type LinkProps, ShortcutProvider } from "@omniralph/ui";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CurrentUserProvider, type SessionUser } from "@/components/current-user";
 import { LiveProvider } from "@/components/live/live-provider";
@@ -92,13 +93,15 @@ function renderView(
       <CurrentUserProvider user={user}>
         <QueryClientProvider client={client}>
           <UiProvider linkComponent={TestLink}>
-            {options.live ? (
-              <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
-                {view}
-              </LiveProvider>
-            ) : (
-              view
-            )}
+            <ShortcutProvider definitions={SHORTCUTS} platform="other">
+              {options.live ? (
+                <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
+                  {view}
+                </LiveProvider>
+              ) : (
+                view
+              )}
+            </ShortcutProvider>
           </UiProvider>
         </QueryClientProvider>
       </CurrentUserProvider>
@@ -662,5 +665,24 @@ describe("live updates", () => {
     renderView();
     await loaded();
     expect(document.body.textContent).not.toMatch(/Live|Retrying|Updated/);
+  });
+});
+
+describe("keyboard", () => {
+  it("moves through the By repo rows with j and k", async () => {
+    renderView();
+    const card = await screen.findByRole("region", { name: "By repo" });
+    const links = await waitFor(() => {
+      const found = within(within(card).getByRole("table")).getAllByRole("link");
+      expect(found.length).toBeGreaterThan(1);
+      return found;
+    });
+    const user = userEvent.setup();
+    await user.keyboard("j");
+    expect(document.activeElement).toBe(links[0]);
+    await user.keyboard("j");
+    expect(document.activeElement).toBe(links[1]);
+    await user.keyboard("k");
+    expect(document.activeElement).toBe(links[0]);
   });
 });

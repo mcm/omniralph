@@ -3,9 +3,15 @@ import "@/components/pickers/test-dom";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type * as OmniralphUi from "@omniralph/ui";
-import { AppFrame, PREFERS_LIGHT_QUERY, type ThemePreference } from "@omniralph/ui";
+import {
+  AppFrame,
+  PREFERS_LIGHT_QUERY,
+  ShortcutProvider,
+  type ThemePreference,
+} from "@omniralph/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActionResult } from "@/lib/action-result";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import { CurrentUserProvider } from "./current-user";
 import { testUser } from "./query-test-utils";
 import { SavedThemeProvider, THEME_SAVE_FAILED } from "./saved-theme";
@@ -49,17 +55,19 @@ function installMatchMedia(light: boolean) {
 
 function renderShell(preference: ThemePreference) {
   render(
-    <SavedThemeProvider preference={preference}>
-      <CurrentUserProvider user={testUser}>
-        <AppFrame
-          currentPath="/runs"
-          brandHref="/"
-          nav={[]}
-          user={{ name: "Ada", initials: "A" }}
-          userMenu={(trigger) => <UserMenu trigger={trigger} />}
-        />
-      </CurrentUserProvider>
-    </SavedThemeProvider>,
+    <ShortcutProvider definitions={SHORTCUTS} platform="other">
+      <SavedThemeProvider preference={preference}>
+        <CurrentUserProvider user={testUser}>
+          <AppFrame
+            currentPath="/runs"
+            brandHref="/"
+            nav={[]}
+            user={{ name: "Ada", initials: "A" }}
+            userMenu={(trigger) => <UserMenu trigger={trigger} />}
+          />
+        </CurrentUserProvider>
+      </SavedThemeProvider>
+    </ShortcutProvider>,
   );
 }
 
@@ -95,13 +103,22 @@ describe("UserMenu", () => {
   it.each([
     ["the sidebar footer", sidebarFooter],
     ["the phone avatar", phoneAvatar],
-  ])("opens from %s with the user, the theme and Sign out", async (_, trigger) => {
+  ])("opens from %s with the user, the theme, Help and Sign out", async (_, trigger) => {
     renderShell("dark");
     const { menu } = await openFrom(trigger());
     expect(within(menu).getByText("Ada")).toBeTruthy();
     expect(within(menu).getByText("ada@example.com")).toBeTruthy();
-    expect(within(menu).getByRole("radiogroup", { name: "Theme" })).toBeTruthy();
-    expect(within(menu).getByRole("menuitem", { name: "Sign out" })).toBeTruthy();
+    const themes = within(menu).getByRole("radiogroup", { name: "Theme" });
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Help", "Sign out"]);
+    // Help sits between the theme and Sign out, links to the Help page and carries its key.
+    const help = within(menu).getByRole("menuitem", { name: "Help" });
+    expect(themes.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(help.getAttribute("href")).toBe("/help");
+    expect(help.getAttribute("aria-keyshortcuts")).toBe("Shift+?");
   });
 
   it("shows the saved preference", async () => {
@@ -137,7 +154,7 @@ describe("UserMenu", () => {
     sidebarFooter().focus();
     await user.keyboard("{Enter}");
     await screen.findByRole("menu");
-    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Sign out" }));
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Help" }));
     await user.tab();
     expect(document.activeElement).toBe(option("Dark"));
     await user.keyboard("{ArrowRight}");

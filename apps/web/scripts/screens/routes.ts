@@ -206,6 +206,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     viewportOnly: true,
   },
   { name: "analytics", path: "/analytics", page: "(app)/analytics/page.tsx", auth: "signed-in" },
+  { name: "help", path: "/help", page: "(app)/help/page.tsx", auth: "signed-in" },
   { name: "fleet", path: "/fleet", page: "(app)/fleet/page.tsx", auth: "signed-in" },
   {
     name: "fleet-agent",

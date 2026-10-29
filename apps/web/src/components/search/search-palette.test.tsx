@@ -5,13 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchResponse, SearchResult } from "@/lib/api/search";
 import { CurrentUserProvider, type SessionUser } from "../current-user";
 import { jsonResponse, mockFetch, TEST_ORGANIZATION_ID, testUser } from "../query-test-utils";
-import {
-  isSearchShortcut,
-  NO_RECENT_MESSAGE,
-  SEARCH_DEBOUNCE_MS,
-  SearchProvider,
-  useSearch,
-} from "./search-palette";
+import { ShortcutProvider, type ShortcutPlatform } from "@omniralph/ui";
+import { SHORTCUTS } from "@/lib/shortcuts";
+import { NO_RECENT_MESSAGE, SEARCH_DEBOUNCE_MS, SearchProvider, useSearch } from "./search-palette";
 
 const nav = vi.hoisted(() => ({ router: { push: vi.fn() } }));
 vi.mock("next/navigation", () => ({ useRouter: () => nav.router }));
@@ -115,14 +111,16 @@ function Opener() {
   );
 }
 
-function renderSearch(user: SessionUser = testUser) {
+function renderSearch(user: SessionUser = testUser, platform: ShortcutPlatform = "other") {
   return render(
-    <CurrentUserProvider user={user}>
-      <SearchProvider>
-        <Opener />
-        <p>Page</p>
-      </SearchProvider>
-    </CurrentUserProvider>,
+    <ShortcutProvider definitions={SHORTCUTS} platform={platform}>
+      <CurrentUserProvider user={user}>
+        <SearchProvider>
+          <Opener />
+          <p>Page</p>
+        </SearchProvider>
+      </CurrentUserProvider>
+    </ShortcutProvider>,
   );
 }
 
@@ -152,21 +150,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("isSearchShortcut", () => {
-  it("is ⌘K or Ctrl+K without other modifiers", () => {
-    const key = (init: KeyboardEventInit) => isSearchShortcut(new KeyboardEvent("keydown", init));
-    expect(key({ key: "k", metaKey: true })).toBe(true);
-    expect(key({ key: "K", ctrlKey: true })).toBe(true);
-    expect(key({ key: "k" })).toBe(false);
-    expect(key({ key: "k", ctrlKey: true, shiftKey: true })).toBe(false);
-    expect(key({ key: "j", metaKey: true })).toBe(false);
-  });
-});
-
 describe("SearchProvider", () => {
-  it("opens with ⌘K or Ctrl+K anywhere, with focus in the input", async () => {
+  it("opens with ⌘K on Apple platforms anywhere, with focus in the input", async () => {
     searchRoutes();
-    renderSearch();
+    renderSearch(testUser, "apple");
     const user = userEvent.setup();
     expect(screen.queryByRole("dialog")).toBeNull();
     await user.keyboard("{Meta>}k{/Meta}");
@@ -174,8 +161,16 @@ describe("SearchProvider", () => {
     expect(document.activeElement).toBe(within(dialog).getByRole("combobox"));
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    await user.keyboard("{Control>}k{/Control}");
+    await user.keyboard("{Meta>}k{/Meta}");
     expect(await screen.findByRole("dialog")).toBeTruthy();
+  });
+
+  it("opens with Ctrl+K elsewhere", async () => {
+    searchRoutes();
+    renderSearch();
+    const user = userEvent.setup();
+    await user.keyboard("{Control>}k{/Control}");
+    expect(await screen.findByRole("dialog", { name: "Search or jump to…" })).toBeTruthy();
   });
 
   it("shows the recent items for an empty or one-character query, without a debounce", async () => {

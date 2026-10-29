@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import "@/components/pickers/test-dom";
 import type * as OmniralphUi from "@omniralph/ui";
-import { SummaryCells, UiProvider, type LinkProps } from "@omniralph/ui";
+import { SummaryCells, UiProvider, type LinkProps, ShortcutProvider } from "@omniralph/ui";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CurrentUserProvider, type SessionUser } from "@/components/current-user";
 import { LiveProvider } from "@/components/live/live-provider";
@@ -101,13 +102,15 @@ function renderFleet(
     <CurrentUserProvider user={options.user ?? testUser}>
       <QueryClientProvider client={client}>
         <UiProvider linkComponent={TestLink}>
-          {options.live ? (
-            <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
-              {view}
-            </LiveProvider>
-          ) : (
-            view
-          )}
+          <ShortcutProvider definitions={SHORTCUTS} platform="other">
+            {options.live ? (
+              <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
+                {view}
+              </LiveProvider>
+            ) : (
+              view
+            )}
+          </ShortcutProvider>
         </UiProvider>
       </QueryClientProvider>
     </CurrentUserProvider>,
@@ -605,5 +608,26 @@ describe("the Enroll sheet", () => {
     const again = await screen.findByRole("dialog", { name: "Enroll an agent" });
     expect(within(again).queryByLabelText("Token")).toBeNull();
     expect(within(again).getByRole("button", { name: "Generate token" })).toBeTruthy();
+  });
+});
+
+describe("keyboard", () => {
+  it("moves through the agents with j and k, and u goes back to Fleet from an agent", async () => {
+    const { unmount } = renderFleet();
+    const links = async () => within(await screen.findByRole("table")).getAllByRole("link");
+    const rows = await links();
+    expect(rows.length).toBeGreaterThan(1);
+    const user = userEvent.setup();
+    await user.keyboard("j");
+    expect(document.activeElement).toBe(rows[0]);
+    await user.keyboard("j");
+    expect(document.activeElement).toBe(rows[1]);
+    await user.keyboard("k");
+    expect(document.activeElement).toBe(rows[0]);
+    unmount();
+
+    renderFleet({ agentId: AGENT_BRAVO });
+    await user.keyboard("u");
+    expect(nav.router.push).toHaveBeenLastCalledWith("/fleet");
   });
 });

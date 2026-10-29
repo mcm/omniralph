@@ -2,6 +2,7 @@
 
 import { Button, EmptyState, StatusLine, TextLink } from "@omniralph/ui";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useRef } from "react";
 import { stepStatusLine } from "@/components/runs/progress";
 import { reviewFindingsTabs } from "@/components/runs/review-findings";
 import { StepPanel } from "@/components/runs/step-panel";
@@ -9,6 +10,7 @@ import { storyDiffTabs } from "@/components/runs/story-diff";
 import { useRunDetail } from "@/components/runs/use-run-detail";
 import { ApiError } from "@/lib/api/client";
 import type { RunDetail } from "@/lib/api/runs";
+import { useShortcut } from "@/lib/shortcuts";
 import {
   NO_RUN_FILTERS,
   parseRunFilters,
@@ -28,9 +30,12 @@ export interface RunStepViewProps {
   stepId: string;
 }
 
+/** "‹ {label}" back to the run (or Runs); Back (`u`) follows it as a click does. */
 function BackLink({ href, label }: { href: string; label: string }) {
+  const ref = useRef<HTMLAnchorElement>(null);
+  useShortcut("back", () => ref.current?.click());
   return (
-    <TextLink href={href} className="or-run-step__back">
+    <TextLink ref={ref} href={href} className="or-run-step__back">
       <span aria-hidden="true">‹ </span>
       {label}
     </TextLink>

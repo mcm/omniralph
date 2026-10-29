@@ -25,9 +25,12 @@ export function createsIn(target: Pick<WorkItemTarget, "team" | "project">): str
 }
 
 export interface NewWorkItemSheetProps {
-  /** Ends the flow (Cancel, Escape, or after a create). */
+  /** Ends the flow (Cancel, Escape). */
   onClose: () => void;
-  /** The created item's row, already in the Backlog: the caller selects it. */
+  /**
+   * The created item's row, already in the Backlog: the caller selects it, which ends the
+   * flow (the Backlog opens the item's URL, without `?new=1`).
+   */
   onCreated: (item: WorkItemRow) => void;
   /** The repo chosen at first, when it's one of the choices (the Backlog's Repo filter). */
   defaultRepositoryId?: string | null;
@@ -88,7 +91,6 @@ export function NewWorkItemSheet({
       {
         onSuccess: (data) => {
           onCreated(data.item);
-          onClose();
         },
         onError: (failure) =>
           setError({

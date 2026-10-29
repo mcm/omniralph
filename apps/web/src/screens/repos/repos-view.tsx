@@ -7,6 +7,8 @@ import {
   MetaBadge,
   OrgBadge,
   RepoBadge,
+  rowLinkProps,
+  rowListProps,
   SplitView,
   StatusDot,
   useLinkComponent,
@@ -110,6 +112,7 @@ function RepoRow({
       {createElement(
         link,
         {
+          ...rowLinkProps,
           href: repoHref(repository.id),
           className: "or-repo-row__link",
           "aria-current": selected ? "page" : undefined,
@@ -214,7 +217,7 @@ export function ReposView({ repositoryId = null, renderDetail = defaultDetail }:
           />
         ) : (
           <>
-            <ul className="or-repos__rows" aria-label="Repos">
+            <ul {...rowListProps} className="or-repos__rows" aria-label="Repos">
               {repositories.map((repository) => (
                 <RepoRow
                   key={repository.id}

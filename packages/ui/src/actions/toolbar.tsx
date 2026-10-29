@@ -17,6 +17,11 @@ export type ToolbarAction = {
   tooltip?: string;
   /** The group's one solid action (e.g. Start epic on the Backlog). */
   solid?: boolean;
+  /**
+   * The key of the shortcut that performs the action, in `aria-keyshortcuts` form
+   * (`useKeyShortcuts`). The tooltip stays the plain label (Design rule 7).
+   */
+  keyShortcuts?: string;
 } & (
   | { onSelect: () => void; href?: undefined }
   | {
@@ -121,6 +126,7 @@ export function Toolbar({ label, actions = [], menu = [], className }: ToolbarPr
               tooltip,
               href,
               onSelect,
+              keyShortcuts,
             } = action;
             const tabIndex = tabIndexFor(!focusable(action));
             const className = action.solid
@@ -142,6 +148,7 @@ export function Toolbar({ label, actions = [], menu = [], className }: ToolbarPr
                 onClick={onSelect}
                 tabIndex={tabIndex}
                 className={className}
+                aria-keyshortcuts={keyShortcuts}
               />
             ) : (
               <IconButton
@@ -155,6 +162,7 @@ export function Toolbar({ label, actions = [], menu = [], className }: ToolbarPr
                 onClick={onSelect}
                 tabIndex={tabIndex}
                 className={className}
+                aria-keyshortcuts={keyShortcuts}
               />
             );
           })}

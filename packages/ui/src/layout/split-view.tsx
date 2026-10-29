@@ -1,7 +1,11 @@
 "use client";
 
 import {
+  createContext,
+  useCallback,
+  useContext,
   useEffect,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -9,6 +13,8 @@ import {
   type RefObject,
 } from "react";
 import { useLinkComponent } from "../provider/ui-provider.js";
+import { OPEN_ON_MOVE_ATTRIBUTE } from "../shortcuts/row-links.js";
+import { useShortcut } from "../shortcuts/shortcut-provider.js";
 
 /** The container width (px) from which both panes show side by side. */
 export const SPLIT_WIDE_MIN_WIDTH = 880;
@@ -46,11 +52,30 @@ export interface SplitViewProps {
   ref?: Ref<HTMLDivElement>;
 }
 
+const DetailShownContext = createContext(true);
+
+/**
+ * Whether the detail pane of the `SplitView` around the caller shows (true outside one): a
+ * control in a hidden detail pane registers no shortcut.
+ */
+export function useSplitDetailShown(): boolean {
+  return useContext(DetailShownContext);
+}
+
+function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
+  if (typeof ref === "function") ref(value);
+  else if (ref) ref.current = value;
+}
+
 /**
  * A list beside its selected item's detail. The panes sit in a size container: at a
  * container width of 880 px or more both show; below it only the pane named by `view`
  * does, the detail with its back link. One rule covers phone width and the narrower
  * content area beside a side panel.
+ *
+ * Keyboard: while both panes show, Next item and Previous item open the row they move to
+ * (replacing the history entry), so the detail follows the selection. While the detail
+ * shows alone, Back follows its back link.
  */
 export function SplitView({
   list,
@@ -65,30 +90,48 @@ export function SplitView({
   ref,
 }: SplitViewProps) {
   const Link = useLinkComponent();
+  const root = useRef<HTMLDivElement | null>(null);
+  const setRoot = useCallback(
+    (node: HTMLDivElement | null) => {
+      root.current = node;
+      assignRef(ref, node);
+    },
+    [ref],
+  );
+  const wide = useSplitWide(root);
+  const backRef = useRef<HTMLAnchorElement>(null);
+  const detailShown = wide || view === "detail";
+  useShortcut("back", () => backRef.current?.click(), {
+    enabled: backLink !== undefined && view === "detail" && !wide,
+  });
   const style = {
     "--or-split-wide": `${listWidth.wide}px`,
     "--or-split-narrow": `${listWidth.narrow}px`,
   } as CSSProperties;
   return (
     <div
-      ref={ref}
+      ref={setRoot}
       className={["or-split", className].filter(Boolean).join(" ")}
       data-view={view}
       data-fixed={fixedPane}
       style={style}
     >
       <div className="or-split__panes">
-        <section className="or-split__list" aria-label={listLabel}>
+        <section
+          className="or-split__list"
+          aria-label={listLabel}
+          {...(wide ? { [OPEN_ON_MOVE_ATTRIBUTE]: "" } : {})}
+        >
           {list}
         </section>
         <section className="or-split__detail" aria-label={detailLabel}>
           {backLink ? (
-            <Link href={backLink.href} className="or-split__back">
+            <Link ref={backRef} href={backLink.href} className="or-split__back">
               <span aria-hidden="true">‹ </span>
               {backLink.label}
             </Link>
           ) : null}
-          {detail}
+          <DetailShownContext.Provider value={detailShown}>{detail}</DetailShownContext.Provider>
         </section>
       </div>
     </div>

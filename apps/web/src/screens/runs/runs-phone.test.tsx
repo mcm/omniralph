@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@/components/pickers/test-dom";
 import type * as OmniralphUi from "@omniralph/ui";
-import { UiProvider, type LinkProps } from "@omniralph/ui";
+import { ShortcutProvider, UiProvider, type LinkProps } from "@omniralph/ui";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -25,6 +25,7 @@ import {
   storyStep,
 } from "@/components/runs/test-fixtures";
 import type { RunDetail, RunRetryResult, TranscriptPageView } from "@/lib/api/runs";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import { RunStepView, STEP_NOT_FOUND } from "./run-step-view";
 import { RunsView } from "./runs-view";
 import { FILTER_OPTIONS, NOW, REPO_PORTAL, runRow } from "./test-fixtures";
@@ -134,7 +135,11 @@ function renderWith(element: ReactNode, search = "") {
   return render(
     <CurrentUserProvider user={testUser}>
       <QueryClientProvider client={client}>
-        <UiProvider linkComponent={TestLink}>{element}</UiProvider>
+        <UiProvider linkComponent={TestLink}>
+          <ShortcutProvider definitions={SHORTCUTS} platform="other">
+            {element}
+          </ShortcutProvider>
+        </UiProvider>
       </QueryClientProvider>
     </CurrentUserProvider>,
   );
@@ -244,6 +249,13 @@ describe("the step page", () => {
     expect(container.querySelector(".or-split")).toBeNull();
     expect(panel().closest(".or-progress-card")).toBeNull();
     expect(panel().parentElement!.classList.contains("or-run-step")).toBe(true);
+  });
+
+  it("follows ‹ {run title} back to the run with u", async () => {
+    renderStep();
+    await screen.findByRole("link", { name: "Customer portal billing export" });
+    await userEvent.setup().keyboard("u");
+    expect(nav.router.push).toHaveBeenLastCalledWith(`/runs/${RUN_ID}?${FILTERS}&step=2`);
   });
 
   it("has the tabs, the transcript, the attempts and the retry", async () => {

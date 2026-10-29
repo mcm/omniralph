@@ -121,6 +121,8 @@ export interface RunMenuHandlers {
   onStop: () => void;
   /** Items other screens add first (the Backlog's "View PRD"). */
   leading?: readonly MenuItem[];
+  /** "Stop run"'s shortcut key, in `aria-keyshortcuts` form. */
+  stopKeyShortcuts?: string;
 }
 
 /**
@@ -131,7 +133,7 @@ export interface RunMenuHandlers {
  */
 export function runMenuItems(
   detail: Pick<RunDetail, "workItem" | "branch" | "details" | "chat">,
-  { onCopyBranch, onStop, leading = [] }: RunMenuHandlers,
+  { onCopyBranch, onStop, leading = [], stopKeyShortcuts }: RunMenuHandlers,
 ): MenuItem[] {
   const items: MenuItem[] = [...leading];
   if (detail.chat?.href)
@@ -141,7 +143,13 @@ export function runMenuItems(
   }
   if (detail.branch) items.push({ label: "Copy branch", icon: IconCopy, onSelect: onCopyBranch });
   if (detail.details.actions.stop) {
-    items.push({ label: "Stop run", icon: IconPlayerStop, destructive: true, onSelect: onStop });
+    items.push({
+      label: "Stop run",
+      icon: IconPlayerStop,
+      destructive: true,
+      onSelect: onStop,
+      keyShortcuts: stopKeyShortcuts,
+    });
   }
   return items;
 }

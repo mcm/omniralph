@@ -2,6 +2,7 @@
 
 import type { NavItem } from "@omniralph/ui";
 import * as React from "react";
+import { useShortcut } from "@/lib/shortcuts";
 import { AskChat } from "./ask-chat";
 import { AskChatsList } from "./ask-chats-list";
 import { AskNewChat } from "./ask-new-chat";
@@ -118,8 +119,8 @@ function panelShown(): boolean {
  * Owns the desktop Ask panel: `{open, view, chatId}`. It sits in the app shell, whose layout
  * persists across client-side navigation, so the panel stays open on the same chat as the
  * member moves between pages; the state is mirrored to `sessionStorage`, so a reload in the
- * same tab reopens it. While it's open, Esc closes it from anywhere, unless a dialog, menu
- * or popover handled the key first (`defaultPrevented`).
+ * same tab reopens it. While it's open, Esc (the Close shortcut) closes it from anywhere, its
+ * composer included, unless a dialog, menu or popover is open (its own Escape closes it).
  */
 export function AskPanelProvider({ children }: { children: React.ReactNode }) {
   const [store] = React.useState(createAskPanelStore);
@@ -149,19 +150,8 @@ export function AskPanelProvider({ children }: { children: React.ReactNode }) {
   }, [store, snapshot]);
 
   const { open, close } = controls;
-  React.useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
-      if (!panelShown()) return;
-      event.preventDefault();
-      close();
-    };
-    // Bubble phase on the document: Radix layers (dialogs, menus, popovers) handle Escape in
-    // the capture phase and mark it handled, so they close first and the panel stays.
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, close]);
+  // At phone widths the panel is hidden, so Esc has nothing to close.
+  useShortcut("close", () => (panelShown() ? close() : false), { enabled: open });
 
   return <AskPanelContext.Provider value={controls}>{children}</AskPanelContext.Provider>;
 }

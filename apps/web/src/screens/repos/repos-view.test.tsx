@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 import "@/components/pickers/test-dom";
 import type * as OmniralphUi from "@omniralph/ui";
-import { nestedInteractiveElements, UiProvider, type LinkProps } from "@omniralph/ui";
+import {
+  nestedInteractiveElements,
+  UiProvider,
+  type LinkProps,
+  ShortcutProvider,
+} from "@omniralph/ui";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CurrentUserProvider, type SessionUser } from "@/components/current-user";
 import { LiveProvider } from "@/components/live/live-provider";
@@ -150,13 +156,15 @@ function renderRepos(
       <ShowAdvancedProvider initial={false}>
         <QueryClientProvider client={client}>
           <UiProvider linkComponent={TestLink}>
-            {options.live ? (
-              <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
-                {view}
-              </LiveProvider>
-            ) : (
-              view
-            )}
+            <ShortcutProvider definitions={SHORTCUTS} platform="other">
+              {options.live ? (
+                <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
+                  {view}
+                </LiveProvider>
+              ) : (
+                view
+              )}
+            </ShortcutProvider>
           </UiProvider>
         </QueryClientProvider>
       </ShowAdvancedProvider>
@@ -939,5 +947,26 @@ describe("live updates", () => {
       }
     }
     client.clear();
+  });
+});
+
+describe("keyboard", () => {
+  it("moves through the rail's rows with j and k, and u goes back to Repos from a repo", async () => {
+    const { unmount } = renderRepos();
+    await waitFor(() => expect(railRows()).toHaveLength(2));
+    const user = userEvent.setup();
+    await user.keyboard("j");
+    expect(document.activeElement).toBe(rowLink(railRows()[0]!));
+    await user.keyboard("jj");
+    expect(document.activeElement).toBe(rowLink(railRows()[1]!));
+    await user.keyboard("k");
+    expect(document.activeElement).toBe(rowLink(railRows()[0]!));
+    await user.keyboard("o");
+    expect(nav.router.push).toHaveBeenLastCalledWith(rowLink(railRows()[0]!).getAttribute("href"));
+    unmount();
+
+    renderRepos({ repositoryId: REPO_WEB });
+    await user.keyboard("u");
+    expect(nav.router.push).toHaveBeenLastCalledWith("/repos");
   });
 });

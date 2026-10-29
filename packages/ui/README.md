@@ -55,7 +55,9 @@ export function Providers({
 
 - `UiProvider` takes `linkComponent`, which renders every link the components draw. It
   receives an anchor's props with a required `href`; without it a plain `<a>` is used.
-  Components read it with `useLinkComponent()`.
+  Components read it with `useLinkComponent()`. `navigate?` (`(href, { replace? })`, read
+  with `useNavigate()`) navigates without a link; pass the router's `push`/`replace`
+  (`location.assign`/`replace` by default).
 - Components that show an active location (the shell's nav) take the current path as a
   `currentPath` prop: pass your router's path (`usePathname()` in Next.js,
   `location.pathname` elsewhere).
@@ -87,6 +89,8 @@ buttons only for decisions, and no keyboard-shortcut hints anywhere.
 - `Tooltip`: Radix tooltip shown on hover and keyboard focus; carries its own provider.
 - `Toolbar`: `label`, up to two `actions` in one bordered group, and `menu` items behind a
   ⋯ "More actions" button. One tab stop; Left/Right/Home/End move between its buttons.
+  An action's `keyShortcuts?` (its shortcut in `aria-keyshortcuts` form) goes on its button;
+  the tooltip stays the plain label.
 - `Menu`: `items` (`{ label, icon?, onSelect | href, destructive?, disabled?, checked? }`
   or `"separator"`) opened from `trigger`. Destructive items always render last, after a
   separator, in coral; their `onSelect` should open a `ConfirmDialog`. An item with
@@ -95,7 +99,9 @@ buttons only for decisions, and no keyboard-shortcut hints anywhere.
   signed in and a `ThemeControl`, styled with `.or-menu__heading`, `-title` and `-detail`);
   its controls keep their own keys, and Tab / Shift+Tab move between them and the items.
   Consecutive items with the same `group` form a labeled `role="group"`; `mark` (a node,
-  e.g. a `BrandMark`) replaces the icon; `keepOpen` items don't close the menu.
+  e.g. a `BrandMark`) replaces the icon; `keepOpen` items don't close the menu;
+  `keyShortcuts?` sets the item's `aria-keyshortcuts`. `open?`/`onOpenChange?` control the
+  menu for one also opened another way (a shortcut).
 - `FilterMenu`: `label`, `options` (`{ value, label, icon?, group? }`; `icon` is a Tabler
   icon or a mark element), `selected`, `onChange` and `multiple?`. The `.or-filter` button
   is named "{label}: All" or "{label}: " and the chosen labels (more than two shorten to
@@ -400,6 +406,10 @@ const card = useStagedCard<Draft, Result>({
   (`container: or-split / inline-size`): from a container width of 880 px both show; below
   it only the pane `view` names does, the detail with its back link. That one rule covers
   phone width and a content area narrowed by a side panel. No Next.js imports, no hints.
+- `SplitView` keys: while both panes show, Next item and Previous item open the row they move
+  to (`navigate(href, { replace: true })`); while the detail shows alone, Back follows the
+  back link. `useSplitDetailShown()` says whether the surrounding detail pane shows (true
+  outside a `SplitView`), so a control in a hidden pane can leave its shortcut unbound.
 - `useSplitWide(ref)`: whether the element is at least 880 px wide
   (`SPLIT_WIDE_MIN_WIDTH`, followed with a `ResizeObserver`; false until measured).
 
@@ -444,7 +454,36 @@ const card = useStagedCard<Draft, Result>({
 - `search?: { onOpen, label? }` adds search and jump: a "Search or jump to…" (`label`)
   button between the picker and the entries (an icon with a rail tooltip on the rail) and a
   search icon button before the avatar in the phone top bar, each calling `onOpen` (e.g. to
-  open a `SearchPalette`). Without it there is no search control.
+  open a `SearchPalette`). Without it there is no search control. `search.keyShortcuts?`
+  and an entry's `keyShortcuts?` set `aria-keyshortcuts` on every place they render.
+
+## Shortcuts
+
+Keyboard shortcuts (Design rule 7): one key per action, shown nowhere but the app's Help page.
+
+- `ShortcutProvider` (`definitions`, `platform?`, `reportConflicts?`), inside `UiProvider`: the
+  app's only document `keydown` listener. `definitions` maps each action id to a
+  `ShortcutDefinition` (`{ key, mod?, label, group, allowInFields?, repeat? }`; `key` is one
+  `event.key`, `mod` is Command on Apple platforms and Ctrl elsewhere) and must hold the
+  package's list actions (`ListShortcutId`: `listNext`, `listPrevious`, `listOpen`, `back`). A
+  key is ignored when already handled, composing, or repeating (unless `repeat`); while focus
+  is in an editable field (unless `allowInFields`); and while a dialog, menu, popover or
+  listbox is open. Plain letters and digits fire only with no modifier held. It renders
+  nothing.
+- `useShortcut(id, handler, { enabled })`: registers the handler of the control that performs
+  action `id`, while it's mounted and `enabled` (pass what the control renders with); a null
+  `id` registers nothing, and outside a provider it does nothing. Of two enabled handlers the
+  most recently mounted runs (`reportConflicts` logs it). A handler returning `false` leaves
+  the key unhandled. `useKeyShortcuts(id)` gives the key in `aria-keyshortcuts` form for the
+  control; `useShortcutPlatform()` the platform.
+- Lists: the provider moves focus between the shown `[data-or-row-link]` links (`ListRow`,
+  `DataTable`, or `rowLinkProps`) of the outermost `[data-or-row-list]` (`RowList`, the
+  table and the cards, or `rowListProps`) holding focus, else the first in `main`, without
+  wrapping, starting after the `aria-current` row when focus is outside; `listOpen` clicks the
+  focused row link.
+- Pure helpers: `matchesShortcut(event, definition, platform)`, `isEditableTarget(element)`,
+  `isModalOpen(document)`, `formatShortcut(definition, platform)` (the Help page's text),
+  `ariaKeyShortcuts(definition, platform)` and `isApplePlatform()`.
 
 ## Scripts
 

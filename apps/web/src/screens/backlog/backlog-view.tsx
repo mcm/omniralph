@@ -8,16 +8,18 @@ import {
   IconButton,
   ListRow,
   RowList,
+  rowListProps,
   SplitView,
   useSplitWide,
   type FilterOption,
 } from "@omniralph/ui";
 import { IconPlus } from "@tabler/icons-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { useCurrentUser, type SessionUser } from "@/components/current-user";
 import { ShareLinkSheet } from "@/components/work-items/share-link-sheet";
 import type { Backlog } from "@/lib/api/backlog";
+import { useKeyShortcuts } from "@/lib/shortcuts";
 import type { WorkItemDetail, WorkItemRow } from "@/lib/api/work-items";
 import { joinNames } from "@/lib/work-items/join-names";
 import { BacklogRowBadges } from "./backlog-row-badges";
@@ -26,8 +28,11 @@ import { useBacklog } from "./queries";
 import {
   backlogHref,
   backlogItemHref,
+  closedNewWorkItemHref,
   hasBacklogFilters,
+  isNewWorkItemOpen,
   NO_BACKLOG_FILTERS,
+  newWorkItemHref,
   parseBacklogFilters,
   type BacklogFilters,
 } from "./url";
@@ -72,8 +77,8 @@ export interface BacklogViewProps {
    */
   renderDetail?: (workItemId: string, context: BacklogDetailContext) => ReactNode;
   /**
-   * The New work item flow, shown while open (`close` ends it; `onCreated` selects the new
-   * item); `NewWorkItemSheet` by default.
+   * The New work item flow, shown while `?new=1` is in the URL (`close` ends it; `onCreated`
+   * opens the new item, which ends it too); `NewWorkItemSheet` by default.
    */
   renderNewWorkItem?: (close: () => void, context: NewWorkItemContext) => ReactNode;
   /** The detail's Share review link flow, shown while open (`close` ends it); `ShareLinkSheet` by default. */
@@ -122,6 +127,8 @@ const defaultDetail = (workItemId: string, context: BacklogDetailContext) => (
  * opens) and the Ready to start and Needs refining groups, beside the open item's detail (on
  * `/backlog`, the first listed item's, when both panes fit). The list is a live query; the
  * pane has no live indicator of its own (the shell's `LiveNotice` covers stopped updates).
+ * The New work item sheet opens from the URL (`?new=1`): the + sets it, closing removes it,
+ * and the New work item shortcut (`n`) goes there from any page.
  */
 export function BacklogView({
   workItemId = null,
@@ -135,7 +142,9 @@ export function BacklogView({
   const user = useCurrentUser();
   const showOrganization = user.scope === "all";
   const admin = administers(user);
-  const [creating, setCreating] = useState(false);
+  const newWorkItemKeys = useKeyShortcuts("newWorkItem");
+  const creating = isNewWorkItemOpen(searchParams);
+  const path = workItemId ? `/backlog/${encodeURIComponent(workItemId)}` : "/backlog";
 
   const backlog = useBacklog(filters);
   const data = backlog.data;
@@ -168,7 +177,10 @@ export function BacklogView({
     icon: <BrandMark brand={repo.provider} />,
   }));
 
-  const newWorkItem = () => setCreating(true);
+  const newWorkItem = () =>
+    router.push(newWorkItemHref(path, searchParams.toString()), { scroll: false });
+  const closeNewWorkItem = () =>
+    router.replace(closedNewWorkItemHref(path, searchParams.toString()), { scroll: false });
 
   // An action took the shown item out of the Backlog: select the next one, as listed now.
   const leave = (leavingId: string) => {
@@ -240,7 +252,12 @@ export function BacklogView({
     <div className="or-backlog__pane">
       <div className="or-backlog__header">
         <h1 className="or-backlog__title">Backlog</h1>
-        <IconButton icon={IconPlus} label={NEW_WORK_ITEM} onClick={newWorkItem} />
+        <IconButton
+          icon={IconPlus}
+          label={NEW_WORK_ITEM}
+          onClick={newWorkItem}
+          aria-keyshortcuts={newWorkItemKeys}
+        />
       </div>
       <div className="or-backlog__filters" role="group" aria-label="Filters">
         <FilterMenu
@@ -287,7 +304,11 @@ export function BacklogView({
         ) : !data ? null : groups.length === 0 ? (
           empty()
         ) : (
-          <div className={backlog.isPlaceholderData ? "or-backlog--stale" : undefined}>
+          // One list for Next and Previous item, across both groups.
+          <div
+            {...rowListProps}
+            className={backlog.isPlaceholderData ? "or-backlog--stale" : undefined}
+          >
             {groups.map((group) => (
               <section
                 key={group.key}
@@ -338,7 +359,8 @@ export function BacklogView({
         detailLabel="Work item"
       />
       {creating
-        ? renderNewWorkItem(() => setCreating(false), {
+        ? renderNewWorkItem(closeNewWorkItem, {
+            // The item's URL has no `?new=1`: opening it closes the sheet.
             onCreated: (item) => router.push(backlogItemHref(item.id, filters), { scroll: false }),
             repositoryId: filters.repo,
           })

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useLinkComponent } from "../provider/ui-provider.js";
+import { rowLinkProps, rowListProps } from "../shortcuts/row-links.js";
 
 /**
  * Where a column goes on the phone card: the top line (`status`, `time`), the `title`,
@@ -50,7 +51,8 @@ function cx(...classes: (string | false | undefined)[]): string {
  * A real table on wider screens and the same rows as stacked cards at 768 px and
  * narrower (Design rule 16). With `getRowHref`, the title is the row's one link and a
  * click anywhere on the row follows it; buttons and checkboxes in other cells stay
- * siblings of the link, never inside it.
+ * siblings of the link, never inside it. Next item and Previous item move between the
+ * shown row links.
  */
 export function DataTable<T>({
   rows,
@@ -87,7 +89,7 @@ export function DataTable<T>({
     href === undefined ? (
       titleColumn?.cell(row)
     ) : (
-      <Link href={href} className={className}>
+      <Link {...rowLinkProps} href={href} className={className}>
         {titleColumn?.cell(row)}
       </Link>
     );
@@ -95,7 +97,7 @@ export function DataTable<T>({
   return (
     <div className={cx("or-data-table", className)}>
       <div className="or-tblwrap">
-        <table className="or-tbl">
+        <table className="or-tbl" {...rowListProps}>
           <caption className="or-sr-only">{caption}</caption>
           <thead>
             <tr>
@@ -141,7 +143,7 @@ export function DataTable<T>({
           </tbody>
         </table>
       </div>
-      <ul className="or-cards" aria-label={caption}>
+      <ul className="or-cards" aria-label={caption} {...rowListProps}>
         {rows.map((row) => {
           const { id, href, selected, bad } = rowState(row);
           return (

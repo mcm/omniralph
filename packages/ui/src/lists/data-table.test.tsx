@@ -283,3 +283,16 @@ describe("DataTable", () => {
     expect(element).toBeTruthy();
   });
 });
+
+describe("DataTable row links", () => {
+  it("marks the table's and the cards' row links as two lists, for Next and Previous item", () => {
+    const { container } = renderTable();
+    const lists = [...container.querySelectorAll("[data-or-row-list]")];
+    expect(lists.map((list) => list.tagName)).toEqual(["TABLE", "UL"]);
+    for (const list of lists) {
+      expect(
+        [...list.querySelectorAll("[data-or-row-link]")].map((link) => link.getAttribute("href")),
+      ).toEqual(runs.map((run) => `/runs/${run.id}`));
+    }
+  });
+});

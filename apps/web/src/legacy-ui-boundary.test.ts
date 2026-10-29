@@ -41,6 +41,7 @@ const SCREENS_2_0 = [
   /^src\/app\/\(app\)\/fleet\//,
   /^src\/app\/\(app\)\/settings\//,
   /^src\/app\/\(app\)\/analytics\//,
+  /^src\/app\/\(app\)\/help\//,
 ];
 
 /** Files that must not reference the library at all. */
