@@ -1,8 +1,10 @@
-// Local ESLint rules that keep the panel's styling inside the design system
+// Local lint rules that keep the panel's styling inside the design system
 // (apps/web/DESIGN.md, @iamthemcmaster/ui): no raw color literals, no inline
 // layout/spacing/color/typography/size styles, no arbitrary Tailwind values,
 // no timestamps rendered outside <Timestamp>.
-// Tested in design-system.test.ts; wired up in apps/web/eslint.config.mjs.
+// Tested in design-system.test.ts; wired up in apps/web/.oxlintrc.json.
+
+/** @typedef {Parameters<import("oxlint/plugins-dev").RuleTester["run"]>[1]} Rule */
 
 // Hex colors (#rgb, #rgba, #rrggbb, #rrggbbaa) as a standalone token. All-digit
 // 3/4-character tokens are skipped: they are far more often issue numbers (#123).
@@ -103,7 +105,7 @@ function stringsOf(node) {
   return [];
 }
 
-/** @type {import("eslint").Rule.RuleModule} */
+/** @type {Rule} */
 export const noRawColor = {
   meta: {
     type: "suggestion",
@@ -165,7 +167,7 @@ function styleObject(sourceCode, expression) {
   return null;
 }
 
-/** @type {import("eslint").Rule.RuleModule} */
+/** @type {Rule} */
 export const noInlineLayoutStyle = {
   meta: {
     type: "suggestion",
@@ -235,7 +237,7 @@ function isInClassNameContext(node) {
   return false;
 }
 
-/** @type {import("eslint").Rule.RuleModule} */
+/** @type {Rule} */
 export const noArbitraryTailwind = {
   meta: {
     type: "suggestion",
@@ -285,7 +287,7 @@ function isRenderedAsJsxChild(node) {
   return false;
 }
 
-/** @type {import("eslint").Rule.RuleModule} */
+/** @type {Rule} */
 export const noBareTimestamp = {
   meta: {
     type: "suggestion",

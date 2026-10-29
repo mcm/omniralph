@@ -1,5 +1,4 @@
-import { RuleTester } from "eslint";
-import tseslint from "typescript-eslint";
+import { RuleTester } from "oxlint/plugins-dev";
 import { describe, it } from "vitest";
 import { noServerData } from "./data-path.mjs";
 
@@ -8,10 +7,7 @@ RuleTester.it = it;
 RuleTester.itOnly = it.only;
 
 const ruleTester = new RuleTester({
-  languageOptions: {
-    parser: tseslint.parser,
-    parserOptions: { ecmaFeatures: { jsx: true } },
-  },
+  languageOptions: { parserOptions: { lang: "tsx" } },
 });
 
 ruleTester.run("no-server-data", noServerData, {

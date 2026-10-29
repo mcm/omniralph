@@ -1,13 +1,15 @@
-// Local ESLint rule that keeps the signed-in pages (`src/app/(app)`) on one data path:
+// Local lint rule that keeps the signed-in pages (`src/app/(app)`) on one data path:
 // client views reading `/api/ui` through TanStack Query (README "Data fetching"). No server
 // actions, no `revalidatePath`/`revalidateTag`, no database imports; only the signed-in
 // layout's session gate reads the database, and the config exempts it.
-// Tested in data-path.test.ts; wired up in apps/web/eslint.config.mjs.
+// Tested in data-path.test.ts; wired up in apps/web/.oxlintrc.json.
+
+/** @typedef {Parameters<import("oxlint/plugins-dev").RuleTester["run"]>[1]} Rule */
 
 const DATABASE_MODULE = /^(?:@omniralph\/db(?:\/.*)?|@\/lib\/db)$/;
 const REVALIDATE = new Set(["revalidatePath", "revalidateTag"]);
 
-/** @type {import("eslint").Rule.RuleModule} */
+/** @type {Rule} */
 export const noServerData = {
   meta: {
     type: "problem",

@@ -25,7 +25,7 @@
     "dev": "tsx watch --conditions=@omniralph/source src/cli.ts",
     "start": "node dist/cli.js",
     "typecheck": "tsrs --noEmit && tsrs --noEmit -p ui",
-    "lint": "eslint .",
+    "lint": "oxlint",
     "test": "vitest run"
   },
   "dependencies": {

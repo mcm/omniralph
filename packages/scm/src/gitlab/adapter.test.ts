@@ -263,7 +263,7 @@ describe("postReview", () => {
 
     expect(await posts("/discussions")).toHaveLength(2);
     expect(posted.inlineCommentIds).toEqual([null, null, "e".repeat(40)]);
-    const summary = ((await posts("/notes"))[0]?.body as { body: string }).body;
+    const summary = ((await posts("/notes"))[0]!.body as { body: string }).body;
     expect(summary).toContain("### Comments outside the diff");
     expect(summary).toContain("**`src/app.ts`** L11\n\nRejected by GitLab");
     expect(summary).toContain("**`src/other.ts`** L3\n\nNot in diff\n\n```\nfix()\n```");
@@ -421,7 +421,7 @@ describe("getReadOnlyCloneCredential", () => {
     const rotated = await adapter.getReadOnlyCloneCredential(REPO);
     expect(rotated.token).toBe("glpat-read-2");
     // Tomorrow would be inside the rotation window, so the new token gets the day after.
-    expect(((await posts("/access_tokens"))[1]?.body as { expires_at: string }).expires_at).toBe("2026-10-06");
+    expect(((await posts("/access_tokens"))[1]!.body as { expires_at: string }).expires_at).toBe("2026-10-06");
     expect(rotated.expiresAt).toEqual(new Date("2026-10-06T00:00:00Z"));
     expect((await cache.get(REPO, "read_repository"))?.externalId).toBe("302");
   });

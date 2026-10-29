@@ -470,7 +470,7 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
     const [, fixed, ...more] = await events();
     expect(more).toEqual([]);
     expect(fixed?.kind).toBe("completion");
-    expect((fixed?.body as { text: string }).text).toContain("Fixed CI.");
+    expect((fixed!.body as { text: string }).text).toContain("Fixed CI.");
     expectNothingPosted();
 
     expect(linearCalls).toEqual([]);
@@ -494,7 +494,7 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
     const [merged, question, ...more] = await events();
     expect(more).toEqual([]);
     expect(merged?.kind).toBe("response");
-    expect((merged?.body as { text: string }).text).toContain(
+    expect((merged!.body as { text: string }).text).toContain(
       `The pull request ${pr.url} was merged, so I removed its worktree`,
     );
     const lane = (await getMainLane(db, run))!;
@@ -508,7 +508,7 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
         options: expect.any(Array),
       },
     });
-    expect((question?.body as { text: string }).text).toContain(
+    expect((question!.body as { text: string }).text).toContain(
       `\`${branch}\` has 1 commit that wasn't merged`,
     );
 
@@ -595,7 +595,7 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
       kind: "permission_request",
       body: { requestId, tool: "Bash", detail: "git commit -m 'Fix the typo'" },
     });
-    expect((asked?.body as { text: string }).text).toContain("I need permission to use **Bash**");
+    expect((asked!.body as { text: string }).text).toContain("I need permission to use **Bash**");
 
     const { output } = await agentTurn(
       memberMessage("sure, go ahead"),

@@ -1,6 +1,6 @@
 {
   "$schema": "https://turborepo.com/schema.json",
-  "globalDependencies": ["tsconfig.base.json", "eslint.config.js"],
+  "globalDependencies": ["tsconfig.base.json", ".oxlintrc.json"],
   "globalPassThroughEnv": ["NODE_ENV"],
   "tasks": {
     "build": {

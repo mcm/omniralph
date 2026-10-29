@@ -261,7 +261,7 @@ describe("omniralph server", () => {
         method: "POST",
         body: { tool: "deploy", detail: "staging", timeoutSeconds: 1 },
       });
-      const requestId = (fake.calls[0]?.body as { requestId: string }).requestId;
+      const requestId = (fake.calls[0]!.body as { requestId: string }).requestId;
       expect(fake.calls.slice(1).map((c) => `${c.method} ${c.url}`)).toEqual(
         Array(3).fill(`GET ${BASE}/permissions/${requestId}`),
       );

@@ -68,6 +68,7 @@ function renderApp(initial: { user?: SessionUser; theme?: ThemePreference } = {}
   let update: (next: typeof server) => void = () => {};
   function App() {
     const [state, setState] = React.useState(server);
+    // oxlint-disable-next-line react/globals -- the test drives the shell's re-render from outside
     update = setState;
     return (
       <AppShell

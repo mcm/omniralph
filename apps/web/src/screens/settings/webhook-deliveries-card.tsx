@@ -76,6 +76,7 @@ export function WebhookDeliveriesCard({ connection }: { connection: Connection }
   const replay = useReplayDelivery();
   const failed = connection.failedDeliveries;
   const rows: ListedDelivery[] = query.data?.pages.flatMap((page) => page.deliveries) ?? [];
+  // oxlint-disable-next-line react/purity -- relative times are as of this render
   const now = new Date();
 
   const columns: DataTableColumn<ListedDelivery>[] = [

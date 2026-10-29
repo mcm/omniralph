@@ -90,7 +90,7 @@ available on hover and copy.
 **The Classes, Not Pixels Rule.** Components set `className`; `style={{}}` with layout, spacing
 or color values is a missing class or component. Inline styles are allowed only for genuinely
 dynamic values (a progress segment's width, a chart size), each with a
-`// dynamic-style: <reason>` comment. The design-system ESLint rules enforce this at `error`.
+`// dynamic-style: <reason>` comment. The design-system lint rules enforce this at `error`.
 
 ## Components
 
