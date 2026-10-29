@@ -1,9 +1,11 @@
 "use client";
 
 import { ariaKeyShortcuts, useNavigate, type NavItem, type ShortcutPlatform } from "@omniralph/ui";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { navItems } from "@/lib/navigation";
 import { SHORTCUTS, useShortcut, type ShortcutId } from "@/lib/shortcuts";
-import { newWorkItemHref } from "@/screens/backlog/url";
+import { NewWorkItemSheet } from "@/screens/backlog/new-work-item-sheet";
 
 /** The Help page, opened from the user menu. */
 export const HELP_PATH = "/help";
@@ -54,23 +56,33 @@ function NavShortcut({ navId, id }: { navId: string; id: ShortcutId }) {
   return null;
 }
 
+/** Whether `pathname` is a Backlog page, whose own + handles New work item. */
+function isBacklogPath(pathname: string): boolean {
+  return pathname === "/backlog" || pathname.startsWith("/backlog/");
+}
+
 /**
  * The shell's own shortcuts, registered in one place: each nav entry's key (from
  * `navigation.ts`, so it opens the entry as a click on it does), Open Help (`/help`, the user
- * menu's Help) and New work item (the Backlog's sheet, `?new=1`, from any page).
+ * menu's Help) and, off the Backlog, New work item: the New work item sheet over the current
+ * page, which stays put (the create's toast reports the new item). On the Backlog, its own +
+ * takes the key, so the sheet starts at the Repo filter and selects the new item.
  */
 export function AppShortcuts() {
   const navigate = useNavigate();
+  const pathname = usePathname();
+  const [creating, setCreating] = useState(false);
   useShortcut("help", () => navigate(HELP_PATH));
-  useShortcut("newWorkItem", () =>
-    navigate(newWorkItemHref(window.location.pathname, window.location.search)),
-  );
+  useShortcut("newWorkItem", () => setCreating(true), { enabled: !isBacklogPath(pathname) });
   return (
     <>
       {navItems.map((item) => {
         const id = navShortcut(item.id);
         return id ? <NavShortcut key={item.id} navId={item.id} id={id} /> : null;
       })}
+      {creating ? (
+        <NewWorkItemSheet onClose={() => setCreating(false)} onCreated={() => {}} />
+      ) : null}
     </>
   );
 }
