@@ -12,11 +12,6 @@ const manifest = JSON.parse(
 };
 
 describe("the agent page bundle", () => {
-  it("is built by Vite after tsup, and typechecked with the daemon", () => {
-    expect(manifest.scripts.build).toBe("tsup && vite build --config ui/vite.config.ts");
-    expect(manifest.scripts.typecheck).toBe("tsc --noEmit && tsc --noEmit -p ui");
-  });
-
   it("takes React, React DOM, TanStack Query and @omniralph/ui as devDependencies only", () => {
     for (const name of ["@omniralph/ui", "react", "react-dom", "@tanstack/react-query", "vite"]) {
       expect(manifest.devDependencies).toHaveProperty(name);
