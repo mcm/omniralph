@@ -60,8 +60,9 @@ describe("Sheet", () => {
   });
 
   it("covers the page with a scrim that injects no style element, and closes on a scrim click", async () => {
-    // The agent page's CSP refuses inline styles: opening a sheet must not need one.
-    const user = userEvent.setup();
+    // The agent page's CSP refuses inline styles: opening a sheet must not need one. The
+    // scrim's pointer events come from `.or-scrim` in surfaces.css, which jsdom doesn't load.
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     render(<Page />);
     const styles = document.querySelectorAll("style").length;
     await user.click(screen.getByRole("button", { name: "Add repo" }));
@@ -69,6 +70,7 @@ describe("Sheet", () => {
     expect(document.querySelectorAll("style")).toHaveLength(styles);
     const scrim = document.querySelector(".or-sheet__scrim.or-scrim")!;
     expect(scrim.getAttribute("aria-hidden")).toBe("true");
+    expect(scrim.getAttribute("style")).toBeNull();
     await user.click(scrim);
     expect(screen.queryByRole("dialog", { name: "Add repos" })).toBeNull();
     expect(document.querySelector(".or-scrim")).toBeNull();

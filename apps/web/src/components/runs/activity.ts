@@ -59,12 +59,34 @@ function firstLine(error: string | null): string | null {
 
 const REASON_STATUSES: readonly RunDetail["status"][] = ["waiting", "stopped", "failed"];
 
+/** Text compared without case or runs of whitespace. */
+function normalized(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * The reason's line: a waiting run's whole reason, but only the event of a stopped or failed
+ * one ("The run failed"), because the page's header already shows its error.
+ */
+function reasonSentence(detail: RunDetail, reason: string): string {
+  switch (detail.status) {
+    case "failed":
+      return "The run failed";
+    case "stopped":
+      return `The ${KIND_NAMES[detail.kind].toLowerCase()} was stopped`;
+    default:
+      return reason;
+  }
+}
+
 /**
  * A run's activity, newest first (Design rule 4: sentences, never job types): its start and
  * routing ("Routed by team `SOC` and label `product:portal` to customer-portal"), each
  * finished attempt's `label` at its finish (numbered "(attempt 2)" when the label repeats; a
- * failed one adds its error's first line), and,
- * for a waiting, stopped or failed run, the current `reason`.
+ * failed one adds its error's first line unless the `reason` the header shows already says it),
+ * and, for a waiting, stopped or failed run, the current `reason` (only its event for a stopped
+ * or failed run). An error is shown once in the header and once where it happened, never
+ * again here.
  */
 export function runActivity(detail: RunDetail, reason: string | null): RunActivityEntry[] {
   // Oldest first; reversed at the end, so equal times keep the later entry on top.
@@ -94,7 +116,8 @@ export function runActivity(detail: RunDetail, reason: string | null): RunActivi
       (repeats.get(attempt.label) ?? 0) > 1
         ? `${attempt.label} (attempt ${number})`
         : attempt.label;
-    const error = attempt.status === "failed" ? firstLine(attempt.error) : null;
+    const line = attempt.status === "failed" ? firstLine(attempt.error) : null;
+    const error = line && reason && normalized(reason).includes(normalized(line)) ? null : line;
     return {
       id: `attempt:${attempt.id}`,
       at: attempt.finishedAt!,
@@ -103,7 +126,11 @@ export function runActivity(detail: RunDetail, reason: string | null): RunActivi
   });
   entries.push(...finished);
   if (reason && REASON_STATUSES.includes(detail.status)) {
-    entries.push({ id: "reason", at: detail.finishedAt ?? detail.updatedAt, text: reason });
+    entries.push({
+      id: "reason",
+      at: detail.finishedAt ?? detail.updatedAt,
+      text: reasonSentence(detail, reason),
+    });
   }
   return entries
     .map((entry, index) => ({ entry, index }))

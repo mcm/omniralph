@@ -306,7 +306,11 @@ function RepoPicker({
           disabled={toAdd.length === 0 || pending || listing.data === undefined}
           onClick={() => add.mutate(toAdd)}
         >
-          {pending ? "Adding…" : `Add ${repoCount(toAdd.length)}`}
+          {pending
+            ? "Adding…"
+            : toAdd.length === 0
+              ? "Add repos"
+              : `Add ${repoCount(toAdd.length)}`}
         </Button>
       </div>
     </div>

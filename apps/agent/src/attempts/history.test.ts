@@ -101,7 +101,7 @@ describe("AttemptHistory", () => {
         outcomes: {
           completed: "Built SOC-1720",
           failed: "Couldn't build SOC-1720",
-          canceled: "Couldn't build SOC-1720",
+          canceled: "Stopped building SOC-1720",
         },
         facts: { runId: RUN_ID, repo: REPO, workItem: "SOC-1719", story: "SOC-1720" },
       },
@@ -112,7 +112,7 @@ describe("AttemptHistory", () => {
         outcomes: {
           completed: "Reviewed pull request #42 in customer-portal",
           failed: "Couldn't review pull request #42 in customer-portal",
-          canceled: "Couldn't review pull request #42 in customer-portal",
+          canceled: "Stopped reviewing pull request #42 in customer-portal",
         },
         facts: { runId: null, repo: REPO, workItem: null, story: null },
       },
@@ -123,7 +123,7 @@ describe("AttemptHistory", () => {
         outcomes: {
           completed: "Synced customer-portal",
           failed: "Couldn't sync customer-portal",
-          canceled: "Couldn't sync customer-portal",
+          canceled: "Stopped syncing customer-portal",
         },
         facts: { runId: null, repo: REPO, workItem: null, story: null },
       },
@@ -134,7 +134,7 @@ describe("AttemptHistory", () => {
         outcomes: {
           completed: "Installed @acme/tools",
           failed: "Couldn't install @acme/tools",
-          canceled: "Couldn't install @acme/tools",
+          canceled: "Stopped installing @acme/tools",
         },
         facts: { runId: null, repo: null, workItem: null, story: null },
       },
@@ -145,7 +145,7 @@ describe("AttemptHistory", () => {
         outcomes: {
           completed: "Cleaned up the SOC-1719 worktree",
           failed: "Couldn't clean up the SOC-1719 worktree",
-          canceled: "Couldn't clean up the SOC-1719 worktree",
+          canceled: "Stopped cleaning up the SOC-1719 worktree",
         },
         facts: { runId: RUN_ID, repo: REPO, workItem: "SOC-1719", story: null },
       },

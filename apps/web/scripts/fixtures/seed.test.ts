@@ -370,6 +370,32 @@ describe("seedFixtures", () => {
     expect(result.rows).toEqual([]);
   });
 
+  it("labels a failed epic's attempts by how each ended: tried, then couldn't", async () => {
+    const run = await getRunIndexEntry(db, FIXTURE_IDS.ralphRuns.failed);
+    const detail = await loadRunDetail(
+      db,
+      run!,
+      { id: FIXTURE_IDS.organizations.main, name: "Fixture Labs", role: "admin" },
+      FIXTURE_IDS.users.admin,
+    );
+    // Newest first: the last attempt failed, the two before it ended without finishing.
+    expect(detail?.attempts.map((a) => a.label)).toEqual([
+      "Couldn't build FIX-131",
+      "Tried to build FIX-131",
+      "Tried to build FIX-131",
+    ]);
+  });
+
+  it("ends every finished review run when its last attempt finished, so the Inbox's time matches Activity", async () => {
+    const result = await db.execute<{ id: string }>(sql`
+      select r.id
+      from review_runs r join jobs j on j.review_run_id = r.id
+      where r.status in ('completed', 'failed', 'skipped')
+      group by r.id, r.updated_at
+      having max(j.finished_at) is distinct from r.updated_at`);
+    expect(result.rows).toEqual([]);
+  });
+
   it("seeds the names verify:screens looks for as bare metadata", async () => {
     const column = async (query: ReturnType<typeof sql>) =>
       (await db.execute<{ name: string }>(query)).rows.map((row) => row.name);
@@ -576,13 +602,13 @@ describe("seedFixtures", () => {
       FIXTURE_IDS.users.admin,
     );
     expect(detail?.status).toBe("failed");
-    const error = "the triage ended without a result (max_turns)";
+    const error = "Om ran out of its token budget before the PRD was done. Retry the triage.";
     expect(detail?.steps.map((s) => [s.status, s.kind === "attempt" && s.label])).toEqual([
       ["failed", "Couldn't triage FIX-322"],
     ]);
     expect(detail?.attempts.map((a) => [a.status, a.error])).toEqual([["failed", error]]);
     expect(detail?.details.error).toBe(error);
-    expect(detail?.reason).toBe("The run failed. The triage ended without a result (max_turns)");
+    expect(detail?.reason).toBe(`The run failed. ${error}`);
   });
 
   it("has jobs in every state", async () => {

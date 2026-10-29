@@ -8,10 +8,7 @@
  */
 export function Scrim({ className }: { className: string }) {
   // The caller's class first: impeccable detect names an element by its first class. The
-  // modal leaves the body without pointer events; the scrim takes them back (as Radix's
-  // Overlay does) so a click on it closes the modal. A style property set from script is
-  // CSSOM, which the CSP allows.
-  return (
-    <div className={`${className} or-scrim`} aria-hidden="true" style={{ pointerEvents: "auto" }} />
-  );
+  // modal leaves the body without pointer events; `.or-scrim` takes them back (as Radix's
+  // Overlay does) so a click on it closes the modal.
+  return <div className={`${className} or-scrim`} aria-hidden="true" />;
 }

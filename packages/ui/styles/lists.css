@@ -107,6 +107,22 @@
   color: var(--or-text);
 }
 
+/* Inside a Card the rows are divided by lines, not drawn as cards inside the card. */
+.or-card .or-cards {
+  gap: 0;
+}
+
+.or-card .or-cardrow {
+  margin-inline: -8px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: 0;
+}
+
+.or-card .or-cardrow + .or-cardrow {
+  border-top: 1px solid var(--or-line);
+}
+
 .or-cardrow--linked:hover {
   background: var(--or-hover);
 }

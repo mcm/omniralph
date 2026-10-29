@@ -88,14 +88,19 @@ describe("the Version page", () => {
     await openVersion({ versionPolicy: { kind: "latest", version: "2.0.3" } });
     expect(summary()).toEqual([
       "Running2.0.3",
-      "OrganizationTrack latest · 2.0.3",
+      "OrganizationTrack latest 2.0.3",
       "UpdateUp to date",
     ]);
     expect(within(updateCell()).getByText("Up to date")).toBeTruthy();
-    const running = screen.getByText("2.0.3");
-    expect(running.classList.contains("or-mono")).toBe(true);
-    // A version is metadata: a badge (Design rules 1 and 2).
-    expect(running.closest("[data-or-badge]")).not.toBeNull();
+    // A version is metadata: a badge (Design rules 1 and 2), the running one and the
+    // organization's.
+    for (const cell of ["Running", "Organization"]) {
+      const version = within(screen.getByRole("group", { name: cell, hidden: true })).getByText(
+        "2.0.3",
+      );
+      expect(version.classList.contains("or-mono")).toBe(true);
+      expect(version.closest("[data-or-badge]")).not.toBeNull();
+    }
     expect(disabled(updateNow())).toBe(false);
     expect(screen.queryByText(NOT_UNDER_PM2)).toBeNull();
     expect(screen.queryByRole("region", { name: "Failed versions" })).toBeNull();
@@ -117,10 +122,7 @@ describe("the Version page", () => {
 
   it("says the agent's pin is why it doesn't follow the organization's version", async () => {
     await openVersion({ settings: settingsState({ v: 1, update: { pin: "2.0.3" } }) });
-    expect(summary().slice(1)).toEqual([
-      "OrganizationTrack latest · 2.0.4",
-      "UpdatePinned to 2.0.3",
-    ]);
+    expect(summary().slice(1)).toEqual(["OrganizationTrack latest 2.0.4", "UpdatePinned to 2.0.3"]);
   });
 
   it("says it isn't retrying a version that failed", async () => {

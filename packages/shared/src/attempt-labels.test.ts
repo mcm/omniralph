@@ -49,13 +49,7 @@ const CASES: [string, AttemptLabelContext, string, string, string][] = [
     "Couldn't build SOC-1719",
   ],
   ["ralph.story", {}, "Building this run", "Built this run", "Couldn't build this run"],
-  [
-    "ralph.request",
-    FULL,
-    "Working on a request in SOC-1719",
-    "Worked on a request in SOC-1719",
-    "Couldn't work on a request in SOC-1719",
-  ],
+  ["ralph.request", FULL, "Working on SOC-1719", "Worked on SOC-1719", "Couldn't work on SOC-1719"],
   [
     "ralph.request",
     { repository: "acme/web/customer-portal" },
@@ -295,11 +289,29 @@ describe("describeAttempt", () => {
     expect(describeAttempt({ type, status: "running", context })).toBe(progressive);
     expect(describeAttempt({ type, status: "completed", context })).toBe(past);
     expect(describeAttempt({ type, status: "failed", context })).toBe(failed);
-    expect(describeAttempt({ type, status: "canceled", context })).toBe(failed);
-    expect(describeAttempt({ type, status: "expired", context })).toBe(failed);
+    const stopped = `Stopped ${progressive.charAt(0).toLowerCase()}${progressive.slice(1)}`;
+    expect(describeAttempt({ type, status: "canceled", context })).toBe(stopped);
+    expect(describeAttempt({ type, status: "expired", context })).toBe(stopped);
+    expect(describeAttempt({ type, status: "completed", context, unfinished: true })).toBe(
+      failed.replace("Couldn't", "Tried to"),
+    );
     expect(describeAttempt({ type, status: "skipped", context })).toBe(
       failed.replace("Couldn't", "Didn't need to"),
     );
+  });
+
+  it("says a canceled story attempt stopped, and an unfinished one tried", () => {
+    const context = { story: "BIL-90" };
+    expect(describeAttempt({ type: "ralph.story", status: "canceled", context })).toBe(
+      "Stopped building BIL-90",
+    );
+    expect(
+      describeAttempt({ type: "ralph.story", status: "completed", context, unfinished: true }),
+    ).toBe("Tried to build BIL-90");
+    // Only a completed attempt can be unfinished.
+    expect(
+      describeAttempt({ type: "ralph.story", status: "failed", context, unfinished: true }),
+    ).toBe("Couldn't build BIL-90");
   });
 
   it("treats blank context like missing context", () => {

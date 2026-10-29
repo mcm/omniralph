@@ -39,7 +39,7 @@ import {
   pinChanges,
   pinDraft,
   pinError,
-  policyText,
+  policyParts,
   updateNowDescription,
   updateStateText,
   updateTarget,
@@ -135,6 +135,17 @@ export function VersionPage() {
   );
 }
 
+/** "Track latest" with the organization's version as a badge, like the running version. */
+function PolicyValue({ state }: { state: AgentUiState }) {
+  const { text, version } = policyParts(state.versionPolicy);
+  if (version === null) return text;
+  return (
+    <span className="agent-version-policy">
+      {text} <MetaBadge text={version} mono />
+    </span>
+  );
+}
+
 function VersionSummary({ state }: { state: AgentUiState }) {
   const { text, tone } = updateStateText(state);
   return (
@@ -146,7 +157,7 @@ function VersionSummary({ state }: { state: AgentUiState }) {
           label: "Running",
           value: <MetaBadge text={state.agent.version} mono />,
         },
-        { id: "policy", label: "Organization", value: policyText(state.versionPolicy) },
+        { id: "policy", label: "Organization", value: <PolicyValue state={state} /> },
         { id: "update", label: "Update", value: <StatusText tone={tone}>{text}</StatusText> },
       ]}
     />

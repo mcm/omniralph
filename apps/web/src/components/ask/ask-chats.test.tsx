@@ -472,6 +472,20 @@ describe("AskNewChat", () => {
     expect(composer().placeholder).toBe("Ask about your repos…");
   });
 
+  it("says what a chat does until the first message, naming the chosen repo", async () => {
+    mockFetch({ [REPOS_PATH]: { repositories: REPOS } });
+    renderNewChat({}, { pageRepositoryId: "repo-2" });
+    await waitFor(() => expect(selectedLabel()).toBe("acme/billing"));
+    expect(screen.getByRole("heading", { name: "Ask Om about your code", level: 3 })).toBeTruthy();
+    expect(
+      screen.getByText("Om reads billing and answers, citing the files it used."),
+    ).toBeTruthy();
+    await pick("All repos");
+    expect(
+      screen.getByText("Om reads your repos and answers, citing the files it used."),
+    ).toBeTruthy();
+  });
+
   it("leads the picker with the chosen repo's host mark (Design rule 1)", async () => {
     const gitlab = repository({ id: "repo-3", fullPath: "acme/infra", provider: "gitlab" });
     mockFetch({ [REPOS_PATH]: { repositories: [...REPOS, gitlab] } });

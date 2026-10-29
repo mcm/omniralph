@@ -64,6 +64,19 @@
   white-space: nowrap;
 }
 
+/* Before the first message, what a chat does fills the space between the picker and the
+   composer. */
+.or-ask-new__empty {
+  margin-block: auto;
+}
+
+/* The phone carries less (Design rule 16): the picker and the composer only. */
+@media (max-width: 768px) {
+  .or-ask-new__empty {
+    display: none;
+  }
+}
+
 .or-ask-new__note {
   margin: 0;
   color: var(--or-sec);

@@ -152,11 +152,13 @@
   gap: 6px;
 }
 
-/* One row per condition: field, operator, value, then its × (a range takes the next line). */
+/* One row per condition: field, operator, value, then its × (a range takes the next line).
+   The field and value keep room for a value like "Identifier" in a nested group; the operator
+   gives way first. */
 .or-routing-builder .rule {
   display: grid;
   grid-template-areas: "field operator value remove";
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.4fr) auto;
+  grid-template-columns: minmax(7.5rem, 1fr) minmax(0, max-content) minmax(6rem, 1.4fr) auto;
   align-items: start;
   gap: 6px;
 }
@@ -219,7 +221,7 @@
     grid-template-areas:
       "field operator remove"
       "value value .";
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(7.5rem, 1fr) minmax(0, max-content) auto;
   }
 }
 

@@ -32,7 +32,12 @@ import {
   type MaterializationPlan,
   type TriageAgentOutput,
 } from "@omniralph/ralph";
-import { QueryRunResult, RunSpecJobPayload, TriageRunResult } from "@omniralph/shared";
+import {
+  QueryRunResult,
+  type QueryRunOutcome,
+  RunSpecJobPayload,
+  TriageRunResult,
+} from "@omniralph/shared";
 import { z } from "zod";
 import { getLinearGateway } from "@/lib/linear/client";
 import type { IssueSummary, LinearGateway } from "@/lib/linear/gateway";
@@ -140,6 +145,17 @@ function clip(text: string): string {
 }
 
 /**
+ * Why a triage that ended without a PRD failed, in plain words with what to do next (Design
+ * rule 4), by the run's outcome: the error its run and job keep, shown on the run's page. The
+ * Linear reply keeps its own wording.
+ */
+const UNANSWERED_ERRORS: Record<Exclude<QueryRunOutcome, "answered">, string> = {
+  budget_exhausted: "Om ran out of its token budget before the PRD was done. Retry the triage.",
+  no_checkout:
+    "Om couldn't check out the repo to read its code. Check the repo's connection, then retry the triage.",
+};
+
+/**
  * The job's result (a `QueryRunResult` whose structured output is the
  * triage) as a validated triage and the `TriageRunResult` its run keeps, or
  * the problem with it (a malformed result, a run that ended without one, a
@@ -150,24 +166,30 @@ export function readTriageResult(
   result: unknown,
 ):
   | { triage: TriageAgentOutput; result: TriageRunResult }
-  | { problem: string; result: TriageRunResult | null } {
+  | { problem: string; error: string; result: TriageRunResult | null } {
   const parsed = QueryRunResult.safeParse(result);
   if (!parsed.success) {
-    return { problem: "the triage job returned a malformed result", result: null };
+    const problem = "the triage job returned a malformed result";
+    return { problem, error: problem, result: null };
   }
   const run = parsed.data;
   const base = { usage: run.usage, durationMs: run.durationMs };
-  const failed = (problem: string) => ({
+  // `problem` goes into the Linear reply; `error` is what the run and its job keep and show.
+  const failed = (problem: string, error = problem) => ({
     problem,
+    error,
     result: TriageRunResult.parse({
-      summary: clip(problem),
-      error: clip(problem),
+      summary: clip(error),
+      error: clip(error),
       outcome: null,
       ...base,
     }),
   });
   if (run.outcome !== "answered") {
-    return failed(`the triage ended without a result (${run.outcome})`);
+    return failed(
+      `the triage ended without a result (${run.outcome})`,
+      UNANSWERED_ERRORS[run.outcome],
+    );
   }
   const validated = validateTriageOutput(run.structured ?? undefined);
   if ("problem" in validated) return failed(validated.problem);
@@ -363,7 +385,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   if ("problem" in read) {
     const claimed = await finishTriageRunJob(db, run.id, job.id, "failed", read.result);
     if (!claimed) return { status: "ignored" };
-    await failCompletedJob(db, job.id, read.problem);
+    await failCompletedJob(db, job.id, read.error);
     await postActivity(linearConversation(linear, sessionId), {
       type: "error",
       body: `Triage didn't produce a usable PRD, so I changed nothing in Linear: ${read.problem}. Mention me with \`/triage\` to try again.`,

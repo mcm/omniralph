@@ -14,12 +14,19 @@ export const PIN_INVALID = "Enter a version such as 2.0.4";
 export const PIN_TOO_OLD = `Use ${AGENT_MIN_VERSION} or later`;
 export const FINISHING = "Finishing running work";
 
-/** "Track latest · 2.0.4", "Pinned to 2.0.3", or "None" without a policy. */
-export function policyText(policy: AgentUiState["versionPolicy"]): string {
-  if (!policy) return "None";
-  return policy.kind === "latest"
-    ? `Track latest · ${policy.version}`
-    : `Pinned to ${policy.version}`;
+/**
+ * The organization's policy as words and its version (a badge, Design rule 1): "Track
+ * latest" 2.0.4, "Pinned to" 2.0.3, or "None" without a policy.
+ */
+export function policyParts(policy: AgentUiState["versionPolicy"]): {
+  text: string;
+  version: string | null;
+} {
+  if (!policy) return { text: "None", version: null };
+  return {
+    text: policy.kind === "latest" ? "Track latest" : "Pinned to",
+    version: policy.version,
+  };
 }
 
 /**
