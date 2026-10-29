@@ -35,9 +35,19 @@ export interface LogLine extends LogEntry {
 
 const WARN = new Set<LogEntry["level"]>(["warn", "error", "fatal"]);
 
-/** Whether a level is shown in the fail tone (and kept by "Warnings and errors"). */
+/** Whether "Warnings and errors" keeps a level. */
 export function isProblemLevel(level: LogEntry["level"]): boolean {
   return WARN.has(level);
+}
+
+/**
+ * A level's tone on a log line: errors are failures (coral), a warning is only emphasized,
+ * never a failure color (Design rule 15), and the rest are plain.
+ */
+export function logLevelTone(level: LogEntry["level"]): "fail" | "warn" | null {
+  if (level === "error" || level === "fatal") return "fail";
+  if (level === "warn") return "warn";
+  return null;
 }
 
 /**

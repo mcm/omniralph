@@ -43,7 +43,7 @@ import {
   entriesAfter,
   fieldText,
   fitToCap,
-  isProblemLevel,
+  logLevelTone,
   lineMatches,
   linesAfterPage,
   type LogFilterValue,
@@ -371,7 +371,8 @@ function LogLineItem({
   onToggle: () => void;
 }) {
   const fields = Object.entries(line.fields);
-  const tone = isProblemLevel(line.level) ? " agent-logs__line--fail" : "";
+  const levelTone = logLevelTone(line.level);
+  const tone = levelTone ? ` agent-logs__line--${levelTone}` : "";
   const date = new Date(line.time);
   const content = (
     <>

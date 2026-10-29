@@ -79,7 +79,7 @@ export const workItemRouteSchema = z.object({
   via: z
     .object({
       kind: z.enum(["project", "team", "label", "parent", "follow_up", "rule", "choice"]),
-      /** `Omniralph project`, `SOC team`, `label product:portal`, `parent SOC-400`, `rule 2`, `your choice`. */
+      /** `Omniralph project`, `SOC team`, `label product:portal`, `parent SOC-400`, `Rule 2`, `your choice`. */
       label: z.string(),
     })
     .nullable(),

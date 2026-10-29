@@ -567,6 +567,24 @@ describe("the routes line", () => {
     expect(within(via).getByRole("img", { name: "Linear" })).toBeTruthy();
   });
 
+  it("draws a routing rule source without the tracker mark", async () => {
+    details["linear-issue-412"] = detailOf(workItemRow(), {
+      route: {
+        outcome: "repository",
+        repository: { id: REPO_WEB, provider: "github", fullPath: "acme/web" },
+        via: { kind: "rule", label: "Rule 1" },
+        by: "rule 1 (Team is SOC)",
+      },
+    });
+    renderBacklog();
+    await loaded();
+    const routes = article().querySelector(".or-backlog-detail__routes") as HTMLElement;
+    expect(words(routes)).toBe("Routes to acme/web via Rule 1");
+    const via = routes.querySelector(".or-ref--meta") as HTMLElement;
+    expect(within(via).queryByRole("img", { name: "Linear" })).toBeNull();
+    expect(via.querySelector("svg")).toBeTruthy();
+  });
+
   it("reads Routes to no repo yet with Choose a repo, which opens Change repo…", async () => {
     renderBacklog({ workItemId: "linear-issue-420" });
     await loaded("Rough idea: dunning emails");

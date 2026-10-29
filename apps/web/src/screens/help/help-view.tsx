@@ -38,6 +38,7 @@ export function HelpView() {
     {
       id: "key",
       header: "Key",
+      className: "or-help__key-col",
       cell: (row) => <kbd className="or-help__key">{formatShortcut(row.definition, platform)}</kbd>,
     },
   ];
@@ -56,6 +57,7 @@ export function HelpView() {
               getRowId={(row) => row.id}
               columns={columns}
               caption={label}
+              className="or-help__table"
             />
           </section>
         ))}

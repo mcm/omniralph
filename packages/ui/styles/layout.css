@@ -181,6 +181,11 @@
   outline-offset: 2px;
 }
 
+.or-subnav__mark {
+  display: inline-flex;
+  flex: none;
+}
+
 .or-subnav__label {
   min-width: 0;
   overflow: hidden;

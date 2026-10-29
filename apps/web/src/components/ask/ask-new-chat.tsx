@@ -1,6 +1,7 @@
 "use client";
 
-import { Field, Select } from "@omniralph/ui";
+import { BrandMark, Field, Select } from "@omniralph/ui";
+import { IconBooks } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { useCurrentUser, type SessionUser } from "@/components/current-user";
@@ -118,7 +119,8 @@ export interface AskNewChatProps {
 }
 
 /**
- * New chat (Design board Ask): the "Repo" picker ("All repos" first, then every repo of the
+ * New chat (Design board Ask): the "Repo" picker (led by the chosen repo's host mark, or the
+ * All repos icon; at most 480 px wide) ("All repos" first, then every repo of the
  * organization a chat can ask about; grouped per organization under "All organizations"),
  * starting on the repo of the page the member is on, and the composer. Sending the first
  * message starts the chat (`POST /api/ui/ask/chats`): it goes to the top of the chats list
@@ -207,8 +209,15 @@ export function AskNewChat({
         headingLevel={headingLevel}
       />
       <div className="or-ask-chat__messages">
-        <Field label="Repo" stacked>
+        <Field label="Repo" stacked className="or-ask-new__repo">
           <Select
+            leading={
+              repository ? (
+                <BrandMark brand={repository.provider} />
+              ) : (
+                <IconBooks size={14} stroke={1.75} />
+              )
+            }
             value={choiceValue(choice)}
             disabled={sending !== null}
             onChange={(event) => setPicked(parseChoice(event.target.value))}

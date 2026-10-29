@@ -293,7 +293,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
       });
       expect(await route(ruled)).toMatchObject({
         repository: { fullPath: "acme/ops" },
-        via: { kind: "rule", label: "rule 1" },
+        via: { kind: "rule", label: "Rule 1" },
         by: "rule 1 (Team is OPS)",
       });
       expect(await route(child)).toMatchObject({

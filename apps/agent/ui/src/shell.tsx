@@ -5,6 +5,7 @@
  * nav); below that `/` is the section list and every other page shows alone with "‹ Agent".
  */
 import {
+  AgentBadge,
   BrandLockup,
   MetaBadge,
   SectionNav,
@@ -12,6 +13,7 @@ import {
   ThemeControl,
   useSplitWide,
 } from "@omniralph/ui";
+import { IconWorld } from "@tabler/icons-react";
 import { useRef } from "react";
 import { LiveNoticeSlot } from "./live/live-provider.js";
 import { AGENT_SECTIONS, INDEX_PATH, agentNavGroups } from "./nav.js";
@@ -47,8 +49,8 @@ export function AgentShell() {
         <BrandLockup href={INDEX_PATH} className="agent-topbar__brand" />
         {state ? (
           <div className="agent-topbar__facts">
-            <MetaBadge text={state.agent.name} mono />
-            <MetaBadge text={serverHost(state.agent.server)} />
+            <AgentBadge name={state.agent.name} />
+            <MetaBadge icon={IconWorld} text={serverHost(state.agent.server)} />
           </div>
         ) : null}
       </header>

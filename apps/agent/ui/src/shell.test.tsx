@@ -26,11 +26,17 @@ describe("the agent page's layout", () => {
     renderAgentPage();
     expect(screen.getByRole("link", { name: "Omniralph home" }).getAttribute("href")).toBe("/");
     expect(await screen.findByText("build-01")).toBeTruthy();
-    expect(screen.getByText("build-01").className).toContain("or-mono");
-    expect(screen.getByText("omniralph.example.com")).toBeTruthy();
+    // Both facts are badges with their icons (Design rule 1).
+    const facts = [...document.querySelectorAll(".agent-topbar__facts .or-ref")];
+    expect(facts.map((badge) => badge.textContent?.trim())).toEqual([
+      "build-01",
+      "omniralph.example.com",
+    ]);
+    expect(facts[0]!.className).toContain("or-ref--agent");
+    expect(facts.every((badge) => badge.querySelector("svg"))).toBe(true);
   });
 
-  it("lists every page in the Agent, Settings and Machine groups, with the theme control", () => {
+  it("lists every page in the Activity, Settings and Machine groups, with the theme control", () => {
     fakeApi({ "/api/state": { body: agentState() } });
     renderAgentPage();
     const groups = within(nav()).getAllByRole("list");
@@ -55,8 +61,12 @@ describe("the agent page's layout", () => {
         ["Storage", "/storage"],
       ],
     ]);
-    expect(within(nav()).getByRole("heading", { name: "Settings" })).toBeTruthy();
-    expect(within(nav()).getByRole("heading", { name: "Machine" })).toBeTruthy();
+    // "Agent" is the nav's title only, never a group heading too.
+    expect(
+      within(nav())
+        .getAllByRole("heading", { level: 2 })
+        .map((heading) => heading.textContent),
+    ).toEqual(["Activity", "Settings", "Machine"]);
     const list = screen.getByRole("region", { name: "Agent sections" });
     expect(within(list).getByRole("radiogroup", { name: "Theme" })).toBeTruthy();
   });

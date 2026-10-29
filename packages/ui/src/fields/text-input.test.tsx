@@ -107,4 +107,25 @@ describe("Select", () => {
     expect(select.getAttribute("aria-invalid")).toBe("true");
     expect(select.hasAttribute("aria-describedby")).toBe(false);
   });
+
+  it("draws a leading mark that stays out of the select's name", () => {
+    render(
+      <Field label="Repo">
+        <Select defaultValue="main" leading={<svg data-testid="mark" />}>
+          {options}
+        </Select>
+      </Field>,
+    );
+    const select = screen.getByRole("combobox", { name: "Repo" });
+    expect(select.className).toContain("or-select__control--leading");
+    const leading = screen.getByTestId("mark").parentElement!;
+    expect(leading.getAttribute("aria-hidden")).toBe("true");
+    expect(leading.nextElementSibling).toBe(select);
+  });
+
+  it("has no leading slot without one", () => {
+    const { container } = render(<Select aria-label="Branch">{options}</Select>);
+    expect(container.querySelector(".or-select__leading")).toBeNull();
+    expect(screen.getByRole("combobox").className).not.toContain("--leading");
+  });
 });

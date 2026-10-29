@@ -15,6 +15,16 @@
   min-height: 0;
 }
 
+/* On `/ask` the list's "Ask" is the page title: the same type as Inbox's and Runs'. */
+.or-ask-page .or-ask-chats__header {
+  padding: 20px 20px 12px;
+}
+
+.or-ask-page .or-ask-chats__title {
+  font-size: 20px;
+  line-height: 1.2;
+}
+
 .or-ask-page--full {
   height: 100vh;
   height: 100dvh;
@@ -30,5 +40,6 @@
   /* The chats list scrolls with the page: its header sticks under the top bar. */
   .or-ask-page .or-ask-chats__header {
     top: 52px;
+    padding: 16px 16px 10px;
   }
 }

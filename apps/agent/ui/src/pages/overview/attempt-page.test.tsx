@@ -80,7 +80,9 @@ describe("the Attempt page", () => {
     const back = screen.getByRole("link", { name: "‹ Overview" });
     expect(back.getAttribute("href")).toBe("/overview");
     expect(await screen.findByRole("status", { name: "Running for 12m" })).toBeTruthy();
-    expect(screen.getByRole("heading", { level: 2, name: "Building SOC-1720" })).toBeTruthy();
+    const heading = screen.getByRole("heading", { level: 2, name: "Building SOC-1720" });
+    // The back link leads the page, above its heading.
+    expect(back.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const badges = document.querySelector(".agent-section .agent-attempt__badges")!;
     expect(badges.textContent).toBe("GitHub acme/customer-portalLinear SOC-1719Linear SOC-1720");
 

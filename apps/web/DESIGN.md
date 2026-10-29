@@ -118,15 +118,17 @@ and the `@omniralph/ui` components.
 | MobileInbox   | `/`                                                                        | The Inbox at 390 px: top bar and tab bar                     |
 | MobileMenu    | `/`                                                                        | The phone menu (drawer) with Repos, Fleet and Settings       |
 | MobileRun     | `/runs/[id]`, `/runs/[id]/steps/[stepId]`                                  | A run at 390 px, and a step as its own view                  |
-| MobileAsk     | `/ask/[chatId]`                                                            | A chat at 390 px with the composer above the tab bar         |
+| MobileAsk     | `/ask/[chatId]`                                                            | A chat at 390 px, full screen: composer pinned, no tab bar   |
 
 ## Widths and accessibility
 
 - **1200 px and wider:** the full 232 px sidebar.
 - **769–1199 px:** a 64 px icon rail; labels become tooltips and keep their accessible names.
 - **768 px and narrower:** phone chrome: a top bar, the bottom tab bar (Inbox, Runs, Backlog,
-  Ask) and the menu (Repos, Fleet, Settings). Nothing wraps under the navigation, and nothing
-  widens the page.
+  Ask) and the menu (Repos, Fleet, Settings). An Ask chat and New chat open full screen (the
+  MobileAsk board's `.no-tabbar`): the tab bar is left out and the composer is pinned at the
+  bottom above the safe area; the chat header's ‹ Chats goes back. Nothing wraps under the
+  navigation, and nothing widens the page.
 - **WCAG 2.2 AA in both themes.** Dark is the default; light is a full theme, not an
   afterthought. Text and control-border contrast, keyboard operability, visible focus, named
   controls and target size hold in each.

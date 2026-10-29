@@ -1,7 +1,9 @@
 /*
  * Analytics (app/(app)/analytics): one scrolling column, 24 px padding, at most 1200 px wide.
  * The head row (the title, then the Window and Repository filters on one line), the summary
- * card, the charts grid (two columns on desktop, one or two at 769–1199 px, one on phone),
+ * card, the charts grid (Stories completed and Reviews side by side where two 420 px columns fit,
+ * then Success rate and Tokens across the whole row, so no card is left half empty; one
+ * column on phone),
  * then the By repo, By organization and By kind cards. At 768 px and narrower the head row
  * wraps with full-width filters, charts are one column and "By kind" sits in a collapsed
  * section. Only `--or-` tokens.
@@ -67,9 +69,14 @@
   min-width: 0;
 }
 
+/* Success rate and Tokens take the whole row; Tokens' charts sit side by side in it. */
+.or-analytics__wide {
+  grid-column: 1 / -1;
+}
+
 .or-analytics__stack {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 16px;
 }
 
@@ -161,7 +168,8 @@
     flex: 1 1 0;
   }
 
-  .or-analytics__charts {
+  .or-analytics__charts,
+  .or-analytics__stack {
     grid-template-columns: minmax(0, 1fr);
   }
 

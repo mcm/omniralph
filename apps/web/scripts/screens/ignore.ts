@@ -62,7 +62,9 @@ export interface DetectFinding {
  * An ignore.md row for an `impeccable detect` rule (any row that isn't `decided:` or an
  * accessibility row): it ignores the rule's findings that name one of what its Scope cell names
  * in backticks: a class selector (`.or-ref`), a file (`packages/ui/styles/refs.css`), a custom
- * property (`--or-glow`) or a color (`#f5f3ee`, also matched in `rgb()` form).
+ * property (`--or-glow`) or a color (`#f5f3ee`, also matched in `rgb()` form), or that were
+ * found on a capture of a route (`route: <name glob>`), for a page-wide finding whose snippet
+ * names no element (e.g. `em-dash-overuse` counting a page's text).
  */
 export interface DetectIgnoreEntry {
   rule: string;
@@ -72,6 +74,8 @@ export interface DetectIgnoreEntry {
   properties: string[];
   /** Lowercase `#rrggbb`. */
   colors: string[];
+  /** Route name globs (`routes.ts`), matched against the snapshot's file name. */
+  routes: string[];
   reason: string;
   text: string;
 }
@@ -82,7 +86,7 @@ export interface ParsedIgnoreList {
   detect: DetectIgnoreEntry[];
   /**
    * Rows that never match: an accessibility row with no scope or a scope key it doesn't know,
-   * or a detect row whose scope names no selector, file, custom property or color.
+   * or a detect row whose scope names no selector, file, custom property, color or route.
    */
   problems: string[];
 }
@@ -111,7 +115,10 @@ export function parseIgnoreList(markdown: string): ParsedIgnoreList {
       if (!DETECT_RULE.test(rule)) continue;
       const entry = detectEntry(rule, scopeCell, reason);
       if (entry) detect.push(entry);
-      else problems.push(`${rule}: names no selector, file, custom property or color in backticks`);
+      else
+        problems.push(
+          `${rule}: names no selector, file, custom property, color or route in backticks`,
+        );
       continue;
     }
     const scope: Partial<Record<ScopeKey, string[]>> = {};
@@ -154,11 +161,17 @@ function detectEntry(rule: string, scopeCell: string, reason: string): DetectIgn
     files: [],
     properties: [],
     colors: [],
+    routes: [],
     reason,
     text: `${rule} | ${scopeCell}`,
   };
   for (const [, raw] of scopeCell.matchAll(/`([^`]+)`/g)) {
     const token = raw!.trim();
+    const route = /^route:\s*(.+)$/.exec(token);
+    if (route) {
+      entry.routes.push(route[1]!.trim());
+      continue;
+    }
     if (token.includes("/")) {
       entry.files.push(token.replace(/^\.\//, ""));
       continue;
@@ -172,7 +185,11 @@ function detectEntry(rule: string, scopeCell: string, reason: string): DetectIgn
     }
   }
   const named =
-    entry.selectors.length + entry.files.length + entry.properties.length + entry.colors.length;
+    entry.selectors.length +
+    entry.files.length +
+    entry.properties.length +
+    entry.colors.length +
+    entry.routes.length;
   return named > 0 ? entry : null;
 }
 
@@ -199,7 +216,8 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&
 /**
  * The first detect entry that ignores `finding`, or `null`: same rule, and the finding names
  * one of the entry's selectors (every class of it, as a whole class name in the snippet), files
- * (the scanned file is it), custom properties or colors.
+ * (the scanned file is it), custom properties or colors, or it was found on a snapshot of one of
+ * the entry's routes.
  */
 export function detectIgnoredBy(
   entries: readonly DetectIgnoreEntry[],
@@ -210,6 +228,8 @@ export function detectIgnoredBy(
   const colors = colorsIn(snippet);
   const hasClass = (name: string) =>
     new RegExp(`(^|[^\\w-])${escapeRegExp(name)}(?![\\w-])`).test(snippet);
+  // A snapshot is `<route>.<viewport>.<theme>.html`.
+  const route = /([^/]+)\.(?:desktop|rail|phone)\.(?:dark|light)\.html$/.exec(file)?.[1];
   return (
     entries.find(
       (entry) =>
@@ -217,7 +237,9 @@ export function detectIgnoredBy(
         (entry.files.some((path) => file === path || file.endsWith(`/${path}`)) ||
           entry.selectors.some((classes) => classes.every(hasClass)) ||
           entry.properties.some((property) => snippet.includes(property)) ||
-          entry.colors.some((color) => colors.includes(color))),
+          entry.colors.some((color) => colors.includes(color)) ||
+          (route !== undefined &&
+            entry.routes.some((glob) => routeMatches({ name: route, path: `/${route}` }, glob)))),
     ) ?? null
   );
 }

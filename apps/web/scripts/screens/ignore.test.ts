@@ -120,6 +120,7 @@ const DETECT_LIST = `
 | cream-palette | \`--or-page: #f5f3ee\` (\`packages/ui/styles/tokens.css\`) | The palette. | TOOL-748 round 1 |
 | dark-glow | \`--or-glow\` (\`#B294FF\`) | Rule 15. | TOOL-748 round 1 |
 | tight-leading | the badges | Names nothing. | TOOL-748 round 1 |
+| em-dash-overuse | \`route: settings-*-playbook-edit\` | Editable content. | TOOL-821 |
 | decided: no-live-indicator | 2.0 code: \`apps/web/src\` | The whole UI is live. | TOOL-730 |
 | axe: color-contrast | \`route: settings-*\` | Decorative. | TOOL-748 round 1 |
 `;
@@ -130,12 +131,13 @@ describe("the impeccable detect entries", () => {
 
   it("reads every detector rule row, apart from decided and accessibility rows", () => {
     expect(
-      detect.map(({ rule, selectors, files, properties, colors }) => ({
+      detect.map(({ rule, selectors, files, properties, colors, routes }) => ({
         rule,
         selectors,
         files,
         properties,
         colors,
+        routes,
       })),
     ).toEqual([
       {
@@ -144,6 +146,7 @@ describe("the impeccable detect entries", () => {
         files: ["packages/ui/styles/refs.css"],
         properties: [],
         colors: [],
+        routes: [],
       },
       {
         rule: "cream-palette",
@@ -151,6 +154,7 @@ describe("the impeccable detect entries", () => {
         files: ["packages/ui/styles/tokens.css"],
         properties: ["--or-page"],
         colors: ["#f5f3ee"],
+        routes: [],
       },
       {
         rule: "dark-glow",
@@ -158,11 +162,20 @@ describe("the impeccable detect entries", () => {
         files: [],
         properties: ["--or-glow"],
         colors: ["#b294ff"],
+        routes: [],
+      },
+      {
+        rule: "em-dash-overuse",
+        selectors: [],
+        files: [],
+        properties: [],
+        colors: [],
+        routes: ["settings-*-playbook-edit"],
       },
     ]);
     expect(entries.map((entry) => entry.rule)).toEqual(["color-contrast"]);
     expect(problems).toEqual([
-      "tight-leading: names no selector, file, custom property or color in backticks",
+      "tight-leading: names no selector, file, custom property, color or route in backticks",
     ]);
   });
 
@@ -232,6 +245,22 @@ describe("the impeccable detect entries", () => {
       "#5ec8d8",
       "#b294ff",
     ]);
+  });
+
+  it("ignores a page-wide finding on a snapshot of one of its routes only", () => {
+    const finding = {
+      antipattern: "em-dash-overuse",
+      file: "/repo/apps/web/.screens/t/settings-advanced-playbook-edit.phone.light.html",
+      snippet: "221 em-dashes in body text",
+    };
+    expect(detectIgnoredBy(detect, finding)?.rule).toBe("em-dash-overuse");
+    expect(
+      detectIgnoredBy(detect, {
+        ...finding,
+        file: "/repo/apps/web/.screens/t/settings-advanced-playbooks.phone.light.html",
+      }),
+    ).toBeNull();
+    expect(detectIgnoredBy(detect, { ...finding, antipattern: "tight-leading" })).toBeNull();
   });
 
   it("never lets a decided entry ignore a detect finding", () => {

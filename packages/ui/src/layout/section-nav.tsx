@@ -2,6 +2,7 @@
 
 import { useId, type ReactNode } from "react";
 import { useLinkComponent } from "../provider/ui-provider.js";
+import { BrandMark, type Brand } from "../refs/brand-mark.js";
 import { isNavActive } from "../shell/nav.js";
 
 /** A coral mark on a section entry, e.g. a connection with failed deliveries. */
@@ -14,6 +15,8 @@ export interface SectionNavIndicator {
 export interface SectionNavItem {
   label: string;
   href: string;
+  /** A brand mark before the label (Design rule 1), e.g. a connection's provider. */
+  brand?: Brand;
   indicator?: SectionNavIndicator;
 }
 
@@ -45,7 +48,7 @@ export function sectionNavItemName(item: Pick<SectionNavItem, "label" | "indicat
 /**
  * A settings area's own navigation: a titled `nav` with one list per group under a visible
  * group heading. The active entry (same matching as the shell's `isNavActive`) gets
- * `aria-current="page"`; an indicator draws a coral dot and joins the entry's name.
+ * `aria-current="page"`; a `brand` draws its mark before the label; an indicator draws a coral dot and joins the entry's name.
  */
 export function SectionNav({
   title,
@@ -87,6 +90,11 @@ export function SectionNav({
                     aria-label={item.indicator ? sectionNavItemName(item) : undefined}
                     aria-current={isNavActive(currentPath, item) ? "page" : undefined}
                   >
+                    {item.brand ? (
+                      <span className="or-subnav__mark" aria-hidden="true">
+                        <BrandMark brand={item.brand} />
+                      </span>
+                    ) : null}
                     <span className="or-subnav__label">{item.label}</span>
                     {item.indicator ? (
                       <span

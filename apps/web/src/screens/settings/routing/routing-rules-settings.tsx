@@ -503,9 +503,9 @@ export function RoutingRulesCard({ data, isAdmin }: { data: RoutingRules; isAdmi
             />
           ))}
         </ol>
-        <h3 className="or-routing__subheading" id="routing-built-in">
+        <p className="or-routing__subheading" id="routing-built-in">
           After each repo&apos;s work item match
-        </h3>
+        </p>
         <ul aria-labelledby="routing-built-in" className="or-routing__rules">
           {DEFAULT_RULES.map((label) => (
             <li

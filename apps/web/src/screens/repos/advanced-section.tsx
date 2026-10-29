@@ -136,6 +136,7 @@ export function PlaybooksCard({ detail }: { detail: RepositoryDetail }) {
   return (
     <Card
       title="Playbooks"
+      headingLevel={3}
       className="or-repo-card"
       titleAddon={
         <ChangeHistoryPopover
@@ -195,7 +196,7 @@ export function PlaybooksCard({ detail }: { detail: RepositoryDetail }) {
 /** The bottom of the page (admins only): removing the repo, through `RemoveRepoDialog`. */
 export function DangerZone({ onRemove }: { onRemove: () => void }) {
   return (
-    <Card title="Danger zone" className="or-repo-card or-repo-danger">
+    <Card title="Danger zone" headingLevel={3} className="or-repo-card or-repo-danger">
       <div className="or-repo-danger__row">
         <p className="or-repo-danger__text">{REMOVE_REPO_DESCRIPTION}</p>
         <Button variant="danger" onClick={onRemove}>
@@ -207,8 +208,8 @@ export function DangerZone({ onRemove }: { onRemove: () => void }) {
 }
 
 /**
- * The Advanced section: the Playbooks card, only while the viewer shows advanced settings
- * (the preference only shows or hides it: bindings apply either way), then the Danger zone
+ * The Advanced section: its h2, then the Playbooks card (h3), only while the viewer shows advanced settings
+ * (the preference only shows or hides it: bindings apply either way), then the Danger zone (h3)
  * for admins. `onRemove` opens the page's one `RemoveRepoDialog`.
  */
 export function AdvancedSection({

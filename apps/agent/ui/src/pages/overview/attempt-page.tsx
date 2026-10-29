@@ -17,6 +17,7 @@ import type { LogEntry } from "../../../../src/logs/entries.js";
 import { LocalApiError } from "../../api.js";
 import { useNow } from "../../format.js";
 import { AGENT_SECTIONS } from "../../nav.js";
+import { logLevelTone } from "../logs/model.js";
 import { useAgentState } from "../../state.js";
 import { AgentPage } from "../page.js";
 import {
@@ -45,8 +46,7 @@ export function AttemptPage({ id }: { id: string }) {
   if (attempt.isError) {
     const missing = attempt.error instanceof LocalApiError && attempt.error.status === 404;
     return (
-      <AgentPage title="Attempt">
-        {BACK}
+      <AgentPage title="Attempt" back={BACK}>
         <EmptyState
           title={missing ? ATTEMPT_NOT_FOUND : "Can't load this attempt"}
           {...(!missing && { description: attempt.error.message })}
@@ -54,7 +54,7 @@ export function AttemptPage({ id }: { id: string }) {
       </AgentPage>
     );
   }
-  return <AgentPage title="Attempt">{BACK}</AgentPage>;
+  return <AgentPage title="Attempt" back={BACK} />;
 }
 
 function AttemptView({ attempt }: { attempt: AttemptPageState }) {
@@ -67,6 +67,7 @@ function AttemptView({ attempt }: { attempt: AttemptPageState }) {
   return (
     <AgentPage
       title={attempt.label}
+      back={BACK}
       actions={
         attempt.runId !== null && server !== null ? (
           <Toolbar
@@ -84,7 +85,6 @@ function AttemptView({ attempt }: { attempt: AttemptPageState }) {
         ) : undefined
       }
     >
-      {BACK}
       <StatusLine tone={status.tone ?? "neutral"}>{status.text}</StatusLine>
       <AttemptBadges attempt={attempt} />
       <section className="agent-attempt__transcript" aria-label="Transcript">
@@ -108,15 +108,21 @@ function AttemptLog({ lines }: { lines: LogEntry[] }) {
   if (lines.length === 0) return <p className="agent-card-description">{NO_LOG_LINES}</p>;
   return (
     <ol className="agent-log or-mono" aria-label="Log">
-      {lines.map((line, index) => (
-        <li key={index} className={`agent-log__line agent-log__line--${line.level}`}>
-          <time className="agent-log__time" dateTime={new Date(line.time).toISOString()}>
-            {clockTimeSeconds(line.time)}
-          </time>
-          <span className="agent-log__level">{line.level}</span>
-          <span className="agent-log__msg">{line.msg}</span>
-        </li>
-      ))}
+      {lines.map((line, index) => {
+        const tone = logLevelTone(line.level);
+        return (
+          <li
+            key={index}
+            className={tone ? `agent-log__line agent-log__line--${tone}` : "agent-log__line"}
+          >
+            <time className="agent-log__time" dateTime={new Date(line.time).toISOString()}>
+              {clockTimeSeconds(line.time)}
+            </time>
+            <span className="agent-log__level">{line.level}</span>
+            <span className="agent-log__msg">{line.msg}</span>
+          </li>
+        );
+      })}
     </ol>
   );
 }

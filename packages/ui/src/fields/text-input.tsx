@@ -100,6 +100,11 @@ export function Textarea(props: TextareaProps) {
 export type SelectProps = ValidationProps & {
   /** `<option>` (and `<optgroup>`) elements. */
   children: ReactNode;
+  /**
+   * Drawn inside the control before the chosen option's text, e.g. the chosen repo's host mark
+   * (Design rule 1; a native option can't hold one). Decorative: the option text names it.
+   */
+  leading?: ReactNode;
   ref?: Ref<HTMLSelectElement>;
 } & Omit<SelectHTMLAttributes<HTMLSelectElement>, "children" | "aria-invalid" | "multiple">;
 
@@ -113,6 +118,7 @@ export function Select(props: SelectProps) {
     id: idProp,
     "aria-describedby": describedByProp,
     children,
+    leading,
     ...rest
   } = props;
   const ids = useControlIds({
@@ -121,15 +127,27 @@ export function Select(props: SelectProps) {
     invalid,
     hasError: errorMessage != null,
   });
+  const hasLeading = leading != null;
   return (
     <>
       <span className="or-select">
+        {hasLeading ? (
+          <span className="or-select__leading" aria-hidden="true">
+            {leading}
+          </span>
+        ) : null}
         <select
           {...rest}
           id={ids.id}
           aria-invalid={ids.invalid}
           aria-describedby={ids.describedBy}
-          className={classes("or-input or-select__control", mono, className)}
+          className={classes(
+            hasLeading
+              ? "or-input or-select__control or-select__control--leading"
+              : "or-input or-select__control",
+            mono,
+            className,
+          )}
         >
           {children}
         </select>

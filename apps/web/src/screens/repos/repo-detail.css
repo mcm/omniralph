@@ -88,10 +88,15 @@
   scroll-margin-top: 48px;
 }
 
-.or-repo-section__title {
+/*
+ * A section's heading (a card that is the section, or Advanced over its cards): 18 px, a clear
+ * step above the 14 px card titles and body text under it.
+ */
+.or-repo-section__title,
+.or-repo-card h2.or-card__title {
   margin: 0;
   color: var(--or-text);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   line-height: 1.3;
 }

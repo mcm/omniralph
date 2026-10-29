@@ -131,11 +131,16 @@ describe("Logs", () => {
       "warn",
       "error",
     ]);
-    // Warnings and errors are in the fail tone.
+    // Only errors are in the fail tone; a warning is emphasized, not a failure (rule 15).
     expect(items.map((item) => item.classList.contains("agent-logs__line--fail"))).toEqual([
       false,
+      false,
       true,
+    ]);
+    expect(items.map((item) => item.classList.contains("agent-logs__line--warn"))).toEqual([
+      false,
       true,
+      false,
     ]);
   });
 

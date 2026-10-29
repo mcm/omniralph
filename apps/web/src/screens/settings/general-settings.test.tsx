@@ -122,7 +122,7 @@ function renderGeneral(options: { user?: SessionUser; live?: ReturnType<typeof f
   return { client };
 }
 
-const generalCard = () => screen.findByRole("region", { name: "General" });
+const generalCard = () => screen.findByRole("region", { name: "Organization" });
 const nameField = async () =>
   within(await generalCard()).getByRole<HTMLInputElement>("textbox", { name: "Name" });
 const sectionNavBadge = () =>

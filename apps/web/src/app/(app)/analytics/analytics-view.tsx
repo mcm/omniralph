@@ -443,7 +443,7 @@ function Charts({ data, withCost }: { data: RunAnalyticsResponse; withCost: bool
           format={count}
         />
       </Card>
-      <Card title="Success rate">
+      <Card title="Success rate" className="or-analytics__wide">
         <AnalyticsChart
           data={data}
           title="Success rate"
@@ -456,7 +456,7 @@ function Charts({ data, withCost }: { data: RunAnalyticsResponse; withCost: bool
           overallRate={data.totals.attempts.successRate}
         />
       </Card>
-      <Card title="Tokens" className="or-analytics__tokens">
+      <Card title="Tokens" className="or-analytics__wide or-analytics__tokens">
         <div className="or-analytics__stack">
           <AnalyticsChart
             data={data}

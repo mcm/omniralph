@@ -46,6 +46,7 @@ import { AGENT_ONLINE_WINDOW_MS } from "@/lib/agents/display";
 import { storedPlaybookInput } from "@/lib/playbooks";
 import { fixtureLinearGateway } from "@/lib/linear/fixture-gateway";
 import { linearRoutingRulesSchema } from "@/lib/linear/routing-fields";
+import { loadFleet } from "@/lib/fleet/load";
 import { loadStoryDiff } from "@/lib/runs/diff";
 import { fixtureDiffAdapterFor } from "@/lib/scm/fixture-diff";
 import { loadOrganizationBacklog } from "@/lib/work-items/backlog";
@@ -438,6 +439,24 @@ describe("seedFixtures", () => {
     expect(rows.some((h) => h.revokedAt)).toBe(true);
     // Enough for the pinned-agent picker to need its search.
     expect(rows.length).toBeGreaterThanOrEqual(30);
+  });
+
+  it("shows Fleet each agent's intended state, so no online agent reads Offline", async () => {
+    const H = FIXTURE_IDS.agents;
+    const { agents: rows } = await loadFleet(db, [
+      { id: FIXTURE_IDS.organizations.main, name: "Fixture Labs", role: "admin" },
+    ]);
+    const kind = (id: string) => rows.find((row) => row.id === id)?.status.kind;
+    expect(kind(H.online)).toBe("running");
+    expect(kind(H.outdated)).not.toBe("offline");
+    expect(kind(H.updating)).not.toBe("offline");
+    expect(kind(H.offline)).toBe("offline");
+    expect(kind(H.revoked)).toBe("revoked");
+    expect(rows.find((row) => row.id === H.offline)!.status.label).toBe("Offline 3d");
+    // Offline is only for agents whose heartbeat is really old.
+    for (const row of rows.filter((r) => r.status.kind === "offline")) {
+      expect(Date.now() - Date.parse(row.lastHeartbeatAt!)).toBeGreaterThan(AGENT_ONLINE_WINDOW_MS);
+    }
   });
 
   it("pins the control panel to a revoked agent among others", async () => {
