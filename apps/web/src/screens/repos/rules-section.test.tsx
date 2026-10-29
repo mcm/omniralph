@@ -205,7 +205,20 @@ const rulesSection = () => screen.findByRole("region", { name: "Rules" });
 /** The row of the rule showing `text`. */
 const row = (text: string) => screen.getByText(text).closest("li") as HTMLElement;
 const useSwitch = (text: string) =>
-  within(row(text)).getByRole("switch", { name: "Use this rule" });
+  within(row(text)).getByRole("switch", { name: `Use rule “${text}”` });
+const editButton = (text: string) =>
+  within(row(text)).getByRole("button", { name: `Edit rule “${text}”` });
+const deleteButton = (text: string) =>
+  within(row(text)).getByRole("button", { name: `Delete rule “${text}”` });
+const saveBar = (section: HTMLElement) =>
+  within(section).queryByRole("region", { name: "Unsaved changes" });
+const pendingItems = (section: HTMLElement) =>
+  [...(saveBar(section)?.querySelectorAll(".or-pending__item") ?? [])].map((item) => ({
+    label: item.querySelector(".or-pending__label")?.textContent,
+    from: item.querySelector(".or-pending__from")?.textContent,
+    to: item.querySelector(".or-pending__to")?.textContent,
+    effect: item.querySelector(".or-pending__effect")?.textContent,
+  }));
 const ruleTexts = (section: HTMLElement) =>
   [...section.querySelectorAll(".or-repo-rules__text")].map((node) => node.textContent);
 const rulesReads = () =>
@@ -236,8 +249,9 @@ describe("the Rules section", () => {
     expect(within(written).getByText("Written")).toBeTruthy();
     expect(within(written).getByText("Written by Ada Admin")).toBeTruthy();
     expect(useSwitch("Rule number 1").getAttribute("aria-checked")).toBe("true");
-    expect(within(written).getByRole("button", { name: "Edit rule" })).toBeTruthy();
-    expect(within(written).getByRole("button", { name: "Delete rule" })).toBeTruthy();
+    expect(editButton("Rule number 1")).toBeTruthy();
+    expect(deleteButton("Rule number 1")).toBeTruthy();
+    expect(useSwitch("Learned rule 2")).toBeTruthy();
 
     const learned = row("Learned rule 2");
     expect(within(learned).getByText("Learned")).toBeTruthy();
@@ -310,7 +324,7 @@ describe("the Rules section", () => {
     const { section } = await renderLoaded();
     const readsBefore = seen.length;
     const user = userEvent.setup();
-    await user.click(within(row("Rule number 1")).getByRole("button", { name: "Edit rule" }));
+    await user.click(editButton("Rule number 1"));
     const text = within(section).getByLabelText("Rule") as HTMLTextAreaElement;
     expect(text.value).toBe("Rule number 1");
     await user.clear(text);
@@ -328,53 +342,113 @@ describe("the Rules section", () => {
   it("cancels an edit back to the saved text", async () => {
     const { section } = await renderLoaded();
     const user = userEvent.setup();
-    await user.click(within(row("Rule number 1")).getByRole("button", { name: "Edit rule" }));
+    await user.click(editButton("Rule number 1"));
     await user.type(within(section).getByLabelText("Rule"), " more");
     await user.click(within(section).getByRole("button", { name: "Cancel" }));
     expect(ruleTexts(section)).toEqual(["Rule number 1", "Learned rule 2"]);
     expect(writes("PATCH")).toHaveLength(0);
   });
 
-  it("switches a rule off at once, holds it while the change is in flight, and keeps it", async () => {
+  it("names each control by its rule, cutting a long rule short", async () => {
+    rules = [
+      rule(1),
+      rule(3, {
+        text: "Don't flag missing error handling in the generated API clients under src/gen",
+      }),
+    ];
+    const { section } = await renderLoaded();
+    const name = "rule “Don't flag missing error handling in the…”";
+    expect(within(section).getByRole("switch", { name: `Use ${name}` })).toBeTruthy();
+    expect(within(section).getByRole("button", { name: `Edit ${name}` })).toBeTruthy();
+    expect(within(section).getByRole("button", { name: `Delete ${name}` })).toBeTruthy();
+  });
+
+  it("stages switched rules in the save bar and saves them together with no refetch", async () => {
     let release: () => void = () => {};
+    const answer = writeAnswer;
+    let held = false;
     writeAnswer = async (request) => {
-      await new Promise<void>((resolve) => (release = resolve));
-      return jsonResponse({
-        ok: true,
-        rule: rule(1, { enabled: (request.body as { enabled: boolean }).enabled }),
-      });
+      if (!held) {
+        held = true;
+        await new Promise<void>((resolve) => (release = resolve));
+      }
+      writeAnswer = answer;
+      const id = request.path.split("/").pop()!;
+      const enabled = (request.body as { enabled: boolean }).enabled;
+      rules = rules.map((entry) => (entry.id === id ? { ...entry, enabled } : entry));
+      writeAnswer = (next) => {
+        const nextId = next.path.split("/").pop()!;
+        const nextEnabled = (next.body as { enabled: boolean }).enabled;
+        rules = rules.map((entry) =>
+          entry.id === nextId ? { ...entry, enabled: nextEnabled } : entry,
+        );
+        return jsonResponse({ ok: true, rule: rules.find((entry) => entry.id === nextId) });
+      };
+      return jsonResponse({ ok: true, rule: rules.find((entry) => entry.id === id) });
     };
-    await renderLoaded();
-    await userEvent.setup().click(useSwitch("Rule number 1"));
+    const { section } = await renderLoaded();
+    const user = userEvent.setup();
+    await user.click(useSwitch("Rule number 1"));
+    await user.click(useSwitch("Learned rule 2"));
+    // Staged, not sent.
+    expect(writes("PATCH")).toHaveLength(0);
     expect(useSwitch("Rule number 1").getAttribute("aria-checked")).toBe("false");
     expect(row("Rule number 1").dataset.enabled).toBe("false");
-    await waitFor(() => expect(useSwitch("Rule number 1").hasAttribute("disabled")).toBe(true));
-    expect(writes("PATCH")[0]!.body).toEqual({ enabled: false });
+    expect(pendingItems(section)).toEqual([
+      {
+        label: "Rule “Rule number 1”",
+        from: "On",
+        to: "Off",
+        effect: "Om stops following it in new reviews.",
+      },
+      {
+        label: "Rule “Learned rule 2”",
+        from: "On",
+        to: "Off",
+        effect: "Om stops following it in new reviews.",
+      },
+    ]);
+    // Switching one back un-stages it.
+    await user.click(useSwitch("Learned rule 2"));
+    expect(pendingItems(section)).toHaveLength(1);
+    await user.click(useSwitch("Learned rule 2"));
 
+    await user.click(within(section).getByRole("button", { name: "Save 2 changes" }));
+    await waitFor(() => expect(writes("PATCH")).toHaveLength(1));
+    expect(useSwitch("Rule number 1").hasAttribute("disabled")).toBe(true);
     release();
-    await waitFor(() => expect(ui.toast).toHaveBeenCalledWith("Rule off"));
-    await waitFor(() => expect(useSwitch("Rule number 1").hasAttribute("disabled")).toBe(false));
+    await waitFor(() => expect(saveBar(section)).toBeNull());
+    expect(writes("PATCH").map((request) => [request.path, request.body])).toEqual([
+      [`${RULES_PATH}/${rule(1).id}`, { enabled: false }],
+      [`${RULES_PATH}/${rule(2).id}`, { enabled: false }],
+    ]);
+    expect(ui.toast).toHaveBeenCalledWith("Saved");
     expect(useSwitch("Rule number 1").getAttribute("aria-checked")).toBe("false");
+    expect(useSwitch("Learned rule 2").getAttribute("aria-checked")).toBe("false");
+    expect(useSwitch("Rule number 1").hasAttribute("disabled")).toBe(false);
     expect(rulesReads()).toHaveLength(1);
   });
 
-  it("rolls a switch back with an error toast when the change fails", async () => {
-    let release: () => void = () => {};
-    writeAnswer = async () => {
-      await new Promise<void>((resolve) => (release = resolve));
-      return jsonResponse({ error: "That rule doesn't exist." }, 400);
-    };
-    await renderLoaded();
-    await userEvent.setup().click(useSwitch("Rule number 1"));
+  it("discards staged switches back to the saved rules", async () => {
+    const { section } = await renderLoaded();
+    const user = userEvent.setup();
+    await user.click(useSwitch("Rule number 1"));
+    await user.click(within(saveBar(section)!).getByRole("button", { name: "Discard" }));
+    expect(saveBar(section)).toBeNull();
+    expect(useSwitch("Rule number 1").getAttribute("aria-checked")).toBe("true");
+    expect(writes("PATCH")).toHaveLength(0);
+  });
+
+  it("keeps the staged switch and shows the error in the save bar when the save fails", async () => {
+    writeAnswer = () => jsonResponse({ error: "That rule doesn't exist." }, 400);
+    const { section } = await renderLoaded();
+    const user = userEvent.setup();
+    await user.click(useSwitch("Rule number 1"));
+    await user.click(within(section).getByRole("button", { name: "Save 1 change" }));
+    await waitFor(() =>
+      expect(within(saveBar(section)!).getByText("That rule doesn't exist.")).toBeTruthy(),
+    );
     expect(useSwitch("Rule number 1").getAttribute("aria-checked")).toBe("false");
-    await waitFor(() => expect(writes("PATCH")).toHaveLength(1));
-    release();
-    await waitFor(() =>
-      expect(ui.toast).toHaveBeenCalledWith("That rule doesn't exist.", { variant: "danger" }),
-    );
-    await waitFor(() =>
-      expect(useSwitch("Rule number 1").getAttribute("aria-checked")).toBe("true"),
-    );
     expect(rulesReads()).toHaveLength(1);
   });
 
@@ -386,14 +460,14 @@ describe("the Rules section", () => {
     };
     const { section } = await renderLoaded();
     const user = userEvent.setup();
-    await user.click(within(row("Rule number 1")).getByRole("button", { name: "Delete rule" }));
+    await user.click(deleteButton("Rule number 1"));
     const dialog = await screen.findByRole("alertdialog", { name: "Delete this rule?" });
     expect(within(dialog).getByText("Om stops following it in new reviews.")).toBeTruthy();
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(writes("DELETE")).toHaveLength(0);
     expect(ruleTexts(section)).toEqual(["Rule number 1", "Learned rule 2"]);
 
-    await user.click(within(row("Rule number 1")).getByRole("button", { name: "Delete rule" }));
+    await user.click(deleteButton("Rule number 1"));
     await user.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete rule" }),
     );
@@ -410,7 +484,7 @@ describe("the Rules section", () => {
     writeAnswer = () => jsonResponse({ error: "That rule doesn't exist." }, 400);
     const { section } = await renderLoaded();
     const user = userEvent.setup();
-    await user.click(within(row("Rule number 1")).getByRole("button", { name: "Delete rule" }));
+    await user.click(deleteButton("Rule number 1"));
     await user.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete rule" }),
     );
@@ -479,8 +553,9 @@ describe("the Rules section", () => {
     const { section } = await renderLoaded({ user: member });
     expect(useSwitch("Rule number 1").hasAttribute("disabled")).toBe(true);
     expect(within(section).queryByRole("button", { name: "Add rule" })).toBeNull();
-    expect(within(section).queryByRole("button", { name: "Edit rule" })).toBeNull();
-    expect(within(section).queryByRole("button", { name: "Delete rule" })).toBeNull();
+    expect(within(section).queryByRole("button", { name: /^Edit rule/ })).toBeNull();
+    expect(within(section).queryByRole("button", { name: /^Delete rule/ })).toBeNull();
+    expect(saveBar(section)).toBeNull();
   });
 
   it("shows members no Add rule in the empty state", async () => {

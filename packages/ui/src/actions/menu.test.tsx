@@ -177,6 +177,28 @@ describe("Menu groups and keepOpen", () => {
   });
 });
 
+describe("Menu badge items", () => {
+  it("draws an item as its badge, named by its label, and finds it by typeahead", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    const trigger = renderMenu([
+      {
+        label: "build-01",
+        onSelect: noop,
+        badge: <span data-testid="badge-1">Agent build-01</span>,
+      },
+      { label: "gpu-02", onSelect, badge: <span data-testid="badge-2">Agent gpu-02</span> },
+    ]);
+    await user.click(trigger);
+    const item = await screen.findByRole("menuitem", { name: "gpu-02" });
+    expect(within(item).getByTestId("badge-2").closest("[aria-hidden]")).not.toBeNull();
+    // The menu scrolls when long: its box is focusable, since its items are tabindex -1.
+    expect(screen.getByRole("menu").getAttribute("tabindex")).toBe("0");
+    await user.keyboard("g{Enter}");
+    expect(onSelect).toHaveBeenCalledOnce();
+  });
+});
+
 describe("Menu shortcut keys", () => {
   it("puts an item's key on it, and opens when told to", async () => {
     const { rerender } = render(

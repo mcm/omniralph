@@ -245,6 +245,10 @@
 .or-menu {
   z-index: 50;
   min-width: 190px;
+  /* A long menu (every agent of an organization, say) scrolls inside the viewport. */
+  max-height: min(400px, var(--radix-dropdown-menu-content-available-height, 400px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px;
   border: 1px solid var(--or-border);
   border-radius: var(--or-radius);
@@ -332,6 +336,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.or-menu__label--badge {
+  display: flex;
+  align-items: center;
 }
 
 .or-menu__check {

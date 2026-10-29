@@ -8,22 +8,27 @@ import {
   Field,
   IconButton,
   MetaBadge,
+  SaveBar,
   Switch,
   Textarea,
   TextLink,
+  useStagedCard,
+  type StagedChange,
 } from "@omniralph/ui";
 import { MAX_RULE_LENGTH, RuleInput } from "@omniralph/shared";
 import { IconPencil, IconTrash } from "@tabler/icons-react";
-import { useMutationState } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useCallback, useMemo, useState, type FormEvent } from "react";
 import type { z } from "zod";
+import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
 import { useApiMutation, type MutationCache } from "@/components/use-api-mutation";
 import { api } from "@/lib/api/client";
 import type { RepositoryDetail } from "@/lib/api/repositories";
 import { ruleSaveResultSchema, type RepositoryRules, type RuleSaveResult } from "@/lib/api/rules";
 import { mutationResultSchema } from "@/lib/api/schemas";
+import { ruleEnabledEffect, ruleExcerpt } from "@/lib/repositories/effects";
 import type { RuleView } from "@/lib/rules/display";
 import { reposKeys, useRepositoryRules } from "./queries";
+import { saveChangesLabel } from "./reviews-card";
 
 type Provider = RepositoryDetail["repository"]["provider"];
 
@@ -188,40 +193,63 @@ function EditRuleForm({
   );
 }
 
-/** A rule switched on or off. */
-interface RuleSwitch {
-  ruleId: string;
-  enabled: boolean;
+/** The rules' "Use rule" switches as the Rules card stages them: on or off, by rule ID. */
+export interface RulesDraft {
+  enabled: Record<string, boolean>;
 }
 
-const ruleSwitchKey = (repositoryId: string) => ["repo-rule-enabled", repositoryId];
+const NO_RULES: RuleView[] = [];
+
+function toDraft(rules: readonly RuleView[]): RulesDraft {
+  return { enabled: Object.fromEntries(rules.map((rule) => [rule.id, rule.enabled])) };
+}
+
+/** The rules whose switch the draft changes, in the list's order (deleted rules drop out). */
+function switchedRules(rules: readonly RuleView[], draft: RulesDraft): RuleView[] {
+  return rules.filter(
+    (rule) => draft.enabled[rule.id] !== undefined && draft.enabled[rule.id] !== rule.enabled,
+  );
+}
+
+/** The save bar's items: each rule switched on or off, with what that does. */
+export function rulesChanges(rules: readonly RuleView[], draft: RulesDraft): StagedChange[] {
+  return switchedRules(rules, draft).map((rule) => ruleEnabledEffect(rule, !rule.enabled));
+}
 
 /**
- * "Use this rule": `PATCH { enabled }`, shown at once (optimistic) and rolled back with the
- * server's error as a toast when it fails. `switching` holds the rules with a change in
- * flight, so two changes of one rule never race.
+ * The rules' switches as a staged card (the Repos save model): a switch only stages its
+ * change in the card's save bar; Save sends each switched rule's `PATCH { enabled }` in turn
+ * and writes the saved rules into the list.
  */
-function useRuleSwitch(repositoryId: string) {
-  const mutation = useApiMutation<RuleSaveResult, RuleSwitch>({
-    mutationKey: ruleSwitchKey(repositoryId),
-    mutationFn: ({ ruleId, enabled }, { organizationId }) =>
-      api.patch(rulePath(repositoryId, ruleId), ruleSaveResultSchema, {
-        body: { enabled },
-        organizationId,
-      }),
-    optimistic: ({ ruleId, enabled }, cache) =>
-      updateRules(cache, repositoryId, (rules) =>
-        rules.map((rule) => (rule.id === ruleId ? { ...rule, enabled } : rule)),
-      ),
-    applyResult: (result, cache) => putRule(cache, repositoryId, result.rule),
-    invalidate: () => [],
-    success: (_result, { enabled }) => (enabled ? "Rule on" : "Rule off"),
+function useRuleSwitches(repositoryId: string, rules: readonly RuleView[]) {
+  const saved = useMemo(() => toDraft(rules), [rules]);
+  const toChanges = useCallback(
+    (_saved: RulesDraft, draft: RulesDraft) => rulesChanges(rules, draft),
+    [rules],
+  );
+  return useStagedCard<RulesDraft, RuleSaveResult[]>({
+    label: "Rules",
+    saved,
+    toChanges,
+    save: useStagedSave({
+      request: async (draft, { organizationId }) => {
+        const results: RuleSaveResult[] = [];
+        for (const rule of switchedRules(rules, draft)) {
+          results.push(
+            await api.patch(rulePath(repositoryId, rule.id), ruleSaveResultSchema, {
+              body: { enabled: draft.enabled[rule.id] },
+              organizationId,
+            }),
+          );
+        }
+        return results;
+      },
+      applyResult: async (results, cache) => {
+        for (const result of results) await putRule(cache, repositoryId, result.rule);
+      },
+    }),
+    onDirtyChange: useUnsavedCard("Rules"),
   });
-  const pending = useMutationState({
-    filters: { mutationKey: ruleSwitchKey(repositoryId), status: "pending" },
-    select: (entry) => (entry.state.variables as RuleSwitch | undefined)?.ruleId,
-  });
-  return { setEnabled: mutation.mutate, switching: new Set(pending) };
 }
 
 /** `DELETE …/rules/{id}`: the row leaves at once (back, with the error, if it fails). */
@@ -266,21 +294,26 @@ function RuleSource({ rule }: { rule: RuleView }) {
 function RuleRow({
   repositoryId,
   rule,
+  enabled,
   canEdit,
-  switching,
+  saving,
   onSwitch,
   onDelete,
 }: {
   repositoryId: string;
   rule: RuleView;
+  /** The switch's state in the draft. */
+  enabled: boolean;
   canEdit: boolean;
-  switching: boolean;
-  onSwitch: (change: RuleSwitch) => void;
+  saving: boolean;
+  onSwitch: (enabled: boolean) => void;
   onDelete: (rule: RuleView) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  // Every control names its rule (WCAG 2.4.6), as "Unpin build-01" names its agent.
+  const name = `rule “${ruleExcerpt(rule.text)}”`;
   return (
-    <li className="or-repo-rules__row" data-enabled={rule.enabled}>
+    <li className="or-repo-rules__row" data-enabled={enabled}>
       <div className="or-repo-rules__body">
         <MetaBadge text={rule.kind === "learned" ? "Learned" : "Written"} />
         {editing ? (
@@ -294,22 +327,22 @@ function RuleRow({
       </div>
       <div className="or-repo-rules__controls">
         <Switch
-          aria-label="Use this rule"
-          checked={rule.enabled}
-          disabled={!canEdit || switching}
-          onCheckedChange={(enabled) => onSwitch({ ruleId: rule.id, enabled })}
+          aria-label={`Use ${name}`}
+          checked={enabled}
+          disabled={!canEdit || saving}
+          onCheckedChange={onSwitch}
         />
         {canEdit ? (
           <>
             <IconButton
-              label="Edit rule"
+              label={`Edit ${name}`}
               icon={IconPencil}
               size="sm"
               disabled={editing}
               onClick={() => setEditing(true)}
             />
             <IconButton
-              label="Delete rule"
+              label={`Delete ${name}`}
               icon={IconTrash}
               size="sm"
               onClick={() => onDelete(rule)}
@@ -332,7 +365,7 @@ function RulesBody({
 }) {
   const { repository, canEdit } = detail;
   const rules = useRepositoryRules(repository.id);
-  const { setEnabled, switching } = useRuleSwitch(repository.id);
+  const card = useRuleSwitches(repository.id, rules.data?.rules ?? NO_RULES);
   const remove = useDeleteRule(repository.id);
   const [deleting, setDeleting] = useState<RuleView | null>(null);
 
@@ -386,13 +419,26 @@ function RulesBody({
             key={rule.id}
             repositoryId={repository.id}
             rule={rule}
+            enabled={card.draft.enabled[rule.id] ?? rule.enabled}
             canEdit={canEdit}
-            switching={switching.has(rule.id)}
-            onSwitch={setEnabled}
+            saving={card.saving}
+            onSwitch={(enabled) =>
+              card.set("enabled", { ...card.draft.enabled, [rule.id]: enabled })
+            }
             onDelete={setDeleting}
           />
         ))}
       </ul>
+      {canEdit ? (
+        <SaveBar
+          changes={card.changes}
+          onSave={card.submit}
+          onDiscard={card.discard}
+          saving={card.saving}
+          error={card.error}
+          saveLabel={saveChangesLabel(card.changes.length)}
+        />
+      ) : null}
       {canEdit ? (
         <ConfirmDialog
           open={deleting !== null}
@@ -414,8 +460,10 @@ function RulesBody({
 
 /**
  * The Rules section: the repo's review rules, written by admins or learned from findings
- * marked as false positives. Rules are records: each add, edit, switch and delete saves on
- * its own (`/api/ui/repositories/{id}/rules`) and shows at once from the response (or
+ * marked as false positives. The rules' switches are staged like every Repos card: they show
+ * in the card's save bar with their effect and save together. Adding, editing (each a form
+ * with its own Save) and deleting (after a confirm) save the rule on its own
+ * (`/api/ui/repositories/{id}/rules`) and show at once from the response (or
  * optimistically); the repo's change events refetch the list, so a rule learned from a pull
  * request appears without a refresh. Members see the rules read-only.
  */

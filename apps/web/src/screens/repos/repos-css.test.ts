@@ -53,12 +53,6 @@ describe("the Repos screen's stylesheets", () => {
     expect(read("repos-view.tsx")).not.toMatch(/listWidth=/);
   });
 
-  it("dims a rail row's switch icon that is off to 35%", () => {
-    expect(declarations(sheets["repos.css"], ".or-repo-row__switch--off")).toMatch(
-      /opacity:\s*0\.35;/,
-    );
-  });
-
   it("keeps the organization and branch in the header and hides Details above phone width", () => {
     const desktop = detailCss.slice(0, detailCss.search(/@media\s*\(max-width:\s*768px\)/));
     expect(declarations(desktop, ".or-repo-detail__details")).toMatch(/display:\s*none;/);

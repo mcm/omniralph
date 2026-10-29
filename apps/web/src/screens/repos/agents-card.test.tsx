@@ -362,6 +362,15 @@ describe("the Agents card", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
+  it("offers each pinnable agent as its agent badge (Design rule 1)", async () => {
+    renderRepos();
+    const card = await agentsCard();
+    await userEvent.setup().click(within(card).getByRole("button", { name: "Pin agent" }));
+    const item = await screen.findByRole("menuitem", { name: "build-3" });
+    const badge = item.querySelector('[data-or-badge="agent"]');
+    expect(badge?.querySelector(".or-ref__text")?.textContent).toBe("build-3");
+  });
+
   it("offers an agent unpinned in the draft again, and re-pinning un-stages it", async () => {
     details[REPO_PORTAL] = repoDetail(portalRow(), {
       agents: { pinned: [pinned(BUILD_1, "idle")], pinnable: [] },

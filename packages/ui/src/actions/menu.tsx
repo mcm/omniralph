@@ -27,6 +27,11 @@ interface MenuItemBase {
   group?: string;
   /** A leading mark in place of `icon` (e.g. a repository's code-host `BrandMark`). */
   mark?: ReactNode;
+  /**
+   * Draws the item as this badge (e.g. an `AgentBadge` for a pickable agent, Design rule 1)
+   * in place of its label text; `label` still names the item and drives typeahead.
+   */
+  badge?: ReactNode;
   /** Keeps the menu open when the item is chosen (e.g. toggling one of many choices). */
   keepOpen?: boolean;
   /**
@@ -146,6 +151,7 @@ export function Menu({
       label,
       icon: Icon,
       mark,
+      badge,
       destructive,
       disabled: itemDisabled,
       checked,
@@ -164,7 +170,16 @@ export function Menu({
         ) : Icon ? (
           <Icon className="or-menu__icon" size={16} stroke={1.75} aria-hidden="true" />
         ) : null}
-        <span className="or-menu__label">{label}</span>
+        {badge !== undefined ? (
+          <>
+            <span className="or-menu__label or-menu__label--badge" aria-hidden="true">
+              {badge}
+            </span>
+            <span className="or-sr-only">{label}</span>
+          </>
+        ) : (
+          <span className="or-menu__label">{label}</span>
+        )}
         {checked !== undefined ? (
           <DropdownMenu.ItemIndicator className="or-menu__check">
             <IconCheck size={16} stroke={2} aria-hidden="true" />
@@ -174,6 +189,7 @@ export function Menu({
     );
     const itemProps = {
       className,
+      textValue: label,
       "aria-keyshortcuts": keyShortcuts,
       disabled: itemDisabled,
       onSelect:
@@ -206,6 +222,10 @@ export function Menu({
           align={align}
           sideOffset={6}
           collisionPadding={8}
+          // A long menu scrolls (max-height in actions.css); its items are tabindex -1 (Radix
+          // moves focus with the arrows), so the scroll box itself is focusable (axe
+          // scrollable-region-focusable, WCAG 2.1.1).
+          tabIndex={0}
           onKeyDown={header !== undefined ? onTabKey : undefined}
         >
           {header !== undefined ? (

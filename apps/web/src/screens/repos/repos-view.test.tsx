@@ -249,7 +249,7 @@ describe("the rail", () => {
     expect(badgeTexts(beta!)).toEqual(["Beta", "api"]);
   });
 
-  it("names the Reviews, Coding and Ask icons on or off, dimming the ones that are off", async () => {
+  it("names the Reviews, Coding and Ask icons on or off, slashing the ones that are off", async () => {
     rows = [portalRow(), betaRow()];
     renderRepos();
     await waitFor(() => expect(railRows()).toHaveLength(2));
@@ -261,6 +261,11 @@ describe("the rail", () => {
     for (const name of ["Reviews off", "Coding off", "Ask off"]) {
       expect(icon(beta!, name).classList.contains("or-repo-row__switch--off")).toBe(true);
     }
+    // Off is a different shape, not only a different color (WCAG 1.4.1).
+    expect(icon(portal!, "Coding off").classList.contains("tabler-icon-code-off")).toBe(true);
+    expect(icon(portal!, "Reviews on").classList.contains("tabler-icon-eye")).toBe(true);
+    expect(icon(beta!, "Reviews off").classList.contains("tabler-icon-eye-off")).toBe(true);
+    expect(icon(beta!, "Ask off").classList.contains("tabler-icon-message-off")).toBe(true);
   });
 
   it.each([
@@ -537,6 +542,21 @@ describe("the detail header", () => {
         "This repo doesn't exist or isn't in your organizations.",
       ),
     ).toBeTruthy();
+  });
+});
+
+describe("the Add repos sheet", () => {
+  it("returns focus to Add repo on Escape when it opened from a link (no control opened it)", async () => {
+    serve({
+      "GET /api/ui/scm-connections": () => jsonResponse({ connections: [] }),
+      "GET /api/ui/repositories/setup": () =>
+        jsonResponse({ githubInstallPath: "/install", defaultGitLabUrl: "https://gitlab.com" }),
+    });
+    renderRepos({ search: "github=requested" });
+    await screen.findByRole("dialog", { name: "Add repos" });
+    await userEvent.setup().keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add repo" }));
   });
 });
 

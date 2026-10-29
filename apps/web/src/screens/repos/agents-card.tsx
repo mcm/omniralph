@@ -176,6 +176,7 @@ export function AgentsCard({ detail, titleId }: { detail: RepositoryDetail; titl
             <Menu
               items={choices.map((agent) => ({
                 label: agent.name,
+                badge: <AgentBadge name={agent.name} />,
                 onSelect: () => pin(agent.id),
               }))}
               trigger={pinButton}
