@@ -5,9 +5,9 @@ import { describe, expect, it } from "vitest";
 /**
  * Keeps `@iamthemcmaster/ui` (Precision Aurora) inside today's screens, so Epic 14 only has to
  * remove it. A file may use the library only if it is under `src/app/(app)/` (today's screens),
- * is the root layout's two library stylesheet imports, or is listed in
- * `LEGACY_SCREEN_MODULES`. Everything else (the signed-out pages, the shells, toasts) uses
- * `@omniralph/ui`.
+ * is the root layout's two library stylesheet imports (or their type declarations), or is
+ * listed in `LEGACY_SCREEN_MODULES`. Everything else (the signed-out pages, the shells,
+ * toasts) uses `@omniralph/ui`.
  */
 
 const SRC = path.resolve(__dirname);
@@ -55,6 +55,8 @@ const LIBRARY_FREE = [
 ];
 
 const ROOT_LAYOUT = "src/app/layout.tsx";
+/** Declares the root layout's stylesheet imports as modules, for the typechecker. */
+const ROOT_LAYOUT_STYLE_TYPES = "src/app/legacy-ui-styles.d.ts";
 const ROOT_LAYOUT_IMPORTS = [
   'import "@iamthemcmaster/ui/styles";',
   'import "@iamthemcmaster/ui/styles/fonts";',
@@ -122,7 +124,11 @@ describe("@iamthemcmaster/ui boundary", () => {
 
   it("is used only by today's screens, the root layout's stylesheets and the allowlist", () => {
     const outside = libraryUsers.filter(
-      (file) => !isScreen(file) && file !== ROOT_LAYOUT && !isAllowlisted(file),
+      (file) =>
+        !isScreen(file) &&
+        file !== ROOT_LAYOUT &&
+        file !== ROOT_LAYOUT_STYLE_TYPES &&
+        !isAllowlisted(file),
     );
     expect(outside).toEqual([]);
   });
