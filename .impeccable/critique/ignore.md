@@ -1,16 +1,24 @@
 # Critique ignore list
 
-Detector findings judged false positives by a review round. Later rounds drop matching findings
-without re-arguing them. Each entry names the rule, its scope and why it is not a defect.
+Findings a review round judged false positives, and the user's Decided items
+(`apps/web/DESIGN.md`, "Decided — never flag, never undo"). Later rounds drop matching critique
+and `impeccable detect` findings without re-arguing them. Each entry names the rule, its scope
+and why it is not a defect. A `decided:` entry never suppresses an axe, keyboard, Escape or
+landmark finding.
 
 | Rule | Scope | Reason | Round |
 |---|---|---|---|
 | broken-image | `apps/web/src/lib/review/sanitize.test.ts` (any `*.test.ts`) | The `<img>` is in a test title and a string fixture proving the sanitizer strips images; it is never rendered. | TOOL-401 round 1 |
-| marquee | library `ui.css` `.whiteout::after` (`whiteout-sheen` animation) | The design system's Skeleton loading sheen (DESIGN.md). It fires from the bundled stylesheet even when no skeleton is on the page. | TOOL-401 round 1 |
-| radial-halo | library `ui.css` `.aurora-field-blob-*` | `AuroraField` styles from the bundled stylesheet. The field renders only on the sign-in, onboarding and legal shells, which DESIGN.md allows; data pages don't render it. | TOOL-401 round 1 |
-| overused-font | Geist Mono | The library's `--font-mono`; DESIGN.md requires mono for IDs, SHAs and exact values. | TOOL-401 round 1 |
-| cramped-padding | library `Card`, `Badge`, `Alert`, `Select`, `ChartContainer`, `Metric`, Tabs list and dialog footers, app-shell sidebar/header/footer, `Avatar`, bordered boxes padded with `--space-*` | The static-HTML scan can't resolve Tailwind v4 `calc(var(--spacing) * n)` padding and reads it as 0; the screenshots show normal insets. | TOOL-401 round 1 (scope widened in round 2) |
-| tight-leading | library `Field` description (`leading-tight`), `Label` (`leading-none`), `CardTitle` | Library typography, not set by the panel. The 1.00× case is a single-line label. | TOOL-401 round 1 |
-| em-dash-overuse | built-in rubric reference `<pre>` on `settings-agent*`; `—` empty-cell placeholders | Shown content and the empty-value convention, not prose copy. | TOOL-401 round 1 |
-
-Removed in round 2: `nested-cards` on the analytics `StatCard` icon tile (StatCard no longer exists; the rule now fires on `ChartContainer` inside `Card`, which is a real finding).
+| overused-font | Geist Mono (`--or-font-mono` in `packages/ui/styles/fonts.css`) | The design system's mono font; DESIGN.md requires mono for IDs, SHAs and exact values. | TOOL-401 round 1 |
+| decided: detail-actions-toolbar | 2.0 code: `apps/web/src`, `packages/ui/src`, the agent's local UI source | The user: "I genuinely don't care" if it goes against impeccable. | TOOL-730 |
+| decided: metadata-is-a-badge | 2.0 code: `apps/web/src`, `packages/ui/src`, the agent's local UI source | A badge with its icon says what kind of thing a value is at a glance, so nobody guesses at a bare name. | TOOL-730 |
+| decided: icon-badge-text | 2.0 code: `apps/web/src`, `packages/ui/src`, the agent's local UI source | Dense rows scan faster with icons and badges than with words. | TOOL-730 |
+| decided: no-location-hints | 2.0 code: `apps/web/src`, `packages/ui/src`, the agent's local UI source | If the layout needs a hint, the layout is wrong. | TOOL-730 |
+| decided: no-shortcut-indicators | 2.0 code: `apps/web/src`, `packages/ui/src`, the agent's local UI source | Shortcuts are one key per action across the app, and the Help page lists every one. | TOOL-730 |
+| decided: no-live-indicator | 2.0 code: `apps/web/src`, `packages/ui/src`, the agent's local UI source | The whole UI is live, so only a stop in live updates is worth a notice. | TOOL-730 |
+| decided: no-row-status-summaries | 2.0 code: `apps/web/src`, `packages/ui/src`, the agent's local UI source | Reasons, summaries and counts live in the detail, and status shows only when something is abnormal. | TOOL-730 |
+| decided: light-phone-layout | 2.0 code: `apps/web/src`, `packages/ui/src`, the agent's local UI source | A phone visit is a quick check or a decision, so the phone carries less. | TOOL-730 |
+| decided: static-glyph | 2.0 code: `apps/web/src`, `packages/ui/src`, the agent's local UI source | The logo decision keeps the Cursor still at every size. | TOOL-730 |
+| decided: no-persona-framing | 2.0 code: `apps/web/src`, `packages/ui/src`, the agent's local UI source | The users are the organization's members, described by what they do, not by a persona. | TOOL-730 |
+| decided: organization-badge-first | 2.0 code: `apps/web/src`, `packages/ui/src`, the agent's local UI source | Across organizations, which one an item belongs to is the first thing to know. | TOOL-730 |
+| decided: mint-and-lavender | 2.0 code: `apps/web/src`, `packages/ui/src`, the agent's local UI source | Lavender stays rare so that it always means the screen needs you. | TOOL-730 |
