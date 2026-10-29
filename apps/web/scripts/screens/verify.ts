@@ -32,6 +32,7 @@ import { FIXTURE_EMAILS, FIXTURE_METADATA_NAMES } from "../fixtures/ids";
 import {
   accessibilityFindings,
   captureFailures,
+  unignoredDetectFindings,
   DECIDED_CHECK_TITLES,
   DECIDED_CHECKS,
   decidedFindings,
@@ -40,10 +41,13 @@ import {
 } from "./checks";
 import {
   ACCESSIBILITY_CHECKS,
+  detectIgnoredBy,
   ignoredBy,
   parseIgnoreList,
   type AccessibilityCheck,
   type AccessibilityIgnoreEntry,
+  type DetectFinding,
+  type ParsedIgnoreList,
 } from "./ignore";
 import {
   parseScreensOptions,
@@ -161,9 +165,11 @@ async function main(cleanups: Cleanups): Promise<number> {
   const results = JSON.parse(
     await readFile(join(outDir, "results.json"), "utf8"),
   ) as CaptureResult[];
-  await detect(outDir, results);
+  const detected = await detect(outDir, results);
+  // results.json gains each capture's detect findings.
+  if (detected) await writeFile(join(outDir, "results.json"), JSON.stringify(results, null, 2));
   const ignore = parseIgnoreList(await readFile(IGNORE_LIST, "utf8"));
-  return report(outDir, results, [...routes, ...agentRoutes], options.strict, ignore);
+  return report(outDir, results, [...routes, ...agentRoutes], options.strict, ignore, detected);
 }
 
 /** The critique ignore list: its accessibility entries are scoped exceptions to `--strict`. */
@@ -248,14 +254,17 @@ async function findPluginLaunchers(root: string, depth = 0): Promise<string[]> {
   return found;
 }
 
-/** Runs `impeccable detect --json` on each HTML snapshot, into `<screen>.impeccable.json`. */
-async function detect(outDir: string, results: CaptureResult[]): Promise<void> {
+/**
+ * Runs `impeccable detect --json` on each HTML snapshot, into `<screen>.impeccable.json`, and
+ * sets each result's `impeccable` (or `impeccableError`). Returns whether it ran.
+ */
+async function detect(outDir: string, results: CaptureResult[]): Promise<boolean> {
   const cli = await findImpeccable();
   if (!cli) {
     log(
       "impeccable CLI not found (set IMPECCABLE_CLI or put `impeccable` on PATH): skipping detect.",
     );
-    return;
+    return false;
   }
   log(`Running impeccable detect (${cli})…`);
   for (const result of results) {
@@ -275,7 +284,19 @@ async function detect(outDir: string, results: CaptureResult[]): Promise<void> {
           : { stdout: "", failure: error.stderr || error.message },
     );
     await writeFile(findingsPath, failure ? JSON.stringify({ error: failure }, null, 2) : stdout);
+    if (failure) {
+      result.impeccableError = failure.slice(0, 2000);
+      continue;
+    }
+    try {
+      const findings = JSON.parse(stdout || "[]") as unknown;
+      if (!Array.isArray(findings)) throw new Error("not a list of findings");
+      result.impeccable = findings as DetectFinding[];
+    } catch (error) {
+      result.impeccableError = `unreadable output: ${(error as Error).message}`;
+    }
   }
+  return true;
 }
 
 /** Prints the screenshots (stdout) and a summary (stderr); returns the exit code. */
@@ -284,7 +305,8 @@ async function report(
   results: CaptureResult[],
   routes: readonly Pick<ScreenRoute, "name" | "page">[],
   strict: boolean,
-  ignore: { entries: AccessibilityIgnoreEntry[]; problems: string[] },
+  ignore: ParsedIgnoreList,
+  detected: boolean,
 ): Promise<number> {
   const summary: string[] = [];
   const routeOf = new Map(routes.map((route) => [route.name, route]));
@@ -346,6 +368,7 @@ async function report(
   }
   summary.push(...decidedReport(results, routeOf, strict));
   summary.push(...accessibilityReport(results, ignore.entries));
+  summary.push(...detectReport(results, ignore, detected, strict));
   if (ignore.problems.length > 0) {
     summary.push(
       `\nIgnore list entries that ignore nothing (${relative(process.cwd(), IGNORE_LIST)}):`,
@@ -360,7 +383,12 @@ async function report(
   log(summary.join("\n"));
 
   const failing = results.filter(
-    (r) => captureFailures(r, routeOf.get(r.route), { strict, ignore: ignore.entries }).length > 0,
+    (r) =>
+      captureFailures(r, routeOf.get(r.route), {
+        strict,
+        ignore: ignore.entries,
+        detectIgnore: ignore.detect,
+      }).length > 0,
   );
   return failing.length > 0 ? 1 : 0;
 }
@@ -449,6 +477,71 @@ function accessibilityReport(
     }
     for (const [text, count] of ignored) {
       lines.push(`  ${count} ignored by ignore.md: ${text}`);
+    }
+  }
+  return lines;
+}
+
+/**
+ * The "impeccable detect" section: each rule the detector found on the HTML snapshots, with
+ * what it saw (up to five distinct snippets) and the captures (route, viewport, theme) it was
+ * seen on, then how many findings each ignore.md entry matched. `--strict` fails on the rest.
+ */
+function detectReport(
+  results: CaptureResult[],
+  ignore: ParsedIgnoreList,
+  detected: boolean,
+  strict: boolean,
+): string[] {
+  const title = `\nimpeccable detect (HTML snapshots)${strict ? "" : ": fails only with --strict"}`;
+  if (!detected) return [`${title}: didn't run (no CLI).`];
+  const lines: string[] = [];
+  const errors = results.filter((r) => r.impeccableError);
+  const rules = new Map<
+    string,
+    { name: string | undefined; snippets: Set<string>; where: Set<string>; count: number }
+  >();
+  const ignored = new Map<string, number>();
+  for (const result of results) {
+    const capture = `${result.route} ${result.viewport} ${result.theme}`;
+    const unignored = new Set(unignoredDetectFindings(result, ignore.detect));
+    for (const finding of result.impeccable ?? []) {
+      if (!unignored.has(finding)) {
+        const entry = detectIgnoredBy(ignore.detect, finding)!;
+        ignored.set(entry.text, (ignored.get(entry.text) ?? 0) + 1);
+        continue;
+      }
+      const rule = rules.get(finding.antipattern) ?? {
+        name: finding.name,
+        snippets: new Set<string>(),
+        where: new Set<string>(),
+        count: 0,
+      };
+      rule.count++;
+      rule.snippets.add(finding.snippet);
+      rule.where.add(capture);
+      rules.set(finding.antipattern, rule);
+    }
+  }
+  if (rules.size === 0) {
+    lines.push(`${title}: no findings.`);
+  } else {
+    lines.push(`${title}: ${rules.size} rule(s)`);
+    for (const [antipattern, rule] of [...rules].sort(([a], [b]) => a.localeCompare(b))) {
+      lines.push(
+        `  ${antipattern}${rule.name ? ` (${rule.name})` : ""}: ${rule.count} finding(s) on ${rule.where.size} capture(s)`,
+      );
+      const snippets = [...rule.snippets];
+      for (const snippet of snippets.slice(0, 5)) lines.push(`    ${snippet}`);
+      if (snippets.length > 5) lines.push(`    … and ${snippets.length - 5} more`);
+      lines.push(`    on ${[...rule.where].join(", ")}`);
+    }
+  }
+  for (const [text, count] of ignored) lines.push(`  ${count} ignored by ignore.md: ${text}`);
+  if (errors.length > 0) {
+    lines.push(`  detect failed on:`);
+    for (const r of errors) {
+      lines.push(`    ${r.route} ${r.viewport} ${r.theme}: ${r.impeccableError}`);
     }
   }
   return lines;

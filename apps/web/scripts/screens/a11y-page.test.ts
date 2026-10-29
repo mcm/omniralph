@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   analyzeKeyboardWalk,
   keyboardInPage,
+  keyboardStops,
   landmarksInPage,
   overlaysInPage,
   walkKeyboard,
@@ -73,6 +74,27 @@ describe("the keyboard walk", () => {
     expect(cycled).toBe(true);
     expect(findings).toEqual([]);
     expect(document.querySelector("[data-a11y-start]")).toBeNull();
+  });
+
+  it("records each stop by its selector and accessible name, in Tab order", async () => {
+    render(`
+      <a class="ring nav-link" href="/runs"><svg aria-hidden="true"></svg> Runs</a>
+      <button class="ring" id="more" aria-label="More actions">⋯</button>
+      <label for="name">Agent name</label><input class="ring" id="name">
+      <span id="hint">Search runs</span><input class="ring" aria-labelledby="hint">
+      <button class="ring" role="switch"><img alt="Coding" src="x.png"></button>
+      <textarea class="ring" placeholder="Ask Om"></textarea>
+      <button class="ring" title="Archive"></button>`);
+    const { stops } = await walk();
+    expect(keyboardStops(stops)).toEqual([
+      { selector: "a.ring.nav-link", name: "Runs" },
+      { selector: "button#more.ring", name: "More actions" },
+      { selector: "input#name.ring", name: "Agent name" },
+      { selector: "input.ring", name: "Search runs" },
+      { selector: 'button.ring[role="switch"]', name: "Coding" },
+      { selector: "textarea.ring", name: "Ask Om" },
+      { selector: "button.ring", name: "Archive" },
+    ]);
   });
 
   it("reports a button Tab never reaches", async () => {

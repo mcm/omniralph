@@ -745,7 +745,7 @@ function PlaybookForm({
         ) : null}
 
         <div className="or-playbook-editor__actions">
-          <Button type="submit" variant="primary" disabled={save.isPending}>
+          <Button type="submit" variant="solid" disabled={save.isPending}>
             {editing ? "Save" : "Create playbook"}
           </Button>
           <Button variant="outline" onClick={() => router.push(cancelHref)}>

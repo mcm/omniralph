@@ -18,8 +18,9 @@ export const MAX_TAB_STOPS = 300;
  *   when there is one), each with its composite widget (`group`), whose members are reached
  *   with the arrow keys once one of them is.
  * - `state`: where the focus is now: `{ outside: true }` on the body (or a focus guard), or
- *   the focused element, whether it is visible, and whether its focus styles differ from its
- *   unfocused ones (`indicator`, `null` when they weren't recorded).
+ *   the focused element (`target`, and its `selector` and accessible `name`), whether it is
+ *   visible, and whether its focus styles differ from its unfocused ones (`indicator`, `null`
+ *   when they weren't recorded).
  * - `cleanup`: removes the walk's start marker.
  * `pseudo`: also compare `::before` and `::after` (jsdom can't read them).
  * @param {{ action: "prepare" | "state" | "cleanup", pseudo?: boolean }} options
@@ -57,13 +58,54 @@ export function keyboardInPage(options) {
     if (!element.hasAttribute(KEY)) element.setAttribute(KEY, `k${store.next++}`);
     return element.getAttribute(KEY);
   };
-  const describe = (element) => {
+  const selectorOf = (element) => {
     let text = element.tagName.toLowerCase();
     if (element.id) text += `#${element.id}`;
     const classes = [...element.classList].slice(0, 2);
     if (classes.length > 0) text += `.${classes.join(".")}`;
     const role = element.getAttribute("role");
     if (role) text += `[role="${role}"]`;
+    return text;
+  };
+  // The accessible name, as far as a walk needs it: aria-labelledby, aria-label, the labels of a
+  // form control, its content (alt text and labels of what it holds, minus aria-hidden parts),
+  // then placeholder and title.
+  const contentText = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
+    if (node.nodeType !== Node.ELEMENT_NODE || node.getAttribute("aria-hidden") === "true") {
+      return "";
+    }
+    const label = node.getAttribute("aria-label") ?? (node.tagName === "IMG" ? node.alt : null);
+    if (label) return ` ${label} `;
+    return [...node.childNodes].map(contentText).join("");
+  };
+  const squash = (text) => text.replace(/\s+/g, " ").trim();
+  const accessibleName = (element) => {
+    const labelledBy = (element.getAttribute("aria-labelledby") ?? "")
+      .split(/\s+/)
+      .map((id) => (id ? document.getElementById(id) : null))
+      .filter(Boolean);
+    const candidates = [
+      () => labelledBy.map((node) => contentText(node)).join(" "),
+      () => element.getAttribute("aria-label") ?? "",
+      () => [...(element.labels ?? [])].map((label) => contentText(label)).join(" "),
+      () =>
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLTextAreaElement ||
+        element instanceof HTMLSelectElement
+          ? ""
+          : contentText(element),
+      () => element.getAttribute("placeholder") ?? "",
+      () => element.getAttribute("title") ?? "",
+    ];
+    for (const candidate of candidates) {
+      const name = squash(candidate());
+      if (name) return name;
+    }
+    return "";
+  };
+  const describe = (element) => {
+    const text = selectorOf(element);
     const name = (element.getAttribute("aria-label") ?? element.textContent ?? "")
       .replace(/\s+/g, " ")
       .trim()
@@ -162,6 +204,8 @@ export function keyboardInPage(options) {
     outside: false,
     key,
     target: describe(element),
+    selector: selectorOf(element),
+    name: accessibleName(element),
     visible: visible(element),
     indicator: rest === undefined ? null : focusStyles(element) !== rest,
     inModal: element.closest(MODAL) !== null,
@@ -191,6 +235,16 @@ export async function walkKeyboard({ press, state, maxStops = MAX_TAB_STOPS }) {
     stops.push(stop);
   }
   return { stops, cycled: false };
+}
+
+/**
+ * The walk's stops as `results.json` records them: each focused element in Tab order, by its
+ * selector (`tag#id.class[role]`) and accessible name.
+ * @param {{ selector: string, name: string }[]} stops
+ * @returns {{ selector: string, name: string }[]}
+ */
+export function keyboardStops(stops) {
+  return stops.map(({ selector, name }) => ({ selector, name }));
 }
 
 /**

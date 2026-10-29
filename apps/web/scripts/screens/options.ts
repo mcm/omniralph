@@ -23,6 +23,12 @@ export const VIEWPORT_NAMES = Object.keys(VIEWPORTS) as ViewportName[];
 export const SURFACES = ["panel", "agent"] as const;
 export type Surface = (typeof SURFACES)[number];
 
+/** The values of `--surface` and its alias `--app` beyond the surfaces' own names. */
+const SURFACE_ALIASES: Record<string, readonly Surface[]> = {
+  web: ["panel"],
+  all: SURFACES,
+};
+
 export interface ScreensOptions {
   /** `--routes`: comma-separated globs over route names and paths. */
   routes: string | null;
@@ -56,6 +62,7 @@ Options:
   --viewport <names>  desktop (1440px), rail (1024px) or phone (390px)
                       (comma-separated; 1440, 1024 and 390 also work; default all)
   --surface <names>   panel, agent or both (comma-separated; default both)
+  --app <names>       Same as --surface: web (the panel), agent or all
   --strict            Exit non-zero when a route is wider than its viewport, or
                       has an accessibility finding (axe, keyboard, Escape,
                       landmarks) that no entry of .impeccable/critique/ignore.md
@@ -73,6 +80,7 @@ export function parseScreensOptions(argv: string[]): ScreensOptions {
       theme: { type: "string" },
       viewport: { type: "string" },
       surface: { type: "string" },
+      app: { type: "string" },
       strict: { type: "boolean", default: false },
       "skip-build": { type: "boolean", default: false },
       help: { type: "boolean", default: false },
@@ -86,13 +94,25 @@ export function parseScreensOptions(argv: string[]): ScreensOptions {
       (THEMES as readonly string[]).includes(item) ? (item as Theme) : null,
     ) ?? [...THEMES],
     viewports: parseList(values.viewport, "--viewport", parseViewport) ?? [...VIEWPORT_NAMES],
-    surfaces: parseList(values.surface, "--surface", (item) =>
-      (SURFACES as readonly string[]).includes(item) ? (item as Surface) : null,
-    ) ?? [...SURFACES],
+    surfaces: parseSurfaces(values.surface, values.app) ?? [...SURFACES],
     strict: values.strict,
     skipBuild: values["skip-build"],
     help: values.help,
   };
+}
+
+/** `--surface` or `--app` (not both): surface names, `web` for the panel, `all` for both. */
+function parseSurfaces(surface: string | undefined, app: string | undefined): Surface[] | null {
+  if (surface !== undefined && app !== undefined) {
+    throw new Error("--app is another name for --surface: give one of them");
+  }
+  const flag = app !== undefined ? "--app" : "--surface";
+  const lists = parseList(app ?? surface, flag, (item) =>
+    (SURFACES as readonly string[]).includes(item)
+      ? [item as Surface]
+      : (SURFACE_ALIASES[item] ?? null),
+  );
+  return lists && SURFACES.filter((name) => lists.some((list) => list.includes(name)));
 }
 
 function parseViewport(item: string): ViewportName | null {

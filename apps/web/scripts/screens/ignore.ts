@@ -43,9 +43,47 @@ export interface AccessibilityIgnoreEntry {
   text: string;
 }
 
+/** One finding of `impeccable detect --json` (a `<screen>.impeccable.json` item). */
+export interface DetectFinding {
+  /** The detector's rule, e.g. `cramped-padding`. */
+  antipattern: string;
+  name?: string;
+  severity?: string;
+  /** The scanned file: the HTML snapshot, or a source file. */
+  file: string;
+  line?: number;
+  /** What it saw, naming the element (`<span> "or-ref": …`, `.whiteout::after — …`) or a color. */
+  snippet: string;
+  /** Set on the detector's less certain rules. */
+  advisory?: boolean;
+}
+
+/**
+ * An ignore.md row for an `impeccable detect` rule (any row that isn't `decided:` or an
+ * accessibility row): it ignores the rule's findings that name one of what its Scope cell names
+ * in backticks: a class selector (`.or-ref`), a file (`packages/ui/styles/refs.css`), a custom
+ * property (`--or-glow`) or a color (`#f5f3ee`, also matched in `rgb()` form).
+ */
+export interface DetectIgnoreEntry {
+  rule: string;
+  /** Class names, each set from one backticked selector (`.a.b` needs both). */
+  selectors: string[][];
+  files: string[];
+  properties: string[];
+  /** Lowercase `#rrggbb`. */
+  colors: string[];
+  reason: string;
+  text: string;
+}
+
 export interface ParsedIgnoreList {
   entries: AccessibilityIgnoreEntry[];
-  /** Accessibility rows that never match: no scope, or a scope key it doesn't know. */
+  /** The `impeccable detect` entries (`detectIgnoredBy`). */
+  detect: DetectIgnoreEntry[];
+  /**
+   * Rows that never match: an accessibility row with no scope or a scope key it doesn't know,
+   * or a detect row whose scope names no selector, file, custom property or color.
+   */
   problems: string[];
 }
 
@@ -59,6 +97,7 @@ const CHECK_RULE = new RegExp(`^(${ACCESSIBILITY_CHECKS.join("|")}): ?([\\w-]+)$
  */
 export function parseIgnoreList(markdown: string): ParsedIgnoreList {
   const entries: AccessibilityIgnoreEntry[] = [];
+  const detect: DetectIgnoreEntry[] = [];
   const problems: string[] = [];
   for (const line of markdown.split("\n")) {
     if (!line.startsWith("|") || /^\|[\s|:-]+\|$/.test(line)) continue;
@@ -66,8 +105,15 @@ export function parseIgnoreList(markdown: string): ParsedIgnoreList {
       .slice(1, -1)
       .split("|")
       .map((cell) => cell.trim());
-    const match = CHECK_RULE.exec(ruleCell.replace(/`/g, ""));
-    if (!match) continue;
+    const rule = ruleCell.replace(/`/g, "").trim();
+    const match = CHECK_RULE.exec(rule);
+    if (!match) {
+      if (!DETECT_RULE.test(rule)) continue;
+      const entry = detectEntry(rule, scopeCell, reason);
+      if (entry) detect.push(entry);
+      else problems.push(`${rule}: names no selector, file, custom property or color in backticks`);
+      continue;
+    }
     const scope: Partial<Record<ScopeKey, string[]>> = {};
     let unknown = false;
     for (const [, token] of scopeCell.matchAll(/`([^`]+)`/g)) {
@@ -93,7 +139,87 @@ export function parseIgnoreList(markdown: string): ParsedIgnoreList {
       text: `${ruleCell} | ${scopeCell}`,
     });
   }
-  return { entries, problems };
+  return { entries, detect, problems };
+}
+
+/** A detector rule ID (the header row's "Rule" and `decided:` items aren't). */
+const DETECT_RULE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
+const HEX = /#([0-9a-f]{6}|[0-9a-f]{3})\b/gi;
+const RGB = /rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/gi;
+
+function detectEntry(rule: string, scopeCell: string, reason: string): DetectIgnoreEntry | null {
+  const entry: DetectIgnoreEntry = {
+    rule,
+    selectors: [],
+    files: [],
+    properties: [],
+    colors: [],
+    reason,
+    text: `${rule} | ${scopeCell}`,
+  };
+  for (const [, raw] of scopeCell.matchAll(/`([^`]+)`/g)) {
+    const token = raw!.trim();
+    if (token.includes("/")) {
+      entry.files.push(token.replace(/^\.\//, ""));
+      continue;
+    }
+    entry.colors.push(...colorsIn(token));
+    if (token.startsWith("--")) {
+      entry.properties.push(token.split(":")[0]!.trim());
+    } else if (token.startsWith(".")) {
+      const classes = [...token.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map(([, name]) => name!);
+      if (classes.length > 0) entry.selectors.push(classes);
+    }
+  }
+  const named =
+    entry.selectors.length + entry.files.length + entry.properties.length + entry.colors.length;
+  return named > 0 ? entry : null;
+}
+
+/** The colors a text names, as lowercase `#rrggbb`: hex, and `rgb()`/`rgba()`. */
+export function colorsIn(text: string): string[] {
+  const colors: string[] = [];
+  for (const [, hex] of text.matchAll(HEX)) {
+    const long = hex!.length === 3 ? [...hex!].map((digit) => digit + digit).join("") : hex!;
+    colors.push(`#${long.toLowerCase()}`);
+  }
+  for (const [, ...channels] of text.matchAll(RGB)) {
+    colors.push(
+      `#${channels
+        .slice(0, 3)
+        .map((channel) => Number(channel).toString(16).padStart(2, "0"))
+        .join("")}`,
+    );
+  }
+  return colors;
+}
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The first detect entry that ignores `finding`, or `null`: same rule, and the finding names
+ * one of the entry's selectors (every class of it, as a whole class name in the snippet), files
+ * (the scanned file is it), custom properties or colors.
+ */
+export function detectIgnoredBy(
+  entries: readonly DetectIgnoreEntry[],
+  finding: Pick<DetectFinding, "antipattern" | "file" | "snippet">,
+): DetectIgnoreEntry | null {
+  const snippet = finding.snippet ?? "";
+  const file = (finding.file ?? "").replace(/\\/g, "/");
+  const colors = colorsIn(snippet);
+  const hasClass = (name: string) =>
+    new RegExp(`(^|[^\\w-])${escapeRegExp(name)}(?![\\w-])`).test(snippet);
+  return (
+    entries.find(
+      (entry) =>
+        entry.rule === finding.antipattern &&
+        (entry.files.some((path) => file === path || file.endsWith(`/${path}`)) ||
+          entry.selectors.some((classes) => classes.every(hasClass)) ||
+          entry.properties.some((property) => snippet.includes(property)) ||
+          entry.colors.some((color) => colors.includes(color))),
+    ) ?? null
+  );
 }
 
 /** The first entry that ignores `finding` of `check` on `capture`, or `null`. */

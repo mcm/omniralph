@@ -317,6 +317,19 @@ describe("parseScreensOptions", () => {
     expect(parseScreensOptions(["--viewport", "1024"]).viewports).toEqual(["rail"]);
   });
 
+  it("takes --app as another name for --surface, with web for the panel and all for both", () => {
+    expect(parseScreensOptions(["--app", "web"]).surfaces).toEqual(["panel"]);
+    expect(parseScreensOptions(["--app", "agent"]).surfaces).toEqual(["agent"]);
+    expect(parseScreensOptions(["--app", "all"]).surfaces).toEqual(["panel", "agent"]);
+    expect(parseScreensOptions(["--app=agent,web"]).surfaces).toEqual(["panel", "agent"]);
+    expect(parseScreensOptions(["--surface", "all"]).surfaces).toEqual(["panel", "agent"]);
+    expect(parseScreensOptions(["--surface", "web"]).surfaces).toEqual(["panel"]);
+    expect(() => parseScreensOptions(["--app", "fleet"])).toThrow(/--app/);
+    expect(() => parseScreensOptions(["--app", "web", "--surface", "agent"])).toThrow(
+      /one of them/,
+    );
+  });
+
   it("rejects unknown values and flags", () => {
     expect(() => parseScreensOptions(["--theme", "sepia"])).toThrow(/--theme/);
     expect(() => parseScreensOptions(["--viewport", "800"])).toThrow(/--viewport/);
