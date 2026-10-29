@@ -142,6 +142,13 @@ const OPEN_MORE_ACTIONS: ScreenStep = {
 };
 
 /**
+ * A connection page with its webhook deliveries loaded (their table, or the empty log): the
+ * page and the card each show a busy placeholder first, so a capture can't race them.
+ */
+export const CONNECTION_LOADED =
+  '[aria-labelledby="connection-deliveries"] :is(.or-data-table, .or-empty)';
+
+/**
  * Every screen of the panel, with fixture IDs (`scripts/fixtures/ids.ts`) for
  * dynamic segments. A page may appear more than once to cover its states.
  */
@@ -645,6 +652,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/settings/connections/[provider]/[id]/page.tsx",
     detail: true,
     auth: "signed-in",
+    waitFor: CONNECTION_LOADED,
   },
   {
     // With its webhook deliveries (every outcome, and a replay).
@@ -653,6 +661,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/settings/connections/[provider]/[id]/page.tsx",
     detail: true,
     auth: "signed-in",
+    waitFor: CONNECTION_LOADED,
   },
   {
     name: "settings-connection-gitlab",
@@ -660,6 +669,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/settings/connections/[provider]/[id]/page.tsx",
     detail: true,
     auth: "signed-in",
+    waitFor: CONNECTION_LOADED,
   },
   {
     name: "settings-advanced-routing-edit",
@@ -780,6 +790,9 @@ function memberRoutes(): ScreenRoute[] {
     as: "member",
     ...((LIST_PAGES as readonly string[]).includes(page) && { list: true as const }),
     ...((DETAIL_PAGES as readonly string[]).includes(page) && { detail: true as const }),
+    ...(page === "(app)/settings/connections/[provider]/[id]/page.tsx" && {
+      waitFor: CONNECTION_LOADED,
+    }),
   }));
 }
 

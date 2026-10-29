@@ -5,6 +5,7 @@ import { parseScreensOptions, VIEWPORT_NAMES } from "./options";
 import {
   CANVAS_BOARDS,
   capturedAt,
+  CONNECTION_LOADED,
   DETAIL_PAGES,
   LIST_PAGES,
   opensInboxItem,
@@ -150,6 +151,20 @@ describe("SCREEN_ROUTES states", () => {
     for (const page of new Set(asMember.map((route) => route.page))) {
       expect(page).toMatch(/^\(app\)\/(settings|repos|fleet)\//);
     }
+  });
+
+  it("waits for every connection page's deliveries, admin and member", () => {
+    const connections = SCREEN_ROUTES.filter(
+      (route) => route.page === "(app)/settings/connections/[provider]/[id]/page.tsx",
+    );
+    expect(connections.map((route) => route.name).sort()).toEqual([
+      "member-settings-connection-github",
+      "member-settings-connection-linear",
+      "settings-connection-github",
+      "settings-connection-gitlab",
+      "settings-connection-linear",
+    ]);
+    for (const route of connections) expect(route.waitFor).toBe(CONNECTION_LOADED);
   });
 
   it("only signs in as the member or picks an organization for signed-in routes", () => {
