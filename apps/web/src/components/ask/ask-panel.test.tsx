@@ -8,7 +8,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "@/components/app-shell";
-import { mockFetch, TEST_ORGANIZATION_ID, testUser } from "@/components/query-test-utils";
+import { jsonResponse, mockFetch, TEST_ORGANIZATION_ID, testUser } from "@/components/query-test-utils";
 import type { AskChat as AskChatModel, AskChatDetail, AskChatList } from "@/lib/api/ask";
 import {
   ASK_PANEL_STORAGE_KEY,
@@ -58,8 +58,9 @@ const detail: AskChatDetail = {
 
 const list: AskChatList = { chats: [chat], nextCursor: null };
 
-function mockAsk() {
-  return mockFetch({
+/** The shell's and the panel's routes, for `mockFetch`. */
+function askRoutes(): Parameters<typeof mockFetch>[0] {
+  return {
     "GET /api/ui/live/token": { token: null },
     "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 0 },
     "GET /api/ui/backlog/counts": { readyToStart: 0, needsRefining: 0, total: 0 },
@@ -79,7 +80,11 @@ function mockAsk() {
         },
       ],
     },
-  });
+  };
+}
+
+function mockAsk() {
+  return mockFetch(askRoutes());
 }
 
 /** `matchMedia` for a desktop (wider than 768 px) or a phone window. */
@@ -246,6 +251,50 @@ describe("the Ask panel", () => {
     await user.click(within(panel()!).getByRole("button", { name: "Close Ask" }));
     expect(panel()).toBeNull();
     expect(document.activeElement).toBe(askEntry());
+  });
+
+  // Opened over a page from the sidebar's Ask entry, the panel loads its own chats list.
+  for (const pathname of ["/runs", "/"]) {
+    it(`loads the viewer's chats when opened over ${pathname}`, async () => {
+      const user = userEvent.setup();
+      renderShell(pathname);
+      await user.click(askEntry());
+      const body = panel()!.querySelector<HTMLElement>(".or-ask-chats__body")!;
+      expect(
+        await within(body).findByRole("link", { name: /Where does the login form post/ }),
+      ).toBeTruthy();
+      expect(body.querySelector(".or-list-loading")).toBeNull();
+    });
+
+    it(`shows "No chats yet" over ${pathname} when the viewer has none`, async () => {
+      const routes = askRoutes();
+      routes["GET /api/ui/ask/chats"] = { chats: [], nextCursor: null };
+      mockFetch(routes);
+      const user = userEvent.setup();
+      renderShell(pathname);
+      await user.click(askEntry());
+      expect(await within(panel()!).findByRole("heading", { name: "No chats yet" })).toBeTruthy();
+    });
+  }
+
+  it("says why its chats couldn't load, with Retry, instead of loading forever", async () => {
+    let failing = true;
+    const routes = askRoutes();
+    routes["GET /api/ui/ask/chats"] = () =>
+      failing ? jsonResponse({ error: "Not allowed here." }, 403) : jsonResponse(list);
+    mockFetch(routes);
+    const user = userEvent.setup();
+    renderShell("/runs");
+    await user.click(askEntry());
+    const alert = await within(panel()!).findByRole("alert");
+    expect(alert.textContent).toContain("Couldn't load your chats. Not allowed here.");
+    expect(panel()!.querySelector(".or-list-loading")).toBeNull();
+
+    failing = false;
+    await user.click(within(alert).getByRole("button", { name: "Retry" }));
+    expect(
+      await within(panel()!).findByRole("link", { name: /Where does the login form post/ }),
+    ).toBeTruthy();
   });
 
   it("stays open on the same chat across client-side navigation", async () => {

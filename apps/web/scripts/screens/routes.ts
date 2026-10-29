@@ -43,8 +43,9 @@ export interface ScreenRoute {
   /** Interactions before the screenshot, in order (to capture a state, e.g. an open dialog). */
   steps?: readonly ScreenStep[];
   /**
-   * A CSS selector to wait for before the steps: content that loads without a skeleton
-   * (e.g. Up next in the empty Inbox), so the capture can't race it.
+   * A CSS selector to wait for: content that loads without a skeleton (e.g. Up next in the
+   * empty Inbox), so the capture can't race it. With steps, it's waited for after them, so it
+   * can name what a step opens (e.g. the Ask panel's chats list).
    */
   waitFor?: string;
   /** Screenshot only the viewport (e.g. an open dialog), not the full page. */
