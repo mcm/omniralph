@@ -194,3 +194,19 @@ describe("Toolbar", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Share review link" }));
   });
 });
+
+describe("Toolbar shortcut keys", () => {
+  it("puts an action's key on its button, with the plain label as its tooltip", async () => {
+    render(
+      <Toolbar
+        label="Run actions"
+        actions={[{ label: "Retry run", icon: IconRefresh, onSelect: () => {}, keyShortcuts: "R" }]}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Retry run" });
+    expect(button.getAttribute("aria-keyshortcuts")).toBe("R");
+    const user = userEvent.setup();
+    await user.tab();
+    expect((await screen.findByRole("tooltip")).textContent).toBe("Retry run");
+  });
+});

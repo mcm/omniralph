@@ -1,7 +1,16 @@
 import { act, render, renderHook, screen, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { useRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SPLIT_WIDE_MIN_WIDTH, SplitView, useSplitWide } from "./split-view.js";
+import { ListRow, RowList } from "../lists/list-row.js";
+import { UiProvider, type LinkProps } from "../provider/ui-provider.js";
+import { ShortcutProvider } from "../shortcuts/shortcut-provider.js";
+import {
+  SPLIT_WIDE_MIN_WIDTH,
+  SplitView,
+  useSplitDetailShown,
+  useSplitWide,
+} from "./split-view.js";
 
 describe("SplitView", () => {
   it("renders the list and detail panes, named, with the view and fixed pane", () => {
@@ -161,5 +170,94 @@ describe("useSplitWide", () => {
     const { result } = renderHook(() => useSplitWide({ current: null }));
     expect(result.current).toBe(false);
     expect(observers).toHaveLength(0);
+  });
+});
+
+describe("SplitView shortcuts", () => {
+  const DEFINITIONS = {
+    listNext: { key: "j", label: "Next item", group: "lists", repeat: true },
+    listPrevious: { key: "k", label: "Previous item", group: "lists", repeat: true },
+    listOpen: { key: "o", label: "Open the focused item", group: "lists" },
+    back: { key: "u", label: "Back to the list", group: "lists" },
+  } as const;
+  const navigate = vi.fn();
+  const followed: string[] = [];
+
+  function TestLink({ href, onClick, ...props }: LinkProps) {
+    return (
+      <a
+        {...props}
+        href={href}
+        onClick={(event) => {
+          event.preventDefault();
+          followed.push(href);
+          onClick?.(event);
+        }}
+      />
+    );
+  }
+
+  function DetailShown() {
+    return <p>{useSplitDetailShown() ? "Detail shown" : "Detail hidden"}</p>;
+  }
+
+  function renderSplit(view: "list" | "detail", width: number) {
+    navigate.mockReset();
+    followed.length = 0;
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({ width } as DOMRect);
+    return render(
+      <UiProvider linkComponent={TestLink} navigate={navigate}>
+        <ShortcutProvider definitions={DEFINITIONS} platform="other">
+          <main>
+            <SplitView
+              list={
+                <RowList aria-label="Runs">
+                  <ListRow href="/runs/1" title="One" kindLabel="Epic · running" tone="run" />
+                  <ListRow href="/runs/2" title="Two" kindLabel="Epic · running" tone="run" />
+                </RowList>
+              }
+              detail={<DetailShown />}
+              view={view}
+              listLabel="Runs"
+              backLink={{ label: "Runs", href: "/runs" }}
+            />
+          </main>
+        </ShortcutProvider>
+      </UiProvider>,
+    );
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("opens the row a move lands on while both panes show", async () => {
+    renderSplit("list", 1000);
+    const user = userEvent.setup();
+    await user.keyboard("jj");
+    expect(document.activeElement).toBe(screen.getByRole("link", { name: "Two" }));
+    expect(navigate).toHaveBeenLastCalledWith("/runs/2", { replace: true });
+    expect(screen.getByText("Detail shown")).toBeTruthy();
+    // Back has nothing to follow: the back link is hidden while both panes show.
+    await user.keyboard("u");
+    expect(followed).toEqual([]);
+  });
+
+  it("only moves focus in a single pane, and o opens the row", async () => {
+    renderSplit("list", 600);
+    const user = userEvent.setup();
+    await user.keyboard("j");
+    expect(navigate).not.toHaveBeenCalled();
+    expect(screen.getByText("Detail hidden")).toBeTruthy();
+    await user.keyboard("o");
+    expect(followed).toEqual(["/runs/1"]);
+  });
+
+  it("follows the back link with u while the detail shows alone", async () => {
+    renderSplit("detail", 600);
+    const user = userEvent.setup();
+    await user.keyboard("u");
+    expect(followed).toEqual(["/runs"]);
+    expect(screen.getByText("Detail shown")).toBeTruthy();
   });
 });

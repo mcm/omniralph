@@ -21,6 +21,7 @@ import {
   type SearchResult,
 } from "@/lib/api/search";
 import { splitRepositoryPath } from "@/lib/repositories/path";
+import { useShortcut } from "@/lib/shortcuts";
 import { BacklogRowBadges } from "@/screens/backlog/backlog-row-badges";
 import { RunRowBadges } from "@/screens/runs/run-badges";
 import { runRowLabel } from "@/screens/runs/labels";
@@ -55,33 +56,15 @@ export function useSearch(): SearchContextValue {
   return value;
 }
 
-/** ⌘K (macOS) or Ctrl+K (elsewhere), with no other modifier. */
-export function isSearchShortcut(event: KeyboardEvent): boolean {
-  return (
-    (event.metaKey || event.ctrlKey) &&
-    !event.altKey &&
-    !event.shiftKey &&
-    event.key.toLowerCase() === "k"
-  );
-}
-
 /**
  * Search and jump for the signed-in app: the search palette, opened by `useSearch` (the
- * frame's search buttons) or ⌘K / Ctrl+K anywhere (no visible hint, Design rule 7).
+ * frame's search buttons) or the Search shortcut, ⌘K / Ctrl+K, anywhere (`SHORTCUTS`; no
+ * visible hint, Design rule 7).
  */
 export function SearchProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
   const openSearch = React.useCallback(() => setOpen(true), []);
-
-  React.useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || !isSearchShortcut(event)) return;
-      event.preventDefault();
-      setOpen(true);
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  useShortcut("search", openSearch);
 
   const value = React.useMemo(() => ({ openSearch }), [openSearch]);
   return (

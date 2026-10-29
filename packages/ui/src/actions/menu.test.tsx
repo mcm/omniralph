@@ -176,3 +176,26 @@ describe("Menu groups and keepOpen", () => {
     expect(screen.getByRole("menu")).toBeTruthy();
   });
 });
+
+describe("Menu shortcut keys", () => {
+  it("puts an item's key on it, and opens when told to", async () => {
+    const { rerender } = render(
+      <Menu
+        open={false}
+        items={[{ label: "Stop run", onSelect: noop, keyShortcuts: "X" }]}
+        trigger={<Button>Actions</Button>}
+      />,
+    );
+    expect(screen.queryByRole("menu")).toBeNull();
+    rerender(
+      <Menu
+        open
+        items={[{ label: "Stop run", onSelect: noop, keyShortcuts: "X" }]}
+        trigger={<Button>Actions</Button>}
+      />,
+    );
+    const item = await screen.findByRole("menuitem", { name: "Stop run" });
+    expect(item.getAttribute("aria-keyshortcuts")).toBe("X");
+    expect(item.textContent).toBe("Stop run");
+  });
+});

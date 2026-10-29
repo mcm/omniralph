@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import "@/components/pickers/test-dom";
 import type * as OmniralphUi from "@omniralph/ui";
-import { UiProvider, type LinkProps } from "@omniralph/ui";
+import { ShortcutProvider, UiProvider, type LinkProps } from "@omniralph/ui";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import { CurrentUserProvider, type SessionUser } from "@/components/current-user";
 import { LiveProvider } from "@/components/live/live-provider";
 import { changeEvent, fakeAbly, fakeToken } from "@/components/live/live-test-utils";
@@ -171,19 +172,21 @@ function renderRun(
       />
     );
   const tree = () => (
-    <CurrentUserProvider user={options.user ?? testUser}>
-      <QueryClientProvider client={client}>
-        <UiProvider linkComponent={TestLink}>
-          {options.live ? (
-            <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
-              {view()}
-            </LiveProvider>
-          ) : (
-            view()
-          )}
-        </UiProvider>
-      </QueryClientProvider>
-    </CurrentUserProvider>
+    <ShortcutProvider definitions={SHORTCUTS} platform="other">
+      <CurrentUserProvider user={options.user ?? testUser}>
+        <QueryClientProvider client={client}>
+          <UiProvider linkComponent={TestLink}>
+            {options.live ? (
+              <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
+                {view()}
+              </LiveProvider>
+            ) : (
+              view()
+            )}
+          </UiProvider>
+        </QueryClientProvider>
+      </CurrentUserProvider>
+    </ShortcutProvider>
   );
   const utils = render(tree());
   return {
@@ -589,6 +592,71 @@ describe("Stop and Retry", () => {
     );
     await waitFor(() => expect(statusLine().textContent).toBe("Stopped"));
     expect(within(selected()!).getByRole("img").getAttribute("aria-label")).toBe("Failed");
+  });
+});
+
+describe("Stop and Retry keys", () => {
+  const posted = (suffix: string) =>
+    seen.filter((r) => r.method === "POST" && r.path.endsWith(suffix));
+
+  it("opens Stop run's confirm with x, as the menu item does, which names the key", async () => {
+    renderRun();
+    await loaded();
+    await userEvent.keyboard("x");
+    const dialog = await screen.findByRole("alertdialog", { name: "Stop this run?" });
+    expect(posted("/stop")).toHaveLength(0);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Stop run" }));
+    await waitFor(() => expect(posted("/stop")).toHaveLength(1));
+    const item = within(await openMenu()).getByRole("menuitem", { name: "Stop run" });
+    expect(item.getAttribute("aria-keyshortcuts")).toBe("X");
+  });
+
+  it("retries with r, as Retry run does, and not again while it's pending", async () => {
+    detail = stoppedEpic();
+    const held = deferred();
+    retryAnswer = () => held.promise;
+    renderRun();
+    await loaded();
+    const button = within(toolbar()).getByRole("button", { name: "Retry run" });
+    expect(button.getAttribute("aria-keyshortcuts")).toBe("R");
+    await userEvent.keyboard("r");
+    await waitFor(() => expect(statusLine().textContent).toBe("Queued"));
+    expect(posted("/retry").map((r) => r.body)).toEqual([{ target: { kind: "run" } }]);
+    await userEvent.keyboard("r");
+    expect(posted("/retry")).toHaveLength(1);
+    held.resolve(jsonResponse({ error: "Something broke." }, 500));
+    await waitFor(() => expect(statusLine().textContent).toBe("Stopped"));
+  });
+
+  it("re-runs the selected story of a finished epic with r", async () => {
+    const run = runningEpic({
+      status: "completed",
+      progress: { done: 2, total: 2 },
+      steps: [storyStep("1", "completed", MINUTE), storyStep("2", "completed", MINUTE)],
+    });
+    detail = {
+      ...run,
+      details: {
+        ...run.details,
+        actions: { stop: false, retry: { run: false, storyIds: ["1", "2"], attemptIds: [] } },
+      },
+    };
+    renderRun({ search: "step=2" });
+    await loaded();
+    // Stop isn't offered: x does nothing.
+    await userEvent.keyboard("x");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await userEvent.keyboard("r");
+    await waitFor(() => expect(posted("/retry")).toHaveLength(1));
+    expect(posted("/retry")[0]!.body).toEqual({ target: { kind: "story", storyId: "2" } });
+  });
+
+  it("does nothing with r for a run that can't be retried", async () => {
+    renderRun();
+    await loaded();
+    expect(within(toolbar()).queryByRole("button", { name: "Retry run" })).toBeNull();
+    await userEvent.keyboard("r");
+    expect(posted("/retry")).toHaveLength(0);
   });
 });
 

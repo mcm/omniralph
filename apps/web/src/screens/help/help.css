@@ -1,0 +1,61 @@
+/*
+ * Help (`/help`): one scrolling column, 24 px padding, at most 800 px wide: the title, then
+ * the Keyboard shortcuts card with its intro line and a titled table per group. The tables
+ * become stacked cards at 768 px and narrower (DataTable). Only `--or-` tokens.
+ */
+.or-help {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 800px;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.or-help__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.or-help__intro {
+  margin: 0;
+  color: var(--or-sec);
+}
+
+.or-help__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.or-help__group-title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.or-help__key {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 6px;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius-sm);
+  background: var(--or-raised);
+  color: var(--or-text);
+  font-family: var(--or-font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .or-help {
+    padding: 16px;
+  }
+}

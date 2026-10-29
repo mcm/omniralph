@@ -29,6 +29,11 @@ interface MenuItemBase {
   mark?: ReactNode;
   /** Keeps the menu open when the item is chosen (e.g. toggling one of many choices). */
   keepOpen?: boolean;
+  /**
+   * The key of the shortcut that performs the item's action, in `aria-keyshortcuts` form
+   * (`useKeyShortcuts`). Nothing visible shows it (Design rule 7).
+   */
+  keyShortcuts?: string;
 }
 
 /** A menu action: runs `onSelect`, or navigates to `href` through the `UiProvider` link. */
@@ -81,6 +86,9 @@ export interface MenuProps {
    * between them and the items.
    */
   header?: ReactNode;
+  /** Whether the menu is open, for a menu also opened another way (e.g. a shortcut). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 const TABBABLE =
@@ -119,7 +127,15 @@ function onHeaderKey(event: KeyboardEvent<HTMLDivElement>) {
 }
 
 /** A dropdown of actions, opened from `trigger`. Destructive items always come last. */
-export function Menu({ items, trigger, align = "end", disabled = false, header }: MenuProps) {
+export function Menu({
+  items,
+  trigger,
+  align = "end",
+  disabled = false,
+  header,
+  open,
+  onOpenChange,
+}: MenuProps) {
   const LinkComponent = useLinkComponent();
   const groupId = useId();
   const renderItem = (item: MenuItem, key: string) => {
@@ -134,6 +150,7 @@ export function Menu({ items, trigger, align = "end", disabled = false, header }
       disabled: itemDisabled,
       checked,
       keepOpen,
+      keyShortcuts,
       href,
       onSelect,
     } = item;
@@ -157,6 +174,7 @@ export function Menu({ items, trigger, align = "end", disabled = false, header }
     );
     const itemProps = {
       className,
+      "aria-keyshortcuts": keyShortcuts,
       disabled: itemDisabled,
       onSelect:
         onSelect || keepOpen
@@ -175,7 +193,7 @@ export function Menu({ items, trigger, align = "end", disabled = false, header }
     );
   };
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root open={open} onOpenChange={onOpenChange}>
       <DropdownMenu.Trigger asChild disabled={disabled}>
         {trigger}
       </DropdownMenu.Trigger>

@@ -11,6 +11,7 @@ import {
   StatusLine,
   toast,
   Toolbar,
+  useSplitDetailShown,
   type MenuItem,
   type ToolbarAction,
 } from "@omniralph/ui";
@@ -53,6 +54,7 @@ import { useRunRetry, useRunRetryPending, useRunStop } from "@/components/runs/u
 import { useRunDetail } from "@/components/runs/use-run-detail";
 import { ApiError } from "@/lib/api/client";
 import type { RunDetail } from "@/lib/api/runs";
+import { useKeyShortcuts, useShortcut } from "@/lib/shortcuts";
 import { RUN_KIND_LABELS } from "../inbox/labels";
 import { NO_RUN_FILTERS, parseRunFilters, runInListHref, runStepHref } from "./filters";
 import { runRowLabel } from "./labels";
@@ -144,6 +146,22 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
   });
   const retrying = useRunRetryPending(run.id);
   const stop = useRunStop(run.id);
+  const toolbar = runToolbar(run, step);
+  const retryItem = toolbar.find((item) => item.kind === "retry");
+  const retryRun = (item: Extract<RunToolbarItem, { kind: "retry" }>) =>
+    retry.mutate({ target: item.target, selectedStepId: step?.id });
+
+  // Retry (`r`) and Stop run (`x`) do what their buttons do, while they're shown and enabled
+  // and this pane shows (not behind the phone's list).
+  const shown = useSplitDetailShown();
+  const retryKeys = useKeyShortcuts("retry");
+  const stopKeys = useKeyShortcuts("stop");
+  useShortcut("retry", () => (retryItem ? retryRun(retryItem) : false), {
+    enabled: shown && retryItem !== undefined && !retrying,
+  });
+  useShortcut("stop", () => setConfirmStop(true), {
+    enabled: shown && run.details.actions.stop,
+  });
 
   const toolbarAction = (item: RunToolbarItem): ToolbarAction =>
     item.kind === "pull_request"
@@ -156,9 +174,10 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
           label: item.label,
           icon: IconRefresh,
           disabled: retrying,
-          onSelect: () => retry.mutate({ target: item.target, selectedStepId: step?.id }),
+          onSelect: () => retryRun(item),
+          keyShortcuts: retryKeys,
         };
-  const actions = runToolbar(run, step).map(toolbarAction).slice(0, 2) as
+  const actions = toolbar.map(toolbarAction).slice(0, 2) as
     | []
     | [ToolbarAction]
     | [ToolbarAction, ToolbarAction];
@@ -166,6 +185,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
     onCopyBranch: () => void copyBranch(run.branch ?? ""),
     onStop: () => setConfirmStop(true),
     leading: menuItems?.(run, overlay),
+    stopKeyShortcuts: stopKeys,
   });
 
   const status = runStatusLine(run);

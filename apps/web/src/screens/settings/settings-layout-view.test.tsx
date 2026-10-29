@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { UiProvider, type LinkProps } from "@omniralph/ui";
+import { DataTable, ShortcutProvider, UiProvider, type LinkProps } from "@omniralph/ui";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CurrentUserProvider, type SessionUser } from "@/components/current-user";
 import { LiveProvider } from "@/components/live/live-provider";
@@ -175,13 +176,15 @@ function renderSettings(
       <ShowAdvancedProvider initial={options.showAdvanced ?? false}>
         <QueryClientProvider client={client}>
           <UiProvider linkComponent={TestLink}>
-            {options.live ? (
-              <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
-                {view}
-              </LiveProvider>
-            ) : (
-              view
-            )}
+            <ShortcutProvider definitions={SHORTCUTS} platform="other">
+              {options.live ? (
+                <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
+                  {view}
+                </LiveProvider>
+              ) : (
+                view
+              )}
+            </ShortcutProvider>
           </UiProvider>
         </QueryClientProvider>
       </ShowAdvancedProvider>
@@ -464,5 +467,44 @@ describe("live updates", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(connectionRequests()).toHaveLength(before);
     expect(entries("Connections")).toHaveLength(4);
+  });
+});
+
+describe("keyboard", () => {
+  it("goes back to the sections with u from a page in a narrow container", async () => {
+    renderSettings({ pathname: "/settings/members", page: <h2>Members</h2> });
+    const back = screen.getByRole("link", { name: "Settings" });
+    const followed: string[] = [];
+    back.addEventListener("click", (event) => {
+      event.preventDefault();
+      followed.push(back.getAttribute("href")!);
+    });
+    await userEvent.setup().keyboard("u");
+    expect(followed).toEqual(["/settings"]);
+  });
+
+  it("moves through a settings page's rows with j and k", async () => {
+    const rows = [
+      { id: "a", name: "First" },
+      { id: "b", name: "Second" },
+    ];
+    renderSettings({
+      pathname: "/settings/playbooks",
+      page: (
+        <DataTable
+          caption="Playbooks"
+          rows={rows}
+          getRowId={(row) => row.id}
+          getRowHref={(row) => `/settings/playbooks/${row.id}`}
+          columns={[{ id: "name", header: "Name", cell: (row) => row.name }]}
+        />
+      ),
+    });
+    const user = userEvent.setup();
+    await user.keyboard("jj");
+    const table = screen.getByRole("table");
+    expect(document.activeElement).toBe(within(table).getByRole("link", { name: "Second" }));
+    await user.keyboard("k");
+    expect(document.activeElement).toBe(within(table).getByRole("link", { name: "First" }));
   });
 });

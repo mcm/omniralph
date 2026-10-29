@@ -3,6 +3,7 @@
 import { useId, type MouseEventHandler, type ReactNode } from "react";
 import { Checkbox } from "../controls/checkbox.js";
 import { useLinkComponent } from "../provider/ui-provider.js";
+import { rowLinkProps, rowListProps } from "../shortcuts/row-links.js";
 import { StatusDot, type StatusTone } from "../status/status.js";
 
 export interface ListRowSelect {
@@ -85,7 +86,13 @@ export function ListRow({
           onCheckedChange={select.onChange}
         />
       ) : null}
-      <Link href={href} onClick={onClick} className="or-row__link" aria-labelledby={titleId} />
+      <Link
+        {...rowLinkProps}
+        href={href}
+        onClick={onClick}
+        className="or-row__link"
+        aria-labelledby={titleId}
+      />
       {kindLabel !== undefined ? (
         <StatusDot className="or-row__dot" tone={tone} label={kindLabel} />
       ) : (
@@ -116,10 +123,14 @@ export interface RowListProps {
   className?: string;
 }
 
-/** A `<ul>` of `ListRow`s. */
+/** A `<ul>` of `ListRow`s; Next item and Previous item move between its row links. */
 export function RowList({ "aria-label": label, children, className }: RowListProps) {
   return (
-    <ul className={["or-rows", className].filter(Boolean).join(" ")} aria-label={label}>
+    <ul
+      {...rowListProps}
+      className={["or-rows", className].filter(Boolean).join(" ")}
+      aria-label={label}
+    >
       {children}
     </ul>
   );

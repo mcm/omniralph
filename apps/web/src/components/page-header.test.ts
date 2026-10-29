@@ -35,7 +35,7 @@ function reachableModules(entry: string): string[] {
 describe("page headers", () => {
   const pages = walk(appRoutes)
     .filter((path) => path.endsWith("page.tsx"))
-    // The 2.0 screens (the Inbox at the root, Runs, Backlog, Repos, Fleet, Ask, Settings, Analytics) title themselves
+    // The 2.0 screens (the Inbox at the root, Runs, Backlog, Repos, Fleet, Ask, Settings, Analytics, Help) title themselves
     // without today's PageHeader.
     .filter((path) => path !== join(appRoutes, "page.tsx"))
     .filter((path) => !path.startsWith(join(appRoutes, "runs") + sep))
@@ -44,7 +44,8 @@ describe("page headers", () => {
     .filter((path) => !path.startsWith(join(appRoutes, "fleet") + sep))
     .filter((path) => !path.startsWith(join(appRoutes, "ask") + sep))
     .filter((path) => !path.startsWith(join(appRoutes, "settings") + sep))
-    .filter((path) => !path.startsWith(join(appRoutes, "analytics") + sep));
+    .filter((path) => !path.startsWith(join(appRoutes, "analytics") + sep))
+    .filter((path) => !path.startsWith(join(appRoutes, "help") + sep));
 
   it.each(pages.map((page) => [relative(appRoutes, page), page]))(
     "%s renders the shared PageHeader",

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import "@/components/pickers/test-dom";
 import type * as OmniralphUi from "@omniralph/ui";
-import { Button, UiProvider, type LinkProps } from "@omniralph/ui";
+import { Button, ShortcutProvider, UiProvider, type LinkProps } from "@omniralph/ui";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CurrentUserProvider, type SessionUser } from "@/components/current-user";
@@ -18,6 +18,7 @@ import { DecisionButtons } from "@/components/runs/decision-buttons";
 import { ITEM_HANDLED, snoozeUntil } from "@/components/runs/decisions";
 import type { InboxCountsResponse, InboxItem, InboxItemActionResult } from "@/lib/api/inbox";
 import { inboxKeys, queryKeys } from "@/lib/api/keys";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import { InboxView } from "./inbox-view";
 import { agentOfflineItem, BETA_ID, COUNTS, inboxItem, mrReadyItem, NOW } from "./test-fixtures";
 
@@ -102,13 +103,15 @@ function renderInbox(search = "", user: SessionUser = testUser) {
   nav.search = new URLSearchParams(search);
   const client = createTestQueryClient();
   render(
-    <CurrentUserProvider user={user}>
-      <QueryClientProvider client={client}>
-        <UiProvider linkComponent={TestLink}>
-          <InboxView />
-        </UiProvider>
-      </QueryClientProvider>
-    </CurrentUserProvider>,
+    <ShortcutProvider definitions={SHORTCUTS} platform="other">
+      <CurrentUserProvider user={user}>
+        <QueryClientProvider client={client}>
+          <UiProvider linkComponent={TestLink}>
+            <InboxView />
+          </UiProvider>
+        </QueryClientProvider>
+      </CurrentUserProvider>
+    </ShortcutProvider>,
   );
   return client;
 }
@@ -211,6 +214,94 @@ const KINDS: { item: InboxItem; buttons: string[]; posts: Record<string, string>
     posts: { Retry: "retry", Done: "done" },
   },
 ];
+
+/** Each decision's key (`SHORTCUTS`). */
+const DECISION_KEYS: Record<string, string> = {
+  Done: "e",
+  "Done, resume epic": "e",
+  "Skip story": "s",
+  "Start anyway": "t",
+  Resume: "c",
+  Retry: "r",
+  Snooze: "z",
+};
+
+describe("decision keys in the Inbox detail", () => {
+  it.each(KINDS.map((entry) => [entry.item.kind, entry] as const))(
+    "%s: each shown decision's key posts what its button posts, and the button names the key",
+    async (_kind, { item, buttons, posts: expected }) => {
+      for (const [label, action] of Object.entries(expected)) {
+        feeds = { "needs-you": [], problems: [], running: [], [item.tab]: [item] };
+        serve();
+        renderInbox(`tab=${item.tab}&item=${encodeURIComponent(item.key)}`);
+        const group = await waitFor(decisions);
+        expect(
+          within(group)
+            .getAllByRole("button")
+            .map((button) => button.getAttribute("aria-keyshortcuts")),
+        ).toEqual(buttons.map((name) => DECISION_KEYS[name]!.toUpperCase()));
+        await user().keyboard(DECISION_KEYS[label]!);
+        await waitFor(() => expect(posts()).toHaveLength(1));
+        expect(posts()[0]!.path).toBe(itemPath(item.key));
+        expect(posts()[0]!.body).toEqual({ action });
+        cleanup();
+      }
+    },
+  );
+
+  it("opens the Snooze menu with z, whose choice posts the snooze", async () => {
+    const item = feeds["needs-you"]![0]!;
+    renderInbox(`item=${encodeURIComponent(item.key)}`);
+    await waitFor(decisions);
+    await user().keyboard("z");
+    const menu = await screen.findByRole("menu");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((entry) => entry.textContent),
+    ).toEqual(["1 hour", "Tomorrow", "Next week"]);
+    await user().click(within(menu).getByRole("menuitem", { name: "1 hour" }));
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    expect(posts()[0]!.body).toEqual({
+      action: "snooze",
+      until: snoozeUntil("hour", new Date(NOW)).toISOString(),
+    });
+  });
+
+  it("acts on the item the detail shows: after Done, the next one", async () => {
+    const held = deferred();
+    answer = () => held.promise;
+    const [first, second] = feeds["needs-you"]!;
+    renderInbox(`item=${encodeURIComponent(first!.key)}`);
+    await waitFor(decisions);
+    await user().keyboard("e");
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    // The item left its feed at once; the detail moved on to the next one.
+    await waitFor(() =>
+      expect(within(detail()).getByRole("heading", { level: 2 }).textContent).toBe(second!.title),
+    );
+    await user().keyboard("e");
+    await waitFor(() => expect(posts()).toHaveLength(2));
+    expect(posts().map((request) => request.path)).toEqual([
+      itemPath(first!.key),
+      itemPath(second!.key),
+    ]);
+    held.resolve(jsonResponse(result(first!.key, "done")));
+  });
+
+  it("binds nothing while the detail is hidden behind the phone's list (inline row decisions)", async () => {
+    renderInbox();
+    await waitFor(() => expect(rows().length).toBeGreaterThan(0));
+    const inline = rows()[0]!.querySelector(".or-inbox-row__decisions")!;
+    expect(
+      within(inline as HTMLElement)
+        .getAllByRole("button")[0]!
+        .hasAttribute("aria-keyshortcuts"),
+    ).toBe(false);
+    await user().keyboard("e");
+    expect(posts()).toHaveLength(0);
+  });
+});
 
 describe("decisions in the Inbox detail", () => {
   it.each(KINDS.map((entry) => [entry.item.kind, entry] as const))(

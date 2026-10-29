@@ -31,6 +31,11 @@ export interface NavItem {
   onSelect?: (event: MouseEvent<HTMLAnchorElement>) => void;
   /** For an entry with `onSelect` that opens something: whether it's open (`aria-expanded`). */
   expanded?: boolean;
+  /**
+   * The key of the shortcut that opens the entry, in `aria-keyshortcuts` form ("1",
+   * "Meta+J"), on the entry in every place it shows. Nothing visible shows it.
+   */
+  keyShortcuts?: string;
 }
 
 function matchesPrefix(path: string, prefix: string): boolean {

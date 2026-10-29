@@ -662,3 +662,29 @@ describe("AppFrame", () => {
     expect(within(sidebar()).queryByRole("button", { name: "Acme" })).toBeNull();
   });
 });
+
+describe("AppFrame shortcut keys", () => {
+  it("puts each entry's key on it in every placement, and the search key on every search button", async () => {
+    const nav = NAV.map((item, index) => ({ ...item, keyShortcuts: String(index + 1) }));
+    renderFrame({ nav, search: { onOpen: () => {}, keyShortcuts: "Control+K" } });
+    const keysOf = (name: string) =>
+      screen
+        .getAllByRole("link", { name: new RegExp(`^${name}`) })
+        .map((link) => link.getAttribute("aria-keyshortcuts"));
+    // The sidebar (rail) and the tab bar.
+    expect(keysOf("Inbox")).toEqual(["1", "1"]);
+    const searches = screen.getAllByRole("button", { name: "Search or jump to…" });
+    expect(searches.length).toBe(2);
+    for (const button of searches) {
+      expect(button.getAttribute("aria-keyshortcuts")).toBe("Control+K");
+    }
+    // The drawer.
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /^Open menu/ }));
+    const drawer = await screen.findByRole("dialog", { name: "Menu" });
+    const repos = within(drawer).getByRole("link", { name: "Repos" });
+    expect(repos.getAttribute("aria-keyshortcuts")).toBe("3");
+    // Nothing visible names a key.
+    expect(document.body.textContent).not.toMatch(/Control|Ctrl/);
+  });
+});

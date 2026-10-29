@@ -28,7 +28,8 @@ const pages = appPages();
 const PAGES_TO_COME: string[] = [];
 
 /** Pages no entry lights up. */
-const UNLISTED_PAGES: string[] = [];
+// Help opens from the user menu, not a nav entry.
+const UNLISTED_PAGES: string[] = ["/help"];
 
 /** The page an `href` opens: a static match, else one through dynamic `[segments]`. */
 function pageFor(href: string): string | undefined {

@@ -276,7 +276,7 @@ describe("AppShell", () => {
           user.click(
             within(screen.getByRole("banner")).getByRole("button", { name: "Search or jump to…" }),
           ),
-        () => user.keyboard("{Meta>}k{/Meta}"),
+        // jsdom isn't an Apple platform: Mod is Ctrl.
         () => user.keyboard("{Control>}k{/Control}"),
       ]) {
         await open();
@@ -287,6 +287,108 @@ describe("AppShell", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("AppShell shortcuts", () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        matches: query === "(min-width: 769px)",
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("{}", { status: 404, headers: { "content-type": "application/json" } }),
+      ),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("puts each key on its nav entry in every placement and on the search buttons", async () => {
+    // A phone width, where the drawer stays open.
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    );
+    renderShell("/analytics");
+    const keys = (container: HTMLElement) =>
+      Object.fromEntries(
+        within(container)
+          .getAllByRole("link")
+          .filter((link) => link.hasAttribute("data-nav-id"))
+          .map((link) => [link.dataset.navId, link.getAttribute("aria-keyshortcuts")]),
+      );
+    expect(keys(sidebar())).toEqual({
+      inbox: "1",
+      runs: "2",
+      backlog: "3",
+      repos: "4",
+      fleet: "5",
+      ask: "Control+J",
+      analytics: "6",
+      settings: "7",
+    });
+    expect(keys(tabBar())).toEqual({ inbox: "1", runs: "2", backlog: "3", ask: "Control+J" });
+    for (const button of screen.getAllByRole("button", { name: "Search or jump to…" })) {
+      expect(button.getAttribute("aria-keyshortcuts")).toBe("Control+K");
+    }
+    const { drawer } = await openDrawer();
+    expect(keys(drawer)).toEqual({ repos: "4", fleet: "5", analytics: "6", settings: "7" });
+  });
+
+  it("opens a nav entry with its digit, as a click on the sidebar's entry does", async () => {
+    renderShell("/analytics");
+    const clicked: string[] = [];
+    for (const link of within(sidebar()).getAllByRole("link")) {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        clicked.push((event.currentTarget as HTMLElement).dataset.navId ?? "");
+      });
+    }
+    const user = userEvent.setup();
+    await user.keyboard("1234567");
+    expect(clicked).toEqual([
+      "inbox",
+      "runs",
+      "backlog",
+      "repos",
+      "fleet",
+      "analytics",
+      "settings",
+    ]);
+  });
+
+  it("opens and closes the Ask panel with Mod+J above 768 px", async () => {
+    renderShell("/analytics");
+    const user = userEvent.setup();
+    await user.keyboard("{Control>}j{/Control}");
+    expect(screen.getByRole("complementary", { name: "Ask" })).toBeTruthy();
+    // Esc closes it, returning focus to the Ask entry.
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("complementary", { name: "Ask" })).toBeNull();
+    expect(document.activeElement).toBe(within(sidebar()).getByRole("link", { name: "Ask" }));
+    await user.keyboard("{Control>}j{/Control}");
+    await user.keyboard("{Control>}j{/Control}");
+    expect(screen.queryByRole("complementary", { name: "Ask" })).toBeNull();
+  });
+
+  it("opens Help with ? and New work item with n, from any page", async () => {
+    renderShell("/analytics");
+    const user = userEvent.setup();
+    await user.keyboard("?");
+    expect(nav.router.push).toHaveBeenLastCalledWith("/help");
+    await user.keyboard("n");
+    expect(nav.router.push).toHaveBeenLastCalledWith("/backlog?new=1");
   });
 });
 

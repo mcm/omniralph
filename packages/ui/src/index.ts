@@ -9,6 +9,7 @@ export * from "./layout/index.js";
 export * from "./lists/index.js";
 export * from "./provider/index.js";
 export * from "./shell/index.js";
+export * from "./shortcuts/index.js";
 export * from "./refs/index.js";
 export * from "./status/index.js";
 export * from "./surfaces/index.js";

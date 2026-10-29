@@ -1,6 +1,6 @@
 "use client";
 
-import { EmptyState, StatusLine, toast, Toolbar } from "@omniralph/ui";
+import { EmptyState, StatusLine, toast, Toolbar, useSplitDetailShown } from "@omniralph/ui";
 import { DecisionButtons } from "@/components/runs/decision-buttons";
 import { ITEM_HANDLED } from "@/components/runs/decisions";
 import { QuestionForm } from "@/components/runs/question-form";
@@ -27,7 +27,8 @@ async function copyLink(item: InboxItem) {
  * The selected item's detail: its header badges and ⋯ menu, its status line, the title as
  * the pane's heading, why it's here, and the decisions on it (a question's form, with its
  * answers, for a run's open question), then the cards that show why it's here (the run's
- * progress, a PR/MR's AI review, what went wrong) and the run's activity.
+ * progress, a PR/MR's AI review, what went wrong) and the run's activity. The decisions'
+ * keyboard shortcuts are bound here, not on the phone's inline row.
  */
 export function InboxDetail({
   item,
@@ -39,6 +40,8 @@ export function InboxDetail({
   showOrganization: boolean;
 }) {
   const label = inboxItemLabel(item, now);
+  // The decisions' keys work while this pane shows (not behind the phone's list).
+  const bindShortcuts = useSplitDetailShown();
   return (
     <article className="or-inbox-detail" aria-labelledby="or-inbox-detail-title">
       <header className="or-inbox-detail__head">
@@ -61,9 +64,10 @@ export function InboxDetail({
           runId={item.run.id}
           question={item.question}
           item={item}
+          bindShortcuts={bindShortcuts}
         />
       ) : (
-        <DecisionButtons key={item.key} item={item} />
+        <DecisionButtons key={item.key} item={item} bindShortcuts={bindShortcuts} />
       )}
       <InboxItemCards item={item} />
     </article>

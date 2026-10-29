@@ -29,15 +29,35 @@ vi.mock("@omniralph/ui", async (importOriginal) => ({
   toast: ui.toast,
 }));
 
-const nav = vi.hoisted(() => ({
-  search: new URLSearchParams(),
-  router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
-}));
-vi.mock("next/navigation", () => ({
-  usePathname: () => "/backlog",
-  useRouter: () => nav.router,
-  useSearchParams: () => nav.search,
-}));
+const nav = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  const state = {
+    search: new URLSearchParams(),
+    router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    /** Follows a push or replace that opens or closes the New work item sheet (`?new=1`). */
+    follow(href: string) {
+      const next = new URLSearchParams(href.split("?")[1] ?? "");
+      if ((next.get("new") === "1") === (state.search.get("new") === "1")) return;
+      state.search = next;
+      for (const listener of listeners) listener();
+    },
+  };
+  return state;
+});
+vi.mock("next/navigation", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    usePathname: () => "/backlog",
+    useRouter: () => nav.router,
+    useSearchParams: () => useSyncExternalStore(nav.subscribe, () => nav.search),
+  };
+});
 
 function TestLink({ href, onClick, ...props }: LinkProps) {
   return (
@@ -207,8 +227,8 @@ async function fill(sheet: HTMLElement, title: string, description = "") {
 
 beforeEach(() => {
   ui.toast.mockReset();
-  nav.router.push.mockReset();
-  nav.router.replace.mockReset();
+  nav.router.push.mockReset().mockImplementation(nav.follow);
+  nav.router.replace.mockReset().mockImplementation(nav.follow);
   backlog = backlogOf([workItemRow(), refineRow()]);
   targets = [portalTarget, webTarget];
   createAnswer = () =>
@@ -400,7 +420,8 @@ describe("the New work item sheet", () => {
         code === "invalid" ? "true" : null,
       );
       expect(createButton(sheet).disabled).toBe(false);
-      expect(nav.router.push).not.toHaveBeenCalled();
+      // Only the + navigated (opening the sheet): no item opened.
+      expect(nav.router.push.mock.calls.map(([href]) => href)).toEqual(["/backlog?new=1"]);
       expect(listTitles("Needs refining")).toEqual(["Rough idea: dunning emails"]);
       expect(screen.getByTestId("counts").textContent).toBe("1/1/2");
     },

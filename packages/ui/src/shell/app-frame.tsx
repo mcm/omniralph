@@ -60,6 +60,8 @@ export interface FrameSearch {
   onOpen: () => void;
   /** The sidebar button's text and the icon buttons' name. Defaults to "Search or jump to…". */
   label?: string;
+  /** The search shortcut's key in `aria-keyshortcuts` form ("Meta+K"), on every search button. */
+  keyShortcuts?: string;
 }
 
 const SEARCH_LABEL = "Search or jump to…";
@@ -114,6 +116,7 @@ function NavEntries({
             aria-label={navAccessibleName(item)}
             aria-current={active ? "page" : undefined}
             aria-expanded={onSelect && variant === "side" ? item.expanded : undefined}
+            aria-keyshortcuts={item.keyShortcuts}
             data-nav-id={item.id}
             onClick={
               onSelect
@@ -259,6 +262,7 @@ export function AppFrame({
               className="or-icon-btn or-icon-btn--ghost or-icon-btn--md"
               aria-label={search.label ?? SEARCH_LABEL}
               aria-haspopup="dialog"
+              aria-keyshortcuts={search.keyShortcuts}
               onClick={search.onOpen}
             >
               <IconSearch size={20} stroke={1.75} aria-hidden="true" />
@@ -284,6 +288,7 @@ export function AppFrame({
                   type="button"
                   className="or-search-btn"
                   aria-haspopup="dialog"
+                  aria-keyshortcuts={search.keyShortcuts}
                   onClick={search.onOpen}
                 >
                   <IconSearch

@@ -20,11 +20,14 @@ export type QuestionFormProps = {
       /** In an Inbox item: Send answer, then the item's Done and Snooze (`inboxDecisions`). */
       variant: "inbox";
       item: InboxItem;
+      /** Binds Done's and Snooze's keyboard shortcuts (the Inbox detail pane). */
+      bindShortcuts?: boolean;
     }
   | {
       /** In the run detail: Send answer alone. */
       variant: "run";
       item?: undefined;
+      bindShortcuts?: undefined;
     }
 );
 
@@ -75,7 +78,7 @@ export function QuestionForm(props: QuestionFormProps) {
         disabled={pending}
       />
       {props.variant === "inbox" ? (
-        <DecisionButtons item={props.item} answer={send} />
+        <DecisionButtons item={props.item} answer={send} bindShortcuts={props.bindShortcuts} />
       ) : (
         <div className="or-question__actions">{send}</div>
       )}

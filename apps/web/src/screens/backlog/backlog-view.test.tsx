@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@/components/pickers/test-dom";
-import { UiProvider, type LinkProps } from "@omniralph/ui";
+import { ShortcutProvider, UiProvider, type LinkProps } from "@omniralph/ui";
 import { QueryClientProvider, useQuery, type QueryClient } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -19,19 +19,40 @@ import {
 } from "@/components/query-test-utils";
 import type { Backlog } from "@/lib/api/backlog";
 import { backlogKeys } from "@/lib/api/keys";
+import { SHORTCUTS } from "@/lib/shortcuts";
 import { BacklogView } from "./backlog-view";
 import { useBacklogCounts } from "./queries";
 import { backlogOf, BETA_ID, blockedRow, REPO_WEB, refineRow, workItemRow } from "./test-fixtures";
 
-const nav = vi.hoisted(() => ({
-  search: new URLSearchParams(),
-  router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
-}));
-vi.mock("next/navigation", () => ({
-  usePathname: () => "/backlog",
-  useRouter: () => nav.router,
-  useSearchParams: () => nav.search,
-}));
+const nav = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  const state = {
+    search: new URLSearchParams(),
+    router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    /** Follows a push or replace that opens or closes the New work item sheet (`?new=1`). */
+    follow(href: string) {
+      const next = new URLSearchParams(href.split("?")[1] ?? "");
+      if ((next.get("new") === "1") === (state.search.get("new") === "1")) return;
+      state.search = next;
+      for (const listener of listeners) listener();
+    },
+  };
+  return state;
+});
+vi.mock("next/navigation", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    usePathname: () => "/backlog",
+    useRouter: () => nav.router,
+    useSearchParams: () => useSyncExternalStore(nav.subscribe, () => nav.search),
+  };
+});
 
 function TestLink({ href, onClick, ...props }: LinkProps) {
   return (
@@ -164,7 +185,8 @@ const choices = (menu: HTMLElement) =>
 const split = (container: HTMLElement) => container.querySelector(".or-split")!;
 
 beforeEach(() => {
-  nav.router.push.mockReset();
+  nav.router.push.mockReset().mockImplementation(nav.follow);
+  nav.router.replace.mockReset().mockImplementation(nav.follow);
   backlog = backlogOf([workItemRow(), blockedRow(), refineRow()]);
   serve();
 });
@@ -290,6 +312,61 @@ describe("the filters", () => {
     const source = await openFilter("Source: SOC team");
     await source.user.click(within(source.menu).getByRole("menuitemcheckbox", { name: "All" }));
     expect(nav.router.push).toHaveBeenLastCalledWith("/backlog", { scroll: false });
+  });
+});
+
+describe("New work item's URL", () => {
+  const sheet = () => screen.queryByRole("button", { name: "Close new work item" });
+  const renderNew = (options: { search?: string; workItemId?: string } = {}) =>
+    renderBacklog({
+      ...options,
+      renderNewWorkItem: (close) => (
+        <button type="button" onClick={close}>
+          Close new work item
+        </button>
+      ),
+    });
+
+  it("opens the sheet from ?new=1, and closing removes it, keeping the rest of the URL", async () => {
+    renderNew({ workItemId: "linear-issue-1", search: `repo=${REPO_WEB}&new=1` });
+    expect(sheet()).toBeTruthy();
+    await userEvent.setup().click(sheet()!);
+    expect(nav.router.replace).toHaveBeenLastCalledWith(
+      `/backlog/linear-issue-1?repo=${REPO_WEB}`,
+      {
+        scroll: false,
+      },
+    );
+    expect(sheet()).toBeNull();
+  });
+
+  it("opens it from the + by setting ?new=1, which carries the New work item key", async () => {
+    renderNew({ search: `repo=${REPO_WEB}` });
+    const plus = await screen.findByRole("button", { name: "New work item" });
+    expect(sheet()).toBeNull();
+    await userEvent.setup().click(plus);
+    expect(nav.router.push).toHaveBeenLastCalledWith(`/backlog?repo=${REPO_WEB}&new=1`, {
+      scroll: false,
+    });
+    expect(sheet()).toBeTruthy();
+  });
+
+  it("puts the key on the + inside the shortcuts", async () => {
+    nav.search = new URLSearchParams();
+    render(
+      <ShortcutProvider definitions={SHORTCUTS} platform="other">
+        <CurrentUserProvider user={testUser}>
+          <QueryClientProvider client={createTestQueryClient()}>
+            <UiProvider linkComponent={TestLink}>
+              <BacklogView renderDetail={() => null} />
+            </UiProvider>
+          </QueryClientProvider>
+        </CurrentUserProvider>
+      </ShortcutProvider>,
+    );
+    const plus = screen.getByRole("button", { name: "New work item" });
+    expect(plus.getAttribute("aria-keyshortcuts")).toBe("N");
+    expect(plus.textContent).toBe("");
   });
 });
 
