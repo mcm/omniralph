@@ -9,32 +9,22 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Every job runs in parallel on its own runner, so the run takes as long as the slowest one.
+# The web and agent suites are the long ones, so they're split into shards.
 jobs:
   check:
+    name: Format, typecheck and lint
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           # The whole history, so the changeset check can diff against the base branch.
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup
         with:
-          node-version-file: .nvmrc
-          cache: pnpm
-
-      # @iamthemcmaster/ui is a private package on the public npm registry.
-      # .npmrc is gitignored; never commit one containing a token.
-      - name: Authenticate to npm
-        run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Install
-        run: pnpm install --frozen-lockfile
+          npm-token: ${{ secrets.NPM_TOKEN }}
 
       # A pull request that changes the agent, or a workspace package it bundles, must add a
       # changeset for @omniralph/agent (or an empty one). Not for the Version Packages pull
@@ -48,10 +38,46 @@ jobs:
       - name: Check formatting
         run: pnpm format:check
 
-      # One turbo run, so typechecking and linting overlap the (database-bound) tests
-      # rather than running one after the other.
-      - name: Typecheck, lint and test
-        run: pnpm turbo run typecheck lint test
+      - name: Typecheck and lint
+        run: pnpm turbo run typecheck lint
 
-      - name: Smoke-test the agent package
-        run: ./scripts/smoke-agent-package.sh
+  test:
+    name: Test (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: web 1/6, run: pnpm --filter @omniralph/web exec vitest run --shard=1/6 }
+          - { name: web 2/6, run: pnpm --filter @omniralph/web exec vitest run --shard=2/6 }
+          - { name: web 3/6, run: pnpm --filter @omniralph/web exec vitest run --shard=3/6 }
+          - { name: web 4/6, run: pnpm --filter @omniralph/web exec vitest run --shard=4/6 }
+          - { name: web 5/6, run: pnpm --filter @omniralph/web exec vitest run --shard=5/6 }
+          - { name: web 6/6, run: pnpm --filter @omniralph/web exec vitest run --shard=6/6 }
+          - { name: agent 1/2, run: pnpm --filter @omniralph/agent exec vitest run --shard=1/2 }
+          - { name: agent 2/2, run: pnpm --filter @omniralph/agent exec vitest run --shard=2/2 }
+          - name: packages
+            run: pnpm turbo run test --filter=!@omniralph/web --filter=!@omniralph/agent
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+        with:
+          npm-token: ${{ secrets.NPM_TOKEN }}
+
+      - name: Test
+        run: ${{ matrix.run }}
+
+  smoke:
+    name: Smoke-test the agent package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+        with:
+          npm-token: ${{ secrets.NPM_TOKEN }}
+
+      - run: ./scripts/smoke-agent-package.sh
