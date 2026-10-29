@@ -219,13 +219,15 @@ export interface AcceptedKindsCounts {
   total: number;
 }
 
-/** "Accept all kinds", or "2 of 7 agents limit kinds". */
+/**
+ * What kinds of work (review, coding, Ask…) the agents take: "Every agent takes all kinds of
+ * work", or "2 of 7 agents take only some kinds of work".
+ */
 export function acceptedKindsSummary(counts: AcceptedKindsCounts): string {
-  if (counts.limited === 0) return "Accept all kinds";
-  const verb = counts.limited === 1 ? "limits" : "limit";
-  return counts.total === 1
-    ? "1 agent limits kinds"
-    : `${counts.limited} of ${counts.total} agents ${verb} kinds`;
+  if (counts.limited === 0) return "Every agent takes all kinds of work";
+  if (counts.total === 1) return "The agent takes only some kinds of work";
+  const verb = counts.limited === 1 ? "takes" : "take";
+  return `${counts.limited} of ${counts.total} agents ${verb} only some kinds of work`;
 }
 
 /** The pinned repos a row shows: one or two badges, or the first and a "+N" badge. */

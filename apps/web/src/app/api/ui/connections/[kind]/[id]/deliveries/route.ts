@@ -19,7 +19,7 @@ const NOT_FOUND = "That connection doesn't exist.";
 /**
  * A page of the webhook deliveries a connection received (`scm`: a GitHub or GitLab
  * connection, `linear`: a Linear integration), newest first, optionally only some
- * outcomes (`outcome` repeats). Any member of the connection's organization may read it.
+ * outcomes (`outcome` repeats) and only those not replayed (`unreplayed=true`). Any member of the connection's organization may read it.
  */
 export const GET = apiHandler<"member", undefined, undefined, Params>(
   {},
@@ -51,6 +51,7 @@ export const GET = apiHandler<"member", undefined, undefined, Params>(
     const page = await listWebhookEvents(db, {
       source,
       outcomes: parsed.data.outcome,
+      unreplayed: parsed.data.unreplayed,
       cursor: parsed.data.cursor,
       limit: parsed.data.limit,
     });

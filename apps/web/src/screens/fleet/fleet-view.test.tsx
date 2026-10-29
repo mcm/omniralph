@@ -246,14 +246,14 @@ describe("the summary", () => {
 
   it("shows the accepted kinds without an Edit link", () => {
     renderCells(summary());
-    expect(value("Org defaults").textContent).toBe("Accept all kinds");
+    expect(value("Org defaults").textContent).toBe("Every agent takes all kinds of work");
     expect(detail("Org defaults")).toBeNull();
     expect(within(cell("Org defaults")).queryByRole("link")).toBeNull();
   });
 
   it("counts agents that limit their kinds", () => {
     renderCells(summary({ acceptedKinds: { limited: 2, total: 7 } }));
-    expect(value("Org defaults").textContent).toBe("2 of 7 agents limit kinds");
+    expect(value("Org defaults").textContent).toBe("2 of 7 agents take only some kinds of work");
   });
 });
 
@@ -326,7 +326,7 @@ describe("the agents table", () => {
     expect(bodyRows().every((row) => row.getAttribute("aria-current") === null)).toBe(true);
   });
 
-  it("adds the Org column and badges under All organizations", async () => {
+  it("adds the Org column before the pins under All organizations", async () => {
     data = {
       ...fleet(),
       agents: [
@@ -340,9 +340,14 @@ describe("the agents table", () => {
     };
     renderFleet({ user: allOrganizations });
     await waitFor(() => expect(bodyRows()).toHaveLength(4));
-    expect(within(table()).getAllByRole("columnheader").at(-1)!.textContent).toBe("Org");
+    expect(
+      within(table())
+        .getAllByRole("columnheader")
+        .map((header) => header.textContent),
+    ).toEqual(["Agent", "Status", "Org", "Pinned repos"]);
+    // The organization's badge comes first in every row (Design rule 13).
     const beta = bodyRows().find((row) => row.textContent!.includes("beta-1"))!;
-    expect(badgeTexts(within(beta).getAllByRole("cell").at(-1)!)).toEqual(["Beta"]);
+    expect(badgeTexts(beta)[0]).toBe("Beta");
   });
 });
 
@@ -362,10 +367,10 @@ describe("the phone cards", () => {
     expect(badgeTexts(second!)).toEqual(["acme/repo-1", "+2"]);
   });
 
-  it("add the organization badge under All organizations", async () => {
+  it("put the organization badge first under All organizations", async () => {
     renderFleet({ user: allOrganizations });
     await waitFor(() => expect(cards()).toHaveLength(3));
-    expect(badgeTexts(cards()[0]!)).toEqual(["acme/repo-1", "acme/repo-2", "Acme"]);
+    expect(badgeTexts(cards()[0]!)).toEqual(["Acme", "acme/repo-1", "acme/repo-2"]);
   });
 
   it("mark the open agent's card current", async () => {

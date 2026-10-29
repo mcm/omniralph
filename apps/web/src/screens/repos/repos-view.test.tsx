@@ -8,7 +8,7 @@ import {
   ShortcutProvider,
 } from "@omniralph/ui";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SHORTCUTS } from "@/lib/shortcuts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -533,6 +533,20 @@ describe("the detail header", () => {
     await loadedDetail();
     const { menu } = await openMenu();
     expect(menuEntries(menu)).toEqual(["View runs for this repo", "Open in GitHub"]);
+  });
+
+  it("tells a member once why the repo's settings are read-only, and admins nothing", async () => {
+    rows = [portalRow(), betaRow()];
+    details[REPO_BETA] = repoDetail(betaRow());
+    renderRepos({ repositoryId: REPO_BETA, user: allOrganizations });
+    await loadedDetail();
+    expect(
+      within(detailPane()).getAllByText("Only admins can change this repo's settings."),
+    ).toHaveLength(1);
+    cleanup();
+    renderRepos({ repositoryId: REPO_PORTAL });
+    await loadedDetail();
+    expect(within(detailPane()).queryByText(/Only admins can change/)).toBeNull();
   });
 
   it("says when the repo doesn't exist", async () => {

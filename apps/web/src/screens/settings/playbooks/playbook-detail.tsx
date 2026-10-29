@@ -453,7 +453,7 @@ export function PlaybookDetail({ id }: { id: string }) {
   const detail = query.data;
   const { playbook } = detail;
   return (
-    <SettingsPage title={playbook.name}>
+    <SettingsPage title={playbook.name} adminOnly>
       <div className="or-playbook__head">
         {back}
         <div className="or-playbook__badges or-playbook__head-badges">

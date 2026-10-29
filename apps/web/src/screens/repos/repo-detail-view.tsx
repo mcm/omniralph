@@ -16,6 +16,7 @@ import {
 } from "@omniralph/ui";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { AdminsOnlyNote } from "@/components/admins-only-note";
 import { useCurrentUser } from "@/components/current-user";
 import { ApiError } from "@/lib/api/client";
 import type { RepositoryDetail, RepositoryProblemItem } from "@/lib/api/repositories";
@@ -182,6 +183,7 @@ function RepoDetailContent({ detail }: { detail: RepositoryDetail }) {
         </DetailsSection>
       ) : null}
       <RepoProblems repository={detail} />
+      {detail.canEdit ? null : <AdminsOnlyNote what="this repo's settings" />}
       <SectionIndex
         className="or-repo-detail__index"
         aria-label="Sections"

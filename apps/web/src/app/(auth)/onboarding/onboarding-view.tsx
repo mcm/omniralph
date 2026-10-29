@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Field, TextInput } from "@omniralph/ui";
+import { Button, Card, Field, MetaBadge, OrgBadge, TextInput } from "@omniralph/ui";
 import { IconLogout, IconPlus } from "@tabler/icons-react";
 import { useServerAction } from "../use-server-action";
 import { signOutAction } from "@/lib/auth/actions";
@@ -34,20 +34,28 @@ interface OnboardingViewProps {
 
 const roleLabel: Record<Role, string> = { admin: "Admin", member: "Member" };
 
-/** One organization in a list card: its name, a detail line and its actions. */
+/**
+ * One organization in a list card: its badge (Design rule 1), the role it gives as a badge,
+ * a detail line and its actions.
+ */
 function OrganizationRow({
   name,
+  role,
   detail,
   children,
 }: {
   name: string;
+  role?: Role;
   detail?: string;
   children: React.ReactNode;
 }) {
   return (
     <li className="onboarding-row">
       <div className="onboarding-row-text">
-        <span className="onboarding-row-name">{name}</span>
+        <span className="onboarding-row-badges">
+          <OrgBadge name={name} />
+          {role && <MetaBadge text={roleLabel[role]} />}
+        </span>
         {detail && <span className="onboarding-row-detail">{detail}</span>}
       </div>
       <div className="onboarding-row-actions">{children}</div>
@@ -82,8 +90,8 @@ function CreateOrganizationCard() {
     <Card title="Create an organization" className="auth-card">
       <form onSubmit={submit} className="auth-stack">
         <p className="auth-lede">
-          Organizations share repositories, agents and integrations between their members. You
-          become its admin and can invite others.
+          Organizations share repos, agents and integrations between their members. You become its
+          admin and can invite others.
         </p>
         <Field label="Name" htmlFor="organization-name" stacked>
           <TextInput
@@ -108,7 +116,8 @@ function Invitation({ invitation }: { invitation: InvitationRow }) {
   return (
     <OrganizationRow
       name={invitation.organizationName}
-      detail={`${roleLabel[invitation.role]} · expires ${new Date(invitation.expiresAt).toLocaleDateString()}`}
+      role={invitation.role}
+      detail={`Expires ${new Date(invitation.expiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
     >
       <Button
         variant="ghost"
@@ -161,7 +170,7 @@ function JoinableOrganization({ organization }: { organization: { id: string; na
 function Membership({ organization }: { organization: { id: string; name: string; role: Role } }) {
   const { pending, open } = useOrganizationAction();
   return (
-    <OrganizationRow name={organization.name} detail={roleLabel[organization.role]}>
+    <OrganizationRow name={organization.name} role={organization.role}>
       <Button
         size="sm"
         disabled={pending}

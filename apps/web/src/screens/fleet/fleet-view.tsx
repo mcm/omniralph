@@ -140,7 +140,7 @@ function AgentStatus({ agent }: { agent: FleetAgentRow }) {
   return <StatusText tone={agent.status.tone}>{agent.status.label}</StatusText>;
 }
 
-/** One or two repo badges, or the first and "+N". */
+/** One or two repo badges, or the first and "+N"; "None" in the table only (Design rule 16). */
 function PinnedRepos({ agent }: { agent: FleetAgentRow }) {
   const { shown, more } = pinBadges(agent.pinnedRepositories);
   if (shown.length === 0) return <span className="or-fleet__none">None</span>;
@@ -154,7 +154,11 @@ function PinnedRepos({ agent }: { agent: FleetAgentRow }) {
   );
 }
 
-/** The table's columns; Org only under "All organizations" (Design rule 13). */
+/**
+ * The table's columns; Org only under "All organizations", and then before any other badge
+ * (Design rule 13). Status and Org have set widths; the name and Pinned repos share the
+ * rest, and every cell ellipsizes in a narrow pane (the open agent beside it at 1024 px).
+ */
 export function fleetColumns(showOrganization: boolean): DataTableColumn<FleetAgentRow>[] {
   return [
     {
@@ -163,17 +167,14 @@ export function fleetColumns(showOrganization: boolean): DataTableColumn<FleetAg
       cell: (agent) => agent.name,
       card: "title",
       mono: true,
+      truncate: true,
     },
     {
       id: "status",
       header: "Status",
       cell: (agent) => <AgentStatus agent={agent} />,
       card: "status",
-    },
-    {
-      id: "pins",
-      header: "Pinned repos",
-      cell: (agent) => <PinnedRepos agent={agent} />,
+      className: "or-fleet__status-col",
     },
     ...(showOrganization
       ? [
@@ -181,9 +182,17 @@ export function fleetColumns(showOrganization: boolean): DataTableColumn<FleetAg
             id: "organization",
             header: "Org",
             cell: (agent: FleetAgentRow) => <OrgBadge name={agent.organization.name} />,
+            truncate: true,
+            className: "or-fleet__org-col",
           },
         ]
       : []),
+    {
+      id: "pins",
+      header: "Pinned repos",
+      cell: (agent) => <PinnedRepos agent={agent} />,
+      truncate: true,
+    },
   ];
 }
 

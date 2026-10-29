@@ -279,6 +279,7 @@ function ConnectionView({
   return (
     <SettingsPage
       title={label}
+      adminOnly
       mark={<BrandMark brand={connection.provider} size={18} />}
       badges={
         connection.host || connection.account ? (

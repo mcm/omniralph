@@ -14,6 +14,22 @@
   min-height: 0;
 }
 
+/*
+ * The table holds any pane width: Status and Org are set, the name and Pinned repos share
+ * the rest, and every cell ellipsizes (DataTable `truncate`) instead of widening the table.
+ */
+.or-fleet__table .or-tbl {
+  table-layout: fixed;
+}
+
+.or-fleet__status-col {
+  width: 128px;
+}
+
+.or-fleet__org-col {
+  width: 160px;
+}
+
 .or-fleet__head {
   display: flex;
   align-items: center;
@@ -45,16 +61,33 @@
   color: var(--or-fail);
 }
 
-.or-fleet__on,
-.or-fleet__pins {
+.or-fleet__on {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }
 
+/* One line: the repo badges shrink and ellipsize to the column (DataTable `truncate`). */
+.or-fleet__pins {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* "+N" keeps its width; the repo badges give theirs up. */
+.or-fleet__pins > [data-or-badge="meta"] {
+  flex: none;
+}
+
 .or-fleet__none {
   color: var(--or-sec);
+}
+
+/* A phone card carries less (Design rule 16): no line for an agent without pins. */
+.or-cardrow .or-fleet__none {
+  display: none;
 }
 
 /* The open agent */

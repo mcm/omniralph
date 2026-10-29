@@ -347,6 +347,8 @@ describe("Advanced › Routing rules", () => {
     const sheet = dialog();
     expect(within(sheet).getByRole("heading", { name: "Edit rule 1" })).toBeTruthy();
     await userEvent.click(within(sheet).getByRole("button", { name: "Group" }));
+    // A new group comes with its first condition, never empty.
+    expect(within(sheet).getAllByRole("combobox", { name: "Field" })).toHaveLength(2);
     // The new group: OR, negated, with one condition on the parent's team.
     await userEvent.selectOptions(
       within(sheet).getAllByRole("combobox", { name: "Match" })[1]!,
@@ -357,7 +359,6 @@ describe("Advanced › Routing rules", () => {
     expect(
       within(sheet).getAllByRole("button", { name: "NOT" })[1]!.getAttribute("aria-pressed"),
     ).toBe("true");
-    await userEvent.click(within(sheet).getAllByRole("button", { name: "Condition" })[1]!);
     await userEvent.selectOptions(
       within(sheet).getAllByRole("combobox", { name: "Field" })[1]!,
       "parent.team",

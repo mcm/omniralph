@@ -143,12 +143,41 @@
   border-inline-start: 2px solid var(--or-border);
 }
 
-.or-routing-builder .ruleGroup-header,
-.or-routing-builder .rule {
+.or-routing-builder .ruleGroup-header {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 6px;
+}
+
+/* One row per condition: field, operator, value, then its × (a range takes the next line). */
+.or-routing-builder .rule {
+  display: grid;
+  grid-template-areas: "field operator value remove";
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.4fr) auto;
+  align-items: start;
+  gap: 6px;
+}
+
+.or-routing-builder .rule > .or-routing-builder__field {
+  grid-area: field;
+}
+
+.or-routing-builder .rule > .or-routing-builder__operator {
+  grid-area: operator;
+}
+
+.or-routing-builder .rule > .or-routing-builder__value {
+  grid-area: value;
+}
+
+.or-routing-builder .rule > .or-routing-builder__range {
+  grid-row: 2;
+  grid-column: 1 / 4;
+}
+
+.or-routing-builder .rule > .or-routing-builder__remove {
+  grid-area: remove;
 }
 
 .or-routing-builder .ruleGroup-body {
@@ -161,20 +190,15 @@
   display: none;
 }
 
-.or-routing-builder__field {
-  flex: 1 1 140px;
-  min-width: 0;
-}
-
+.or-routing-builder__field,
 .or-routing-builder__operator,
 .or-routing-builder__combinator {
-  flex: 0 1 auto;
   min-width: 0;
 }
 
 .or-routing-builder__value {
   display: flex;
-  flex: 1 1 100%;
+  flex: 1 1 0;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
@@ -182,9 +206,19 @@
 
 .or-routing-builder__range {
   display: flex;
-  flex: 1 1 100%;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+}
+
+/* Phone: the value goes under its field and operator; the × stays on the first line. */
+@media (max-width: 768px) {
+  .or-routing-builder .rule {
+    grid-template-areas:
+      "field operator remove"
+      "value value .";
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
 }
 
 .or-routing-builder__and {

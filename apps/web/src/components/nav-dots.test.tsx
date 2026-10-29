@@ -101,6 +101,7 @@ function replayAnswer(outcome: DeliveryDetail["outcome"]): DeliveryDetail {
     reason: outcome === "failed" ? "No agent online for this repo" : null,
     run: null,
     replayOfId: FAILED_DELIVERY_ID,
+    replayed: false,
     payloadTruncated: false,
     receivedAt: "2026-10-27T10:00:00.000Z",
     payload: {},

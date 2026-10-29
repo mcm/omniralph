@@ -172,6 +172,8 @@ export interface WebhookEventSummary {
   replayOfId: string | null;
   /** Who replayed it (a replay's row), while that user exists. */
   replayedBy: { id: string; name: string | null } | null;
+  /** A later delivery replays this one (it has been handled). */
+  replayed: boolean;
   payloadTruncated: boolean;
   /** UTC ISO to the microsecond (the cursor's precision). */
   receivedAt: string;
@@ -190,9 +192,14 @@ export interface WebhookEventCursor {
 export interface WebhookEventListFilter {
   source: WebhookEventSource;
   outcomes?: readonly WebhookEventOutcome[];
+  /** Only deliveries no other delivery replays. */
+  unreplayed?: boolean;
   cursor?: WebhookEventCursor | null;
   limit: number;
 }
+
+/** Whether a later delivery replays the row's delivery. */
+const replayedExists = sql<boolean>`exists (select 1 from ${webhookEvents} as replay where replay.replay_of_id = ${webhookEvents.id})`;
 
 const receivedAtIso = sql<string>`to_char(${webhookEvents.receivedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
@@ -216,6 +223,7 @@ const summaryColumns = {
   replayOfId: webhookEvents.replayOfId,
   replayedById: users.id,
   replayedByName: users.name,
+  replayed: replayedExists,
   payloadTruncated: webhookEvents.payloadTruncated,
   receivedAt: receivedAtIso,
 };
@@ -254,6 +262,7 @@ function summary(row: SummaryRow): WebhookEventSummary {
     run: row.runId && row.runKind ? { id: row.runId, kind: row.runKind } : null,
     replayOfId: row.replayOfId,
     replayedBy: row.replayedById ? { id: row.replayedById, name: row.replayedByName } : null,
+    replayed: Boolean(row.replayed),
     payloadTruncated: row.payloadTruncated,
     receivedAt: row.receivedAt,
   };
@@ -273,6 +282,7 @@ export async function listWebhookEvents(
       : eq(webhookEvents.integrationId, filter.source.integrationId),
   ];
   if (filter.outcomes?.length) where.push(inArray(webhookEvents.outcome, [...filter.outcomes]));
+  if (filter.unreplayed) where.push(sql`not ${replayedExists}`);
   if (filter.cursor) {
     where.push(
       sql`(${webhookEvents.receivedAt}, ${webhookEvents.id}) < (${filter.cursor.receivedAt}::timestamptz, ${filter.cursor.id}::uuid)`,
