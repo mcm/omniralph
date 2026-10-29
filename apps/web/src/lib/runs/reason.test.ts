@@ -29,3 +29,14 @@ describe("runReason for a run waiting on host tools", () => {
     expect(runReasonLink({ kind: "failed", error: null })).toBeNull();
   });
 });
+
+describe("runReason for a failed or stopped run", () => {
+  it("quotes the error as a sentence of its own", () => {
+    expect(
+      runReason({ kind: "failed", error: "the triage ended without a result (max_turns)" }),
+    ).toBe("The run failed. The triage ended without a result (max_turns)");
+    expect(runReason({ kind: "stopped", runKind: "epic", error: "  " })).toBe(
+      "The epic was stopped.",
+    );
+  });
+});

@@ -334,7 +334,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
     expect(byKind(problems, "agent_update_failed")).toMatchObject({
       title: "edge-box",
       version: "1.4.0",
-      reason: "edge-box couldn't update to 1.4.0. checksum mismatch",
+      reason: "edge-box couldn't update to 1.4.0. Checksum mismatch",
     });
     expect(byKind(problems, "failed_system")).toMatchObject({
       key: `failed_attempt:${ids.sync}`,
@@ -342,7 +342,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       title: "Couldn't sync web",
       repository: { id: repoId, fullPath: "acme/web" },
       agent: { id: ids.agent, name: "build-box" },
-      reason: "Couldn't sync web. git fetch failed",
+      reason: "Couldn't sync web. Git fetch failed",
       actions: ["retry", "done", "snooze"],
     });
     expect(byKind(problems, "agent_offline")).toMatchObject({

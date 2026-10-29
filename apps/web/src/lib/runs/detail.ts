@@ -8,6 +8,7 @@ import {
   getRalphRunDetailFacts,
   getRunChatThread,
   getReviewRunDetailFacts,
+  getTriageRunError,
   listRunAttempts,
   loadRunListEntries,
   type Database,
@@ -41,6 +42,7 @@ import {
   waitingReasonFacts,
   type RunReasonFacts,
 } from "./reason";
+import { settleFailedTurn } from "./turns";
 
 const ms = (from: Date | null, to: Date | null) =>
   from && to ? Math.max(0, to.getTime() - from.getTime()) : null;
@@ -272,7 +274,12 @@ async function reviewKindFacts(
   };
 }
 
-function attemptKindFacts(attempts: RunAttemptEntry[], base: AttemptLabelContext): KindFacts {
+/** `runError`: what the run itself recorded went wrong (a triage's last result). */
+function attemptKindFacts(
+  attempts: RunAttemptEntry[],
+  base: AttemptLabelContext,
+  runError: string | null = null,
+): KindFacts {
   const labelContext = () => base;
   return {
     steps: attemptSteps(attempts, (a) =>
@@ -282,8 +289,9 @@ function attemptKindFacts(attempts: RunAttemptEntry[], base: AttemptLabelContext
     labelContext,
     details: {
       routedBy: null,
-      // What the newest attempt reported, when it didn't succeed.
-      error: attempts.find((a) => a.status !== "completed")?.error ?? null,
+      // What the run recorded (as its Inbox item says), else what the newest attempt
+      // reported, when it didn't succeed.
+      error: runError ?? attempts.find((a) => a.status !== "completed")?.error ?? null,
       waitingOn: null,
       lanes: [],
       baseBranch: null,
@@ -393,13 +401,20 @@ export async function loadRunDetail(
   organization: ScopedOrganization,
   viewerId: string,
 ): Promise<RunDetail | null> {
-  const [[entry], attempts, chat] = await Promise.all([
+  const [[entry], loaded, chat] = await Promise.all([
     loadRunListEntries(db, [run]),
     listRunAttempts(db, run),
     loadRunChat(db, run, viewerId),
   ]);
   if (!entry) return null;
   const row = runRow(entry, organization);
+  const triageError =
+    run.kind === "triage" && row.status === "failed" ? await getTriageRunError(db, run.id) : null;
+  // A triage's or ask's turns are its attempts: a failed run's last turn is what failed.
+  const attempts =
+    run.kind === "triage" || run.kind === "ask"
+      ? settleFailedTurn(loaded, row.status, triageError)
+      : loaded;
   const [open, costs] = await Promise.all([
     loadRunQuestion(db, run, row.workItem?.identifier ?? null),
     costForJobs(
@@ -425,6 +440,8 @@ export async function loadRunDetail(
       break;
     }
     case "triage":
+      facts = attemptKindFacts(attempts, base, triageError);
+      break;
     case "ask":
       facts = attemptKindFacts(attempts, base);
       break;
