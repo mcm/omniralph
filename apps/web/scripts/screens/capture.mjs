@@ -1,13 +1,15 @@
 // Runs inside the mcr.microsoft.com/playwright container (see verify.ts), never on the
 // host: `node capture.mjs config.json`. Screenshots every route of the config in every
 // viewport and theme into `config.outDir`, with an HTML snapshot (styles inlined, for
-// `impeccable detect`) and `results.json`.
+// `impeccable detect`) and `results.json`. Routes are the panel's, or the agent page's
+// (`surface: "agent"`, served by its fixture mode at `config.agent.baseUrl`).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
 
 const config = JSON.parse(await readFile(process.argv[2], "utf8"));
-const { baseUrl, signInPaths, organizationCookie, routes, themes, viewports, outDir } = config;
+const { baseUrl, signInPaths, organizationCookie, routes, themes, viewports, outDir, agent } =
+  config;
 const NAVIGATION_TIMEOUT_MS = 180_000; // `next dev` compiles each route on its first visit.
 // Pages load their data from `/api/ui` after rendering (skeletons are `aria-busy`), and keep
 // polling it, so the network never goes idle: wait for the skeletons to go instead.
@@ -20,22 +22,34 @@ await mkdir(outDir, { recursive: true });
 const browser = await chromium.launch();
 const results = [];
 try {
-  // Who each route is captured as: nobody (signed out), the admin, or the member (`as`).
-  const userOf = (route) => (route.auth === "signed-out" ? null : (route.as ?? "admin"));
+  // Who each route is captured as: nobody (signed out), the admin, or the member (`as`), on
+  // the panel; the agent page's link signs in to the agent page.
+  const userOf = (route) =>
+    route.surface === "agent"
+      ? "agent"
+      : route.auth === "signed-out"
+        ? null
+        : (route.as ?? "admin");
+  const baseUrlOf = (user) => (user === "agent" ? agent.baseUrl : baseUrl);
   const sessions = {};
   for (const user of new Set(routes.map(userOf))) {
-    if (user) sessions[user] = await signIn(signInPaths[user]);
+    if (user) {
+      sessions[user] = await signIn(
+        baseUrlOf(user),
+        user === "agent" ? agent.signInPath : signInPaths[user],
+      );
+    }
   }
   for (const [viewportName, viewport] of Object.entries(viewports)) {
     for (const theme of themes) {
-      for (const user of [null, "admin", "member"]) {
+      for (const user of [null, "admin", "member", "agent"]) {
         const group = routes.filter(
           (route) =>
             userOf(route) === user && (!route.viewports || route.viewports.includes(viewportName)),
         );
         if (group.length === 0) continue;
         const context = await browser.newContext({
-          baseURL: baseUrl,
+          baseURL: baseUrlOf(user),
           viewport,
           colorScheme: theme,
           ...(viewportName === "phone"
@@ -56,15 +70,18 @@ try {
   await writeFile(join(outDir, "results.json"), JSON.stringify(results, null, 2));
 }
 
-/** Signs in with the dev sign-in once per user; returns the session's storage state. */
-async function signIn(signInPath) {
-  const context = await browser.newContext({ baseURL: baseUrl });
+/**
+ * Signs in once per user, with the panel's dev sign-in or the agent page's link (which trades
+ * its token for a cookie with a 303); returns the session's storage state.
+ */
+async function signIn(base, signInPath) {
+  const context = await browser.newContext({ baseURL: base });
   const response = await context.request.get(signInPath, {
     maxRedirects: 0,
     timeout: NAVIGATION_TIMEOUT_MS,
   });
-  if (response.status() !== 307 && response.status() !== 302) {
-    throw new Error(`dev sign-in failed: HTTP ${response.status()} ${await response.text()}`);
+  if (![302, 303, 307].includes(response.status())) {
+    throw new Error(`sign-in failed: HTTP ${response.status()} ${await response.text()}`);
   }
   const state = await context.storageState();
   await context.close();
@@ -76,8 +93,9 @@ async function capture(context, route, viewportName, viewport, theme) {
   const result = {
     route: route.name,
     path: route.path,
+    surface: route.surface ?? "panel",
     auth: route.auth,
-    as: route.auth === "signed-out" ? null : (route.as ?? "admin"),
+    as: route.surface === "agent" || route.auth === "signed-out" ? null : (route.as ?? "admin"),
     viewport: viewportName,
     width: viewport.width,
     theme,
@@ -102,7 +120,7 @@ async function capture(context, route, viewportName, viewport, theme) {
   page.on("pageerror", (error) => result.consoleErrors.push(String(error).slice(0, 500)));
   try {
     // Another organization than the user's active one: the organization cookie, for this page.
-    await context.clearCookies({ name: organizationCookie });
+    if (route.surface !== "agent") await context.clearCookies({ name: organizationCookie });
     if (route.organization) {
       await context.addCookies([
         { name: organizationCookie, value: route.organization, url: baseUrl },
@@ -119,15 +137,34 @@ async function capture(context, route, viewportName, viewport, theme) {
         () => false,
       );
     if (!loaded) result.notRendered = `still loading after ${LOADED_TIMEOUT_MS / 1000}s`;
-    // In-place errors: a failed load (QueryBoundary) or a render error ((app)/error.tsx).
-    result.loadErrors = await page.$$eval(".query-error", (alerts) =>
-      alerts.map((alert) => alert.textContent?.replace(/\s+/g, " ").trim().slice(0, 300) ?? ""),
+    // The agent page renders nothing until its data loads: wait for what each route names.
+    const waitFor = typeof route.waitFor === "string" ? [route.waitFor] : (route.waitFor ?? []);
+    const waited = await Promise.all(
+      waitFor.map((selector) =>
+        page
+          .locator(selector)
+          .first()
+          .waitFor({ timeout: 30_000 })
+          .then(
+            () => null,
+            () => selector,
+          ),
+      ),
+    );
+    // In-place errors: a failed load (the panel's QueryBoundary, the agent page's "Can't load"
+    // empty states) or a render error ((app)/error.tsx).
+    result.loadErrors = await page.$$eval(".query-error, .or-empty__title", (alerts) =>
+      alerts
+        .filter((alert) => alert.matches(".query-error") || /^Can't load/.test(alert.textContent))
+        .map((alert) => alert.textContent?.replace(/\s+/g, " ").trim().slice(0, 300) ?? ""),
     );
     if (result.loadErrors.some((text) => text.startsWith("Couldn't show this page"))) {
       result.notRendered = "the page's error boundary (render error)";
     }
-    await page.addStyleTag({ content: HIDE_DEV_UI });
-    if (route.waitFor) await page.locator(route.waitFor).first().waitFor({ timeout: 30_000 });
+    const missing = waited.filter(Boolean);
+    if (missing.length > 0) result.notRendered ??= `never showed ${missing.join(", ")}`;
+    // The agent page has no dev overlay, and its CSP refuses inline styles.
+    if (route.surface !== "agent") await page.addStyleTag({ content: HIDE_DEV_UI });
     for (const step of route.steps ?? []) {
       const target = page.locator(step.selector).first();
       // Typing before React hydrates the element is lost or doubled: wait for its props.

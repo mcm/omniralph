@@ -21,7 +21,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup && vite build --config ui/vite.config.ts",
+    "build": "tsup && pnpm run build:ui",
+    "build:ui": "vite build --config ui/vite.config.ts",
     "dev": "tsx watch --conditions=@omniralph/source src/cli.ts",
     "start": "node dist/cli.js",
     "typecheck": "tsrs --noEmit && tsrs --noEmit -p ui",

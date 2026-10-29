@@ -1,5 +1,7 @@
 // `pnpm --filter @omniralph/web verify:screens`: screenshots every panel route against the
-// fixture database. Starts the fixture Postgres and `next dev`, runs Playwright in the
+// fixture database, and every screen of the agent's local page in its fixture mode
+// (`apps/agent/scripts/ui-fixture`). Starts the fixture Postgres and `next dev` (and the agent
+// page's fixture server), runs Playwright in the
 // mcr.microsoft.com/playwright container (`--network host`, opening `host.docker.internal`
 // on Docker Desktop; files in and out with `docker cp`, no bind mounts, so a remote Docker
 // daemon works), runs `impeccable detect` on each captured page when the CLI is available,
@@ -8,7 +10,9 @@ import { cp, readFile, readdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import {
+  buildAgentPage,
   buildWorkspacePackages,
+  dockerBrowserHost,
   log,
   packageDir,
   playwrightImage,
@@ -16,14 +20,22 @@ import {
   runInPlaywrightContainer,
   runMain,
   stageWorkDir,
+  startAgentPageFixture,
   startFixturePanel,
   WEB_DIR,
+  type AgentScreenRoute,
   type Cleanups,
 } from "../browser/environment";
 import { ORGANIZATION_COOKIE } from "../../src/lib/auth/routes";
 import { FIXTURE_EMAILS } from "../fixtures/ids";
-import { captureFailures, HELP_PAGE, type CaptureResult } from "./checks";
-import { parseScreensOptions, USAGE, VIEWPORTS, type ScreensOptions } from "./options";
+import { captureFailures, showsShortcutIndicators, type CaptureResult } from "./checks";
+import {
+  parseScreensOptions,
+  USAGE,
+  VIEWPORTS,
+  type ScreensOptions,
+  type ViewportName,
+} from "./options";
 import { capturedAt, routeMatches, SCREEN_ROUTES, type ScreenRoute } from "./routes";
 
 async function main(cleanups: Cleanups): Promise<number> {
@@ -38,48 +50,75 @@ async function main(cleanups: Cleanups): Promise<number> {
     console.log(USAGE);
     return 0;
   }
-  const routes = SCREEN_ROUTES.filter(
-    (route) =>
-      (options.routes === null || routeMatches(route, options.routes)) &&
-      options.viewports.some((viewport) => capturedAt(route, viewport)),
-  );
-  if (routes.length === 0) {
-    console.error(`No route matches --routes ${options.routes}.`);
-    return 2;
-  }
+  const selected = (route: Pick<ScreenRoute, "name" | "path" | "viewports">) =>
+    (options.routes === null || routeMatches(route, options.routes)) &&
+    options.viewports.some((viewport) => capturedAt(route, viewport));
+  const routes = options.surfaces.includes("panel") ? SCREEN_ROUTES.filter(selected) : [];
 
   const image = playwrightImage();
   const outDir = join(WEB_DIR, ".screens", new Date().toISOString().replace(/[:.]/g, "-"));
 
-  if (!options.skipBuild) await buildWorkspacePackages();
-  const panel = await startFixturePanel(cleanups);
+  // The agent page first: its routes come from its fixture server, and it starts in seconds.
+  let agent: Awaited<ReturnType<typeof startAgentPageFixture>> | null = null;
+  let agentRoutes: AgentScreenRoute[] = [];
+  if (options.surfaces.includes("agent")) {
+    if (!options.skipBuild) await buildAgentPage();
+    agent = await startAgentPageFixture(cleanups, await dockerBrowserHost());
+    agentRoutes = agent.routes.filter((route) =>
+      selected({ ...route, viewports: route.viewports as ViewportName[] | undefined }),
+    );
+  }
+  if (routes.length + agentRoutes.length === 0) {
+    console.error(`No route matches --routes ${options.routes}.`);
+    return 2;
+  }
+
+  let panelUrl: string | null = null;
+  if (routes.length > 0) {
+    if (!options.skipBuild) await buildWorkspacePackages();
+    panelUrl = (await startFixturePanel(cleanups)).browserBaseUrl;
+  }
 
   log(
-    `Capturing ${routes.length} route(s) × ${options.viewports.length} viewport(s) × ${options.themes.length} theme(s) in ${image}…`,
+    `Capturing ${routes.length + agentRoutes.length} route(s) × ${options.viewports.length} viewport(s) × ${options.themes.length} theme(s) in ${image}…`,
   );
   await capture({
     cleanups,
     outDir,
     config: {
-      baseUrl: panel.browserBaseUrl,
+      baseUrl: panelUrl,
       signInPaths: {
         admin: devSignInPath(FIXTURE_EMAILS.admin),
         member: devSignInPath(FIXTURE_EMAILS.member),
       },
       organizationCookie: ORGANIZATION_COOKIE,
-      routes: routes.map(
-        ({ name, path, auth, steps, viewportOnly, as, organization, viewports, waitFor }) => ({
+      agent: agent && { baseUrl: agent.browserBaseUrl, signInPath: agent.signInPath },
+      routes: [
+        ...routes.map(
+          ({ name, path, auth, steps, viewportOnly, as, organization, viewports, waitFor }) => ({
+            name,
+            path,
+            surface: "panel",
+            auth,
+            steps,
+            viewportOnly,
+            as,
+            organization,
+            viewports,
+            waitFor,
+          }),
+        ),
+        ...agentRoutes.map(({ name, path, steps, viewportOnly, viewports, waitFor }) => ({
           name,
           path,
-          auth,
+          surface: "agent",
+          auth: "signed-in",
           steps,
           viewportOnly,
-          as,
-          organization,
           viewports,
           waitFor,
-        }),
-      ),
+        })),
+      ],
       themes: options.themes,
       viewports: Object.fromEntries(options.viewports.map((name) => [name, VIEWPORTS[name]])),
       outDir: "/work/out",
@@ -90,7 +129,7 @@ async function main(cleanups: Cleanups): Promise<number> {
     await readFile(join(outDir, "results.json"), "utf8"),
   ) as CaptureResult[];
   await detect(outDir, results);
-  return report(outDir, results, routes, options.strict);
+  return report(outDir, results, [...routes, ...agentRoutes], options.strict);
 }
 
 function devSignInPath(email: string): string {
@@ -202,15 +241,15 @@ async function detect(outDir: string, results: CaptureResult[]): Promise<void> {
 async function report(
   outDir: string,
   results: CaptureResult[],
-  routes: readonly ScreenRoute[],
+  routes: readonly Pick<ScreenRoute, "name" | "page">[],
   strict: boolean,
 ): Promise<number> {
   const summary: string[] = [];
   const routeOf = new Map(routes.map((route) => [route.name, route]));
   const failed = results.filter((r) => r.error);
   const overflowing = results.filter((r) => r.overflow);
-  const shortcutIndicators = results.filter(
-    (r) => r.kbdCount > 0 && routeOf.get(r.route)?.page !== HELP_PAGE,
+  const shortcutIndicators = results.filter((r) =>
+    showsShortcutIndicators(r, routeOf.get(r.route)),
   );
   const retired = results.filter((r) => r.retiredWording.length > 0);
   const serverErrors = results.filter((r) => r.status !== null && r.status >= 500);
@@ -233,7 +272,9 @@ async function report(
     summary.push("No route is wider than its viewport.");
   }
   if (shortcutIndicators.length > 0) {
-    summary.push(`\nShows keyboard-shortcut indicators (rule 7: only the Help page lists keys):`);
+    summary.push(
+      `\nShows keyboard-shortcut indicators (rule 7: only the panel's Help page lists keys):`,
+    );
     for (const r of shortcutIndicators) {
       summary.push(`  ${r.route} ${r.viewport} ${r.theme}: ${r.kbdCount} visible kbd`);
     }

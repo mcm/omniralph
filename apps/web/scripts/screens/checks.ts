@@ -1,10 +1,13 @@
+import type { Surface } from "./options";
 import type { ScreenRoute } from "./routes";
 
 /** A row of the capture script's `results.json`. */
 export interface CaptureResult {
   route: string;
   path: string;
-  /** Who it was captured as: `admin`, `member`, or `null` signed out. */
+  /** The control panel, or the agent's local page (its fixture mode). */
+  surface: Surface;
+  /** Who it was captured as on the panel: `admin`, `member`, or `null` signed out (and on the agent page). */
   as: "admin" | "member" | null;
   viewport: string;
   width: number;
@@ -27,8 +30,16 @@ export interface CaptureResult {
   html: string | null;
 }
 
-/** The page whose `kbd`s are allowed: Help lists every keyboard shortcut. */
+/** The page whose `kbd`s are allowed: the panel's Help lists every keyboard shortcut (the agent page has none). */
 export const HELP_PAGE = "(app)/help/page.tsx";
+
+/** Whether a capture shows keyboard-shortcut indicators where none may be (rule 7). */
+export function showsShortcutIndicators(
+  result: Pick<CaptureResult, "kbdCount" | "surface">,
+  route: Pick<ScreenRoute, "page"> | undefined,
+): boolean {
+  return result.kbdCount > 0 && !(result.surface === "panel" && route?.page === HELP_PAGE);
+}
 
 /** Why a capture fails the run; empty when it passes. `--strict` also fails on overflow. */
 export function captureFailures(
@@ -39,7 +50,7 @@ export function captureFailures(
   const failures: string[] = [];
   if (result.error) failures.push(`failed: ${result.error}`);
   if (result.notRendered) failures.push(`not rendered: ${result.notRendered}`);
-  if (result.kbdCount > 0 && route?.page !== HELP_PAGE) {
+  if (showsShortcutIndicators(result, route)) {
     failures.push(`shows ${result.kbdCount} keyboard-shortcut indicator(s) (rule 7)`);
   }
   for (const text of result.retiredWording) failures.push(`retired wording: …${text}…`);

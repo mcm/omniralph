@@ -69,7 +69,7 @@ export function routeBoards(route: ScreenRoute): readonly CanvasBoard[] {
 }
 
 /** Whether `route` is captured at `viewport`. */
-export function capturedAt(route: ScreenRoute, viewport: ViewportName): boolean {
+export function capturedAt(route: Pick<ScreenRoute, "viewports">, viewport: ViewportName): boolean {
   return route.viewports === undefined || route.viewports.includes(viewport);
 }
 
@@ -610,7 +610,7 @@ function memberRoutes(): ScreenRoute[] {
  * within a path segment, `**` across them. Several globs may be
  * comma-separated; a route matches any of them.
  */
-export function routeMatches(route: ScreenRoute, globs: string): boolean {
+export function routeMatches(route: Pick<ScreenRoute, "name" | "path">, globs: string): boolean {
   const pathname = route.path.split("?")[0]!;
   return globs
     .split(",")

@@ -24,8 +24,8 @@ export const PACKAGE_INVALID_MESSAGE = "Enter a package name and a version or ta
 const InstallBody = InstallPayload.strict();
 
 export function packageRoutes(options: {
-  packages: PackageManager;
-  history: InstallHistory;
+  packages: Pick<PackageManager, "installed" | "install" | "remove">;
+  history: Pick<InstallHistory, "list" | "get">;
   logger: Logger;
 }): UiRoute[] {
   const { packages, history, logger } = options;
