@@ -13,7 +13,7 @@ import "./help.css";
 
 /** The Keyboard shortcuts card's one line, which also covers devices without a keyboard. */
 export const SHORTCUTS_INTRO =
-  "Shortcuts work with a hardware keyboard. They don't run while you're typing in a field.";
+  "Shortcuts work with a hardware keyboard. While you're typing in a field, only ⌘/Ctrl shortcuts and Escape run.";
 
 interface ShortcutRow {
   id: ShortcutId;

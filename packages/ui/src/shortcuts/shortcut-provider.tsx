@@ -92,9 +92,9 @@ export interface ShortcutProviderProps {
  * The app's keyboard shortcuts: the one document-level `keydown` listener. A key runs the
  * enabled handler `useShortcut` registered for its action, unless the event was already
  * handled, is part of IME composition or is an auto-repeat (other than Next and Previous
- * item); unless focus is in an editable field (other than for Close); and never while a
- * dialog, sheet, menu, popover or listbox is open, whose own keys apply. It renders nothing
- * of its own, and handles Next item, Previous item and Open over the page's row links.
+ * item); unless focus is in an editable field (other than for Close and Mod chords, which
+ * can't type text); and never while a dialog, sheet, menu, popover or listbox is open, whose
+ * own keys apply. It renders nothing of its own, and handles Next item, Previous item and Open over the page's row links.
  */
 export function ShortcutProvider({
   definitions,
@@ -122,7 +122,7 @@ export function ShortcutProvider({
       const [id, definition] = match;
       if (event.repeat && !definition.repeat) return;
       const target = event.target instanceof Element ? event.target : document.activeElement;
-      if (!definition.allowInFields && isEditableTarget(target)) return;
+      if (!definition.allowInFields && !definition.mod && isEditableTarget(target)) return;
       if (isModalOpen(document)) return;
       const handlers = registry.enabled(id);
       const registration = handlers.at(-1);

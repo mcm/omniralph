@@ -11,7 +11,7 @@ export interface ShortcutDefinition {
   /** The action's name, as the Help page lists it. */
   label: string;
   group: ShortcutGroup;
-  /** Fires while focus is in an editable field too (only Close, Escape). */
+  /** Fires while focus is in an editable field too (only Close, Escape). Mod chords always do. */
   allowInFields?: true;
   /** Fires on auto-repeat too (only Next item and Previous item). */
   repeat?: true;
