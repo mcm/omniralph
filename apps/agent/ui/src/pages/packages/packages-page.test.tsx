@@ -128,6 +128,8 @@ describe("the Packages page", () => {
     expect(cells[0]!.textContent).toBe("@omniralph/hello");
     expect(cells[0]!.classList.contains("or-mono")).toBe(true);
     expect(cells[1]!.textContent).toBe("1.0.0");
+    // A version is metadata: a badge (Design rules 1 and 2).
+    expect(cells[1]!.querySelector("[data-or-badge]")?.textContent).toBe("1.0.0");
     expect(
       within(installedTable()).getByRole("button", { name: "Update @omniralph/hello" }),
     ).toBeTruthy();
@@ -439,6 +441,109 @@ describe("the Packages page", () => {
     expect(within(sheet).getByRole("alert").textContent).toBe("E404");
     await userEvent.click(within(sheet).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(window.location.pathname).toBe("/packages"));
+  });
+
+  it("offers a failed install's next step in its sheet: Retry install the same version", async () => {
+    const failed = install({
+      id: "f",
+      version: "1.2.0",
+      outcome: "failed",
+      installedVersion: null,
+      error: "npm install exited with 1",
+    });
+    const answer = deferred<{ status: number; body: unknown }>();
+    let sent: unknown;
+    await openPackages({
+      path: "/packages/history/f",
+      installs: [failed],
+      routes: {
+        "/api/packages/history/f": { body: { ...failed, output: "npm error" } },
+        "POST /api/packages": (init) => {
+          sent = JSON.parse(String(init?.body));
+          return answer.promise;
+        },
+      },
+    });
+    const sheet = await screen.findByRole("dialog", { name: "@omniralph/hello@1.2.0" });
+    await userEvent.click(await within(sheet).findByRole("button", { name: "Retry install" }));
+    expect(sent).toEqual({ name: "@omniralph/hello", version: "1.2.0" });
+    // Back on the page, where the new attempt shows at once.
+    await waitFor(() => expect(window.location.pathname).toBe("/packages"));
+    await waitFor(() => expect(historyRows()[0]![3]).toBe("Installing @omniralph/hello…"));
+    answer.resolve({
+      status: 202,
+      body: install({ id: "h", installedVersion: null, finishedAt: null, outcome: null }),
+    });
+  });
+
+  it("offers Remove… in a failed entry's sheet while the package is installed", async () => {
+    const failed = install({
+      id: "f",
+      outcome: "failed",
+      installedVersion: null,
+      error: "npm install exited with 1",
+    });
+    const answer = deferred<{ status: number; body: unknown }>();
+    const { api } = await openPackages({
+      path: "/packages/history/f",
+      installs: [failed],
+      routes: {
+        "/api/packages/history/f": { body: { ...failed, output: "" } },
+        "DELETE /api/packages/%40omniralph%2Fhello": () => answer.promise,
+      },
+    });
+    const sheet = await screen.findByRole("dialog", { name: "@omniralph/hello@latest" });
+    await userEvent.click(await within(sheet).findByRole("button", { name: "Remove…" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Remove @omniralph/hello?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+    expect(api.calls).toContain("DELETE /api/packages/%40omniralph%2Fhello");
+    await waitFor(() => expect(window.location.pathname).toBe("/packages"));
+    await waitFor(() => expect(historyRows()[0]![3]).toBe("Removing @omniralph/hello…"));
+    answer.resolve({
+      status: 202,
+      body: install({
+        id: "e",
+        action: "remove",
+        version: null,
+        installedVersion: null,
+        previousVersion: "1.0.0",
+        finishedAt: null,
+        outcome: null,
+      }),
+    });
+  });
+
+  it("offers no Remove… for a package that isn't installed, and no Retry the allow-list refuses", async () => {
+    const failed = install({
+      id: "f",
+      name: "@acme/tools",
+      outcome: "failed",
+      installedVersion: null,
+      error: "npm install exited with 1",
+    });
+    await openPackages({
+      path: "/packages/history/f",
+      installs: [failed],
+      routes: { "/api/packages/history/f": { body: { ...failed, output: "" } } },
+    });
+    const sheet = await screen.findByRole("dialog", { name: "@acme/tools@latest" });
+    const retry = await within(sheet).findByRole("button", { name: "Retry install" });
+    expect(retry.getAttribute("aria-disabled")).toBe("true");
+    await userEvent.click(retry);
+    expect(window.location.pathname).toBe("/packages/history/f");
+    expect(within(sheet).queryByRole("button", { name: "Remove…" })).toBeNull();
+  });
+
+  it("offers no next step for an install that worked", async () => {
+    await openPackages({
+      path: "/packages/history/a",
+      installs: [install({ id: "a" })],
+      routes: { "/api/packages/history/a": { body: { ...install({ id: "a" }), output: "" } } },
+    });
+    const sheet = await screen.findByRole("dialog");
+    await within(sheet).findByText("npm printed nothing.");
+    expect(within(sheet).queryByRole("button", { name: "Retry install" })).toBeNull();
+    expect(within(sheet).queryByRole("button", { name: "Remove…" })).toBeNull();
   });
 
   it("refreshes an open install's output from the packages event", async () => {

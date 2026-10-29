@@ -96,6 +96,9 @@ describe("the agent page's layout", () => {
     renderAgentPage({ path, width: NARROW });
     expect(splitView().dataset.view).toBe("detail");
     expect(screen.getByRole("heading", { level: 2, name: title })).toBeTruthy();
+    // The nav (and its h1) is hidden: the open page carries the h1, inside the main landmark.
+    const detail = within(screen.getByRole("main")).getByRole("region", { name: title });
+    expect(within(detail).getByRole("heading", { level: 1 }).textContent).toBe("Agent");
     expect(backLink()?.getAttribute("href")).toBe("/");
     expect(within(nav()).getByRole("link", { name: title }).getAttribute("aria-current")).toBe(
       "page",
@@ -107,6 +110,7 @@ describe("the agent page's layout", () => {
     renderAgentPage({ path: "/capacity", width: WIDE });
     expect(splitView().dataset.view).toBe("detail");
     expect(screen.getByRole("heading", { level: 2, name: "Capacity" })).toBeTruthy();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     // Both panes show from 880 px; the stylesheet hides the back link there.
     expect(within(nav()).getByRole("link", { name: "Capacity" })).toBeTruthy();
   });
@@ -137,7 +141,10 @@ describe("the agent page's layout", () => {
   it("says so for an unknown path", () => {
     fakeApi({ "/api/state": { body: agentState() } });
     renderAgentPage({ path: "/nowhere", width: NARROW });
-    expect(screen.getByRole("heading", { name: "Page not found" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Page not found" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open Overview" }).getAttribute("href")).toBe(
+      "/overview",
+    );
     expect(backLink()).toBeTruthy();
   });
 });

@@ -94,6 +94,8 @@ describe("the Version page", () => {
     expect(within(updateCell()).getByText("Up to date")).toBeTruthy();
     const running = screen.getByText("2.0.3");
     expect(running.classList.contains("or-mono")).toBe(true);
+    // A version is metadata: a badge (Design rules 1 and 2).
+    expect(running.closest("[data-or-badge]")).not.toBeNull();
     expect(disabled(updateNow())).toBe(false);
     expect(screen.queryByText(NOT_UNDER_PM2)).toBeNull();
     expect(screen.queryByRole("region", { name: "Failed versions" })).toBeNull();

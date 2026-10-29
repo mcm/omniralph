@@ -3,7 +3,8 @@
  * the "Install package…" sheet, the allow-list (a staged card saved to `settings.json`
  * through `PUT /api/settings/allow-list`) and the install history, whose rows open a sheet
  * with npm's output (`/packages/history/<id>`). Installs, updates and removals show in the
- * history at once and turn installed or failed from the agent's `packages` events.
+ * history at once and turn installed or failed from the agent's `packages` events. A failed
+ * entry's sheet offers the next step: Retry install, and Remove… while the package is installed.
  */
 import { installableAllowed } from "@omniralph/shared";
 import {
@@ -15,6 +16,7 @@ import {
   Field,
   IconButton,
   Menu,
+  MetaBadge,
   SaveBar,
   ScrollRegion,
   Sheet,
@@ -26,7 +28,7 @@ import {
   type DataTableColumn,
   type StagedSaveError,
 } from "@omniralph/ui";
-import { IconDots, IconPlus, IconRefresh } from "@tabler/icons-react";
+import { IconDots, IconPlus, IconRefresh, IconRotateClockwise2 } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import type { InstallRecord } from "../../../../src/packages/history.js";
@@ -54,6 +56,7 @@ import {
   pendingRemoval,
   type InstallHistoryList,
   type InstallSummary,
+  type InstalledPackage,
   type InstalledPackages,
 } from "./model.js";
 
@@ -104,6 +107,22 @@ interface InstallRequest {
   pendingId: string;
 }
 
+/** Removal: the history shows "Removing <name>…" before the agent answers. */
+function useRemove() {
+  return useLocalMutation<InstallSummary, InstalledPackage & { pendingId: string }>({
+    mutationFn: ({ name }) =>
+      // A body, so the request carries the JSON content type every change needs.
+      localRequest<InstallSummary>(`/api/packages/${encodeURIComponent(name)}`, {
+        method: "DELETE",
+        body: {},
+      }),
+    invalidate: () => [agentKeys.packages.all],
+    optimistic: (request, cache) => addToHistory(cache, pendingRemoval(request.pendingId, request)),
+    applyResult: (removal, cache, request) => addToHistory(cache, removal, request.pendingId),
+    success: null,
+  });
+}
+
 /** Install or update: the history shows "Installing <name>…" before the agent answers. */
 function useInstall(onSuccess?: () => void, onError?: (error: LocalApiError) => void) {
   return useLocalMutation<InstallSummary, InstallRequest>({
@@ -123,6 +142,9 @@ export function PackagesPage({ historyId }: { historyId?: string }) {
   const navigate = useNavigate();
   // The install sheet, with the package it opened for (a row's "Install a version…").
   const [installing, setInstalling] = useState<{ name: string } | null>(null);
+  // The package "Remove…" asks about, from its row's ⋯ menu or a failed entry's sheet.
+  const [removing, setRemoving] = useState<InstalledPackage | null>(null);
+  const remove = useRemove();
   const allow = state.data?.settings.effective.installablesAllow;
   const noneAllowed = allow !== undefined && allow.length === 0;
 
@@ -147,6 +169,7 @@ export function PackagesPage({ historyId }: { historyId?: string }) {
       <InstalledCard
         noneAllowed={noneAllowed}
         onInstallVersion={(name) => setInstalling({ name })}
+        onRemove={setRemoving}
       />
       {state.data ? (
         <AllowListCard settings={state.data.settings} />
@@ -170,7 +193,28 @@ export function PackagesPage({ historyId }: { historyId?: string }) {
           />
         ) : null}
       </Sheet>
-      <InstallOutputSheet id={historyId} onClose={() => navigate(PACKAGES_PATH)} />
+      <InstallOutputSheet
+        id={historyId}
+        allow={allow}
+        onClose={() => navigate(PACKAGES_PATH)}
+        onRemove={setRemoving}
+      />
+      <ConfirmDialog
+        open={removing !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoving(null);
+        }}
+        title={`Remove ${removing?.name ?? ""}?`}
+        description="Runs that need it won't be offered to this agent."
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => {
+          if (removing) remove.mutate({ ...removing, pendingId: nextPendingId() });
+          setRemoving(null);
+          // From a failed entry's sheet: back to the history, where the removal shows.
+          if (historyId !== undefined) navigate(PACKAGES_PATH);
+        }}
+      />
     </AgentPage>
   );
 }
@@ -178,32 +222,22 @@ export function PackagesPage({ historyId }: { historyId?: string }) {
 function InstalledCard({
   noneAllowed,
   onInstallVersion,
+  onRemove,
 }: {
   noneAllowed: boolean;
   onInstallVersion: (name: string) => void;
+  onRemove: (installed: InstalledPackage) => void;
 }) {
   const packages = usePackages();
-  const [removing, setRemoving] = useState<{ name: string; version: string } | null>(null);
   const install = useInstall();
-  const remove = useLocalMutation<
-    InstallSummary,
-    { name: string; version: string; pendingId: string }
-  >({
-    mutationFn: ({ name }) =>
-      // A body, so the request carries the JSON content type every change needs.
-      localRequest<InstallSummary>(`/api/packages/${encodeURIComponent(name)}`, {
-        method: "DELETE",
-        body: {},
-      }),
-    invalidate: () => [agentKeys.packages.all],
-    optimistic: (request, cache) => addToHistory(cache, pendingRemoval(request.pendingId, request)),
-    applyResult: (removal, cache, request) => addToHistory(cache, removal, request.pendingId),
-    success: null,
-  });
 
-  const columns: DataTableColumn<{ name: string; version: string }>[] = [
+  const columns: DataTableColumn<InstalledPackage>[] = [
     { id: "name", header: "Package", cell: (row) => row.name, card: "title", mono: true },
-    { id: "version", header: "Version", cell: (row) => row.version, mono: true },
+    {
+      id: "version",
+      header: "Version",
+      cell: (row) => <MetaBadge text={row.version} mono />,
+    },
     {
       id: "actions",
       header: <span className="or-sr-only">Actions</span>,
@@ -232,7 +266,7 @@ function InstalledCard({
                 onSelect: () => onInstallVersion(row.name),
                 disabled: noneAllowed,
               },
-              { label: "Remove…", destructive: true, onSelect: () => setRemoving(row) },
+              { label: "Remove…", destructive: true, onSelect: () => onRemove(row) },
             ]}
             trigger={
               <IconButton label={`More actions for ${row.name}`} icon={IconDots} size="sm" />
@@ -259,20 +293,6 @@ function InstalledCard({
           columns={columns}
         />
       )}
-      <ConfirmDialog
-        open={removing !== null}
-        onOpenChange={(open) => {
-          if (!open) setRemoving(null);
-        }}
-        title={`Remove ${removing?.name ?? ""}?`}
-        description="Runs that need it won't be offered to this agent."
-        confirmLabel="Remove"
-        destructive
-        onConfirm={() => {
-          if (removing) remove.mutate({ ...removing, pendingId: nextPendingId() });
-          setRemoving(null);
-        }}
-      />
     </Card>
   );
 }
@@ -480,8 +500,22 @@ function HistoryCard() {
   );
 }
 
-/** One install's facts and npm output, at `/packages/history/<id>`. */
-function InstallOutputSheet({ id, onClose }: { id: string | undefined; onClose: () => void }) {
+/**
+ * One install's facts and npm output, at `/packages/history/<id>`. A failed one ends with
+ * its next step: Retry install (the same version again), and Remove… while it's installed.
+ */
+function InstallOutputSheet({
+  id,
+  allow,
+  onClose,
+  onRemove,
+}: {
+  id: string | undefined;
+  /** The allow-list, once the agent's state has loaded. */
+  allow: readonly string[] | undefined;
+  onClose: () => void;
+  onRemove: (installed: InstalledPackage) => void;
+}) {
   const entry = useQuery({
     queryKey: agentKeys.packages.historyEntry(id ?? ""),
     queryFn: ({ signal }) =>
@@ -495,6 +529,44 @@ function InstallOutputSheet({ id, onClose }: { id: string | undefined; onClose: 
   if (entry.data) lastTitle.current = installPackageLabel(entry.data);
   const install = entry.data;
   const outcome = install ? installOutcome(install) : null;
+  const packages = usePackages();
+  const retry = useInstall();
+  const failed = install?.outcome === "failed" ? install : null;
+  const installed = failed
+    ? packages.data?.packages.find((pkg) => pkg.name === failed.name)
+    : undefined;
+  const retryBlocked =
+    failed && allow !== undefined && !installableAllowed(allow, failed.name)
+      ? `${failed.name} doesn't match the allow-list.`
+      : null;
+  const nextSteps =
+    failed && (failed.action === "install" || installed) ? (
+      <>
+        {failed.action === "install" ? (
+          <Button
+            variant="solid"
+            icon={IconRotateClockwise2}
+            disabled={retryBlocked !== null}
+            {...(retryBlocked !== null && { disabledReason: retryBlocked })}
+            onClick={() => {
+              retry.mutate({
+                name: failed.name,
+                version: failed.version ?? DEFAULT_INSTALL_VERSION,
+                pendingId: nextPendingId(),
+              });
+              onClose();
+            }}
+          >
+            Retry install
+          </Button>
+        ) : null}
+        {installed ? (
+          <Button variant="outline" onClick={() => onRemove(installed)}>
+            Remove…
+          </Button>
+        ) : null}
+      </>
+    ) : undefined;
   return (
     <Sheet
       title={lastTitle.current}
@@ -502,6 +574,7 @@ function InstallOutputSheet({ id, onClose }: { id: string | undefined; onClose: 
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
+      footer={nextSteps}
     >
       {entry.isError ? (
         <EmptyState title="Can't load this install" description={entry.error.message} />

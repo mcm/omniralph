@@ -8,9 +8,15 @@ import type { InstallSummary } from "../../../../src/packages/history.js";
 
 export type { InstallSummary };
 
+/** An installed package. */
+export interface InstalledPackage {
+  name: string;
+  version: string;
+}
+
 /** `GET /api/packages`. */
 export interface InstalledPackages {
-  packages: { name: string; version: string }[];
+  packages: InstalledPackage[];
 }
 
 /** `GET /api/packages/history`. */

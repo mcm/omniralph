@@ -285,7 +285,7 @@ describe("SplitView's title", () => {
   it("is a visually hidden h1 in the detail pane while the detail shows alone", () => {
     renderSplit("detail", 600);
     const heading = within(detail()).getByRole("heading", { level: 1, name: "Inbox" });
-    expect(heading.className).toBe("or-sr-only");
+    expect(heading.classList.contains("or-sr-only")).toBe(true);
     // The detail's own title stays the h2 under it.
     expect(within(detail()).getByRole("heading", { level: 2, name: "Fix the login" })).toBeTruthy();
   });

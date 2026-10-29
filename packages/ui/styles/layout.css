@@ -38,6 +38,16 @@
   display: none;
 }
 
+/*
+ * The page title the detail carries while it shows alone: hidden, but in the page title's type
+ * (as `.or-subnav__title`), so the heading levels keep their scale for tools that measure them.
+ */
+.or-split__title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
 .or-split__back {
   display: inline-flex;
   align-self: flex-start;

@@ -142,7 +142,7 @@ export function SplitView({
             </Link>
           ) : null}
           {title !== undefined && !wide && view === "detail" ? (
-            <h1 className="or-sr-only">{title}</h1>
+            <h1 className="or-split__title or-sr-only">{title}</h1>
           ) : null}
           <DetailShownContext.Provider value={detailShown}>{detail}</DetailShownContext.Provider>
         </section>
