@@ -193,7 +193,10 @@ export function Menu({
     );
   };
   return (
-    <DropdownMenu.Root open={open} onOpenChange={onOpenChange}>
+    // Not modal: a modal menu aria-hides the page while its controls stay focusable (WCAG
+    // 4.1.2, axe aria-hidden-focus) and hides the page's main landmark. Escape, an outside
+    // click and choosing an item still close it, and focus returns to the trigger.
+    <DropdownMenu.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <DropdownMenu.Trigger asChild disabled={disabled}>
         {trigger}
       </DropdownMenu.Trigger>

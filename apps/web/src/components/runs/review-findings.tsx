@@ -1,7 +1,7 @@
 "use client";
 
 import { FEEDBACK_REASON_LABELS } from "@omniralph/shared";
-import { activityDate, Button, TextLink } from "@omniralph/ui";
+import { activityDate, Button, ScrollRegion, TextLink } from "@omniralph/ui";
 import { IconFileCode } from "@tabler/icons-react";
 import type {
   ReviewFindingFile,
@@ -83,7 +83,9 @@ function FindingItem({ finding }: { finding: ReviewFindingView }) {
       {finding.suggestion !== null ? (
         <div className="or-finding__suggestion">
           <span className="or-finding__label">Suggested change</span>
-          <pre className="or-finding__code">{finding.suggestion}</pre>
+          <ScrollRegion as="pre" className="or-finding__code" label="Suggested change">
+            {finding.suggestion}
+          </ScrollRegion>
         </div>
       ) : null}
       {supersededBy ? (

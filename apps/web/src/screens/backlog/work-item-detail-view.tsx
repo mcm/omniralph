@@ -7,6 +7,7 @@ import {
   ConfirmDialog,
   EmptyState,
   IssueBadge,
+  ListLoading,
   MetaBadge,
   OrgBadge,
   RepoBadge,
@@ -370,7 +371,7 @@ export function WorkItemDetailView({
     );
   }
   const item = detail.data;
-  if (!item) return <div className="or-backlog-detail" aria-busy="true" />;
+  if (!item) return <ListLoading className="or-backlog-detail" label="Loading the work item" />;
 
   return <WorkItemDetailContent item={item} onLeave={onLeave} renderShareLink={renderShareLink} />;
 }

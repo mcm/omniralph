@@ -36,7 +36,8 @@ const COLOR_TOKENS: Record<string, [string, string]> = {
   "run-glow": ["rgba(94,230,208,.16)", "rgba(8,112,100,.14)"],
   fail: ["#FF6B5E", "#C42B2B"],
   "fail-tint": ["#1C1216", "#FBEDEC"],
-  done: ["#5E5578", "#968FA1"],
+  // Changed for WCAG 1.4.11 only (same hue): the table's #5E5578 / #968FA1 were under 3:1.
+  done: ["#6B6188", "#867E93"],
   solid: ["#ECE8F4", "#17151C"],
   "solid-ink": ["#0A0810", "#FFFFFF"],
   "solid-hover": ["#FFFFFF", "#000000"],

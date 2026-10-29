@@ -5,6 +5,7 @@ import {
   Button,
   EmptyState,
   FilterMenu,
+  ListLoading,
   ListRow,
   RowList,
   SplitView,
@@ -132,7 +133,9 @@ export function RunsView({ runId = null, renderDetail = defaultDetail }: RunsVie
               </Button>
             }
           />
-        ) : runs === undefined ? null : runs.length === 0 ? (
+        ) : runs === undefined ? (
+          <ListLoading label="Loading runs" />
+        ) : runs.length === 0 ? (
           filtered ? (
             <EmptyState
               headingLevel={2}

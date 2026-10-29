@@ -16,6 +16,7 @@ import {
   IconButton,
   Menu,
   SaveBar,
+  ScrollRegion,
   Sheet,
   StatusText,
   TextInput,
@@ -528,9 +529,9 @@ function InstallOutputSheet({ id, onClose }: { id: string | undefined; onClose: 
             </p>
           ) : null}
           {install.output ? (
-            <pre className="agent-output or-mono" aria-label="npm output">
+            <ScrollRegion as="pre" className="agent-output or-mono" label="npm output">
               {install.output}
-            </pre>
+            </ScrollRegion>
           ) : (
             <p className="agent-card-description">
               {install.outcome === null ? "npm hasn't finished yet." : "npm printed nothing."}

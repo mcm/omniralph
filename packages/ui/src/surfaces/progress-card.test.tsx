@@ -89,11 +89,53 @@ describe("ProgressCard", () => {
     );
     const items = screen.getAllByRole("listitem");
     const icon = within(items[1]!).getByRole("img", { name: "Canceled" });
-    expect(icon.className).toBe("or-step__icon");
+    expect(icon.className).toBe("or-step__icon or-step__icon--canceled");
     expect(icon.querySelector("svg")).not.toBeNull();
     expect(items[1]!.className).toBe("or-step or-step--canceled");
     expect(container.querySelectorAll(".or-progress__seg--canceled")).toHaveLength(1);
     expect(screen.getByText("1 of 2 done · 1 canceled")).toBeTruthy();
+  });
+
+  it("tells done, pending, blocked and failed steps apart by shape, not only by color", () => {
+    render(
+      <ProgressCard
+        title="Stories"
+        steps={[
+          { id: "a", label: "One", state: "done" },
+          { id: "b", label: "Two", state: "pending" },
+          { id: "c", label: "Three", state: "blocked" },
+          { id: "d", label: "Four", state: "failed" },
+          { id: "e", label: "Five", state: "canceled" },
+        ]}
+      />,
+    );
+    const names = ["Done", "Pending", "Blocked", "Failed", "Canceled"];
+    const icons = screen
+      .getAllByRole("listitem")
+      .map((item, index) => within(item).getByRole("img", { name: names[index] }));
+    // No neutral dot that differs from the others by color only.
+    for (const icon of icons) expect(icon.classList).not.toContain("or-dot");
+    const shapes = icons.map((icon) => `${icon.className}|${icon.innerHTML}`);
+    expect(new Set(icons.map((icon) => icon.innerHTML)).size).toBe(icons.length);
+    expect(shapes[1]).toContain("or-step__icon--pending");
+    expect(icons[1]!.querySelector("svg")).toBeNull();
+    for (const index of [0, 2, 3, 4]) expect(icons[index]!.querySelector("svg")).not.toBeNull();
+  });
+
+  it("keeps the status dot for running and waiting steps", () => {
+    render(
+      <ProgressCard
+        title="Stories"
+        steps={[
+          { id: "a", label: "One", state: "running" },
+          { id: "b", label: "Two", state: "waiting" },
+        ]}
+      />,
+    );
+    expect(screen.getByRole("img", { name: "Running" }).className).toBe("or-dot or-dot--run");
+    expect(screen.getByRole("img", { name: "Waiting on you" }).className).toBe(
+      "or-dot or-dot--need",
+    );
   });
 
   it("appends the summary suffix to the count line and the bar's value text", () => {

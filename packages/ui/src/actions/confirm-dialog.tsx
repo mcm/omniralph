@@ -3,6 +3,7 @@
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { useId, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { buttonClassName } from "./button.js";
+import { returnFocusTo, useOpener } from "./opener.js";
 
 export interface ConfirmDialogProps {
   /** Whether the dialog is open (controlled). */
@@ -36,6 +37,7 @@ export interface ConfirmDialogProps {
 /**
  * Asks before an action runs (`role="alertdialog"`). Focus moves into the dialog, Escape
  * and Cancel close it, and confirm stays disabled until `typedConfirmation` (if any) matches.
+ * On close, focus returns to the control that opened it (the menu's trigger for a menu item).
  */
 export function ConfirmDialog({
   open,
@@ -55,6 +57,7 @@ export function ConfirmDialog({
   const confirmed = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const opener = useOpener(open);
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     // Each opening starts fresh: nothing typed, not yet confirmed.
@@ -81,6 +84,7 @@ export function ConfirmDialog({
           onEscapeKeyDown={(event) => {
             if (cancelLabel === null) event.preventDefault();
           }}
+          onCloseAutoFocus={returnFocusTo(opener)}
           onOpenAutoFocus={(event) => {
             confirmed.current = false;
             // With a typed confirmation, start in the field; otherwise Radix focuses Cancel.

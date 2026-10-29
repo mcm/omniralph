@@ -4,6 +4,7 @@ import {
   Button,
   EmptyState,
   IssueBadge,
+  ListLoading,
   MetaBadge,
   OrgBadge,
   RepoBadge,
@@ -269,7 +270,7 @@ export function AgentPanel({
   showOrganization: boolean;
 }) {
   const detail = useAgentDetail(agentId);
-  if (detail.isPending) return <div className="or-fleet-agent" aria-busy="true" />;
+  if (detail.isPending) return <ListLoading className="or-fleet-agent" label="Loading the agent" />;
   if (detail.isError) {
     if (detail.error instanceof ApiError && detail.error.status === 404) {
       return <EmptyState title={AGENT_NOT_FOUND} />;

@@ -25,6 +25,9 @@ const PAIRS: (readonly [string, string, number])[] = [
   ["acc-ink", "acc", 4.5],
   ["solid-ink", "solid", 4.5],
   ...["page", "side", "surf", "raised"].map((bg) => ["ctl", bg, 3] as const),
+  // The neutral status dot (done, pending, blocked steps; idle agents) is a graphic that
+  // can be the only cue of a state (WCAG 1.4.11).
+  ...SURFACES.map((bg) => ["done", bg, 3] as const),
 ];
 
 describe("contrastRatio", () => {

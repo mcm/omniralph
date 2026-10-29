@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { ScrollRegion } from "../layout/scroll-region.js";
 import { useLinkComponent } from "../provider/ui-provider.js";
 import { rowLinkProps, rowListProps } from "../shortcuts/row-links.js";
 
@@ -96,7 +97,7 @@ export function DataTable<T>({
 
   return (
     <div className={cx("or-data-table", className)}>
-      <div className="or-tblwrap">
+      <ScrollRegion className="or-tblwrap" label={caption}>
         <table className="or-tbl" {...rowListProps}>
           <caption className="or-sr-only">{caption}</caption>
           <thead>
@@ -142,7 +143,7 @@ export function DataTable<T>({
             })}
           </tbody>
         </table>
-      </div>
+      </ScrollRegion>
       <ul className="or-cards" aria-label={caption} {...rowListProps}>
         {rows.map((row) => {
           const { id, href, selected, bad } = rowState(row);

@@ -4,6 +4,7 @@ import {
   Button,
   EmptyState,
   IconButton,
+  ListLoading,
   MetaBadge,
   OrgBadge,
   RepoBadge,
@@ -203,7 +204,9 @@ export function ReposView({ repositoryId = null, renderDetail = defaultDetail }:
               </Button>
             }
           />
-        ) : repositories === undefined ? null : repositories.length === 0 ? (
+        ) : repositories === undefined ? (
+          <ListLoading label="Loading repos" />
+        ) : repositories.length === 0 ? (
           <EmptyState
             headingLevel={2}
             title="No repos yet"

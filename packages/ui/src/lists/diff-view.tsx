@@ -3,6 +3,7 @@
 import { IconChevronRight } from "@tabler/icons-react";
 import { useId, useState, type ReactNode } from "react";
 import { TextLink } from "../actions/text-link.js";
+import { ScrollRegion } from "../layout/scroll-region.js";
 
 /** One changed file of a diff. */
 export interface DiffFile {
@@ -99,7 +100,7 @@ function FileSection({
       </div>
       <div id={bodyId} className="or-diff__body" hidden={!open}>
         {lines.length > 0 ? (
-          <pre className="or-diff__lines or-mono">
+          <ScrollRegion as="pre" className="or-diff__lines or-mono" label={file.path}>
             <code>
               {lines.map((line, index) => (
                 <span key={index} className={`or-diff__line or-diff__line--${diffLineKind(line)}`}>
@@ -107,7 +108,7 @@ function FileSection({
                 </span>
               ))}
             </code>
-          </pre>
+          </ScrollRegion>
         ) : null}
         {file.truncated ? (
           <TooLarge url={url} urlLabel={urlLabel} />

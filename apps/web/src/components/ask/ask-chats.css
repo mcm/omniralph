@@ -51,13 +51,6 @@
   margin: 0;
 }
 
-.or-ask-chats__skeleton {
-  height: 56px;
-  margin: 12px;
-  border-radius: var(--or-radius-sm);
-  background: var(--or-hover);
-}
-
 .or-ask-new__note {
   margin: 0;
   color: var(--or-sec);

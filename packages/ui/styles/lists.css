@@ -517,3 +517,45 @@
 .or-activity__more {
   margin-top: 8px;
 }
+
+/* List loading: placeholder rows shaped like `.or-row`s while a list pane loads */
+.or-list-loading__rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.or-list-loading__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--or-line);
+}
+
+.or-list-loading__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--or-border);
+}
+
+.or-list-loading__lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.or-list-loading__line {
+  width: 80%;
+  height: 10px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-sel);
+}
+
+.or-list-loading__line--short {
+  width: 35%;
+}

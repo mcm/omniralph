@@ -16,7 +16,7 @@ export const MAX_TAB_STOPS = 300;
  *   styles, and moves the focus to the top of the page (an open modal keeps it). Returns the
  *   elements the walk must reach: visible, enabled interactive elements (inside the open modal,
  *   when there is one), each with its composite widget (`group`), whose members are reached
- *   with the arrow keys once one of them is.
+ *   with the arrow keys once one of them is, and for a menu item its menu's button (`opener`).
  * - `state`: where the focus is now: `{ outside: true }` on the body (or a focus guard), or
  *   the focused element (`target`, and its `selector` and accessible `name`), whether it is
  *   visible, and whether its focus styles differ from its unfocused ones (`indicator`, `null`
@@ -148,6 +148,13 @@ export function keyboardInPage(options) {
     }
     return null;
   };
+  // A menu's button: Radix names the menu by it (`aria-labelledby`).
+  const menuOpenerOf = (element) => {
+    const menu = element.closest('[role="menu"]');
+    const id = menu?.getAttribute("aria-labelledby");
+    const opener = id ? document.getElementById(id) : null;
+    return opener ? keyOf(opener) : null;
+  };
 
   if (action === "prepare") {
     store.rest.clear();
@@ -170,6 +177,7 @@ export function keyboardInPage(options) {
         key: keyOf(element),
         target: describe(element),
         group: groupOf(element),
+        opener: menuOpenerOf(element),
       }));
     const start = document.createElement("span");
     start.tabIndex = -1;
@@ -249,10 +257,12 @@ export function keyboardStops(stops) {
 
 /**
  * The keyboard walk's findings: required elements the focus never reached (a member of a
- * composite widget counts once any member, or a control of it, was), focused elements with no
+ * composite widget counts once any member, or a control of it, was; a menu item once the button
+ * that opens its menu was: a menu that isn't modal closes when the focus leaves it, and its
+ * button reopens it), focused elements with no
  * visible focus indicator, and a focus trap: the walk never came back to its first stop and
  * kept cycling through elements that aren't all inside an open modal.
- * @param {{ required: { key: string, target: string, group: string | null }[], stops: any[], cycled: boolean }} walk
+ * @param {{ required: { key: string, target: string, group: string | null, opener?: string | null }[], stops: any[], cycled: boolean }} walk
  */
 export function analyzeKeyboardWalk({ required, stops, cycled }) {
   const findings = [];
@@ -261,7 +271,13 @@ export function analyzeKeyboardWalk({ required, stops, cycled }) {
     stops.flatMap((stop) => [stop.group, ...(stop.controls ?? [])]).filter(Boolean),
   );
   for (const element of required) {
-    if (reached.has(element.key) || (element.group && reachedGroups.has(element.group))) continue;
+    if (
+      reached.has(element.key) ||
+      (element.group && reachedGroups.has(element.group)) ||
+      (element.opener && reached.has(element.opener))
+    ) {
+      continue;
+    }
     findings.push({
       rule: "unreachable",
       target: element.target,

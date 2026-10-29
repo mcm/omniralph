@@ -168,14 +168,37 @@
   color: var(--or-ter);
 }
 
+/*
+ * Step icons: each state that isn't a status dot has its own shape (WCAG 1.4.1) in a 12 px
+ * box, the dot's slot: done a check, failed a cross, blocked a lock, canceled a dash,
+ * pending a ring. Strokes and the ring use --or-done (3:1 or more on every surface).
+ */
 .or-step__icon {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
+  width: 12px;
+  height: 12px;
+  margin: 0 -2px;
+  color: var(--or-done);
+}
+
+.or-step__icon--done {
+  color: var(--or-sec);
+}
+
+.or-step__icon--failed {
+  color: var(--or-fail);
+}
+
+.or-step__icon--pending::before {
+  box-sizing: border-box;
   width: 8px;
   height: 8px;
-  color: var(--or-ter);
+  border: 1.5px solid var(--or-done);
+  border-radius: 50%;
+  content: "";
 }
 
 /* Selectable steps: the whole row is a button, the selected one bold */

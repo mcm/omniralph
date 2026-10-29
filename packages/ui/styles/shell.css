@@ -523,6 +523,14 @@
     display: flex;
   }
 
+  /*
+   * Scrolling to a section or a focused control stops below the sticky top bar, so it never
+   * hides the target (WCAG 2.4.11, 2.5.8).
+   */
+  :root:has(.or-topbar) {
+    scroll-padding-top: 52px;
+  }
+
   .or-tabbar {
     display: block;
   }
