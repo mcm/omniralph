@@ -2107,7 +2107,9 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
       id: failedJob,
       triageRunId: T.failed,
       payload: triagePayload(T.failed, "FIX-322", "Faster agent startup"),
-      status: "completed",
+      // Its result had no PRD, so applying it failed the job (as `applyTriageJob` does).
+      status: "failed",
+      error: "the triage ended without a result (max_turns)",
       agentId: H.online,
       deliveryCount: 1,
       createdAt: ago(5 * HOUR),

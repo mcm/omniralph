@@ -408,6 +408,14 @@ export async function getReviewRunDetailFacts(
   };
 }
 
+/** What a triage run's last result says went wrong (`last_result.error`); null when nothing. */
+export async function getTriageRunError(db: Queryable, runId: string): Promise<string | null> {
+  const result = await db.execute<{ error: string | null }>(
+    sql`select t.last_result ->> 'error' as error from triage_runs t where t.id = ${runId}::uuid`,
+  );
+  return result.rows[0]?.error ?? null;
+}
+
 // ── Transcript ───────────────────────────────────────────────────────────────
 
 /** The position after which a transcript page starts: its last event. */

@@ -46,7 +46,10 @@ export function changeRequestName(
 /** A sentence ending in the error, when there is one. */
 export function withError(sentence: string, error: string | null): string {
   const message = error?.trim().replace(/\s+/g, " ");
-  return message ? `${sentence} ${truncate(message, REASON_ERROR_MAX_LENGTH)}` : sentence;
+  if (!message) return sentence;
+  // A sentence of its own: "The run failed. The triage ended …", not "… failed. the triage …".
+  const capitalized = message.charAt(0).toUpperCase() + message.slice(1);
+  return `${sentence} ${truncate(capitalized, REASON_ERROR_MAX_LENGTH)}`;
 }
 
 const KIND_NAMES: Record<RunKind, string> = {

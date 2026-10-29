@@ -48,6 +48,7 @@ import { fixtureLinearGateway } from "@/lib/linear/fixture-gateway";
 import { linearRoutingRulesSchema } from "@/lib/linear/routing-fields";
 import { loadFleet } from "@/lib/fleet/load";
 import { loadStoryDiff } from "@/lib/runs/diff";
+import { loadRunDetail } from "@/lib/runs/detail";
 import { fixtureDiffAdapterFor } from "@/lib/scm/fixture-diff";
 import { loadOrganizationBacklog } from "@/lib/work-items/backlog";
 import { getWorkItemTracker } from "@/lib/work-items/get-tracker";
@@ -536,6 +537,24 @@ describe("seedFixtures", () => {
       expect(runJobs.length, run.id).toBeGreaterThan(0);
       if (run.lastResult) expect(TriageRunResult.safeParse(run.lastResult).success).toBe(true);
     }
+  });
+
+  it("has a failed triage whose turn reads failed and says why", async () => {
+    const run = await getRunIndexEntry(db, FIXTURE_IDS.triageRuns.failed);
+    const detail = await loadRunDetail(
+      db,
+      run!,
+      { id: FIXTURE_IDS.organizations.main, name: "Fixture Labs", role: "admin" },
+      FIXTURE_IDS.users.admin,
+    );
+    expect(detail?.status).toBe("failed");
+    const error = "the triage ended without a result (max_turns)";
+    expect(detail?.steps.map((s) => [s.status, s.kind === "attempt" && s.label])).toEqual([
+      ["failed", "Couldn't triage FIX-322"],
+    ]);
+    expect(detail?.attempts.map((a) => [a.status, a.error])).toEqual([["failed", error]]);
+    expect(detail?.details.error).toBe(error);
+    expect(detail?.reason).toBe("The run failed. The triage ended without a result (max_turns)");
   });
 
   it("has jobs in every state", async () => {

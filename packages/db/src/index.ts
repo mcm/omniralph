@@ -816,6 +816,7 @@ export {
 export {
   getRalphRunDetailFacts,
   getReviewRunDetailFacts,
+  getTriageRunError,
   isRunAttempt,
   listAttemptTranscript,
   listRunAttempts,
