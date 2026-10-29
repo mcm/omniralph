@@ -255,8 +255,9 @@ the host. It runs unattended:
    (`--skip-build` skips it);
 2. starts the agent page's fixture mode, and the fixture database and `next dev` on a free port;
 3. runs `scripts/screens/capture.mjs` in `mcr.microsoft.com/playwright:v<version>-noble`, the
-   version of the `playwright-core` dev dependency, with `--network host`. The script and
-   `playwright-core` go in, and the screenshots come out, with `docker cp` (no bind mounts).
+   version of the `playwright-core` dev dependency, with `--network host`. The scripts,
+   `playwright-core` and `axe-core` go in, and the screenshots and reports come out, with
+   `docker cp` (no bind mounts).
    On Docker Desktop (Mac, Windows), whose `localhost` is the VM's rather than the host's, the
    browser opens `host.docker.internal` instead, and `next dev` is started with
    `OMNIRALPH_ALLOWED_DEV_ORIGINS=host.docker.internal` so it allows that origin
@@ -264,26 +265,29 @@ the host. It runs unattended:
 4. signs in with the dev sign-in (as the fixture admin, and as the member for routes with
    `as: "member"`) and captures each route of `scripts/screens/routes.ts`, once its
    data has loaded: pages poll `/api/ui`, so the network never goes idle, and the capture waits
-   instead until no skeleton (`[aria-busy="true"]`) is left, up to 60s;
+   instead until no skeleton (`[aria-busy="true"]`) is left, up to 60s, then runs the
+   accessibility checks on it (below);
 5. runs `impeccable detect --json` on each page's HTML snapshot, if the CLI is available
    (`$IMPECCABLE_CLI`, `impeccable` on `PATH`, or the Claude Code plugin's launcher);
 6. stops the panel and the agent page, and removes the fixture database.
 
 Output goes to `apps/web/.screens/<timestamp>/` (gitignored), one set per route, viewport and
 theme: `<route>.<desktop|rail|phone>.<dark|light>.png` (full page), `.html` (DOM with styles
-inlined) and `.impeccable.json` (detect findings), plus `results.json` (per capture: who it was
-captured as, HTTP status, final path, `scrollWidth`, `kbdCount`, `retiredWording`, console
-errors, in-place load errors, and why a page didn't render). The screenshot paths go to stdout,
-the summary to stderr.
+inlined), `.impeccable.json` (detect findings), `.axe.json` (axe-core's violations) and
+`.aria.yml` (the ARIA snapshot), plus `results.json` (per capture: who it was captured as, HTTP
+status, final path, `scrollWidth`, `kbdCount`, `retiredWording`, console errors, in-place load
+errors, why a page didn't render, and the accessibility findings: `axe`, `keyboard`,
+`keyboardStops`, `escape`, `landmarks`, `checkErrors`). The screenshot paths go to stdout, the
+summary to stderr.
 
-| Option              | Effect                                                                |
-| ------------------- | --------------------------------------------------------------------- |
-| `--routes <glob>`   | Routes whose name or path matches (comma-separated; `*`, `**`)        |
-| `--theme <list>`    | `dark`, `light` (default both)                                        |
-| `--viewport <list>` | `desktop`/`1440`, `rail`/`1024`, `phone`/`390` (default all three)    |
-| `--surface <list>`  | `panel`, `agent` (default both)                                       |
-| `--strict`          | Exit non-zero when a route is wider than its viewport (`scrollWidth`) |
-| `--skip-build`      | Don't build the workspace packages first                              |
+| Option              | Effect                                                                                                                            |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `--routes <glob>`   | Routes whose name or path matches (comma-separated; `*`, `**`)                                                                    |
+| `--theme <list>`    | `dark`, `light` (default both)                                                                                                    |
+| `--viewport <list>` | `desktop`/`1440`, `rail`/`1024`, `phone`/`390` (default all three)                                                                |
+| `--surface <list>`  | `panel`, `agent` (default both)                                                                                                   |
+| `--strict`          | Exit non-zero when a route is wider than its viewport (`scrollWidth`), or on any accessibility finding `ignore.md` doesn't ignore |
+| `--skip-build`      | Don't build the workspace packages first                                                                                          |
 
 Every capture is checked for the Design rules a machine can check (the logic is
 `scripts/screens/checks.ts`). These always exit non-zero:
@@ -300,6 +304,43 @@ Every capture is checked for the Design rules a machine can check (the logic is
 Routes wider than their viewport (`scrollWidth`, at every width including `rail`) are always
 reported, and exit non-zero with `--strict`. In-place load errors (e.g. the GitHub picker, which
 can't reach GitHub with fixture credentials) are listed.
+
+#### Accessibility checks
+
+After its screenshot, every capture (each route, viewport and theme, on the panel and the agent
+page) is checked for WCAG 2.2 AA semantics, contrast and keyboard operation. The in-page logic is
+`scripts/screens/a11y-page.mjs` (tested in jsdom by `a11y-page.test.ts`); capture.mjs runs it.
+
+| Check       | What it reports (the `rule` of each finding)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `axe`       | axe-core's violations of the rules tagged `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` and `wcag22aa` (`color-contrast`, `target-size`, `nested-interactive`, `aria-*`, `label`, `button-name`, `link-name`, …) and the `landmark-*` rules, by axe rule ID                                                                                                                                                                                                                                                                                                                                                                     |
+| `keyboard`  | Tab from the top of the page until the focus comes back to its first stop (or 300 stops): `unreachable` (a visible, enabled link, button, input, `[role=switch\|checkbox\|tab\|menuitem\|option]` or `[tabindex="0"]` the focus never reached; inside an open modal, only what it holds; one member of a roving widget such as a tab list or toolbar counts for all), `no-focus-indicator` (its `outline` and `box-shadow`, its `::before`/`::after`'s and its parent's, are the same focused as unfocused; or it is hidden), `trap` (the focus keeps cycling through elements that aren't all inside an open modal or menu) |
+| `escape`    | Only on routes whose `steps` open a dialog, sheet, menu or popover (`dialog`, `alertdialog`, `menu`, `listbox`, `aria-modal`): after Escape, `stays-open` (still visible after 2s) and `focus-not-restored` (the focus isn't on the last clicked step target, the control that opened it). The overlay is opened again for the keyboard walk                                                                                                                                                                                                                                                                                 |
+| `landmarks` | `no-main`, `many-main` and `no-h1` (hidden elements don't count) and, at `rail`, `unnamed-nav-link`: a navigation link with an empty accessible name (the rail hides the labels visually; they must stay accessible)                                                                                                                                                                                                                                                                                                                                                                                                         |
+
+The summary prints a section per check: each finding (rule, impact, target, summary) and the
+captures (route, viewport, theme) it was seen on. A check that couldn't run fails every run;
+the findings fail `--strict`, except those an accessibility entry of
+`.impeccable/critique/ignore.md` ignores: its rule is `<check>: <rule>` (`axe: color-contrast`,
+`keyboard: unreachable`) and its scope is one or more backticked `key: value` pairs, all of
+which must match: `route` (a name or path glob, like `--routes`), `surface`, `viewport`,
+`theme`, and `target` (part of the finding's target). An entry with no scope ignores nothing,
+and the critique's own entries (impeccable rules, `decided:` items) never ignore an
+accessibility finding (`scripts/screens/ignore.ts`).
+
+To read the reports of a capture:
+
+- `<screen>.axe.json`: `{ testEngine, url, rules, violations }`, where `rules` are the axe rules
+  that ran and each violation has its `id`, `impact`, `help`, `helpUrl` and `nodes`: per element
+  its `target` (CSS selector path), `html` and `failureSummary` (for `color-contrast`, the
+  ratio, the colors and the ratio needed). `results.json`'s `axe` has one line per element:
+  `{ rule, impact, target, summary }`.
+- `<screen>.aria.yml`: Playwright's ARIA snapshot of the page (`locator("body").ariaSnapshot()`),
+  the accessibility tree as YAML: one line per node, `- role "accessible name" [state]`, nested
+  by containment, e.g. `- navigation "Main":` then `- link "Inbox"`. A link or button with no
+  quoted name has no accessible name; `heading … [level=1]` is the page's `h1`. It is what a
+  screen reader announces, for the critique to read beside the screenshot.
+
 A new `page.tsx` needs an entry in `scripts/screens/routes.ts` (a test checks every page is
 listed), with fixture IDs from `scripts/fixtures/ids.ts` for its dynamic segments.
 To capture a state that needs interaction (unsaved changes, an open confirmation), add a

@@ -6,6 +6,14 @@ and `impeccable detect` findings without re-arguing them. Each entry names the r
 and why it is not a defect. A `decided:` entry never suppresses an axe, keyboard, Escape or
 landmark finding.
 
+An accessibility finding of `verify:screens` is ignored only by an entry whose rule is
+`<check>: <rule>` (`axe: color-contrast`, `keyboard: unreachable`, `escape: stays-open`,
+`landmarks: no-h1`) and whose scope names the captures as backticked `key: value` pairs:
+`` `route: <name or path glob>` ``, `` `surface: panel|agent` ``,
+`` `viewport: desktop|rail|phone` ``, `` `theme: dark|light` `` and
+`` `target: <part of the selector>` ``. A capture matches when it matches every key (any value
+of a key). An entry with no scope ignores nothing (see `apps/web/README.md`).
+
 | Rule | Scope | Reason | Round |
 |---|---|---|---|
 | broken-image | `apps/web/src/lib/review/sanitize.test.ts` (any `*.test.ts`) | The `<img>` is in a test title and a string fixture proving the sanitizer strips images; it is never rendered. | TOOL-401 round 1 |
