@@ -26,6 +26,7 @@ import type { DeliveryDetail, DeliveryRow } from "@/lib/api/deliveries";
 import { ConnectionSettings } from "./connection-settings";
 import { SettingsLayoutView } from "./settings-layout-view";
 import { DELIVERIES_RETENTION_NOTE, NO_DELIVERIES, REPLAYING } from "./webhook-deliveries-card";
+import { CONNECTION_LOADED } from "../../../scripts/screens/routes";
 
 const ui = vi.hoisted(() => ({ toast: vi.fn() }));
 vi.mock("@omniralph/ui", async (importOriginal) => ({
@@ -140,6 +141,8 @@ let seen: SeenRequest[];
 /** While set, reads never answer: the view shows only what the cache holds. */
 let holdReads: boolean;
 let replayResponse: () => Response | Promise<Response>;
+/** While set, delivery reads wait for it to resolve. */
+let deliveriesGate: Promise<void> | null;
 
 const pending = () => new Promise<Response>(() => {});
 
@@ -172,12 +175,14 @@ beforeEach(() => {
     ignored: listOf([ignored(3)]),
   };
   holdReads = false;
+  deliveriesGate = null;
   replayResponse = () => {
     holdReads = true;
     return jsonResponse(replayAnswer());
   };
-  const deliveries = (request: SeenRequest) => {
+  const deliveries = async (request: SeenRequest) => {
     if (holdReads) return pending();
+    if (deliveriesGate) await deliveriesGate;
     const outcome = request.query.getAll("outcome");
     const filter = outcome.length === 0 ? "all" : outcome.join(",");
     const page = pages[filter]?.[request.query.get("cursor") ?? ""];
@@ -318,6 +323,33 @@ describe("the deliveries section", () => {
     expect(screen.queryByRole("region", { name: "Webhook deliveries" })).toBeNull();
     expect(screen.queryByText(DELIVERIES_RETENTION_NOTE)).toBeNull();
     expect(seen.some((request) => request.path.endsWith("/deliveries"))).toBe(false);
+  });
+
+  it("shows the filters over a busy list placeholder until the first page arrives", async () => {
+    let release!: () => void;
+    deliveriesGate = new Promise((resolve) => (release = resolve));
+    renderConnection("github");
+    const section = await card();
+    const loading = (await within(section).findByText("Loading the deliveries")).closest(
+      '[role="status"]',
+    )!;
+    expect(loading.getAttribute("aria-busy")).toBe("true");
+    expect(within(await filters()).getAllByRole("radio")).toHaveLength(3);
+    expect(screen.queryByRole("table", { name: "Webhook deliveries" })).toBeNull();
+    expect(within(section).queryByRole("heading", { name: NO_DELIVERIES.all })).toBeNull();
+    // What the screenshot routes wait for isn't there yet.
+    expect(document.querySelector(CONNECTION_LOADED)).toBeNull();
+    act(() => release());
+    expect((await tableRows()).length).toBe(4);
+    expect(within(section).queryByText("Loading the deliveries")).toBeNull();
+    expect(document.querySelector(CONNECTION_LOADED)).not.toBeNull();
+  });
+
+  it("is what the screenshot routes wait for once the empty log arrives", async () => {
+    pages.all = listOf([]);
+    renderConnection("github");
+    await within(await card()).findByRole("heading", { name: NO_DELIVERIES.all });
+    expect(document.querySelector(CONNECTION_LOADED)).not.toBeNull();
   });
 
   it("shows when each came in (mono; the date when not today), the event, repo and outcome", async () => {

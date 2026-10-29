@@ -6,6 +6,7 @@ import {
   Card,
   ConfirmDialog,
   EmptyState,
+  ListLoading,
   MetaBadge,
   Sheet,
   SummaryCells,
@@ -399,7 +400,7 @@ export function ConnectionSettings({
       />
     );
   }
-  if (!connections) return null;
+  if (!connections) return <ListLoading label="Loading the connection" />;
   if (!connection) {
     // Its own disconnect: the page is on its way to Settings.
     if (leaving) return null;

@@ -6,6 +6,7 @@ import {
   DataTable,
   EmptyState,
   IconButton,
+  ListLoading,
   RepoBadge,
   SegmentedControl,
   useLinkComponent,
@@ -147,7 +148,7 @@ export function WebhookDeliveriesCard({ connection }: { connection: Connection }
       />
     );
   } else if (!query.data) {
-    body = null;
+    body = <ListLoading label="Loading the deliveries" rows={3} />;
   } else if (rows.length === 0) {
     body = <EmptyState headingLevel={3} title={NO_DELIVERIES[filter]} />;
   } else {
