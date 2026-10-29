@@ -124,15 +124,17 @@ describe("ShortcutProvider", () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  it("ignores keys typed in a field, except Close", async () => {
+  it("ignores keys typed in a field, except Close and Mod chords", async () => {
     const done = vi.fn();
     const close = vi.fn();
+    const search = vi.fn();
     renderWith(
       <>
         <input aria-label="Title" />
         <input type="checkbox" aria-label="Pick" />
         <Bound id="done" onRun={done} />
         <Bound id="close" onRun={close} />
+        <Bound id="search" onRun={search} />
       </>,
     );
     const user = userEvent.setup();
@@ -142,6 +144,8 @@ describe("ShortcutProvider", () => {
     expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("e");
     await user.keyboard("{Escape}");
     expect(close).toHaveBeenCalledTimes(1);
+    await user.keyboard("{Control>}k{/Control}");
+    expect(search).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole("checkbox", { name: "Pick" }));
     await user.keyboard("e");
     expect(done).toHaveBeenCalledTimes(1);
