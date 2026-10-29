@@ -252,7 +252,12 @@ the host. It runs unattended:
 
 1. builds the workspace packages the panel imports and the agent page (`apps/agent/dist/ui`)
    (`--skip-build` skips it);
-2. starts the agent page's fixture mode, and the fixture database and `next dev` on a free port;
+2. starts the agent page's fixture mode, and the fixture database and `next dev` on a free port,
+   then requests every `/api/ui` route handler once (`scripts/browser/api-routes.ts`; it also
+   compiles them). Turbopack's dev server sometimes starts without some of them, and answers
+   them with Next's HTML 404 for the whole run (every Runs step panel then says "Couldn't load
+   the transcript"): it is then started again on an empty Turbopack cache
+   (`.next/dev/cache/turbopack`), and the run stops if a route is still missing;
 3. runs `scripts/screens/capture.mjs` in `mcr.microsoft.com/playwright:v<version>-noble`, the
    version of the `playwright-core` dev dependency, with `--network host`. The scripts,
    `playwright-core` and `axe-core` go in, and the screenshots and reports come out, with
@@ -275,22 +280,22 @@ theme: `<route>.<desktop|rail|phone>.<dark|light>.png` (full page), `.html` (DOM
 inlined), `.impeccable.json` (detect findings), `.axe.json` (axe-core's violations) and
 `.aria.yml` (the ARIA snapshot), plus `results.json` (per capture: who it was captured as, HTTP
 status, final path, `scrollWidth`, `kbdCount`, `retiredWording`, console errors, in-place load
-errors, why a page didn't render, the Decided checks' findings: `hintText`, `liveIndicator`,
+errors, failed API responses (`failedResponses`), why a page didn't render, the Decided checks' findings: `hintText`, `liveIndicator`,
 `detailToolbar`, `bareMetadata`, `rowSummary`, `phoneExpanded`, `orgFirst`, and the
 accessibility findings: `axe`, `keyboard`, `keyboardStops` (each element the keyboard walk
 focused, in Tab order: `{ selector, name }`, its `tag#id.class[role]` and accessible name),
 `escape`, `landmarks`, `checkErrors`, and, when detect ran, `impeccable` (the snapshot's detect
 findings) or `impeccableError`). The screenshot paths go to stdout, the summary to stderr.
 
-| Option              | Effect                                                                                                                                                                           |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--routes <glob>`   | Routes whose name or path matches (comma-separated; `*`, `**`)                                                                                                                   |
-| `--theme <list>`    | `dark`, `light` (default both)                                                                                                                                                   |
-| `--viewport <list>` | `desktop`/`1440`, `rail`/`1024`, `phone`/`390` (default all three)                                                                                                               |
-| `--surface <list>`  | `panel`, `agent` (default both); `web` is the panel and `all` both                                                                                                               |
-| `--app <list>`      | Another name for `--surface` (`web`, `agent`, `all`); give one of the two                                                                                                        |
-| `--strict`          | Exit non-zero when a route is wider than its viewport (`scrollWidth`), on any Decided finding, or on any accessibility or `impeccable detect` finding `ignore.md` doesn't ignore |
-| `--skip-build`      | Don't build the workspace packages first                                                                                                                                         |
+| Option              | Effect                                                                                                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--routes <glob>`   | Routes whose name or path matches (comma-separated; `*`, `**`)                                                                                                                                                                                    |
+| `--theme <list>`    | `dark`, `light` (default both)                                                                                                                                                                                                                    |
+| `--viewport <list>` | `desktop`/`1440`, `rail`/`1024`, `phone`/`390` (default all three)                                                                                                                                                                                |
+| `--surface <list>`  | `panel`, `agent` (default both); `web` is the panel and `all` both                                                                                                                                                                                |
+| `--app <list>`      | Another name for `--surface` (`web`, `agent`, `all`); give one of the two                                                                                                                                                                         |
+| `--strict`          | Exit non-zero when a route is wider than its viewport (`scrollWidth`), on a load error or failed API response the route doesn't expect, on any Decided finding, or on any accessibility or `impeccable detect` finding `ignore.md` doesn't ignore |
+| `--skip-build`      | Don't build the workspace packages first                                                                                                                                                                                                          |
 
 Every capture is checked for the Design rules a machine can check (the logic is
 `scripts/screens/checks.ts`). These always exit non-zero:
@@ -305,8 +310,22 @@ Every capture is checked for the Design rules a machine can check (the logic is
   the `ralph-run` sink are identifiers and don't count.
 
 Routes wider than their viewport (`scrollWidth`, at every width including `rail`) are always
-reported, and exit non-zero with `--strict`. In-place load errors (e.g. the GitHub picker, which
-can't reach GitHub with fixture credentials) are listed.
+reported, and exit non-zero with `--strict`.
+
+Load errors and failed API responses are always listed, and exit non-zero with `--strict` unless
+the route expects them (`expectedFailures` in `routes.ts`, for a fixture that shows a failed load
+on purpose: load errors by their starting text, responses by a part of their line):
+
+- `loadErrors`: in-place errors on the page (`scripts/screens/load-errors-page.mjs`, tested in
+  jsdom): the panel's QueryBoundary (`.query-error`), the Runs `LoadError` (`.or-run-error`,
+  e.g. "Couldn't load the transcript. The server sent an unexpected response.") and any empty
+  state or `role="alert"` that starts "Couldn't load …" or "Can't load …" (the agent page's).
+  They are read once the content has loaded and again just before the screenshot, so a step
+  panel's transcript counts;
+- `failedResponses`: the page's API calls (`/api/ui/…` on the panel, `/api/…` on the agent page)
+  answered with a status of 400 or more, or with a body that isn't JSON (or an event stream),
+  e.g. `GET /api/ui/runs/…/session: HTTP 404 (text/html; charset=utf-8)`, Next's not-found page
+  for a route it didn't match.
 
 #### Decided checks
 

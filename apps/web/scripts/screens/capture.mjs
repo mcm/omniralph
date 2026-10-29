@@ -20,6 +20,7 @@ import {
   walkKeyboard,
 } from "./a11y-page.mjs";
 import { decidedInPage, expandedInPage } from "./decided-page.mjs";
+import { failedApiResponse, loadErrorsInPage } from "./load-errors-page.mjs";
 
 const config = JSON.parse(await readFile(process.argv[2], "utf8"));
 const {
@@ -152,6 +153,7 @@ async function capture(context, route, viewportName, viewport, theme) {
     consoleErrors: [],
     notRendered: null,
     loadErrors: [],
+    failedResponses: [],
     error: null,
     screenshot: null,
     html: null,
@@ -177,15 +179,31 @@ async function capture(context, route, viewportName, viewport, theme) {
     if (message.type() !== "error") return;
     // "Failed to load resource" doesn't say which: its location is the resource.
     const { url } = message.location();
-    const text = message.text().startsWith("Failed to load resource") && url
-      ? `${message.text()} (${new URL(url).pathname})`
-      : message.text();
+    const text =
+      message.text().startsWith("Failed to load resource") && url
+        ? `${message.text()} (${new URL(url).pathname})`
+        : message.text();
     result.consoleErrors.push(text.slice(0, 500));
   });
   page.on("pageerror", (error) => result.consoleErrors.push(String(error).slice(0, 500)));
+  // The page's API calls that failed: an error status, or not JSON (Next's HTML not-found page).
+  page.on("response", (response) => {
+    const failure = failedApiResponse({
+      surface: result.surface,
+      method: response.request().method(),
+      url: response.url(),
+      status: response.status(),
+      contentType: response.headers()["content-type"] ?? null,
+    });
+    if (failure && !result.failedResponses.includes(failure)) result.failedResponses.push(failure);
+  });
   try {
     const { overlays } = await openRoute(context, page, route, theme, result, viewportName);
     await page.evaluate(() => document.fonts.ready);
+    // What failed to load since, e.g. a transcript in the step panel a step opened.
+    for (const text of await page.evaluate(loadErrorsInPage)) {
+      if (!result.loadErrors.includes(text)) result.loadErrors.push(text);
+    }
     const url = new URL(page.url());
     result.finalPath = url.pathname + url.search;
     result.scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -251,6 +269,9 @@ async function capture(context, route, viewportName, viewport, theme) {
     result.error ? "ERROR" : null,
     result.notRendered ? `not rendered: ${result.notRendered}` : null,
     result.loadErrors.length > 0 ? `${result.loadErrors.length} load error(s)` : null,
+    result.failedResponses.length > 0
+      ? `${result.failedResponses.length} failed API response(s)`
+      : null,
     result.overflow ? `overflow ${result.scrollWidth}px` : null,
     result.kbdCount > 0 ? `${result.kbdCount} kbd` : null,
     result.retiredWording.length > 0 ? "retired wording" : null,
@@ -304,13 +325,10 @@ async function openRoute(context, page, route, theme, record, viewportName) {
   const waitFor = typeof route.waitFor === "string" ? [route.waitFor] : (route.waitFor ?? []);
   const steps = route.steps ?? [];
   const missing = await waitForAll(page, steps.length > 0 ? [steps[0].selector] : waitFor);
-  // In-place errors: a failed load (the panel's QueryBoundary, the agent page's "Can't load"
-  // empty states) or a render error ((app)/error.tsx).
-  record.loadErrors = await page.$$eval(".query-error, .or-empty__title", (alerts) =>
-    alerts
-      .filter((alert) => alert.matches(".query-error") || /^Can't load/.test(alert.textContent))
-      .map((alert) => alert.textContent?.replace(/\s+/g, " ").trim().slice(0, 300) ?? ""),
-  );
+  // In-place errors: a failed load (the panel's QueryBoundary, the Runs `LoadError`, a
+  // "Couldn't load …" or "Can't load …" empty state or alert) or a render error
+  // ((app)/error.tsx). Read again before the screenshot, after the steps.
+  record.loadErrors = await page.evaluate(loadErrorsInPage);
   if (record.loadErrors.some((text) => text.startsWith("Couldn't show this page"))) {
     record.notRendered = "the page's error boundary (render error)";
   }

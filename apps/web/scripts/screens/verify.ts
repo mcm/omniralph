@@ -32,6 +32,7 @@ import { FIXTURE_EMAILS, FIXTURE_METADATA_NAMES } from "../fixtures/ids";
 import {
   accessibilityFindings,
   captureFailures,
+  unexpectedLoadFailures,
   unignoredDetectFindings,
   DECIDED_CHECK_TITLES,
   DECIDED_CHECKS,
@@ -193,7 +194,12 @@ async function capture({
   config: Record<string, unknown>;
 }): Promise<void> {
   const work = await stageWorkDir(cleanups, "omniralph-screens");
-  for (const script of ["capture.mjs", "a11y-page.mjs", "decided-page.mjs"]) {
+  for (const script of [
+    "capture.mjs",
+    "a11y-page.mjs",
+    "decided-page.mjs",
+    "load-errors-page.mjs",
+  ]) {
     await cp(join(__dirname, script), join(work, script));
   }
   for (const name of ["playwright-core", "axe-core"]) {
@@ -303,7 +309,8 @@ async function detect(outDir: string, results: CaptureResult[]): Promise<boolean
 async function report(
   outDir: string,
   results: CaptureResult[],
-  routes: readonly Pick<ScreenRoute, "name" | "page">[],
+  routes: readonly (Pick<ScreenRoute, "name" | "page"> &
+    Pick<Partial<ScreenRoute>, "expectedFailures">)[],
   strict: boolean,
   ignore: ParsedIgnoreList,
   detected: boolean,
@@ -316,7 +323,6 @@ async function report(
   const serverErrors = results.filter((r) => r.status !== null && r.status >= 500);
   const redirected = results.filter((r) => r.finalPath && r.finalPath !== r.path);
   const notRendered = results.filter((r) => r.notRendered);
-  const loadErrors = results.filter((r) => r.loadErrors.length > 0);
 
   for (const result of results) {
     if (result.screenshot) console.log(join(outDir, result.screenshot));
@@ -359,13 +365,7 @@ async function report(
   } else {
     summary.push("Every route rendered its content.");
   }
-  if (loadErrors.length > 0) {
-    summary.push(`\nShows a load error:`);
-    for (const r of loadErrors) {
-      for (const text of r.loadErrors)
-        summary.push(`  ${r.route} ${r.viewport} ${r.theme}: ${text}`);
-    }
-  }
+  summary.push(...loadFailureReport(results, routeOf, strict));
   summary.push(...decidedReport(results, routeOf, strict));
   summary.push(...accessibilityReport(results, ignore.entries));
   summary.push(...detectReport(results, ignore, detected, strict));
@@ -391,6 +391,35 @@ async function report(
       }).length > 0,
   );
   return failing.length > 0 ? 1 : 0;
+}
+
+/**
+ * The in-place load errors and failed API responses, by route, viewport and theme; those the
+ * route expects (`expectedFailures`) are marked. `--strict` fails on the others.
+ */
+function loadFailureReport(
+  results: CaptureResult[],
+  routeOf: Map<string, Pick<Partial<ScreenRoute>, "expectedFailures">>,
+  strict: boolean,
+): string[] {
+  const lines: string[] = [];
+  for (const r of results) {
+    const unexpected = new Set(unexpectedLoadFailures(r, routeOf.get(r.route)?.expectedFailures));
+    const all = [
+      ...r.loadErrors.map((text) => `load error: ${text}`),
+      ...(r.failedResponses ?? []).map((line) => `failed API response: ${line}`),
+    ];
+    for (const line of all) {
+      lines.push(
+        `  ${r.route} ${r.viewport} ${r.theme}: ${line}${unexpected.has(line) ? "" : " (expected)"}`,
+      );
+    }
+  }
+  if (lines.length === 0) return ["No route shows a load error or got a failed API response."];
+  return [
+    `\nLoad errors and failed API responses${strict ? "" : " (fail only with --strict)"}:`,
+    ...lines,
+  ];
 }
 
 /**

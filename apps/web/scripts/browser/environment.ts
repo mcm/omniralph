@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { removeFixtureDatabases } from "../fixtures/container";
+import { unservedApiRoutes } from "./api-routes";
 import { startFixtures } from "../fixtures/start";
 
 export const run = promisify(execFile);
@@ -17,6 +18,9 @@ export const WEB_DIR = resolve(__dirname, "../..");
 export const REPO_ROOT = resolve(WEB_DIR, "../..");
 export const AGENT_DIR = resolve(REPO_ROOT, "apps/agent");
 const SERVER_START_TIMEOUT_MS = 180_000;
+const APP_DIR = join(WEB_DIR, "src", "app");
+/** `next dev`'s persistent Turbopack cache. */
+const TURBOPACK_DEV_CACHE = join(WEB_DIR, ".next", "dev", "cache", "turbopack");
 
 // How the Playwright container reaches the panel on the host. With `--network host` on Linux
 // it shares the host's network, so `localhost` works. Docker Desktop (Mac, Windows) runs the
@@ -172,12 +176,31 @@ export async function startFixturePanel(cleanups: Cleanups): Promise<FixturePane
   log(`Starting the panel on ${baseUrl}…`);
   // Webhooks created against the fixtures (a fake GitLab's) point back at the panel.
   const panelEnv = { ...fixtureEnv, APP_URL: baseUrl };
-  const server = startPanel(
-    port,
-    host === "localhost" ? panelEnv : { ...panelEnv, [DEV_ORIGINS_ENV]: host },
-  );
+  const env = host === "localhost" ? panelEnv : { ...panelEnv, [DEV_ORIGINS_ENV]: host };
+  let server = startPanel(port, env);
   cleanups.push(() => stopPanel(server));
   await waitForPanel(baseUrl, server);
+  // Turbopack's dev server sometimes starts without some route handlers (its persistent cache):
+  // they answer Next's HTML 404 for the whole run. Start it again on an empty cache.
+  log("Checking that the panel serves every /api/ui route…");
+  const checkStart = Date.now();
+  let unserved = await unservedApiRoutes(baseUrl, APP_DIR);
+  if (unserved.length > 0) {
+    log(
+      `next dev doesn't serve ${unserved.length} /api/ui route(s) (${unserved.slice(0, 3).join(", ")}${unserved.length > 3 ? ", …" : ""}): restarting it on an empty Turbopack cache…`,
+    );
+    await stopPanel(server);
+    await rm(TURBOPACK_DEV_CACHE, { recursive: true, force: true });
+    server = startPanel(port, env);
+    await waitForPanel(baseUrl, server);
+    unserved = await unservedApiRoutes(baseUrl, APP_DIR);
+    if (unserved.length > 0) {
+      throw new Error(
+        `next dev doesn't serve these /api/ui routes, even on an empty cache:\n  ${unserved.join("\n  ")}`,
+      );
+    }
+  }
+  log(`It does (${Math.round((Date.now() - checkStart) / 1000)}s).`);
   if (host !== "localhost") log(`Docker Desktop: the browser opens the panel on ${host}.`);
   return { fixtureEnv, host, baseUrl, browserBaseUrl: `http://${host}:${port}` };
 }
@@ -213,8 +236,16 @@ function startPanel(port: number, fixtureEnv: Record<string, string>): ChildProc
   child.stdout?.on("data", keep);
   child.stderr?.on("data", keep);
   (child as ChildProcess & { output: string[] }).output = output;
+  // Dying mid-run fails every capture after it with a refused connection: say why.
+  child.on("exit", (code, signal) => {
+    if (stopping.has(child)) return;
+    log(`next dev exited (${signal ?? `code ${code}`}):\n${output.join("").slice(-4000)}`);
+  });
   return child;
 }
+
+/** The panels being stopped on purpose (`stopPanel`). */
+const stopping = new WeakSet<ChildProcess>();
 
 async function waitForPanel(baseUrl: string, server: ChildProcess): Promise<void> {
   const deadline = Date.now() + SERVER_START_TIMEOUT_MS;
@@ -234,6 +265,7 @@ async function waitForPanel(baseUrl: string, server: ChildProcess): Promise<void
 
 async function stopPanel(server: ChildProcess): Promise<void> {
   if (server.exitCode !== null || server.pid === undefined) return;
+  stopping.add(server);
   await stopProcessGroup(server);
   log("Panel stopped.");
 }

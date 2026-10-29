@@ -159,6 +159,38 @@ describe("captureFailures", () => {
     ]);
   });
 
+  it("fails --strict on load errors and failed API responses the route doesn't expect", () => {
+    const broken: CaptureResult = {
+      ...clean,
+      loadErrors: ["Couldn't load the transcript. The server sent an unexpected response."],
+      failedResponses: ["GET /api/ui/runs/r1/attempts/a1/transcript: HTTP 404 (text/html)"],
+    };
+    expect(captureFailures(broken, runsPage, { strict: false })).toEqual([]);
+    expect(captureFailures(broken, runsPage, { strict: true })).toEqual([
+      "load error: Couldn't load the transcript. The server sent an unexpected response.",
+      "failed API response: GET /api/ui/runs/r1/attempts/a1/transcript: HTTP 404 (text/html)",
+    ]);
+    // A load-error fixture declares what it fails to load.
+    const expecting = {
+      ...runsPage,
+      expectedFailures: {
+        loadErrors: ["Couldn't load the transcript."],
+        responses: ["/transcript:"],
+      },
+    };
+    expect(captureFailures(broken, expecting, { strict: true })).toEqual([]);
+    expect(
+      captureFailures(
+        { ...broken, loadErrors: [...broken.loadErrors, "Couldn't load the diff."] },
+        expecting,
+        { strict: true },
+      ),
+    ).toEqual(["load error: Couldn't load the diff."]);
+    // Captures made before failed responses were recorded.
+    const { failedResponses: _, ...old } = broken;
+    expect(captureFailures(old, expecting, { strict: true })).toEqual([]);
+  });
+
   it("fails on an accessibility check that couldn't run", () => {
     expect(
       captureFailures({ ...clean, checkErrors: ["axe: boom"] }, runsPage, { strict: false }),
