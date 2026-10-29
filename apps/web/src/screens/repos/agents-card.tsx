@@ -2,6 +2,7 @@
 
 import {
   AgentBadge,
+  Button,
   Card,
   IconButton,
   Menu,
@@ -144,15 +145,17 @@ export function AgentsCard({ detail, titleId }: { detail: RepositoryDetail; titl
       "pinnedAgentIds",
       pinnedIds.filter((pinned) => pinned !== id),
     );
+  // The same kind of add control as the Rules card's "Add rule" (Design rule 12).
   const pinButton = (
-    <IconButton
-      label="Pin agent"
+    <Button
       icon={IconPlus}
       variant="outline"
       size="sm"
       disabled={disabled || choices.length === 0}
       disabledReason={choices.length === 0 ? "Every agent is already pinned" : undefined}
-    />
+    >
+      Pin agent
+    </Button>
   );
 
   return (

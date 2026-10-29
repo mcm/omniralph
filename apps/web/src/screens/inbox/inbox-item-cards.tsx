@@ -31,7 +31,7 @@ function AiReviewCard({ item }: { item: InboxItem }) {
   const name = isGitLab(item) ? "merge request" : "pull request";
   return (
     <Card
-      title="AI review"
+      title="Om's review"
       headingLevel={3}
       actions={
         review ? (

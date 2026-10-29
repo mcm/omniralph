@@ -1,7 +1,7 @@
 "use client";
 
-import { BrandMark, Field, Select } from "@omniralph/ui";
-import { IconBooks } from "@tabler/icons-react";
+import { BrandMark, Field, Menu, type MenuAction, type MenuItem } from "@omniralph/ui";
+import { IconBooks, IconChevronDown } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { useCurrentUser, type SessionUser } from "@/components/current-user";
@@ -30,11 +30,6 @@ export interface AskScopeChoice {
 const choiceValue = ({ organizationId, repositoryId }: AskScopeChoice) =>
   `${organizationId}:${repositoryId ?? "all"}`;
 
-function parseChoice(value: string): AskScopeChoice {
-  const [organizationId = "", repositoryId = "all"] = value.split(":");
-  return { organizationId, repositoryId: repositoryId === "all" ? null : repositoryId };
-}
-
 /**
  * The picker's first choice: the page's repo when a new chat can pick it (connected, with
  * Ask on), else all of the active organization's repos.
@@ -57,46 +52,107 @@ export function newChatPlaceholder(repository: Pick<AskRepositoryOption, "fullPa
   return repository ? `Ask about ${repoShortName(repository.fullPath)}…` : "Ask about your repos…";
 }
 
-/** The picker's options: "All repos" then each repo, or one group per organization. */
-function RepoOptions({
+/** The picker's label for a choice: "All repos", "All repos in Acme" or the repo's path. */
+function choiceLabel(
+  user: SessionUser,
+  choice: AskScopeChoice,
+  repository: AskRepositoryOption | null,
+): string {
+  if (repository) return repository.fullPath;
+  if (user.scope !== "all") return "All repos";
+  const organization = user.organizations.find((entry) => entry.id === choice.organizationId);
+  return organization ? `All repos in ${organization.name}` : "All repos";
+}
+
+/**
+ * The picker's choices: "All repos" then each repo, or one group per organization under "All
+ * organizations". Every repo carries its code host's mark (Design rule 1), "All repos" the
+ * All repos icon.
+ */
+function repoMenuItems(
+  user: SessionUser,
+  repositories: readonly AskRepositoryOption[],
+  chosen: string,
+  onPick: (choice: AskScopeChoice) => void,
+): MenuItem[] {
+  const item = (choice: AskScopeChoice, label: string, group?: string): MenuAction => ({
+    label,
+    checked: choiceValue(choice) === chosen,
+    onSelect: () => onPick(choice),
+    ...(group === undefined ? {} : { group }),
+  });
+  const repoItems = (organizationId: string, group?: string) =>
+    repositories
+      .filter((repository) => repository.organization.id === organizationId)
+      .map((repository): MenuItem => ({
+        ...item({ organizationId, repositoryId: repository.id }, repository.fullPath, group),
+        mark: <BrandMark brand={repository.provider} />,
+      }));
+  if (user.scope !== "all") {
+    const organizationId = user.organization.id;
+    return [
+      { ...item({ organizationId, repositoryId: null }, "All repos"), icon: IconBooks },
+      ...repoItems(organizationId),
+    ];
+  }
+  return user.organizations.flatMap(({ id, name }) => [
+    {
+      ...item({ organizationId: id, repositoryId: null }, `All repos in ${name}`, name),
+      icon: IconBooks,
+    },
+    ...repoItems(id, name),
+  ]);
+}
+
+/**
+ * The "Repo" picker: a `Menu` drawn like a `Select` (led by the chosen repo's host mark, or
+ * the All repos icon), since a native select's options can't carry marks.
+ */
+function RepoPicker({
   user,
   repositories,
+  choice,
+  repository,
+  disabled,
+  onPick,
 }: {
   user: SessionUser;
   repositories: readonly AskRepositoryOption[];
+  choice: AskScopeChoice;
+  repository: AskRepositoryOption | null;
+  disabled: boolean;
+  onPick: (choice: AskScopeChoice) => void;
 }) {
-  const option = (repository: AskRepositoryOption) => (
-    <option
-      key={repository.id}
-      value={choiceValue({
-        organizationId: repository.organization.id,
-        repositoryId: repository.id,
-      })}
-    >
-      {repository.fullPath}
-    </option>
-  );
-  if (user.scope !== "all") {
-    return (
-      <>
-        <option value={choiceValue({ organizationId: user.organization.id, repositoryId: null })}>
-          All repos
-        </option>
-        {repositories.filter((r) => r.organization.id === user.organization.id).map(option)}
-      </>
-    );
-  }
+  const id = React.useId();
+  const label = choiceLabel(user, choice, repository);
   return (
-    <>
-      {user.organizations.map((organization) => (
-        <optgroup key={organization.id} label={organization.name}>
-          <option value={choiceValue({ organizationId: organization.id, repositoryId: null })}>
-            All repos in {organization.name}
-          </option>
-          {repositories.filter((r) => r.organization.id === organization.id).map(option)}
-        </optgroup>
-      ))}
-    </>
+    <Field label="Repo" htmlFor={id} stacked className="or-ask-new__repo">
+      <span className="or-select">
+        <span className="or-select__leading" aria-hidden="true">
+          {repository ? (
+            <BrandMark brand={repository.provider} />
+          ) : (
+            <IconBooks size={14} stroke={1.75} />
+          )}
+        </span>
+        <Menu
+          align="start"
+          disabled={disabled}
+          items={repoMenuItems(user, repositories, choiceValue(choice), onPick)}
+          trigger={
+            <button
+              id={id}
+              type="button"
+              className="or-input or-select__control or-select__control--leading or-ask-new__repo-button"
+              aria-label={`Repo: ${label}`}
+            >
+              {label}
+            </button>
+          }
+        />
+        <IconChevronDown className="or-select__chevron" size={16} stroke={1.75} aria-hidden />
+      </span>
+    </Field>
   );
 }
 
@@ -209,22 +265,14 @@ export function AskNewChat({
         headingLevel={headingLevel}
       />
       <div className="or-ask-chat__messages">
-        <Field label="Repo" stacked className="or-ask-new__repo">
-          <Select
-            leading={
-              repository ? (
-                <BrandMark brand={repository.provider} />
-              ) : (
-                <IconBooks size={14} stroke={1.75} />
-              )
-            }
-            value={choiceValue(choice)}
-            disabled={sending !== null}
-            onChange={(event) => setPicked(parseChoice(event.target.value))}
-          >
-            <RepoOptions user={user} repositories={options ?? []} />
-          </Select>
-        </Field>
+        <RepoPicker
+          user={user}
+          repositories={options ?? []}
+          choice={choice}
+          repository={repository}
+          disabled={sending !== null}
+          onPick={setPicked}
+        />
         {repositories.isError ? (
           <p className="or-ask-new__note" role="alert">
             Couldn&apos;t load the repos. {repositories.error.message}

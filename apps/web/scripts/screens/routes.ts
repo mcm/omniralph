@@ -315,6 +315,8 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     list: true,
     auth: "signed-in",
     steps: [{ action: "click", selector: '.or-sidebar [data-nav-id="ask"]' }],
+    // The panel's chats list loads after it opens.
+    waitFor: ".or-frame__aside .or-ask-chats__body :is(.or-rows, .or-empty)",
     viewportOnly: true,
     viewports: ["desktop", "rail"],
     board: "Ask",
@@ -402,9 +404,10 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
   },
   {
-    // The running epic's first story as its own view (the phone step page).
+    // A story of the running epic as its own view (the phone step page), with its last
+    // attempt's recorded transcript.
     name: "run-epic-step",
-    path: `/runs/${ids.ralphRuns.running}/steps/${fixtureId("ralphStory", 100)}`,
+    path: `/runs/${ids.ralphRuns.running}/steps/${ids.stories.severalAttempts}`,
     page: "(app)/runs/[id]/steps/[stepId]/page.tsx",
     detail: true,
     auth: "signed-in",
@@ -486,7 +489,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/repos/[id]/page.tsx",
     detail: true,
     auth: "signed-in",
-    steps: [{ action: "click", selector: 'button[aria-label="Pin agent"]' }],
+    steps: [{ action: "click", selector: 'button:has-text("Pin agent")' }],
     viewportOnly: true,
   },
   {

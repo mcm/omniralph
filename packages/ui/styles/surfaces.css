@@ -515,6 +515,14 @@
 }
 
 /*
+ * Scrim: the cover under every modal. While one is open the page under it doesn't scroll
+ * (CSS, not an injected style: the agent page's CSP refuses inline styles).
+ */
+:root:has(.or-scrim) {
+  overflow: hidden;
+}
+
+/*
  * Sheet: a side flow from the right, 480 px wide; full screen at 768 px and narrower. Above
  * the shell's drawer, below menus, tooltips and confirm dialogs opened from inside it.
  */

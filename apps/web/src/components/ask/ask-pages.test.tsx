@@ -250,8 +250,9 @@ describe("New chat (/ask/new)", () => {
     expectPinned(view);
     expect(screen.getByRole("heading", { level: 1, name: "Ask" })).toBeTruthy();
     expect(within(view).queryByRole("button", { name: "Close Ask" })).toBeNull();
-    const repo = screen.getByRole<HTMLSelectElement>("combobox", { name: "Repo" });
-    await waitFor(() => expect(repo.value).toBe(`${ORG}:${OTHER_REPO.id}`));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: `Repo: ${OTHER_REPO.fullPath}` })).toBeTruthy(),
+    );
     expect(composer().placeholder).toBe("Ask about billing…");
     // Opened on purpose: the composer has focus.
     expect(document.activeElement).toBe(composer());

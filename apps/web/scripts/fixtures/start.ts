@@ -23,7 +23,8 @@ export async function startFixtures(): Promise<Record<string, string>> {
     OMNIRALPH_DEV_SIGNIN: "1",
     // Linear settings pickers read the fixture workspace (`lib/linear/fixture-gateway.ts`).
     OMNIRALPH_FIXTURE_LINEAR: "1",
-    // Story diffs of fixture connections come from the fixture code host (`lib/scm/fixture-diff.ts`).
+    // Story diffs and the add-repo picker's list of fixture connections come from the fixture
+    // code host (`lib/scm/fixture-diff.ts`, `lib/scm/fixture-repositories.ts`).
     OMNIRALPH_FIXTURE_SCM: "1",
   };
 }

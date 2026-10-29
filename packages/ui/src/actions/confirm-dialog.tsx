@@ -4,6 +4,7 @@ import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { useId, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { buttonClassName } from "./button.js";
 import { returnFocusTo, useOpener } from "./opener.js";
+import { Scrim } from "../surfaces/scrim.js";
 
 export interface ConfirmDialogProps {
   /** Whether the dialog is open (controlled). */
@@ -78,7 +79,7 @@ export function ConfirmDialog({
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
       {trigger ? <AlertDialog.Trigger asChild>{trigger}</AlertDialog.Trigger> : null}
       <AlertDialog.Portal>
-        <AlertDialog.Overlay className="or-dialog__overlay" />
+        <Scrim className="or-dialog__overlay" />
         <AlertDialog.Content
           className="or-root or-dialog"
           onEscapeKeyDown={(event) => {

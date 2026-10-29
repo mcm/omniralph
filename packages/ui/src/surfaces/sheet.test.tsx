@@ -59,6 +59,21 @@ describe("Sheet", () => {
     errors.mockRestore();
   });
 
+  it("covers the page with a scrim that injects no style element, and closes on a scrim click", async () => {
+    // The agent page's CSP refuses inline styles: opening a sheet must not need one.
+    const user = userEvent.setup();
+    render(<Page />);
+    const styles = document.querySelectorAll("style").length;
+    await user.click(screen.getByRole("button", { name: "Add repo" }));
+    expect(screen.getByRole("dialog", { name: "Add repos" })).toBeTruthy();
+    expect(document.querySelectorAll("style")).toHaveLength(styles);
+    const scrim = document.querySelector(".or-sheet__scrim.or-scrim")!;
+    expect(scrim.getAttribute("aria-hidden")).toBe("true");
+    await user.click(scrim);
+    expect(screen.queryByRole("dialog", { name: "Add repos" })).toBeNull();
+    expect(document.querySelector(".or-scrim")).toBeNull();
+  });
+
   it("closes on Escape and returns focus to the button that opened it", async () => {
     const user = userEvent.setup();
     render(<Page />);

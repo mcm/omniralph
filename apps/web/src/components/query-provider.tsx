@@ -32,12 +32,29 @@ export function QueryProvider({
     <QueryClientProvider client={client}>
       <OrganizationCache organizationId={organizationId} />
       {children}
-      {Devtools && (
-        <React.Suspense fallback={null}>
-          <Devtools buttonPosition="bottom-left" />
-        </React.Suspense>
-      )}
+      {Devtools && <ClientDevtools devtools={Devtools} />}
     </QueryClientProvider>
+  );
+}
+
+const subscribeNever = () => () => {};
+
+/**
+ * The devtools, mounted only once the page has hydrated: no server HTML of theirs, so a modal
+ * opening during hydration (a sheet from `/repos?add=…`), which marks the rest of the body
+ * `aria-hidden`, can't make their container mismatch the server render.
+ */
+function ClientDevtools({ devtools: Tools }: { devtools: NonNullable<typeof Devtools> }) {
+  const hydrated = React.useSyncExternalStore(
+    subscribeNever,
+    () => true,
+    () => false,
+  );
+  if (!hydrated) return null;
+  return (
+    <React.Suspense fallback={null}>
+      <Tools buttonPosition="bottom-left" />
+    </React.Suspense>
   );
 }
 

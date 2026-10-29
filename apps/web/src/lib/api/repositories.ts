@@ -211,6 +211,12 @@ export const selectableRepositoriesQuerySchema = z.object({
 export const LISTING_FAILED = "listing_failed";
 
 /**
+ * `code` of a GitHub picker list on a server without the GitHub App's ID and signing key:
+ * GitHub can't be asked, and retrying won't change that.
+ */
+export const GITHUB_APP_NOT_CONFIGURED = "github_app_not_configured";
+
+/**
  * `POST /api/ui/scm-connections/{id}/repositories` body: the repositories (GitHub) or projects
  * (GitLab) to connect, by code-host ID. Add-only: repos left out are never changed.
  */

@@ -5,6 +5,7 @@ import {
   Button,
   Checkbox,
   Field,
+  IconRetry,
   MetaBadge,
   RepoBadge,
   Select,
@@ -31,6 +32,7 @@ import { useApiMutation, type MutationCache } from "@/components/use-api-mutatio
 import { api, ApiError } from "@/lib/api/client";
 import {
   addedRepositoriesSchema,
+  GITHUB_APP_NOT_CONFIGURED,
   LISTING_FAILED,
   type ScmConnectionList,
   type ScmConnectionListRow,
@@ -126,14 +128,29 @@ function ListingError({
   retrying: boolean;
   onRetry: () => void;
 }) {
-  const fromHost = error instanceof ApiError && error.code === LISTING_FAILED;
+  const code = error instanceof ApiError ? error.code : undefined;
+  if (code === GITHUB_APP_NOT_CONFIGURED) {
+    // Retrying can't help until the server is configured, so there's nothing to retry.
+    return (
+      <div role="alert" className="or-add-repos__alert or-add-repos__alert--fail">
+        <p className="or-add-repos__alert-title">The GitHub App isn&apos;t set up</p>
+        <p className="or-add-repos__alert-text">
+          Omniralph can&apos;t ask GitHub for this installation&apos;s repos until its server has
+          the GitHub App&apos;s ID and signing key. Ask whoever runs Omniralph to configure the
+          GitHub App, then open this connection again.
+        </p>
+      </div>
+    );
+  }
   return (
     <div role="alert" className="or-add-repos__alert or-add-repos__alert--fail">
       <p className="or-add-repos__alert-title">
-        {fromHost ? `${HOST[provider]} couldn't list the repos` : "Couldn't load the repos"}
+        {code === LISTING_FAILED
+          ? `${HOST[provider]} couldn't list the repos`
+          : "Couldn't load the repos"}
       </p>
       <p className="or-add-repos__alert-text or-mono">{error.message}</p>
-      <Button variant="outline" size="sm" icon={IconRefresh} disabled={retrying} onClick={onRetry}>
+      <Button variant="outline" size="sm" icon={IconRetry} disabled={retrying} onClick={onRetry}>
         {retrying ? "Retrying…" : "Retry"}
       </Button>
     </div>
@@ -272,14 +289,17 @@ function RepoPicker({
       )}
 
       <div className="or-add-repos__actions">
-        <Button
-          variant="outline"
-          icon={IconRefresh}
-          disabled={refreshing || pending}
-          onClick={() => void listing.refetch()}
-        >
-          {refreshing && listing.data ? "Refreshing…" : "Refresh"}
-        </Button>
+        {/* Only over a list: a failed listing's alert has the one recovery control (Retry). */}
+        {listing.data ? (
+          <Button
+            variant="outline"
+            icon={IconRefresh}
+            disabled={refreshing || pending}
+            onClick={() => void listing.refetch()}
+          >
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </Button>
+        ) : null}
         <Button
           variant="solid"
           icon={IconPlus}
@@ -349,7 +369,7 @@ function Connections({
           <Button
             variant="outline"
             size="sm"
-            icon={IconRefresh}
+            icon={IconRetry}
             disabled={connections.isFetching}
             onClick={() => void connections.refetch()}
           >

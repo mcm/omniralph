@@ -142,7 +142,8 @@ function memberColumns(actions: MemberActions): DataTableColumn<MemberRow>[] {
     {
       id: "role",
       header: "Role",
-      card: "status",
+      // Under the name on phone (Design rule 16): a card leads with who, not their role.
+      card: "meta",
       cell: (member) =>
         actions.isAdmin ? (
           <Select

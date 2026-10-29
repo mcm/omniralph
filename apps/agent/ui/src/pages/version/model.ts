@@ -22,11 +22,34 @@ export function policyText(policy: AgentUiState["versionPolicy"]): string {
     : `Pinned to ${policy.version}`;
 }
 
+/**
+ * Why an agent with no update under way runs the version it does, the way the updater decides
+ * (`apps/agent/src/update.ts` `wantedVersion`): "Up to date", "Pinned to 2.3.1", "Can't update
+ * itself", "Not retrying 2.4.1" (it failed before) or "Updating to 2.4.1 soon" (the next
+ * heartbeat starts it).
+ */
+export function idleVersionText(state: AgentUiState): { text: string; tone: StatusTone } {
+  const running = state.agent.version;
+  const pin = state.settings.effective.versionPin;
+  const target = pin ?? state.versionPolicy?.version ?? null;
+  if (target === null || target === running) {
+    return { text: pin !== null ? `Pinned to ${pin}` : "Up to date", tone: "neutral" };
+  }
+  if (state.update.selfUpdate === "unsupported") {
+    return { text: "Can't update itself", tone: "neutral" };
+  }
+  if (state.update.failedVersions.includes(target)) {
+    return { text: `Not retrying ${target}`, tone: "neutral" };
+  }
+  return { text: `Updating to ${target} soon`, tone: "neutral" };
+}
+
 /** Where the update is: an "Update now" no heartbeat took yet already reads as the drain. */
-export function updateStateText(update: AgentUiState["update"]): {
+export function updateStateText(agent: AgentUiState): {
   text: string;
   tone: StatusTone;
 } {
+  const { update } = agent;
   const report = update.update;
   const state = report?.state ?? "idle";
   if (state === "draining" || (state === "idle" && update.request !== null)) {
@@ -37,7 +60,7 @@ export function updateStateText(update: AgentUiState["update"]): {
   if (state === "confirming")
     return { text: `Checking ${report?.version ?? ""}`.trim(), tone: "run" };
   if (report?.error) return { text: "The last update failed", tone: "fail" };
-  return { text: "Up to date", tone: "neutral" };
+  return idleVersionText(agent);
 }
 
 /** An update is under way (asked for, draining, installing or confirming). */

@@ -16,7 +16,7 @@ import {
   type StagedChange,
 } from "@omniralph/ui";
 import { MAX_RULE_LENGTH, RuleInput } from "@omniralph/shared";
-import { IconPencil, IconTrash } from "@tabler/icons-react";
+import { IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useCallback, useMemo, useState, type FormEvent } from "react";
 import type { z } from "zod";
 import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
@@ -480,7 +480,7 @@ export function RulesSection({ detail, titleId }: { detail: RepositoryDetail; ti
       className="or-repo-card"
       actions={
         showAdd ? (
-          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+          <Button variant="outline" size="sm" icon={IconPlus} onClick={() => setAdding(true)}>
             Add rule
           </Button>
         ) : null

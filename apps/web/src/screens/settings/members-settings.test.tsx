@@ -182,6 +182,12 @@ describe("Organization › Members: the members", () => {
     expect(options.map((o) => o.textContent)).toEqual(["Admin", "Member"]);
     const cards = within(await membersCard()).getByRole("list", { name: "Members" });
     expect(within(cards).getAllByRole("listitem")).toHaveLength(2);
+    // A phone card leads with the member's name; the role select comes after it.
+    const [adaCard] = within(cards).getAllByRole("listitem");
+    const name = within(adaCard!).getByText("Ada Lovelace");
+    const role = within(adaCard!).getByRole("combobox", { name: "Role for Ada Lovelace" });
+    expect(adaCard!.querySelector(".or-cardrow__top select")).toBeNull();
+    expect(name.compareDocumentPosition(role) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("shows the table as cards at 768 px and narrower", () => {

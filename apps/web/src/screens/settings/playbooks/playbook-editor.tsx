@@ -469,10 +469,14 @@ function PlaybookForm({
   const cancelHref = editing ? playbookHref(playbookId) : PLAYBOOKS_PATH;
 
   return (
-    <SettingsPage title={title}>
-      <AppLink href={cancelHref} className="or-playbook__back">
-        {editing ? "‹ Playbook" : "‹ Playbooks"}
-      </AppLink>
+    <SettingsPage
+      title={title}
+      back={
+        <AppLink href={cancelHref} className="or-playbook__back">
+          {editing ? "‹ Playbook" : "‹ Playbooks"}
+        </AppLink>
+      }
+    >
       <form id={formId} className="or-playbook-editor" onSubmit={onSubmit} noValidate>
         {alert.length > 0 ? (
           <div role="alert" className="or-playbook-editor__alert">

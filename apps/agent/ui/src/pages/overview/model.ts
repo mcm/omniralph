@@ -8,7 +8,7 @@ import type { LogEntry } from "../../../../src/logs/entries.js";
 import { formatBytes } from "../../format.js";
 import type { AgentUiState } from "../../state.js";
 import { NOT_CHECKED, NOT_SIGNED_IN, SOURCE_LABELS } from "../claude/model.js";
-import { updateTarget } from "../version/model.js";
+import { idleVersionText, updateTarget } from "../version/model.js";
 
 export const NOTHING_RUNNING = "Nothing running";
 export const NO_RECENT_WORK = "No recent work";
@@ -100,7 +100,10 @@ export function slotsText(state: AgentUiState): string {
   return busy === 0 ? "Idle" : `${busy} of ${state.status.maxConcurrency} busy`;
 }
 
-/** Under the running version: "Up to date", "Updating to 2.0.4", "Pinned", "Update to 2.0.4 failed". */
+/**
+ * Under the running version: "Updating to 2.0.4", "Update to 2.0.4 failed", or why it runs
+ * this one (`idleVersionText`: "Up to date", "Pinned to 2.0.3", …).
+ */
 export function versionDetail(state: AgentUiState): Sentence {
   const target = updatingTo(state);
   if (target !== null) return { text: `Updating to ${target}` };
@@ -112,8 +115,7 @@ export function versionDetail(state: AgentUiState): Sentence {
       tone: "fail",
     };
   }
-  if (state.settings.effective.versionPin !== null) return { text: "Pinned" };
-  return { text: "Up to date" };
+  return { text: idleVersionText(state).text };
 }
 
 /** "Signed in" with its source, or "Not signed in" in the fail tone. */

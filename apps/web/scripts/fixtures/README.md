@@ -27,8 +27,8 @@ It also prints `OMNIRALPH_FIXTURE_LINEAR=1`: the settings pickers and the Backlo
 fixture Linear workspace (`src/lib/linear/fixture-gateway.ts`: teams FIX, OPS and WEB, their
 labels, projects, states and work items; the sandbox organization's token gets its own SBX
 workspace) instead of linear.app; and `OMNIRALPH_FIXTURE_SCM=1`: a story's Diff tab reads a
-fixture diff (`src/lib/scm/fixture-diff.ts`) for the fixture connections instead of GitHub or
-GitLab. Both only outside production.
+fixture diff (`src/lib/scm/fixture-diff.ts`) and the add-repo picker a fixture list
+(`src/lib/scm/fixture-repositories.ts`) for the fixture connections instead of GitHub or GitLab. Both only outside production.
 
 ## What's in it
 

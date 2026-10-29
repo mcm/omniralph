@@ -445,6 +445,13 @@ describe("a playbook's page", () => {
     expect(within(used).getByText("Ask about code, Start work")).toBeTruthy();
   });
 
+  it("draws the back link above the playbook's title", async () => {
+    await renderDetail(reviewPlaybook.id);
+    const title = await screen.findByRole("heading", { level: 2, name: reviewPlaybook.name });
+    const back = screen.getByRole("link", { name: "‹ Playbooks" });
+    expect(back.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("copies the playbook ID from the ⋯ menu", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });

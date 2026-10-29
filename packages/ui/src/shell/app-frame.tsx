@@ -7,6 +7,7 @@ import { Tooltip } from "../actions/tooltip.js";
 import { BrandLockup } from "../brand/wordmark.js";
 import { useLinkComponent } from "../provider/ui-provider.js";
 import { StatusDot } from "../status/status.js";
+import { Scrim } from "../surfaces/scrim.js";
 import {
   isNavActive,
   isNavAlert,
@@ -334,7 +335,7 @@ export function AppFrame({
         ) : null}
 
         <Dialog.Portal>
-          <Dialog.Overlay className="or-drawer__scrim" />
+          <Scrim className="or-drawer__scrim" />
           <Dialog.Content
             className="or-root or-drawer"
             aria-describedby={undefined}

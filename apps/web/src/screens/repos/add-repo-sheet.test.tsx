@@ -549,10 +549,26 @@ describe("the picker", () => {
     const alert = await within(sheet()).findByRole("alert");
     expect(within(alert).getByText("GitHub couldn't list the repos")).toBeTruthy();
     expect(within(alert).getByText("fetch failed")).toBeTruthy();
+    // One recovery control: the alert's Retry, no Refresh under it.
+    expect(within(sheet()).queryByRole("button", { name: "Refresh" })).toBeNull();
     fail = false;
     await userEvent.click(within(alert).getByRole("button", { name: "Retry" }));
     expect(await within(sheet()).findByRole("list", { name: "Repos" })).toBeTruthy();
     expect(within(sheet()).queryByRole("alert")).toBeNull();
+  });
+
+  it("says what to do when the GitHub App isn't configured, with nothing to retry", async () => {
+    listingAnswer = () =>
+      jsonResponse({ error: "GitHub App not configured", code: "github_app_not_configured" }, 503);
+    renderRepos();
+    await openSheet();
+    await userEvent.click(await within(sheet()).findByRole("button", { name: "GitHub acme" }));
+    const alert = await within(sheet()).findByRole("alert");
+    expect(within(alert).getByText("The GitHub App isn't set up")).toBeTruthy();
+    expect(alert.textContent).toContain("Ask whoever runs Omniralph to configure the GitHub App");
+    expect(alert.textContent).not.toContain("GitHub App not configured");
+    expect(within(sheet()).queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(within(sheet()).queryByRole("button", { name: "Refresh" })).toBeNull();
   });
 
   it("adds the ticked repos in one request, shows them in the rail without a refetch and opens the first", async () => {

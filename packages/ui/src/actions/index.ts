@@ -6,3 +6,4 @@ export * from "./menu.js";
 export * from "./toolbar.js";
 export * from "./tooltip.js";
 export * from "./text-link.js";
+export * from "./retry-icon.js";

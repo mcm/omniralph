@@ -56,6 +56,14 @@
   max-width: 480px;
 }
 
+/* The picker's menu button reads like a select: its value at the start, cut short when long. */
+.or-ask-new__repo-button {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .or-ask-new__note {
   margin: 0;
   color: var(--or-sec);

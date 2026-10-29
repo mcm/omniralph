@@ -9,8 +9,9 @@ import {
   Transcript,
   type MenuItem,
   type ToolbarAction,
+  IconRetry,
 } from "@omniralph/ui";
-import { IconGitCommit, IconLink, IconRotateClockwise2 } from "@tabler/icons-react";
+import { IconGitCommit, IconLink } from "@tabler/icons-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { RunAttempt, RunDetail, RunStep } from "@/lib/api/runs";
 import { AttemptList } from "./attempt-list";
@@ -191,8 +192,7 @@ export function StepPanel({
     ? [
         {
           label: retryItem.label,
-          // Not the run's Retry icon: a story or attempt retry is a different action.
-          icon: IconRotateClockwise2,
+          icon: IconRetry,
           disabled: retrying,
           onSelect: () => retry.mutate({ target: retryItem.target, selectedStepId: step.id }),
         },

@@ -58,6 +58,13 @@ const CASES: [string, AttemptLabelContext, string, string, string][] = [
   ],
   [
     "ralph.request",
+    { repository: "acme/web/customer-portal" },
+    "Working on a request in customer-portal",
+    "Worked on a request in customer-portal",
+    "Couldn't work on a request in customer-portal",
+  ],
+  [
+    "ralph.request",
     {},
     "Working on a request in this run",
     "Worked on a request in this run",

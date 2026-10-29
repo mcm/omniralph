@@ -236,7 +236,7 @@ describe("a pull or merge request ready for review", () => {
     runs["run-2"] = epicRunDetail({ id: "run-2", status: "completed" });
     serve();
     renderInbox("");
-    const review = await card("AI review");
+    const review = await card("Om's review");
     expect(within(review).getByText("Finished")).toBeTruthy();
     expect(within(review).getByText("1 high · 2 medium")).toBeTruthy();
     expect(within(review).getByRole("link", { name: "Open review" }).getAttribute("href")).toBe(
@@ -258,7 +258,7 @@ describe("a pull or merge request ready for review", () => {
     runs["run-2"] = epicRunDetail({ id: "run-2", status: "completed" });
     serve();
     renderInbox("");
-    const review = await card("AI review");
+    const review = await card("Om's review");
     expect(within(review).getByText("Running")).toBeTruthy();
     expect(within(review).getByText("No open findings")).toBeTruthy();
   });

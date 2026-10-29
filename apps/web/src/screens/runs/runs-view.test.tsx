@@ -186,7 +186,7 @@ describe("the Runs rail", () => {
     await waitFor(() => expect(rows()).toHaveLength(3));
     const [epic, review, ask] = rows() as [HTMLElement, HTMLElement, HTMLElement];
     const dot = (row: HTMLElement) => row.querySelector(".or-dot")!;
-    expect(dot(epic).getAttribute("aria-label")).toBe("Running · story 2 of 4");
+    expect(dot(epic).getAttribute("aria-label")).toBe("Epic · running");
     expect(dot(epic).classList.contains("or-dot--run")).toBe(true);
     expect(dot(review).getAttribute("aria-label")).toBe("Review · failed");
     expect(dot(review).classList.contains("or-dot--fail")).toBe(true);
@@ -227,12 +227,13 @@ describe("the Runs rail", () => {
     );
   });
 
-  it("renders through SplitView with the default list widths", async () => {
+  it("renders through SplitView, keeping the rail 340px wide at the icon rail too", async () => {
+    // At 769–1199 px the Kind, Status and Repo filters still fit on one line.
     const { container } = renderRuns();
     const split = container.querySelector<HTMLElement>(".or-split")!;
     expect(split.classList.contains("or-runs")).toBe(true);
     expect(split.style.getPropertyValue("--or-split-wide")).toBe("340px");
-    expect(split.style.getPropertyValue("--or-split-narrow")).toBe("300px");
+    expect(split.style.getPropertyValue("--or-split-narrow")).toBe("340px");
     expect(split.getAttribute("data-view")).toBe("list");
     expect(screen.getByRole("region", { name: "Runs" })).toBeTruthy();
   });

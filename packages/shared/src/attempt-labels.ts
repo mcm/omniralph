@@ -134,7 +134,8 @@ const PHRASES: Record<string, (context: AttemptLabelContext) => Phrase> = {
       "work on",
       "Working on",
       "Worked on",
-      `a request in ${present(c.workItem) ?? RUN_FALLBACK}`,
+      // A request from a chat has no work item: it names its repo.
+      `a request in ${present(c.workItem) ?? repositoryName(c.repository) ?? RUN_FALLBACK}`,
     ),
   [RALPH_DESCRIBE_PR_JOB_TYPE]: (c) =>
     phrase(
