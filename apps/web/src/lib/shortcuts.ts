@@ -26,6 +26,8 @@ export type ShortcutId =
   | "snooze"
   | "startAnyway"
   | "resume"
+  | "startEpic"
+  | "openChange"
   | "retry"
   | "stop"
   | "newWorkItem"
@@ -58,6 +60,8 @@ export const SHORTCUTS = {
   snooze: { key: "z", label: "Snooze", group: "inbox" },
   startAnyway: { key: "t", label: "Start anyway", group: "inbox" },
   resume: { key: "c", label: "Resume", group: "inbox" },
+  startEpic: { key: "b", label: "Start epic", group: "inbox" },
+  openChange: { key: "v", label: "Open pull request or merge request", group: "inbox" },
   retry: { key: "r", label: "Retry", group: "runs" },
   stop: { key: "x", label: "Stop run", group: "runs" },
   newWorkItem: { key: "n", label: "New work item", group: "workItems" },

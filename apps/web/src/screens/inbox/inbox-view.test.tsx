@@ -185,42 +185,39 @@ describe("the Inbox", () => {
     renderInbox({ user: allOrganizations });
     await waitFor(() => expect(rows()).toHaveLength(3));
     const [manual, mr] = rows();
-    expect(within(manual!).getByRole("img", { name: "Manual story · Epic" }).className).toContain(
+    expect(within(manual!).getByRole("img", { name: "Epic · manual story" }).className).toContain(
       "or-dot--need",
     );
-    expect(manual!.querySelector(".or-row__kind")!.textContent).toBe("Manual story · Epic");
+    expect(manual!.querySelector(".or-row__kind")!.textContent).toBe("Epic · manual story");
     expect(manual!.querySelector(".or-row__title")!.textContent).toBe(
       "Rotate the staging certificates",
     );
     expect(manual!.querySelector(".or-row__time")!.textContent).toBe("15d");
 
-    expect(mr!.querySelector(".or-row__kind")!.textContent).toBe("MR ready for your review");
+    // Kind · state, the state from the MR's review (Design rule 8).
+    expect(mr!.querySelector(".or-row__kind")!.textContent).toBe(
+      "Merge request · review requested",
+    );
     expect(mr!.querySelector(".or-row__time")!.textContent).toBe("42m");
     const badges = [...mr!.querySelector(".or-row__meta")!.children].map((badge) =>
       [...badge.classList].find((name) => name.startsWith("or-ref--")),
     );
-    expect(badges).toEqual([
-      "or-ref--org",
-      "or-ref--issue",
-      "or-ref--change",
-      "or-ref--repo",
-      "or-ref--meta",
-    ]);
+    expect(badges).toEqual(["or-ref--org", "or-ref--issue", "or-ref--change", "or-ref--repo"]);
     expect(mr!.querySelector(".or-row__meta")!.textContent).toContain("!12");
-    expect(mr!.querySelector(".or-row__meta")!.textContent).toContain("3 findings");
+    // Its 3 open findings are the detail's, not a count badge in the row (rule 8).
+    expect(mr!.textContent).not.toContain("finding");
     // No reason or summary in a row (Design rule 8).
     expect(mr!.textContent).not.toContain("ready for your review.");
   });
 
-  it("puts the agent badge after the repo on an agent's row, in tone fail", async () => {
+  it("doesn't repeat an agent's name as a badge on its own row, in tone fail", async () => {
     renderInbox({ search: "tab=problems" });
     await waitFor(() => expect(rows()).toHaveLength(1));
     const row = rows()[0]!;
-    expect(within(row).getByRole("img", { name: "Agent offline" }).className).toContain(
+    expect(within(row).getByRole("img", { name: "Agent · offline" }).className).toContain(
       "or-dot--fail",
     );
-    expect(row.querySelector(".or-row__meta")!.textContent).toContain("build-box");
-    expect(row.querySelector(".or-ref--agent")).not.toBeNull();
+    expect(row.querySelector(".or-ref--agent")).toBeNull();
     expect(requests("/api/ui/inbox").at(-1)!.query.get("tab")).toBe("problems");
   });
 

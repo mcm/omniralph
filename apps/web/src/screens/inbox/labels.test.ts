@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { InboxItem } from "@/lib/api/inbox";
-import {
-  compactAge,
-  durationSince,
-  inboxItemLabel,
-  openFindingsCount,
-  relativeSince,
-  relativeUntil,
-} from "./labels";
+import { compactAge, durationSince, inboxItemLabel, relativeSince, relativeUntil } from "./labels";
 import { inboxItem, NOW } from "./test-fixtures";
 
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -73,42 +66,46 @@ describe("inboxItemLabel", () => {
     [
       "manual_story",
       { kind: "manual_story" },
-      "Manual story · Epic",
+      "Epic · manual story",
       "need",
       "Waiting on you for 15 days",
     ],
     [
       "blocked_epic",
       { kind: "blocked_epic" },
-      "Blocked · Epic",
+      "Epic · blocked",
       "need",
       "Waiting on you for 15 days",
     ],
     [
       "question",
       { kind: "question", run: run("request") },
-      "Question · Request",
+      "Request · question",
       "need",
       "Waiting on you for 15 days",
     ],
     [
       "stopped_epic",
       { kind: "stopped_epic", run: run("epic") },
-      "Stopped · Epic",
+      "Epic · stopped",
       "need",
       "Waiting on you for 15 days",
     ],
     [
       "prd_ready",
       { kind: "prd_ready", run: run("triage") },
-      "PRD ready · Triage",
+      "Triage · PRD ready",
       "need",
       "Waiting on you for 15 days",
     ],
     [
       "pr_waiting (GitLab)",
-      { kind: "pr_waiting", pullRequest: { provider: "gitlab", number: 1, url: null } },
-      "MR ready for your review",
+      {
+        kind: "pr_waiting",
+        pullRequest: { provider: "gitlab", number: 1, url: null },
+        reviewState: "review_requested",
+      },
+      "Merge request · review requested",
       "need",
       "Waiting on you for 15 days",
     ],
@@ -118,8 +115,9 @@ describe("inboxItemLabel", () => {
         kind: "pr_waiting",
         repository: { id: "r", provider: "github", fullPath: "acme/web" },
         pullRequest: { provider: "github", number: 1, url: null },
+        reviewState: "changes_requested",
       },
-      "PR ready for your review",
+      "Pull request · changes requested",
       "need",
       "Waiting on you for 15 days",
     ],
@@ -129,8 +127,9 @@ describe("inboxItemLabel", () => {
         kind: "pr_waiting",
         repository: { id: "r", provider: "github", fullPath: "acme/web" },
         pullRequest: null,
+        reviewState: "approved",
       },
-      "PR ready for your review",
+      "Pull request · approved",
       "need",
       "Waiting on you for 15 days",
     ],
@@ -151,25 +150,32 @@ describe("inboxItemLabel", () => {
     [
       "agent_offline",
       { kind: "agent_offline", run: null },
-      "Agent offline",
+      "Agent · offline",
       "fail",
       "Offline for 15 days",
     ],
     [
       "agent_update_failed",
       { kind: "agent_update_failed", run: null },
-      "Agent update failed",
+      "Agent · update failed",
       "fail",
       "Update failed 15 days ago",
     ],
     [
       "agent_update_failed (with its version)",
       { kind: "agent_update_failed", run: null, version: "1.4.0" },
-      "Agent update failed",
+      "Agent · update failed",
       "fail",
       "Update to 1.4.0 failed 15 days ago",
     ],
     ["run", { kind: "run", run: run("ask") }, "Ask · running", "run", "Running for 15 days"],
+    [
+      "run (queued: waiting for an agent)",
+      { kind: "run", run: { id: "r", kind: "triage", status: "queued" } },
+      "Triage · queued",
+      "run",
+      "Queued for 15 days",
+    ],
   ];
 
   it.each(cases)("%s", (_name, overrides, rowLabel, tone, statusLine) => {
@@ -178,6 +184,14 @@ describe("inboxItemLabel", () => {
       tone,
       statusLine,
     });
+  });
+
+  it("names a PR/MR's every review state, and one without a state as waiting for review", () => {
+    const label = (reviewState: InboxItem["reviewState"]) =>
+      inboxItemLabel(inboxItem({ kind: "pr_waiting", reviewState }), NOW).rowLabel;
+    expect(label("none")).toBe("Merge request · waiting for review");
+    expect(label("commented")).toBe("Merge request · commented");
+    expect(label(null)).toBe("Merge request · waiting for review");
   });
 
   it("covers every item kind", () => {
@@ -211,20 +225,5 @@ describe("inboxItemLabel", () => {
         `${label} · failed`,
       );
     }
-  });
-});
-
-describe("openFindingsCount", () => {
-  it("adds every severity, 0 without a review", () => {
-    expect(openFindingsCount({ review: null })).toBe(0);
-    expect(
-      openFindingsCount({
-        review: {
-          runId: "r",
-          status: "completed",
-          openFindings: { critical: 1, high: 2, medium: 3, low: 4, info: 5 },
-        },
-      }),
-    ).toBe(15);
   });
 });

@@ -1,17 +1,7 @@
 import type { StatusTone } from "@omniralph/ui";
-import type { InboxItem } from "@/lib/api/inbox";
-import type { RUN_KINDS } from "@/lib/api/runs";
-
-type RunKind = (typeof RUN_KINDS)[number];
-
-/** Each run kind as a row label names it. */
-export const RUN_KIND_LABELS: Readonly<Record<RunKind, string>> = {
-  epic: "Epic",
-  request: "Request",
-  review: "Review",
-  triage: "Triage",
-  ask: "Ask",
-};
+import { RUN_KIND_LABELS } from "@/components/runs/run-kind";
+import { RUN_STATUS_TONES } from "@/components/runs/run-status";
+import type { InboxItem, PR_REVIEW_STATES } from "@/lib/api/inbox";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -55,7 +45,7 @@ export function relativeUntil(at: string, now: number): string {
 }
 
 export interface InboxItemLabel {
-  /** The row's kind and state, e.g. "Manual story · Epic"; it also names the dot. */
+  /** The row's kind and state (Design rule 8), e.g. "Epic · manual story"; it also names the dot. */
   rowLabel: string;
   /** The row dot's and status line's tone. */
   tone: StatusTone;
@@ -71,6 +61,15 @@ function kindOf(item: InboxItem): string {
 export function isGitLab(item: Pick<InboxItem, "pullRequest" | "repository">): boolean {
   return (item.pullRequest?.provider ?? item.repository?.provider) === "gitlab";
 }
+
+/** A PR/MR's human review state as its row label's state word. */
+export const REVIEW_STATE_WORDS: Readonly<Record<(typeof PR_REVIEW_STATES)[number], string>> = {
+  none: "waiting for review",
+  review_requested: "review requested",
+  commented: "commented",
+  changes_requested: "changes requested",
+  approved: "approved",
+};
 
 /**
  * An Inbox item's row label, tone and status line (the epic's "Inbox behavior" table): what
@@ -90,41 +89,44 @@ export function inboxItemLabel(item: InboxItem, now: number): InboxItemLabel {
   });
   switch (item.kind) {
     case "manual_story":
-      return waiting("Manual story · Epic");
+      return waiting("Epic · manual story");
     case "blocked_epic":
-      return waiting("Blocked · Epic");
+      return waiting("Epic · blocked");
     case "question":
-      return waiting(`Question · ${kindOf(item)}`);
+      return waiting(`${kindOf(item)} · question`);
     case "stopped_epic":
-      return waiting(`Stopped · ${kindOf(item)}`);
+      return waiting(`${kindOf(item)} · stopped`);
     case "prd_ready":
-      return waiting("PRD ready · Triage");
+      return waiting("Triage · PRD ready");
     case "pr_waiting":
-      return waiting(isGitLab(item) ? "MR ready for your review" : "PR ready for your review");
+      return waiting(
+        `${isGitLab(item) ? "Merge request" : "Pull request"} · ${REVIEW_STATE_WORDS[item.reviewState ?? "none"]}`,
+      );
     case "failed_run":
       return failed(`${kindOf(item)} · failed`, `Failed ${relativeSince(item.since, now)}`);
     case "failed_system":
       return failed("Background work · failed", `Failed ${relativeSince(item.since, now)}`);
     case "agent_offline":
-      return failed("Agent offline", `Offline for ${durationSince(item.since, now)}`);
+      return failed("Agent · offline", `Offline for ${durationSince(item.since, now)}`);
     case "agent_update_failed":
       return failed(
-        "Agent update failed",
+        "Agent · update failed",
         item.version
           ? `Update to ${item.version} failed ${relativeSince(item.since, now)}`
           : `Update failed ${relativeSince(item.since, now)}`,
       );
     case "run":
-      return {
-        rowLabel: `${kindOf(item)} · running`,
-        tone: "run",
-        statusLine: `Running for ${durationSince(item.since, now)}`,
-      };
+      // The Running tab has queued runs too (waiting for an agent): say so, not "running".
+      return item.run?.status === "queued"
+        ? {
+            rowLabel: `${kindOf(item)} · queued`,
+            tone: RUN_STATUS_TONES.queued,
+            statusLine: `Queued for ${durationSince(item.since, now)}`,
+          }
+        : {
+            rowLabel: `${kindOf(item)} · running`,
+            tone: "run",
+            statusLine: `Running for ${durationSince(item.since, now)}`,
+          };
   }
-}
-
-/** The open findings of a PR/MR's latest AI review, all severities. */
-export function openFindingsCount(item: Pick<InboxItem, "review">): number {
-  const counts = item.review?.openFindings;
-  return counts ? counts.critical + counts.high + counts.medium + counts.low + counts.info : 0;
 }

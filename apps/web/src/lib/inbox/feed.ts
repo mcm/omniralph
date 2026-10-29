@@ -150,6 +150,7 @@ function itemFields(
         ...base,
         title: story.title,
         workItem: {
+          id: null,
           tracker: "linear",
           identifier: story.identifier,
           url: storyIssueUrl(entry?.workItem?.url ?? null, story.identifier),

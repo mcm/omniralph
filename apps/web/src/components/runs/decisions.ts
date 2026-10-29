@@ -1,8 +1,16 @@
+import { START_EPIC } from "@/components/work-items/action-labels";
 import type { InboxAction, InboxItem } from "@/lib/api/inbox";
+
+/**
+ * What a decision does: an Inbox action (`POST /api/ui/inbox/items/{key}`), or one of the
+ * item's own: `start_epic` (a ready PRD's work item starts, through the Backlog's Start
+ * epic) and `open_change` (opens the PR/MR on its code host).
+ */
+export type InboxDecisionAction = InboxAction | "start_epic" | "open_change";
 
 /** One decision on an Inbox item: a labeled button (Design rule 6). */
 export interface InboxDecision {
-  action: InboxAction;
+  action: InboxDecisionAction;
   label: string;
   /** `primary` (lavender) only for the first: the action that clears the item. */
   variant: "primary" | "outline";
@@ -10,17 +18,31 @@ export interface InboxDecision {
 
 type Kind = InboxItem["kind"];
 
+type DecisionItem = Pick<InboxItem, "kind" | "actions" | "workItem" | "pullRequest">;
+
 const SNOOZE: [InboxAction, string] = ["snooze", "Snooze"];
 const DONE: [InboxAction, string] = ["done", "Done"];
 
+/** "Open pull request", or "Open merge request" on GitLab. */
+export function openChangeLabel(item: Pick<InboxItem, "pullRequest">): string {
+  return item.pullRequest?.provider === "gitlab" ? "Open merge request" : "Open pull request";
+}
+
+/** Whether the item offers a decision of its own (one that isn't an Inbox action). */
+function offers(item: DecisionItem, action: InboxDecisionAction): boolean {
+  if (action === "start_epic") return Boolean(item.workItem?.id);
+  if (action === "open_change") return Boolean(item.pullRequest?.url);
+  return item.actions.includes(action);
+}
+
 /** Each kind's buttons, in order: the clearing action first. */
-const DECISIONS: Record<Kind, readonly [InboxAction, string][]> = {
+const DECISIONS: Record<Kind, readonly [InboxDecisionAction, string][]> = {
   manual_story: [["done", "Done, resume epic"], ["skip", "Skip story"], SNOOZE],
   blocked_epic: [["start_anyway", "Start anyway"], DONE, SNOOZE],
   question: [["answer", "Send answer"], DONE, SNOOZE],
   stopped_epic: [["resume", "Resume"], DONE, SNOOZE],
-  prd_ready: [DONE, SNOOZE],
-  pr_waiting: [DONE, SNOOZE],
+  prd_ready: [["start_epic", START_EPIC], DONE, SNOOZE],
+  pr_waiting: [["open_change", "Open pull request"], DONE, SNOOZE],
   agent_offline: [DONE, SNOOZE],
   agent_update_failed: [DONE, SNOOZE],
   failed_run: [["retry", "Retry"], DONE, SNOOZE],
@@ -29,15 +51,16 @@ const DECISIONS: Record<Kind, readonly [InboxAction, string][]> = {
 };
 
 /**
- * The item's decision buttons, in order: its kind's buttons whose action the item's
- * `actions` include. The first is the clearing action and the only `primary` one.
+ * The item's decision buttons, in order: its kind's buttons whose action the item offers
+ * (its `actions`; a work item to start; a PR/MR link to open). The first is the decision the
+ * item waits for and the only `primary` one.
  */
-export function inboxDecisions(item: Pick<InboxItem, "kind" | "actions">): InboxDecision[] {
+export function inboxDecisions(item: DecisionItem): InboxDecision[] {
   return DECISIONS[item.kind]
-    .filter(([action]) => item.actions.includes(action))
+    .filter(([action]) => offers(item, action))
     .map(([action, label], index) => ({
       action,
-      label,
+      label: action === "open_change" ? openChangeLabel(item) : label,
       variant: index === 0 ? "primary" : "outline",
     }));
 }

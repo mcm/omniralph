@@ -43,7 +43,7 @@ import type {
   RunAnalyticsResponse,
 } from "@/lib/api/analytics";
 import { RUN_KINDS } from "@/lib/api/runs";
-import { RUN_KIND_LABELS } from "@/screens/inbox/labels";
+import { RUN_KIND_LABELS } from "@/components/runs/run-kind";
 import type { ScopeParam } from "@/screens/scope";
 import { useRunAnalytics } from "./analytics-queries";
 import "./analytics.css";

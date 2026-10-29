@@ -1,7 +1,7 @@
 import type { StatusTone } from "@omniralph/ui";
 import type { RunRow } from "@/lib/api/runs";
 import { RUN_STATUS_TONES } from "@/components/runs/run-status";
-import { RUN_KIND_LABELS } from "../inbox/labels";
+import { RUN_KIND_LABELS } from "@/components/runs/run-kind";
 
 type RunStatus = RunRow["status"];
 

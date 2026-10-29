@@ -284,7 +284,9 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       organization: { id: state.orgId, name: "Acme", role: "member" },
       title: "Point DNS at the new host",
       run: { id: ids.waiting, kind: "epic", status: "waiting" },
+      // A manual story is a story of the epic, not a Backlog item to start.
       workItem: {
+        id: null,
         tracker: "linear",
         identifier: "ENG-11",
         url: "https://linear.app/acme/issue/ENG-11",
