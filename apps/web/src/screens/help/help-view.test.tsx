@@ -66,6 +66,8 @@ describe("HelpView", () => {
         ["Snooze", "z"],
         ["Start anyway", "t"],
         ["Resume", "c"],
+        ["Start epic", "b"],
+        ["Open pull request or merge request", "v"],
       ],
       Runs: [
         ["Retry", "r"],

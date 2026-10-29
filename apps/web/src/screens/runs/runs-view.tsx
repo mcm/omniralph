@@ -19,7 +19,8 @@ import { viewPrdMenuItems } from "@/components/work-items/view-prd-sheet";
 import { RUN_STATUS_LABELS } from "@/components/runs/run-status";
 import { RUN_KINDS, RUN_STATUSES, type RunRow } from "@/lib/api/runs";
 import { useClock } from "../clock";
-import { compactAge, RUN_KIND_LABELS } from "../inbox/labels";
+import { RUN_KIND_LABELS } from "@/components/runs/run-kind";
+import { compactAge } from "../inbox/labels";
 import {
   hasRunFilters,
   NO_RUN_FILTERS,

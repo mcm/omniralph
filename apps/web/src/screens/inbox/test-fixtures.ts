@@ -17,6 +17,7 @@ export function inboxItem(overrides: Partial<InboxItem> = {}): InboxItem {
     title: "Rotate the staging certificates",
     run: { id: "run-1", kind: "epic", status: "waiting" },
     workItem: {
+      id: null,
       tracker: "linear",
       identifier: "TOOL-42",
       url: "https://linear.app/acme/issue/TOOL-42",
@@ -58,6 +59,27 @@ export function mrReadyItem(overrides: Partial<InboxItem> = {}): InboxItem {
       status: "completed",
       openFindings: { critical: 0, high: 1, medium: 2, low: 0, info: 0 },
     },
+    ...overrides,
+  });
+}
+
+/** A PRD that triage wrote for TOOL-51, ready to start. */
+export function prdReadyItem(overrides: Partial<InboxItem> = {}): InboxItem {
+  return inboxItem({
+    key: "prd_ready:triage-1:job-1",
+    kind: "prd_ready",
+    title: "Export invoices as CSV",
+    run: { id: "triage-1", kind: "triage", status: "completed" },
+    workItem: {
+      id: "linear-issue-51",
+      tracker: "linear",
+      identifier: "TOOL-51",
+      url: "https://linear.app/acme/issue/TOOL-51",
+    },
+    reason: "Triage wrote a PRD for TOOL-51. It's ready for a person to start.",
+    since: minutesAgo(30),
+    actions: ["done", "snooze"],
+    size: "M",
     ...overrides,
   });
 }

@@ -12,8 +12,9 @@ import {
   type WorkItemActionTarget,
 } from "./use-work-item-actions";
 
-export const START_EPIC = "Start epic";
-export const TRIAGE_NOW = "Triage now";
+import { START_EPIC, TRIAGE_NOW } from "./action-labels";
+
+export { START_EPIC, TRIAGE_NOW };
 
 /** "Starts when SOC-398 and SOC-401 are done": a blocked item's Start epic tooltip. */
 export function startsWhenTooltip(blockers: readonly string[]): string {

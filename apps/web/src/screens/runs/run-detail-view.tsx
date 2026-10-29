@@ -15,22 +15,13 @@ import {
   type MenuItem,
   type ToolbarAction,
 } from "@omniralph/ui";
-import {
-  IconEye,
-  IconGitMerge,
-  IconGitPullRequest,
-  IconListSearch,
-  IconMessage2,
-  IconMessageQuestion,
-  IconRefresh,
-  IconStack2,
-  type TablerIcon,
-} from "@tabler/icons-react";
+import { IconGitMerge, IconGitPullRequest, IconRefresh } from "@tabler/icons-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useCurrentUser } from "@/components/current-user";
 import { QuestionForm } from "@/components/runs/question-form";
 import { RunActivity } from "@/components/runs/run-activity";
+import { RUN_KIND_ICONS, RUN_KIND_LABELS } from "@/components/runs/run-kind";
 import { RunReason } from "@/components/runs/run-reason";
 import {
   runMenuItems,
@@ -55,7 +46,6 @@ import { useRunDetail } from "@/components/runs/use-run-detail";
 import { ApiError } from "@/lib/api/client";
 import type { RunDetail } from "@/lib/api/runs";
 import { useKeyShortcuts, useShortcut } from "@/lib/shortcuts";
-import { RUN_KIND_LABELS } from "../inbox/labels";
 import { NO_RUN_FILTERS, parseRunFilters, runInListHref, runStepHref } from "./filters";
 import { runRowLabel } from "./labels";
 import "@/components/runs/run-cards.css";
@@ -70,14 +60,6 @@ export const RUN_DETAIL_FAILED = "Couldn't load this run.";
 
 /** A queued run has a reason only while it waits for something (a missing host tool). */
 const REASON_STATUSES: readonly RunDetail["status"][] = ["waiting", "queued", "stopped", "failed"];
-
-const KIND_ICONS: Record<RunDetail["kind"], TablerIcon> = {
-  epic: IconStack2,
-  request: IconMessage2,
-  review: IconEye,
-  triage: IconListSearch,
-  ask: IconMessageQuestion,
-};
 
 /**
  * Items other screens add to the run ⋯ menu, first: each may open an element over the run
@@ -104,7 +86,7 @@ function RunHeaderBadges({ run, showOrganization }: { run: RunDetail; showOrgani
   return (
     <>
       {showOrganization ? <OrgBadge name={run.organization.name} /> : null}
-      <MetaBadge icon={KIND_ICONS[run.kind]} text={RUN_KIND_LABELS[run.kind]} />
+      <MetaBadge icon={RUN_KIND_ICONS[run.kind]} text={RUN_KIND_LABELS[run.kind]} />
       {run.workItem ? (
         <IssueBadge
           tracker="linear"

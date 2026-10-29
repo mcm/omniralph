@@ -20,7 +20,15 @@ import type { InboxCountsResponse, InboxItem, InboxItemActionResult } from "@/li
 import { inboxKeys, queryKeys } from "@/lib/api/keys";
 import { SHORTCUTS } from "@/lib/shortcuts";
 import { InboxView } from "./inbox-view";
-import { agentOfflineItem, BETA_ID, COUNTS, inboxItem, mrReadyItem, NOW } from "./test-fixtures";
+import {
+  agentOfflineItem,
+  BETA_ID,
+  COUNTS,
+  inboxItem,
+  mrReadyItem,
+  NOW,
+  prdReadyItem,
+} from "./test-fixtures";
 
 const ui = vi.hoisted(() => ({ toast: vi.fn() }));
 vi.mock("@omniralph/ui", async (importOriginal) => ({
@@ -87,11 +95,12 @@ let answer: (request: SeenRequest) => Response | Promise<Response>;
 
 const itemPath = (key: string) => `/api/ui/inbox/items/${encodeURIComponent(key)}`;
 
-function serve() {
+function serve(extra: Parameters<typeof mockFetch>[0] = {}) {
   const routes: Parameters<typeof mockFetch>[0] = {
     "GET /api/ui/inbox": (request) =>
       jsonResponse({ items: feeds[request.query.get("tab") ?? "needs-you"] ?? [] }),
     "GET /api/ui/inbox/counts": () => jsonResponse(counts),
+    ...extra,
   };
   for (const item of Object.values(feeds).flat()) {
     routes[`POST ${itemPath(item.key)}`] = (request) => answer(request);
@@ -122,6 +131,8 @@ const rowTitles = () => rows().map((row) => row.querySelector(".or-row__title")?
 const detail = () => screen.getByRole("region", { name: "Item" });
 const decisions = () => within(detail()).getByRole("group", { name: "Decisions" });
 const posts = () => seen.filter((request) => request.method === "POST");
+/** A decisions group's buttons, links styled as buttons (Open pull request) included. */
+const buttonsIn = (group: HTMLElement) => [...group.querySelectorAll<HTMLElement>(".or-btn")];
 const scopeCounts = (client: ReturnType<typeof createTestQueryClient>, scope: string) =>
   client.getQueryData<InboxCountsResponse>(
     inboxKeys(queryKeys(testUser.organization.id)).counts(scope),
@@ -180,12 +191,12 @@ const KINDS: { item: InboxItem; buttons: string[]; posts: Record<string, string>
     buttons: ["Resume", "Done", "Snooze"],
     posts: { Resume: "resume", Done: "done" },
   },
+  { item: prdReadyItem(), buttons: ["Start epic", "Done", "Snooze"], posts: { Done: "done" } },
   {
-    item: inboxItem({ key: "prd_ready:i1", kind: "prd_ready", actions: ["done", "snooze"] }),
-    buttons: ["Done", "Snooze"],
+    item: mrReadyItem(),
+    buttons: ["Open merge request", "Done", "Snooze"],
     posts: { Done: "done" },
   },
-  { item: mrReadyItem(), buttons: ["Done", "Snooze"], posts: { Done: "done" } },
   { item: agentOfflineItem(), buttons: ["Done", "Snooze"], posts: { Done: "done" } },
   {
     item: agentOfflineItem({ key: "agent_update_failed:a1", kind: "agent_update_failed" }),
@@ -222,6 +233,8 @@ const DECISION_KEYS: Record<string, string> = {
   "Skip story": "s",
   "Start anyway": "t",
   Resume: "c",
+  "Start epic": "b",
+  "Open merge request": "v",
   Retry: "r",
   Snooze: "z",
 };
@@ -235,11 +248,9 @@ describe("decision keys in the Inbox detail", () => {
         serve();
         renderInbox(`tab=${item.tab}&item=${encodeURIComponent(item.key)}`);
         const group = await waitFor(decisions);
-        expect(
-          within(group)
-            .getAllByRole("button")
-            .map((button) => button.getAttribute("aria-keyshortcuts")),
-        ).toEqual(buttons.map((name) => DECISION_KEYS[name]!.toUpperCase()));
+        expect(buttonsIn(group).map((button) => button.getAttribute("aria-keyshortcuts"))).toEqual(
+          buttons.map((name) => DECISION_KEYS[name]!.toUpperCase()),
+        );
         await user().keyboard(DECISION_KEYS[label]!);
         await waitFor(() => expect(posts()).toHaveLength(1));
         expect(posts()[0]!.path).toBe(itemPath(item.key));
@@ -313,7 +324,7 @@ describe("decisions in the Inbox detail", () => {
       const group = await waitFor(decisions);
       // Under the reason.
       expect(group.previousElementSibling?.className).toBe("or-inbox-detail__reason");
-      const all = within(group).getAllByRole("button");
+      const all = buttonsIn(group);
       expect(all.map((button) => button.textContent)).toEqual(buttons);
       expect(group.querySelectorAll(".or-btn--primary")).toHaveLength(1);
       expect(all[0]!.classList.contains("or-btn--primary")).toBe(true);
@@ -390,6 +401,56 @@ describe("decisions in the Inbox detail", () => {
         until: snoozeUntil(choice, new Date(NOW)).toISOString(),
       });
     }
+  });
+});
+
+describe("the decision a ready PRD and a PR/MR wait for", () => {
+  const startPath = "/api/ui/work-items/linear-issue-51/start";
+
+  it("a ready PRD's Start epic starts its work item and the item leaves at once", async () => {
+    const held = deferred();
+    const prd = prdReadyItem();
+    feeds = { "needs-you": [prd, inboxItem()], problems: [], running: [] };
+    serve({ [`POST ${startPath}`]: () => held.promise });
+    const client = renderInbox(`item=${encodeURIComponent(prd.key)}`);
+    await waitFor(() => expect(rows()).toHaveLength(2));
+
+    await user().click(within(decisions()).getByRole("button", { name: "Start epic" }));
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    expect(posts()[0]!.path).toBe(startPath);
+    expect(posts()[0]!.query.get("organization")).toBe(prd.organization.id);
+    // Before the server answers: the item left its feed and the count, the next is selected,
+    // and no Inbox decision was posted for it.
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(scopeCounts(client, testUser.organization.id)?.needsYou).toBe(2);
+    expect(posts().some((request) => request.path === itemPath(prd.key))).toBe(false);
+    held.resolve(jsonResponse({ ok: true }));
+  });
+
+  it("Start epic's key (b) starts it from the detail", async () => {
+    const prd = prdReadyItem();
+    feeds = { "needs-you": [prd], problems: [], running: [] };
+    serve({ [`POST ${startPath}`]: () => jsonResponse({ ok: true }) });
+    renderInbox(`item=${encodeURIComponent(prd.key)}`);
+    await waitFor(decisions);
+    await user().keyboard("b");
+    await waitFor(() => expect(posts().map((request) => request.path)).toEqual([startPath]));
+  });
+
+  it("a PR/MR's Open merge request links to it on its code host, in a new tab; v opens it", async () => {
+    const mr = mrReadyItem();
+    const open = vi.fn();
+    vi.stubGlobal("open", open);
+    renderInbox(`item=${encodeURIComponent(mr.key)}`);
+    const link = await waitFor(() =>
+      within(decisions()).getByRole("link", { name: "Open merge request" }),
+    );
+    expect(link.getAttribute("href")).toBe(mr.pullRequest!.url);
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.classList.contains("or-btn--primary")).toBe(true);
+    await user().keyboard("v");
+    expect(open).toHaveBeenCalledWith(mr.pullRequest!.url, "_blank", "noopener,noreferrer");
+    expect(posts()).toHaveLength(0);
   });
 });
 

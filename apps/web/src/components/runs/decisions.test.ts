@@ -8,8 +8,20 @@ import {
 import { inboxDecisions, SNOOZE_CHOICES, snoozeUntil } from "./decisions";
 
 const ALL = [...INBOX_ACTIONS];
-const buttons = (kind: InboxItem["kind"], actions: InboxItem["actions"] = ALL) =>
-  inboxDecisions({ kind, actions }).map(({ label, action, variant }) => [label, action, variant]);
+const WORK_ITEM = { id: "linear-1", tracker: "linear", identifier: "TOOL-1", url: null } as const;
+const pullRequest = (provider: "github" | "gitlab", url: string | null = "https://host/pr/1") => ({
+  provider,
+  number: 1,
+  url,
+});
+const buttons = (
+  kind: InboxItem["kind"],
+  actions: InboxItem["actions"] = ALL,
+  refs: Partial<Pick<InboxItem, "workItem" | "pullRequest">> = {},
+) =>
+  inboxDecisions({ kind, actions, workItem: null, pullRequest: null, ...refs }).map(
+    ({ label, action, variant }) => [label, action, variant],
+  );
 
 describe("inboxDecisions", () => {
   it("a manual story: Done, resume epic · Skip story · Snooze", () => {
@@ -44,15 +56,41 @@ describe("inboxDecisions", () => {
     ]);
   });
 
-  it.each(["prd_ready", "pr_waiting", "agent_offline", "agent_update_failed"] as const)(
-    "%s: Done · Snooze",
-    (kind) => {
-      expect(buttons(kind)).toEqual([
-        ["Done", "done", "primary"],
-        ["Snooze", "snooze", "outline"],
-      ]);
-    },
-  );
+  it("a ready PRD: Start epic · Done · Snooze, Start epic only with a work item to start", () => {
+    expect(buttons("prd_ready", ALL, { workItem: WORK_ITEM })).toEqual([
+      ["Start epic", "start_epic", "primary"],
+      ["Done", "done", "outline"],
+      ["Snooze", "snooze", "outline"],
+    ]);
+    expect(buttons("prd_ready", ALL, { workItem: { ...WORK_ITEM, id: null } })).toEqual([
+      ["Done", "done", "primary"],
+      ["Snooze", "snooze", "outline"],
+    ]);
+  });
+
+  it("a PR/MR: Open pull request (merge request on GitLab) · Done · Snooze, with a link", () => {
+    expect(buttons("pr_waiting", ALL, { pullRequest: pullRequest("github") })).toEqual([
+      ["Open pull request", "open_change", "primary"],
+      ["Done", "done", "outline"],
+      ["Snooze", "snooze", "outline"],
+    ]);
+    expect(buttons("pr_waiting", ALL, { pullRequest: pullRequest("gitlab") })[0]).toEqual([
+      "Open merge request",
+      "open_change",
+      "primary",
+    ]);
+    expect(buttons("pr_waiting", ALL, { pullRequest: pullRequest("github", null) })).toEqual([
+      ["Done", "done", "primary"],
+      ["Snooze", "snooze", "outline"],
+    ]);
+  });
+
+  it.each(["agent_offline", "agent_update_failed"] as const)("%s: Done · Snooze", (kind) => {
+    expect(buttons(kind)).toEqual([
+      ["Done", "done", "primary"],
+      ["Snooze", "snooze", "outline"],
+    ]);
+  });
 
   it.each(["failed_run", "failed_system"] as const)("%s: Retry · Done · Snooze", (kind) => {
     expect(buttons(kind)).toEqual([

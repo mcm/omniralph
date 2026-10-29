@@ -84,7 +84,11 @@ export const inboxItemSchema = z.object({
   run: z
     .object({ id: z.string(), kind: z.enum(RUN_KINDS), status: z.enum(RUN_STATUSES) })
     .nullable(),
-  workItem: workItemRefSchema.nullable(),
+  /**
+   * The work item it is about, with its URL ID (`linear-<issue id>`, the Backlog's, for Start
+   * epic); `id` is null for a manual story (a story of the epic, not a Backlog item).
+   */
+  workItem: workItemRefSchema.extend({ id: z.string().nullable() }).nullable(),
   repository: repositoryRefSchema.nullable(),
   pullRequest: pullRequestRefSchema.nullable(),
   agent: agentRefSchema.nullable(),

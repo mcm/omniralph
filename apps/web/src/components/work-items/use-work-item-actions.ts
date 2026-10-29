@@ -1,8 +1,10 @@
 "use client";
 
 import type { QueryKey } from "@tanstack/react-query";
+import { inboxDecisionKey, removeFromInbox } from "@/components/runs/use-inbox-decision";
 import { useApiMutation, type MutationCache } from "@/components/use-api-mutation";
 import type { Backlog, BacklogCounts, BacklogUpNext } from "@/lib/api/backlog";
+import type { InboxItem } from "@/lib/api/inbox";
 import { api } from "@/lib/api/client";
 import { backlogKeys } from "@/lib/api/keys";
 import { mutationResultSchema, type MutationResult } from "@/lib/api/schemas";
@@ -12,6 +14,7 @@ import {
   type WorkItemGroup,
   type WorkItemRow,
 } from "@/lib/api/work-items";
+import { useScopeParam } from "@/screens/scope";
 import { isWorkItemDetail, workItemDetailPath } from "./use-work-item-detail";
 
 /** The item an action acts on: a Backlog or Up next row, or the open detail. */
@@ -97,12 +100,19 @@ function updateDetail(
  * its run as a delegation in Linear does. Before the server answers, the item leaves the
  * Backlog list, Up next and the counts, and the detail stops offering Start; a failure (409
  * when a run exists, 400 unless Ready to start) puts everything back with the server's
- * message. Shared by Up next and the work item detail.
+ * message. Shared by Up next, the work item detail and the Inbox's PRD ready item: given
+ * `inboxItem`, it is that item's decision (its other decisions disable while it is
+ * pending) and the item leaves its feed at once too.
  */
-export function useStartWorkItem() {
+export function useStartWorkItem({
+  inboxItem,
+}: { inboxItem?: Pick<InboxItem, "key" | "tab"> } = {}) {
+  const scope = useScopeParam();
   return useApiMutation<MutationResult, WorkItemActionTarget>({
+    mutationKey: inboxItem ? inboxDecisionKey(inboxItem.key) : undefined,
     mutationFn: (target, { organizationId }) => postAction(target, "start", organizationId),
     optimistic: async (target, cache) => {
+      if (inboxItem) await removeFromInbox(cache, scope, inboxItem.key, [inboxItem.tab]);
       await updateBacklogRows(cache, (row) => (row.id === target.id ? null : row));
       // Only a Ready to start item starts (the server refuses any other).
       await cache.set<BacklogCounts>(countsPrefix(cache), (previous) =>
@@ -115,7 +125,13 @@ export function useStartWorkItem() {
         actions: { ...detail.actions, start: false, triage: false, move: false, changeRepo: false },
       }));
     },
-    invalidate: (keys, target) => [backlogKeys(keys).all, backlogKeys(keys).detail(target.id)],
+    // A ready PRD's Inbox item leaves once its run exists, and the run joins Runs.
+    invalidate: (keys, target) => [
+      backlogKeys(keys).all,
+      backlogKeys(keys).detail(target.id),
+      keys.inbox.all,
+      keys.runs.all,
+    ],
     success: (_data, target) => `Om is starting ${target.identifier}`,
   });
 }
