@@ -401,7 +401,7 @@ function InvitationsCard({ settings }: { settings: OrganizationSettings }) {
             <option value="admin">{ROLE_LABELS.admin}</option>
           </Select>
         </Field>
-        <Button type="submit" variant="primary" icon={IconMailPlus} disabled={emails.length === 0}>
+        <Button type="submit" variant="solid" icon={IconMailPlus} disabled={emails.length === 0}>
           Invite
         </Button>
       </form>

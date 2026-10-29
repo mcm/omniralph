@@ -5,6 +5,7 @@ import {
   decidedFindings,
   decidedOptions,
   HELP_PAGE,
+  unignoredDetectFindings,
   type CaptureResult,
 } from "./checks";
 import { parseIgnoreList } from "./ignore";
@@ -31,7 +32,10 @@ const clean: CaptureResult = {
   html: "runs.rail.dark.html",
   axe: [],
   keyboard: [],
-  keyboardStops: 12,
+  keyboardStops: [
+    { selector: "a.or-skip", name: "Skip to content" },
+    { selector: "a.or-nav__link", name: "Inbox" },
+  ],
   escape: null,
   landmarks: [],
   checkErrors: [],
@@ -107,6 +111,51 @@ describe("captureFailures", () => {
       "keyboard: trap div.or-pop: The focus cycles",
       "escape: stays-open div.or-sheet: Escape doesn't close it",
       "landmarks: no-h1: The page has no level-1 heading",
+    ]);
+  });
+
+  it("fails on impeccable detect findings only with --strict, unless ignore.md ignores them", () => {
+    const html = "/repo/apps/web/.screens/t/runs.rail.dark.html";
+    const detected: CaptureResult = {
+      ...clean,
+      impeccable: [
+        {
+          antipattern: "cramped-padding",
+          file: html,
+          snippet: '<span> "or-ref": children flush against border on top/bottom (no inset)',
+        },
+        {
+          antipattern: "marquee",
+          file: html,
+          snippet: '.whiteout::after — infinite horizontal loop animation "whiteout-sheen"',
+        },
+      ],
+    };
+    expect(captureFailures(detected, runsPage, { strict: false })).toEqual([]);
+    expect(captureFailures(detected, runsPage, { strict: true })).toHaveLength(2);
+
+    const { detect } = parseIgnoreList(`
+| Rule | Scope | Reason | Round |
+|---|---|---|---|
+| cramped-padding | \`.or-ref\` (\`packages/ui/styles/refs.css\`) | Fixed height. | TOOL-748 round 1 |
+| decided: no-live-indicator | 2.0 code: \`apps/web/src\` | Decided. | TOOL-730 |
+`);
+    expect(captureFailures(detected, runsPage, { strict: true, detectIgnore: detect })).toEqual([
+      'impeccable: marquee: .whiteout::after — infinite horizontal loop animation "whiteout-sheen"',
+    ]);
+    expect(
+      unignoredDetectFindings({ impeccable: detected.impeccable }, detect).map(
+        (finding) => finding.antipattern,
+      ),
+    ).toEqual(["marquee"]);
+    expect(unignoredDetectFindings({}, detect)).toEqual([]);
+  });
+
+  it("fails --strict when impeccable detect failed on the snapshot", () => {
+    const failed = { ...clean, impeccableError: "unreadable output: not a list of findings" };
+    expect(captureFailures(failed, runsPage, { strict: false })).toEqual([]);
+    expect(captureFailures(failed, runsPage, { strict: true })).toEqual([
+      "impeccable detect failed: unreadable output: not a list of findings",
     ]);
   });
 

@@ -319,3 +319,106 @@ describe("the color scan", () => {
     expect(scan("apps/web/src/screens/probe.tsx", code)).toEqual(["lavender (literal)"]);
   });
 });
+
+// Rule 15 and rule 6: the primary Button (lavender, with the glow) is only for the action that
+// clears a needs-you item. The stylesheet scan above allows `.or-btn--primary` itself; this scan
+// allows `variant="primary"` (and the `or-btn--primary` class) only in the components below.
+
+interface PrimaryAllowed {
+  /** Path from the repository root. */
+  file: string;
+  reason: string;
+}
+
+const PRIMARY_ALLOWED: PrimaryAllowed[] = [
+  {
+    file: "apps/web/src/components/runs/decisions.ts",
+    reason: "an Inbox item's first decision, the one that clears it (Inbox and run detail)",
+  },
+  {
+    file: "apps/web/src/components/runs/question-form.tsx",
+    reason: "Send answer: answering Om's question clears the needs-you question",
+  },
+];
+
+/** Where an expression's value can come from: the branches of `?:`, `??`, `||` and `&&`. */
+function valueContext(node: ts.Node): ts.Node {
+  let current = node;
+  while (
+    ts.isConditionalExpression(current.parent) ||
+    ts.isParenthesizedExpression(current.parent) ||
+    ts.isJsxExpression(current.parent) ||
+    ts.isAsExpression(current.parent) ||
+    ts.isSatisfiesExpression(current.parent) ||
+    (ts.isBinaryExpression(current.parent) && current.parent.left !== current)
+  ) {
+    current = current.parent;
+  }
+  return current.parent;
+}
+
+/** Each `variant="primary"` (JSX attribute or `variant:` property) and `or-btn--primary` class. */
+function primaryUses(file: string, code: string): string[] {
+  const source = ts.createSourceFile(file, code, ts.ScriptTarget.Latest, true);
+  const found: string[] = [];
+  const at = (node: ts.Node) =>
+    `${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`;
+  const visit = (node: ts.Node) => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      const context = valueContext(node);
+      const named = (name: ts.Node) => ts.isIdentifier(name) && name.text === "variant";
+      if (
+        node.text === "primary" &&
+        ((ts.isJsxAttribute(context) && named(context.name)) ||
+          (ts.isPropertyAssignment(context) && named(context.name)))
+      ) {
+        found.push(`${at(node)}: variant="primary"`);
+      } else if (/\bor-btn--primary\b/.test(node.text)) {
+        found.push(`${at(node)}: or-btn--primary`);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
+describe("the primary Button (rules 6 and 15)", () => {
+  const scanned = SCANNED.flatMap(files).filter((file) => /\.tsx?$/.test(file));
+  const uses = scanned.flatMap((file) =>
+    primaryUses(file, readFileSync(path.join(root, file), "utf8")).map((use) => ({ file, use })),
+  );
+  const allowed = (file: string) => PRIMARY_ALLOWED.find((entry) => entry.file === file);
+
+  it("is used only by the components that clear a needs-you item", () => {
+    expect(uses.filter(({ file }) => !allowed(file)).map(({ use }) => use)).toEqual([]);
+  });
+
+  it("keeps every allowlist entry in use and explained", () => {
+    for (const entry of PRIMARY_ALLOWED) {
+      expect(
+        uses.some(({ file }) => file === entry.file),
+        entry.file,
+      ).toBe(true);
+      expect(entry.reason.trim()).not.toBe("");
+    }
+  });
+
+  it("finds the variant in JSX, in props objects and through conditionals, not in types", () => {
+    const code = [
+      'const a = <Button variant="primary">Save</Button>;',
+      'const b = <Button variant={busy ? "outline" : "primary"}>Save</Button>;',
+      'const c = { label: "Done", variant: "primary" as const };',
+      'const d = <span className="or-btn or-btn--primary" />;',
+      'type Variant = "primary" | "outline";',
+      'const e = { style: "primary" };',
+      'const f = <Button variant="solid">Save</Button>;',
+    ].join("\n");
+    expect(primaryUses("apps/web/src/screens/probe.tsx", code)).toEqual([
+      'apps/web/src/screens/probe.tsx:1: variant="primary"',
+      'apps/web/src/screens/probe.tsx:2: variant="primary"',
+      'apps/web/src/screens/probe.tsx:3: variant="primary"',
+      "apps/web/src/screens/probe.tsx:4: or-btn--primary",
+    ]);
+  });
+});

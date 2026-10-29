@@ -1,9 +1,12 @@
 import {
   ACCESSIBILITY_CHECKS,
+  detectIgnoredBy,
   ignoredBy,
   type AccessibilityCheck,
   type AccessibilityFinding,
   type AccessibilityIgnoreEntry,
+  type DetectFinding,
+  type DetectIgnoreEntry,
 } from "./ignore";
 import {
   AGO,
@@ -48,8 +51,8 @@ export interface CaptureResult {
   axe: AccessibilityFinding[];
   /** The keyboard walk's findings: unreachable controls, missing focus indicators, a trap. */
   keyboard: AccessibilityFinding[];
-  /** How many elements the keyboard walk focused. */
-  keyboardStops: number;
+  /** Each element the keyboard walk focused, in Tab order: its selector and accessible name. */
+  keyboardStops: { selector: string; name: string }[];
   /** The Escape check's findings, or `null` when the route's steps open no overlay. */
   escape: AccessibilityFinding[] | null;
   /** No `main` landmark, more than one, no `h1`, and (at `rail`) unnamed navigation links. */
@@ -60,6 +63,13 @@ export interface CaptureResult {
   axeFile: string | null;
   /** `<screen>.aria.yml`: the page's ARIA snapshot. */
   ariaFile: string | null;
+  /**
+   * `impeccable detect` on the HTML snapshot (`<screen>.impeccable.json`), added by verify.ts;
+   * missing when it didn't run (no CLI, or no snapshot).
+   */
+  impeccable?: DetectFinding[];
+  /** Why `impeccable detect` failed on the snapshot. */
+  impeccableError?: string | null;
   // The Decided checks (`decided-page.mjs`, DESIGN.md "Decided — never flag, never undo"); each
   // a list of findings. Missing from captures made before they existed.
   /** Hint text about where things are (rule 3). */
@@ -183,6 +193,14 @@ export function unignoredFindings(
   );
 }
 
+/** The snapshot's `impeccable detect` findings that no detect entry of ignore.md matches. */
+export function unignoredDetectFindings(
+  result: Pick<CaptureResult, "impeccable">,
+  ignore: readonly DetectIgnoreEntry[],
+): DetectFinding[] {
+  return (result.impeccable ?? []).filter((finding) => detectIgnoredBy(ignore, finding) === null);
+}
+
 /** The page whose `kbd`s are allowed: the panel's Help lists every keyboard shortcut (the agent page has none). */
 export const HELP_PAGE = "(app)/help/page.tsx";
 
@@ -196,13 +214,22 @@ export function showsShortcutIndicators(
 
 /**
  * Why a capture fails the run; empty when it passes. `--strict` also fails on overflow, on
- * every Decided finding, and on every accessibility finding that no entry of `ignore`
- * (ignore.md) matches.
+ * every Decided finding, on every accessibility finding that no entry of `ignore` (ignore.md)
+ * matches, and on `impeccable detect` failing on the snapshot or finding something no entry of
+ * `detectIgnore` matches.
  */
 export function captureFailures(
   result: CaptureResult,
   route: Pick<ScreenRoute, "page"> | undefined,
-  { strict, ignore = [] }: { strict: boolean; ignore?: readonly AccessibilityIgnoreEntry[] },
+  {
+    strict,
+    ignore = [],
+    detectIgnore = [],
+  }: {
+    strict: boolean;
+    ignore?: readonly AccessibilityIgnoreEntry[];
+    detectIgnore?: readonly DetectIgnoreEntry[];
+  },
 ): string[] {
   const failures: string[] = [];
   if (result.error) failures.push(`failed: ${result.error}`);
@@ -225,6 +252,11 @@ export function captureFailures(
       failures.push(
         `${finding.check}: ${finding.rule}${finding.target ? ` ${finding.target}` : ""}: ${finding.summary}`,
       );
+    }
+    if (result.impeccableError)
+      failures.push(`impeccable detect failed: ${result.impeccableError}`);
+    for (const finding of unignoredDetectFindings(result, detectIgnore)) {
+      failures.push(`impeccable: ${finding.antipattern}: ${finding.snippet}`);
     }
   }
   return failures;

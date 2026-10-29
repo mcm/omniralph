@@ -177,4 +177,35 @@ describe("ListRow", () => {
     expect(row.querySelector(".or-row__dot")).toBeNull();
     expect(row.querySelector(".or-row__kind")).toBeNull();
   });
+
+  // Decided `no-row-status-summaries` (rules 8 and 9): a row is its kind and state, title,
+  // badges and time. Reasons, summaries and counts live in the detail, so ListRow has no prop
+  // for them (typecheck fails when one is added).
+  it("takes no summary, reason, description, stats or subtitle", () => {
+    const rows = (
+      <RowList aria-label="Needs you">
+        {/* @ts-expect-error ListRow has no summary */}
+        <ListRow href="/a" title="A" mark={null} summary="3 of 5 stories" />
+        {/* @ts-expect-error ListRow has no reason */}
+        <ListRow href="/b" title="B" mark={null} reason="Waiting for review" />
+        {/* @ts-expect-error ListRow has no description */}
+        <ListRow href="/c" title="C" mark={null} description="Fixes the login redirect" />
+        {/* @ts-expect-error ListRow has no stats */}
+        <ListRow href="/d" title="D" mark={null} stats="2 failed" />
+        {/* @ts-expect-error ListRow has no subtitle */}
+        <ListRow href="/e" title="E" mark={null} subtitle="acme/web" />
+      </RowList>
+    );
+    render(rows);
+    // Nor does it render one it is given anyway.
+    for (const text of [
+      "3 of 5 stories",
+      "Waiting for review",
+      "Fixes the login redirect",
+      "2 failed",
+    ]) {
+      expect(screen.queryByText(text)).toBeNull();
+    }
+    expect(screen.getAllByRole("listitem")).toHaveLength(5);
+  });
 });

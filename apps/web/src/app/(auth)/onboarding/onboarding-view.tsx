@@ -125,7 +125,7 @@ function Invitation({ invitation }: { invitation: InvitationRow }) {
         Decline
       </Button>
       <Button
-        variant="primary"
+        variant="solid"
         size="sm"
         disabled={pending}
         onClick={() =>

@@ -14,6 +14,7 @@ import {
   analyzeKeyboardWalk,
   AXE_TAGS,
   keyboardInPage,
+  keyboardStops,
   landmarksInPage,
   overlaysInPage,
   walkKeyboard,
@@ -156,7 +157,7 @@ async function capture(context, route, viewportName, viewport, theme) {
     html: null,
     axe: [],
     keyboard: [],
-    keyboardStops: 0,
+    keyboardStops: [],
     escape: null,
     landmarks: [],
     checkErrors: [],
@@ -455,13 +456,13 @@ async function checkKeyboard(page, result) {
     state: () => page.evaluate(keyboardInPage, { action: "state", pseudo: true }),
   });
   await page.evaluate(keyboardInPage, { action: "cleanup" });
-  result.keyboardStops = walk.stops.length;
+  result.keyboardStops = keyboardStops(walk.stops);
   result.keyboard = analyzeKeyboardWalk({ required, ...walk });
 }
 
 /**
  * The page's DOM as a standalone HTML file: every stylesheet inlined (static
- * analysis can't fetch `/_next/…` URLs), scripts and the dev overlay removed.
+ * analysis can't fetch `/_next/…` URLs), scripts and the dev UI (HIDE_DEV_UI) removed.
  */
 function snapshotHtml(page) {
   return page.evaluate(() => {
@@ -476,7 +477,9 @@ function snapshotHtml(page) {
       .join("\n");
     const root = document.documentElement.cloneNode(true);
     root
-      .querySelectorAll("script, style, link[rel='stylesheet'], link[as='script'], nextjs-portal")
+      .querySelectorAll(
+        "script, style, link[rel='stylesheet'], link[as='script'], nextjs-portal, .tsqd-parent-container",
+      )
       .forEach((element) => element.remove());
     const style = document.createElement("style");
     style.textContent = css;

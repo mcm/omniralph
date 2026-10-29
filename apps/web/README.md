@@ -245,7 +245,7 @@ touch, 2× device):
 ```sh
 pnpm --filter @omniralph/web verify:screens
 pnpm --filter @omniralph/web verify:screens --routes "settings-*,/runs/**" --theme dark --viewport 390
-pnpm --filter @omniralph/web verify:screens --surface agent --strict
+pnpm --filter @omniralph/web verify:screens --app agent --strict
 ```
 
 **Prerequisites:** Docker only (a local or remote daemon). No secrets, no OAuth, no browser on
@@ -278,17 +278,20 @@ inlined), `.impeccable.json` (detect findings), `.axe.json` (axe-core's violatio
 status, final path, `scrollWidth`, `kbdCount`, `retiredWording`, console errors, in-place load
 errors, why a page didn't render, the Decided checks' findings: `hintText`, `liveIndicator`,
 `detailToolbar`, `bareMetadata`, `rowSummary`, `phoneExpanded`, `orgFirst`, and the
-accessibility findings: `axe`, `keyboard`, `keyboardStops`, `escape`, `landmarks`,
-`checkErrors`). The screenshot paths go to stdout, the summary to stderr.
+accessibility findings: `axe`, `keyboard`, `keyboardStops` (each element the keyboard walk
+focused, in Tab order: `{ selector, name }`, its `tag#id.class[role]` and accessible name),
+`escape`, `landmarks`, `checkErrors`, and, when detect ran, `impeccable` (the snapshot's detect
+findings) or `impeccableError`). The screenshot paths go to stdout, the summary to stderr.
 
-| Option              | Effect                                                                                                                                                    |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--routes <glob>`   | Routes whose name or path matches (comma-separated; `*`, `**`)                                                                                            |
-| `--theme <list>`    | `dark`, `light` (default both)                                                                                                                            |
-| `--viewport <list>` | `desktop`/`1440`, `rail`/`1024`, `phone`/`390` (default all three)                                                                                        |
-| `--surface <list>`  | `panel`, `agent` (default both)                                                                                                                           |
-| `--strict`          | Exit non-zero when a route is wider than its viewport (`scrollWidth`), on any Decided finding, or on any accessibility finding `ignore.md` doesn't ignore |
-| `--skip-build`      | Don't build the workspace packages first                                                                                                                  |
+| Option              | Effect                                                                                                                                                                           |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--routes <glob>`   | Routes whose name or path matches (comma-separated; `*`, `**`)                                                                                                                   |
+| `--theme <list>`    | `dark`, `light` (default both)                                                                                                                                                   |
+| `--viewport <list>` | `desktop`/`1440`, `rail`/`1024`, `phone`/`390` (default all three)                                                                                                               |
+| `--surface <list>`  | `panel`, `agent` (default both); `web` is the panel and `all` both                                                                                                               |
+| `--app <list>`      | Another name for `--surface` (`web`, `agent`, `all`); give one of the two                                                                                                        |
+| `--strict`          | Exit non-zero when a route is wider than its viewport (`scrollWidth`), on any Decided finding, or on any accessibility or `impeccable detect` finding `ignore.md` doesn't ignore |
+| `--skip-build`      | Don't build the workspace packages first                                                                                                                                         |
 
 Every capture is checked for the Design rules a machine can check (the logic is
 `scripts/screens/checks.ts`). These always exit non-zero:
@@ -348,6 +351,22 @@ which must match: `route` (a name or path glob, like `--routes`), `surface`, `vi
 `theme`, and `target` (part of the finding's target). An entry with no scope ignores nothing,
 and the critique's own entries (impeccable rules, `decided:` items) never ignore an
 accessibility finding (`scripts/screens/ignore.ts`).
+
+#### impeccable detect
+
+When the impeccable CLI is found, `impeccable detect --json` runs on each capture's HTML
+snapshot (the page's DOM with its styles inlined; scripts and the hidden dev UI removed). The
+summary's "impeccable detect" section lists each rule with what it saw and the captures it was
+seen on, and `--strict` fails on every finding that no detect row of
+`.impeccable/critique/ignore.md` ignores, and on a snapshot detect couldn't scan. A detect row
+is any row whose rule is a detector rule (not `decided:`, not `<check>: <rule>`); it ignores
+that rule's findings that name something its Scope cell names in backticks: a class selector
+(`` `.or-ref` ``; every class of `` `.a.b` ``, as whole class names), a file
+(`` `packages/ui/styles/refs.css` ``, for a source scan), a custom property (`` `--or-glow` ``)
+or a color (`` `#f5f3ee` ``, also matched as `rgb(245, 243, 238)`). A row naming none of these
+ignores nothing and is reported (`scripts/screens/ignore.ts`). A `decided:` row names an item,
+not a detector rule, so a detect finding that a Decided item rejects gets its own row naming
+what it rejects (e.g. `dark-glow` on `.or-btn--primary`, "Rejected: rule 15").
 
 To read the reports of a capture:
 
