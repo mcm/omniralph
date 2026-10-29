@@ -2,10 +2,21 @@
 // host: `node capture.mjs config.json`. Screenshots every route of the config in every
 // viewport and theme into `config.outDir`, with an HTML snapshot (styles inlined, for
 // `impeccable detect`) and `results.json`. Routes are the panel's, or the agent page's
-// (`surface: "agent"`, served by its fixture mode at `config.agent.baseUrl`).
+// (`surface: "agent"`, served by its fixture mode at `config.agent.baseUrl`). After each
+// screenshot it runs the accessibility checks (`a11y-page.mjs`): axe-core, the ARIA snapshot
+// and landmarks, the Escape check on overlays the steps opened, and the keyboard walk.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
+import {
+  analyzeKeyboardWalk,
+  AXE_TAGS,
+  keyboardInPage,
+  landmarksInPage,
+  overlaysInPage,
+  walkKeyboard,
+} from "./a11y-page.mjs";
 
 const config = JSON.parse(await readFile(process.argv[2], "utf8"));
 const { baseUrl, signInPaths, organizationCookie, routes, themes, viewports, outDir, agent } =
@@ -15,8 +26,17 @@ const NAVIGATION_TIMEOUT_MS = 180_000; // `next dev` compiles each route on its 
 // polling it, so the network never goes idle: wait for the skeletons to go instead.
 const LOADED_TIMEOUT_MS = 60_000;
 
-// Hides the `next dev` indicator and overlay; errors are recorded instead.
-const HIDE_DEV_UI = "nextjs-portal { display: none !important; }";
+// Hides the `next dev` indicator and overlay (errors are recorded instead) and the React Query
+// devtools, so neither is captured or checked.
+const HIDE_DEV_UI = "nextjs-portal, .tsqd-parent-container { display: none !important; }";
+
+// axe-core's browser build, evaluated in each page (the agent page's CSP refuses script tags).
+const AXE_SOURCE = await readFile(
+  createRequire(import.meta.url).resolve("axe-core/axe.min.js"),
+  "utf8",
+);
+// How long an overlay may take to close after Escape (exit animations).
+const CLOSE_TIMEOUT_MS = 2_000;
 
 await mkdir(outDir, { recursive: true });
 const browser = await chromium.launch();
@@ -112,6 +132,14 @@ async function capture(context, route, viewportName, viewport, theme) {
     error: null,
     screenshot: null,
     html: null,
+    axe: [],
+    keyboard: [],
+    keyboardStops: 0,
+    escape: null,
+    landmarks: [],
+    checkErrors: [],
+    axeFile: null,
+    ariaFile: null,
   };
   const page = await context.newPage();
   page.on("console", (message) => {
@@ -119,75 +147,8 @@ async function capture(context, route, viewportName, viewport, theme) {
   });
   page.on("pageerror", (error) => result.consoleErrors.push(String(error).slice(0, 500)));
   try {
-    // Another organization than the user's active one: the organization cookie, for this page.
-    if (route.surface !== "agent") await context.clearCookies({ name: organizationCookie });
-    if (route.organization) {
-      await context.addCookies([
-        { name: organizationCookie, value: route.organization, url: baseUrl },
-      ]);
-    }
-    const response = await page.goto(route.path, { waitUntil: "load" });
-    result.status = response?.status() ?? null;
-    const loaded = await page
-      .waitForFunction(() => !document.querySelector('[aria-busy="true"]'), null, {
-        timeout: LOADED_TIMEOUT_MS,
-      })
-      .then(
-        () => true,
-        () => false,
-      );
-    if (!loaded) result.notRendered = `still loading after ${LOADED_TIMEOUT_MS / 1000}s`;
-    // The agent page renders nothing until its data loads: wait for what each route names.
-    const waitFor = typeof route.waitFor === "string" ? [route.waitFor] : (route.waitFor ?? []);
-    const waited = await Promise.all(
-      waitFor.map((selector) =>
-        page
-          .locator(selector)
-          .first()
-          .waitFor({ timeout: 30_000 })
-          .then(
-            () => null,
-            () => selector,
-          ),
-      ),
-    );
-    // In-place errors: a failed load (the panel's QueryBoundary, the agent page's "Can't load"
-    // empty states) or a render error ((app)/error.tsx).
-    result.loadErrors = await page.$$eval(".query-error, .or-empty__title", (alerts) =>
-      alerts
-        .filter((alert) => alert.matches(".query-error") || /^Can't load/.test(alert.textContent))
-        .map((alert) => alert.textContent?.replace(/\s+/g, " ").trim().slice(0, 300) ?? ""),
-    );
-    if (result.loadErrors.some((text) => text.startsWith("Couldn't show this page"))) {
-      result.notRendered = "the page's error boundary (render error)";
-    }
-    const missing = waited.filter(Boolean);
-    if (missing.length > 0) result.notRendered ??= `never showed ${missing.join(", ")}`;
-    // The agent page has no dev overlay, and its CSP refuses inline styles.
-    if (route.surface !== "agent") await page.addStyleTag({ content: HIDE_DEV_UI });
-    for (const step of route.steps ?? []) {
-      const target = page.locator(step.selector).first();
-      // Typing before React hydrates the element is lost or doubled: wait for its props.
-      await target.waitFor();
-      await page
-        .waitForFunction(
-          (element) => Object.keys(element).some((key) => key.startsWith("__reactProps")),
-          await target.elementHandle(),
-          { timeout: 15_000 },
-        )
-        .catch(() => {});
-      if (step.action === "fill") await target.fill(step.value);
-      else await target.click();
-    }
-    // The signed-in user's saved theme wins over the emulated OS preference.
-    result.themeForced = await page.evaluate((wanted) => {
-      const root = document.documentElement;
-      if (root.getAttribute("data-theme") === wanted) return false;
-      root.setAttribute("data-theme", wanted);
-      return true;
-    }, theme);
+    const { overlays } = await openRoute(context, page, route, theme, result);
     await page.evaluate(() => document.fonts.ready);
-    await page.waitForTimeout(300);
     const url = new URL(page.url());
     result.finalPath = url.pathname + url.search;
     result.scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -225,11 +186,20 @@ async function capture(context, route, viewportName, viewport, theme) {
     });
     result.html = `${base}.html`;
     await writeFile(join(outDir, result.html), await snapshotHtml(page));
+
+    await checkAccessibility(page, base, viewportName, result);
+    if (overlays.length > 0) {
+      await check(result, "escape", () => checkEscape(page, overlays, result));
+      // Escape closed the overlay: open it again, so the walk covers what it holds.
+      await openRoute(context, page, route, theme, { loadErrors: [] });
+    }
+    await check(result, "keyboard", () => checkKeyboard(page, result));
   } catch (error) {
     result.error = String(error?.message ?? error).slice(0, 2000);
   } finally {
     await page.close();
   }
+  const findings = (name, list) => (list?.length ? `${list.length} ${name}` : null);
   const flags = [
     result.error ? "ERROR" : null,
     result.notRendered ? `not rendered: ${result.notRendered}` : null,
@@ -237,9 +207,209 @@ async function capture(context, route, viewportName, viewport, theme) {
     result.overflow ? `overflow ${result.scrollWidth}px` : null,
     result.kbdCount > 0 ? `${result.kbdCount} kbd` : null,
     result.retiredWording.length > 0 ? "retired wording" : null,
+    findings("axe", result.axe),
+    findings("keyboard", result.keyboard),
+    findings("escape", result.escape),
+    findings("landmarks", result.landmarks),
+    result.checkErrors.length > 0 ? `${result.checkErrors.length} check error(s)` : null,
   ].filter(Boolean);
   console.log(`${base} ${result.status ?? "-"}${flags.length ? ` (${flags.join(", ")})` : ""}`);
   return result;
+}
+
+/**
+ * Opens `route` in `page`: its organization, the page, its content (skeletons gone, `waitFor`),
+ * its steps and the theme. Records the status and what didn't render in `record`. Returns the
+ * overlays the steps opened (`overlaysInPage`); the target of each click step is marked as a
+ * possible opener for the Escape check.
+ */
+async function openRoute(context, page, route, theme, record) {
+  // Another organization than the user's active one: the organization cookie, for this page.
+  if (route.surface !== "agent") await context.clearCookies({ name: organizationCookie });
+  if (route.organization) {
+    await context.addCookies([
+      { name: organizationCookie, value: route.organization, url: baseUrl },
+    ]);
+  }
+  const response = await page.goto(route.path, { waitUntil: "load" });
+  record.status = response?.status() ?? null;
+  const loaded = await page
+    .waitForFunction(() => !document.querySelector('[aria-busy="true"]'), null, {
+      timeout: LOADED_TIMEOUT_MS,
+    })
+    .then(
+      () => true,
+      () => false,
+    );
+  if (!loaded) record.notRendered = `still loading after ${LOADED_TIMEOUT_MS / 1000}s`;
+  // The agent page renders nothing until its data loads: wait for what each route names.
+  const waitFor = typeof route.waitFor === "string" ? [route.waitFor] : (route.waitFor ?? []);
+  const waited = await Promise.all(
+    waitFor.map((selector) =>
+      page
+        .locator(selector)
+        .first()
+        .waitFor({ timeout: 30_000 })
+        .then(
+          () => null,
+          () => selector,
+        ),
+    ),
+  );
+  // In-place errors: a failed load (the panel's QueryBoundary, the agent page's "Can't load"
+  // empty states) or a render error ((app)/error.tsx).
+  record.loadErrors = await page.$$eval(".query-error, .or-empty__title", (alerts) =>
+    alerts
+      .filter((alert) => alert.matches(".query-error") || /^Can't load/.test(alert.textContent))
+      .map((alert) => alert.textContent?.replace(/\s+/g, " ").trim().slice(0, 300) ?? ""),
+  );
+  if (record.loadErrors.some((text) => text.startsWith("Couldn't show this page"))) {
+    record.notRendered = "the page's error boundary (render error)";
+  }
+  const missing = waited.filter(Boolean);
+  if (missing.length > 0) record.notRendered ??= `never showed ${missing.join(", ")}`;
+  // The agent page has no dev overlay, and its CSP refuses inline styles.
+  if (route.surface !== "agent") await page.addStyleTag({ content: HIDE_DEV_UI });
+  const before = new Set(
+    (await page.evaluate(overlaysInPage, { action: "list" })).map(({ key }) => key),
+  );
+  let clicks = 0;
+  for (const step of route.steps ?? []) {
+    const target = page.locator(step.selector).first();
+    // Typing before React hydrates the element is lost or doubled: wait for its props.
+    await target.waitFor();
+    await page
+      .waitForFunction(
+        (element) => Object.keys(element).some((key) => key.startsWith("__reactProps")),
+        await target.elementHandle(),
+        { timeout: 15_000 },
+      )
+      .catch(() => {});
+    if (step.action === "fill") {
+      await target.fill(step.value);
+    } else {
+      await target.evaluate(
+        (element, index) => element.setAttribute("data-a11y-opener", index),
+        String(clicks++),
+      );
+      await target.click();
+    }
+  }
+  // The signed-in user's saved theme wins over the emulated OS preference.
+  record.themeForced = await page.evaluate((wanted) => {
+    const root = document.documentElement;
+    if (root.getAttribute("data-theme") === wanted) return false;
+    root.setAttribute("data-theme", wanted);
+    return true;
+  }, theme);
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(overlaysInPage, { action: "list" });
+  return { overlays: after.filter(({ key }) => !before.has(key)) };
+}
+
+/** Runs one check; a check that throws is recorded in `checkErrors`, not the capture's error. */
+async function check(result, name, run) {
+  try {
+    await run();
+  } catch (error) {
+    result.checkErrors.push(`${name}: ${String(error?.message ?? error).slice(0, 500)}`);
+  }
+}
+
+/** The ARIA snapshot, axe-core and the landmarks, on the page as captured. */
+async function checkAccessibility(page, base, viewportName, result) {
+  await check(result, "aria", async () => {
+    const snapshot = await page.locator("body").ariaSnapshot();
+    result.ariaFile = `${base}.aria.yml`;
+    await writeFile(join(outDir, result.ariaFile), snapshot);
+  });
+  await check(result, "axe", async () => {
+    await page.evaluate(AXE_SOURCE);
+    const report = await page.evaluate(async (tags) => {
+      const rules = window.axe
+        .getRules(tags)
+        .concat(window.axe.getRules().filter((rule) => rule.ruleId.startsWith("landmark-")))
+        .filter((rule) => !rule.tags.includes("experimental") && !rule.tags.includes("deprecated"))
+        .map((rule) => rule.ruleId);
+      const results = await window.axe.run(document, {
+        runOnly: { type: "rule", values: [...new Set(rules)] },
+        resultTypes: ["violations"],
+      });
+      return {
+        testEngine: results.testEngine,
+        url: results.url,
+        timestamp: results.timestamp,
+        rules: [...new Set(rules)],
+        violations: results.violations,
+      };
+    }, AXE_TAGS);
+    result.axeFile = `${base}.axe.json`;
+    await writeFile(join(outDir, result.axeFile), JSON.stringify(report, null, 2));
+    result.axe = report.violations.flatMap((violation) =>
+      violation.nodes.map((node) => ({
+        rule: violation.id,
+        impact: node.impact ?? violation.impact ?? null,
+        target: node.target.map((part) => [part].flat().join(" >>> ")).join(" "),
+        summary: (node.failureSummary || violation.help)
+          .replace(/^Fix (any|all) of the following:\s*/i, "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 400),
+      })),
+    );
+  });
+  await check(result, "landmarks", async () => {
+    result.landmarks = await page.evaluate(landmarksInPage, { navNames: viewportName === "rail" });
+  });
+}
+
+/**
+ * Escape on the overlays the route's steps opened: each must close, and the focus must go back
+ * to the control that opened it.
+ */
+async function checkEscape(page, overlays, result) {
+  await page.keyboard.press("Escape");
+  const keys = overlays.map(({ key }) => key);
+  const deadline = Date.now() + CLOSE_TIMEOUT_MS;
+  let open = await page.evaluate(overlaysInPage, { action: "open", keys });
+  while (open.length > 0 && Date.now() < deadline) {
+    await page.waitForTimeout(100);
+    open = await page.evaluate(overlaysInPage, { action: "open", keys });
+  }
+  // Focus moves back as the overlay closes, or just after.
+  await page.waitForTimeout(200);
+  const focus = await page.evaluate(overlaysInPage, { action: "focus" });
+  result.escape = escapeFindings(overlays, open, focus);
+}
+
+/** The Escape check's findings, from the overlays opened, those still open, and the focus. */
+function escapeFindings(overlays, stillOpen, focus) {
+  const findings = overlays
+    .filter(({ key }) => stillOpen.includes(key))
+    .map(({ target }) => ({ rule: "stays-open", target, summary: "Escape doesn't close it" }));
+  if (stillOpen.length < overlays.length && !focus.returned) {
+    findings.push({
+      rule: "focus-not-restored",
+      target: overlays[0].target,
+      summary: focus.opener
+        ? `After Escape the focus is on ${focus.focused}, not on ${focus.opener}, which opened it`
+        : `After Escape the focus is on ${focus.focused}: the control that opened it is gone`,
+    });
+  }
+  return findings;
+}
+
+/** The keyboard walk (a11y-page.mjs) from the top of the page. */
+async function checkKeyboard(page, result) {
+  await page.mouse.move(0, 0);
+  const required = await page.evaluate(keyboardInPage, { action: "prepare", pseudo: true });
+  const walk = await walkKeyboard({
+    press: () => page.keyboard.press("Tab"),
+    state: () => page.evaluate(keyboardInPage, { action: "state", pseudo: true }),
+  });
+  await page.evaluate(keyboardInPage, { action: "cleanup" });
+  result.keyboardStops = walk.stops.length;
+  result.keyboard = analyzeKeyboardWalk({ required, ...walk });
 }
 
 /**

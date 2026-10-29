@@ -16,6 +16,7 @@ import {
   log,
   packageDir,
   playwrightImage,
+  REPO_ROOT,
   run,
   runInPlaywrightContainer,
   runMain,
@@ -28,7 +29,19 @@ import {
 } from "../browser/environment";
 import { ORGANIZATION_COOKIE } from "../../src/lib/auth/routes";
 import { FIXTURE_EMAILS } from "../fixtures/ids";
-import { captureFailures, showsShortcutIndicators, type CaptureResult } from "./checks";
+import {
+  accessibilityFindings,
+  captureFailures,
+  showsShortcutIndicators,
+  type CaptureResult,
+} from "./checks";
+import {
+  ACCESSIBILITY_CHECKS,
+  ignoredBy,
+  parseIgnoreList,
+  type AccessibilityCheck,
+  type AccessibilityIgnoreEntry,
+} from "./ignore";
 import {
   parseScreensOptions,
   USAGE,
@@ -129,16 +142,20 @@ async function main(cleanups: Cleanups): Promise<number> {
     await readFile(join(outDir, "results.json"), "utf8"),
   ) as CaptureResult[];
   await detect(outDir, results);
-  return report(outDir, results, [...routes, ...agentRoutes], options.strict);
+  const ignore = parseIgnoreList(await readFile(IGNORE_LIST, "utf8"));
+  return report(outDir, results, [...routes, ...agentRoutes], options.strict, ignore);
 }
+
+/** The critique ignore list: its accessibility entries are scoped exceptions to `--strict`. */
+const IGNORE_LIST = join(REPO_ROOT, ".impeccable", "critique", "ignore.md");
 
 function devSignInPath(email: string): string {
   return `/sign-in/dev?email=${encodeURIComponent(email)}&callbackUrl=/`;
 }
 
 /**
- * Runs capture.mjs in the Playwright container: the script, its config and
- * playwright-core go in with `docker cp`, the screenshots come out the same way.
+ * Runs capture.mjs in the Playwright container: the scripts, their config, playwright-core
+ * and axe-core go in with `docker cp`, the screenshots and reports come out the same way.
  */
 async function capture({
   cleanups,
@@ -150,11 +167,15 @@ async function capture({
   config: Record<string, unknown>;
 }): Promise<void> {
   const work = await stageWorkDir(cleanups, "omniralph-screens");
-  await cp(join(__dirname, "capture.mjs"), join(work, "capture.mjs"));
-  await cp(packageDir("playwright-core"), join(work, "node_modules", "playwright-core"), {
-    recursive: true,
-    dereference: true,
-  });
+  for (const script of ["capture.mjs", "a11y-page.mjs"]) {
+    await cp(join(__dirname, script), join(work, script));
+  }
+  for (const name of ["playwright-core", "axe-core"]) {
+    await cp(packageDir(name), join(work, "node_modules", name), {
+      recursive: true,
+      dereference: true,
+    });
+  }
   await writeFile(join(work, "config.json"), JSON.stringify(config));
   const code = await runInPlaywrightContainer({
     cleanups,
@@ -243,6 +264,7 @@ async function report(
   results: CaptureResult[],
   routes: readonly Pick<ScreenRoute, "name" | "page">[],
   strict: boolean,
+  ignore: { entries: AccessibilityIgnoreEntry[]; problems: string[] },
 ): Promise<number> {
   const summary: string[] = [];
   const routeOf = new Map(routes.map((route) => [route.name, route]));
@@ -315,6 +337,13 @@ async function report(
         summary.push(`  ${r.route} ${r.viewport} ${r.theme}: ${text}`);
     }
   }
+  summary.push(...accessibilityReport(results, ignore.entries));
+  if (ignore.problems.length > 0) {
+    summary.push(
+      `\nIgnore list entries that ignore nothing (${relative(process.cwd(), IGNORE_LIST)}):`,
+    );
+    for (const problem of ignore.problems) summary.push(`  ${problem}`);
+  }
   if (failed.length > 0) {
     summary.push(`\nFailed captures:`);
     for (const r of failed) summary.push(`  ${r.route} ${r.viewport} ${r.theme}: ${r.error}`);
@@ -323,9 +352,68 @@ async function report(
   log(summary.join("\n"));
 
   const failing = results.filter(
-    (r) => captureFailures(r, routeOf.get(r.route), strict).length > 0,
+    (r) => captureFailures(r, routeOf.get(r.route), { strict, ignore: ignore.entries }).length > 0,
   );
   return failing.length > 0 ? 1 : 0;
+}
+
+const CHECK_TITLES: Record<AccessibilityCheck, string> = {
+  axe: "axe-core (WCAG 2.2 A and AA)",
+  keyboard: "Keyboard walk (Tab from the top of the page)",
+  escape: "Escape (overlays the steps opened)",
+  landmarks: "Landmarks (one main, an h1, named navigation links at rail)",
+};
+
+/**
+ * A section per accessibility check: each finding (rule, target, summary) with the captures
+ * (route, viewport, theme) it was seen on, then how many ignore.md entries matched.
+ */
+function accessibilityReport(
+  results: CaptureResult[],
+  entries: readonly AccessibilityIgnoreEntry[],
+): string[] {
+  const lines: string[] = [];
+  const errors = results.flatMap((r) =>
+    r.checkErrors.map((error) => `  ${r.route} ${r.viewport} ${r.theme}: ${error}`),
+  );
+  if (errors.length > 0) lines.push(`\nAccessibility checks that couldn't run:`, ...errors);
+  for (const check of ACCESSIBILITY_CHECKS) {
+    const seen = new Map<string, string[]>();
+    const ignored = new Map<string, number>();
+    for (const result of results) {
+      for (const finding of accessibilityFindings(result)) {
+        if (finding.check !== check) continue;
+        const entry = ignoredBy(entries, check, finding, result);
+        if (entry) {
+          ignored.set(entry.text, (ignored.get(entry.text) ?? 0) + 1);
+          continue;
+        }
+        const key = [
+          finding.rule,
+          finding.impact ? `(${finding.impact})` : null,
+          finding.target,
+          `— ${finding.summary}`,
+        ]
+          .filter(Boolean)
+          .join(" ");
+        const where = seen.get(key) ?? [];
+        where.push(`${result.route} ${result.viewport} ${result.theme}`);
+        seen.set(key, where);
+      }
+    }
+    if (seen.size === 0) {
+      lines.push(`${CHECK_TITLES[check]}: no findings.`);
+    } else {
+      lines.push(`\n${CHECK_TITLES[check]}: ${seen.size} finding(s)`);
+      for (const [key, where] of [...seen].sort(([a], [b]) => a.localeCompare(b))) {
+        lines.push(`  ${key}`, `    on ${where.join(", ")}`);
+      }
+    }
+    for (const [text, count] of ignored) {
+      lines.push(`  ${count} ignored by ignore.md: ${text}`);
+    }
+  }
+  return lines;
 }
 
 runMain(main);

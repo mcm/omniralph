@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { ACCESSIBILITY_CHECKS } from "./ignore";
 import { SCREEN_ROUTES } from "./routes";
 
 /**
@@ -123,8 +124,13 @@ describe("the critique ignore list", () => {
     }
   });
 
-  it("scopes every other entry to files that exist", () => {
-    const others = rows.filter(([rule]) => !rule!.startsWith("decided: "));
+  it("scopes every other critique entry to files that exist", () => {
+    // Accessibility entries (`axe: …`, `keyboard: …`) are scoped to captures (ignore.test.ts).
+    const others = rows.filter(
+      ([rule]) =>
+        !rule!.startsWith("decided: ") &&
+        !ACCESSIBILITY_CHECKS.some((check) => rule!.replace(/`/g, "").startsWith(`${check}:`)),
+    );
     for (const [rule, scope] of others) {
       const paths = [...scope!.matchAll(/`([^`]*\/[^`]*)`/g)].map((match) => match[1]!);
       expect(paths, rule).not.toEqual([]);
