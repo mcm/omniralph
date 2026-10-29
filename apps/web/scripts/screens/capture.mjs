@@ -267,9 +267,10 @@ async function capture(context, route, viewportName, viewport, theme) {
 
 /**
  * Opens `route` in `page`: its organization (and "All organizations" with `org: "all"`), the
- * page, its content (skeletons gone, `waitFor`), its steps and the theme. Records the status
- * and what didn't render in `record`, and (a detail at phone width) the Details expanded on
- * load, before the steps. Returns the overlays the steps opened (`overlaysInPage`); the target
+ * page, its content (skeletons gone, `waitFor`), its steps and the theme; a route with steps
+ * waits for its first step's target before them and for `waitFor` after them. Records the
+ * status and what didn't render in `record`, and (a detail at phone width) the Details
+ * expanded on load, before the steps. Returns the overlays the steps opened (`overlaysInPage`); the target
  * of each click step is marked as a possible opener for the Escape check.
  */
 async function openRoute(context, page, route, theme, record, viewportName) {
@@ -297,20 +298,12 @@ async function openRoute(context, page, route, theme, record, viewportName) {
       () => false,
     );
   if (!loaded) record.notRendered = `still loading after ${LOADED_TIMEOUT_MS / 1000}s`;
-  // The agent page renders nothing until its data loads: wait for what each route names.
+  // What the route names (`waitFor`) shows once its data has loaded (the agent page renders
+  // nothing until then). With steps, it may only show after them (the Ask panel's chats list,
+  // opened by a click): wait for the first step's target first, and for it after the steps.
   const waitFor = typeof route.waitFor === "string" ? [route.waitFor] : (route.waitFor ?? []);
-  const waited = await Promise.all(
-    waitFor.map((selector) =>
-      page
-        .locator(selector)
-        .first()
-        .waitFor({ timeout: 30_000 })
-        .then(
-          () => null,
-          () => selector,
-        ),
-    ),
-  );
+  const steps = route.steps ?? [];
+  const missing = await waitForAll(page, steps.length > 0 ? [steps[0].selector] : waitFor);
   // In-place errors: a failed load (the panel's QueryBoundary, the agent page's "Can't load"
   // empty states) or a render error ((app)/error.tsx).
   record.loadErrors = await page.$$eval(".query-error, .or-empty__title", (alerts) =>
@@ -321,7 +314,6 @@ async function openRoute(context, page, route, theme, record, viewportName) {
   if (record.loadErrors.some((text) => text.startsWith("Couldn't show this page"))) {
     record.notRendered = "the page's error boundary (render error)";
   }
-  const missing = waited.filter(Boolean);
   if (missing.length > 0) record.notRendered ??= `never showed ${missing.join(", ")}`;
   // Rule 16: a detail loads with its Details collapsed on a phone (before any step opens one).
   if (viewportName === "phone" && route.detail) {
@@ -333,7 +325,7 @@ async function openRoute(context, page, route, theme, record, viewportName) {
     (await page.evaluate(overlaysInPage, { action: "list" })).map(({ key }) => key),
   );
   let clicks = 0;
-  for (const step of route.steps ?? []) {
+  for (const step of steps) {
     const target = page.locator(step.selector).first();
     // Typing before React hydrates the element is lost or doubled: wait for its props.
     await target.waitFor();
@@ -354,6 +346,10 @@ async function openRoute(context, page, route, theme, record, viewportName) {
       await target.click();
     }
   }
+  if (steps.length > 0) {
+    const shown = await waitForAll(page, waitFor);
+    if (shown.length > 0) record.notRendered ??= `never showed ${shown.join(", ")}`;
+  }
   // The signed-in user's saved theme wins over the emulated OS preference.
   record.themeForced = await page.evaluate((wanted) => {
     const root = document.documentElement;
@@ -364,6 +360,23 @@ async function openRoute(context, page, route, theme, record, viewportName) {
   await page.waitForTimeout(300);
   const after = await page.evaluate(overlaysInPage, { action: "list" });
   return { overlays: after.filter(({ key }) => !before.has(key)) };
+}
+
+/** Waits for each of `selectors` (up to 30s); returns those that never showed. */
+async function waitForAll(page, selectors) {
+  const waited = await Promise.all(
+    selectors.map((selector) =>
+      page
+        .locator(selector)
+        .first()
+        .waitFor({ timeout: 30_000 })
+        .then(
+          () => null,
+          () => selector,
+        ),
+    ),
+  );
+  return waited.filter(Boolean);
 }
 
 /** Runs one check; a check that throws is recorded in `checkErrors`, not the capture's error. */

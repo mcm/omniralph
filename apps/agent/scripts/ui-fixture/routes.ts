@@ -14,7 +14,8 @@ export interface AgentScreenRoute {
   page: string;
   /**
    * CSS selectors to wait for, in order: the page renders nothing while its data loads (no
-   * skeleton), so each names content that only shows once it has.
+   * skeleton), so each names content that only shows once it has. With steps, they're
+   * waited for after them (the first step's target before them).
    */
   waitFor: readonly string[];
   /** Interactions before the screenshot, in order. */
