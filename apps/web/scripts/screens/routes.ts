@@ -1,4 +1,32 @@
-import { FIXTURE_IDS, FIXTURE_SHARE_TOKENS, fixtureId } from "../fixtures/ids";
+import { FIXTURE_IDS, FIXTURE_INBOX_KEYS, FIXTURE_SHARE_TOKENS, fixtureId } from "../fixtures/ids";
+import type { ViewportName } from "./options";
+
+/** The boards of the canvas "Omniralph 2.0 — Primary Screens" (DESIGN.md, "Canvas boards"). */
+export const CANVAS_BOARDS = [
+  "Main",
+  "InboxUVL",
+  "InboxEmpty",
+  "Runs",
+  "Backlog",
+  "Repos",
+  "Fleet",
+  "Ask",
+  "Settings",
+  "CursorAvatars",
+  "MobileInbox",
+  "MobileMenu",
+  "MobileRun",
+  "MobileAsk",
+] as const;
+export type CanvasBoard = (typeof CANVAS_BOARDS)[number];
+
+/** The boards drawn at phone width: their routes must be captured at `phone`. */
+export const PHONE_BOARDS: readonly CanvasBoard[] = [
+  "MobileInbox",
+  "MobileMenu",
+  "MobileRun",
+  "MobileAsk",
+];
 
 /**
  * One screen `verify:screens` captures. `page` is the `page.tsx` it renders
@@ -14,8 +42,35 @@ export interface ScreenRoute {
   auth: "signed-in" | "signed-out";
   /** Interactions before the screenshot, in order (to capture a state, e.g. an open dialog). */
   steps?: readonly ScreenStep[];
+  /**
+   * A CSS selector to wait for before the steps: content that loads without a skeleton
+   * (e.g. Up next in the empty Inbox), so the capture can't race it.
+   */
+  waitFor?: string;
   /** Screenshot only the viewport (e.g. an open dialog), not the full page. */
   viewportOnly?: boolean;
+  /** The canvas board(s) this capture is reviewed against. */
+  board?: CanvasBoard | readonly CanvasBoard[];
+  /**
+   * Signed in as the fixture member instead of the admin, to review admin-only controls in
+   * their read-only form. Only for `signed-in` routes.
+   */
+  as?: "member";
+  /** The organization to open it in (the organization cookie); the user's active one if unset. */
+  organization?: string;
+  /** Only these viewports (a state that exists at some widths only, e.g. the phone menu). */
+  viewports?: readonly ViewportName[];
+}
+
+/** The boards a route names, as a list. */
+export function routeBoards(route: ScreenRoute): readonly CanvasBoard[] {
+  if (route.board === undefined) return [];
+  return typeof route.board === "string" ? [route.board] : route.board;
+}
+
+/** Whether `route` is captured at `viewport`. */
+export function capturedAt(route: ScreenRoute, viewport: ViewportName): boolean {
+  return route.viewports === undefined || route.viewports.includes(viewport);
 }
 
 /** One interaction: type into a field, or click an element (CSS selectors). */
@@ -25,13 +80,35 @@ export type ScreenStep =
 
 const ids = FIXTURE_IDS;
 
+/** The Inbox with `item` selected on `tab` (`inboxHref` in `src/screens/inbox/url.ts`). */
+const inboxItem = (tab: string, item: string) => `/?${new URLSearchParams({ tab, item })}`;
+/**
+ * Clicks the Inbox row whose item key starts with `prefix`: for kinds whose key carries a
+ * time (a stopped epic, a question), so it can't be named up front.
+ */
+const openInboxRow = (prefix: string): ScreenStep => ({
+  action: "click",
+  selector: `.or-inbox a[href*="item=${encodeURIComponent(prefix)}"]`,
+});
+/** Opens the ⋯ "More actions" menu of the detail toolbar. */
+const OPEN_MORE_ACTIONS: ScreenStep = {
+  action: "click",
+  selector: '.or-toolbar__more[aria-label="More actions"]',
+};
+
 /**
  * Every screen of the panel, with fixture IDs (`scripts/fixtures/ids.ts`) for
  * dynamic segments. A page may appear more than once to cover its states.
  */
 export const SCREEN_ROUTES: readonly ScreenRoute[] = [
   // Signed-out shells.
-  { name: "sign-in", path: "/sign-in", page: "(auth)/sign-in/page.tsx", auth: "signed-out" },
+  {
+    name: "sign-in",
+    path: "/sign-in",
+    page: "(auth)/sign-in/page.tsx",
+    auth: "signed-out",
+    board: "CursorAvatars",
+  },
   { name: "privacy", path: "/privacy", page: "(legal)/privacy/page.tsx", auth: "signed-out" },
   { name: "terms", path: "/terms", page: "(legal)/terms/page.tsx", auth: "signed-out" },
   {
@@ -74,31 +151,143 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
   },
 
-  // The app.
-  { name: "home", path: "/", page: "(app)/page.tsx", auth: "signed-in" },
-  { name: "runs", path: "/runs", page: "(app)/runs/page.tsx", auth: "signed-in" },
-  // The Backlog (the fixture Linear workspace's FIX items), and one item open beside it.
-  { name: "backlog", path: "/backlog", page: "(app)/backlog/page.tsx", auth: "signed-in" },
+  // The app. The Inbox: each tab, and an item of each needs-you kind open beside the list.
+  {
+    name: "home",
+    path: "/",
+    page: "(app)/page.tsx",
+    auth: "signed-in",
+    board: ["Main", "InboxUVL", "MobileInbox", "CursorAvatars"],
+  },
+  { name: "inbox-problems", path: "/?tab=problems", page: "(app)/page.tsx", auth: "signed-in" },
+  { name: "inbox-running", path: "/?tab=running", page: "(app)/page.tsx", auth: "signed-in" },
+  {
+    name: "inbox-manual-story",
+    path: inboxItem("needs-you", FIXTURE_INBOX_KEYS.manualStory),
+    page: "(app)/page.tsx",
+    auth: "signed-in",
+    board: "Main",
+  },
+  {
+    name: "inbox-stopped-epic",
+    path: "/",
+    page: "(app)/page.tsx",
+    auth: "signed-in",
+    steps: [openInboxRow(`stopped:${ids.inbox.stoppedEpic}:`)],
+  },
+  {
+    name: "inbox-question",
+    path: "/",
+    page: "(app)/page.tsx",
+    auth: "signed-in",
+    steps: [openInboxRow(`question:${ids.inbox.question}:`)],
+  },
+  {
+    name: "inbox-prd-ready",
+    path: inboxItem("needs-you", FIXTURE_INBOX_KEYS.prdReady),
+    page: "(app)/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "inbox-pull-request",
+    path: inboxItem("needs-you", FIXTURE_INBOX_KEYS.pullRequest),
+    page: "(app)/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "inbox-merge-request",
+    path: inboxItem("needs-you", FIXTURE_INBOX_KEYS.mergeRequest),
+    page: "(app)/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    // The sandbox organization has nothing needing you: the empty Inbox with Up next.
+    name: "inbox-empty",
+    path: "/",
+    page: "(app)/page.tsx",
+    auth: "signed-in",
+    organization: ids.organizations.sandbox,
+    waitFor: ".or-upnext",
+    board: "InboxEmpty",
+  },
+  {
+    // The phone menu (drawer) with Repos, Fleet and Settings.
+    name: "phone-menu",
+    path: "/",
+    page: "(app)/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: ".or-topbar__menu" }],
+    viewportOnly: true,
+    viewports: ["phone"],
+    board: "MobileMenu",
+  },
+  {
+    // The Ask panel open beside another screen (the sidebar's and rail's Ask entry; the
+    // phone opens Ask full screen instead).
+    name: "ask-panel",
+    path: "/runs",
+    page: "(app)/runs/page.tsx",
+    auth: "signed-in",
+    steps: [{ action: "click", selector: '.or-sidebar [data-nav-id="ask"]' }],
+    viewportOnly: true,
+    viewports: ["desktop", "rail"],
+    board: "Ask",
+  },
+  { name: "runs", path: "/runs", page: "(app)/runs/page.tsx", auth: "signed-in", board: "Runs" },
+  // The Backlog (the fixture Linear workspace's FIX items): its Ready to start and Needs
+  // refining lists, and one item open beside it on its PRD.
+  {
+    name: "backlog",
+    path: "/backlog",
+    page: "(app)/backlog/page.tsx",
+    auth: "signed-in",
+    board: "Backlog",
+  },
   // Ask: the member's chats.
-  { name: "ask", path: "/ask", page: "(app)/ask/page.tsx", auth: "signed-in" },
-  { name: "ask-new", path: "/ask/new", page: "(app)/ask/new/page.tsx", auth: "signed-in" },
+  { name: "ask", path: "/ask", page: "(app)/ask/page.tsx", auth: "signed-in", board: "Ask" },
+  {
+    name: "ask-new",
+    path: "/ask/new",
+    page: "(app)/ask/new/page.tsx",
+    auth: "signed-in",
+    board: "Ask",
+  },
   {
     name: "ask-chat",
     path: `/ask/${ids.askChats.controlPanel}`,
     page: "(app)/ask/[chatId]/page.tsx",
     auth: "signed-in",
+    board: ["Ask", "MobileAsk"],
   },
   {
     name: "backlog-item",
     path: "/backlog/linear-fixture-issue-fix-101",
     page: "(app)/backlog/[id]/page.tsx",
     auth: "signed-in",
+    board: "Backlog",
   },
   {
     name: "run-epic-running",
     path: `/runs/${ids.ralphRuns.running}`,
     page: "(app)/runs/[id]/page.tsx",
     auth: "signed-in",
+    board: ["Runs", "MobileRun"],
+  },
+  {
+    // The running story's step panel: its running attempt and transcript.
+    name: "run-epic-step-panel",
+    path: `/runs/${ids.ralphRuns.running}?step=${ids.stories.running}`,
+    page: "(app)/runs/[id]/page.tsx",
+    auth: "signed-in",
+    board: "Runs",
+  },
+  {
+    // The story with three attempts, on its Diff tab.
+    name: "run-epic-diff",
+    path: `/runs/${ids.ralphRuns.running}?step=${ids.stories.severalAttempts}&tab=diff`,
+    page: "(app)/runs/[id]/page.tsx",
+    auth: "signed-in",
+    board: "Runs",
   },
   {
     name: "run-epic-failed",
@@ -112,6 +301,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     path: `/runs/${ids.ralphRuns.running}/steps/${fixtureId("ralphStory", 100)}`,
     page: "(app)/runs/[id]/steps/[stepId]/page.tsx",
     auth: "signed-in",
+    board: "MobileRun",
   },
   {
     name: "runs-reviews",
@@ -144,12 +334,19 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/runs/[id]/page.tsx",
     auth: "signed-in",
   },
-  { name: "repos", path: "/repos", page: "(app)/repos/page.tsx", auth: "signed-in" },
+  {
+    name: "repos",
+    path: "/repos",
+    page: "(app)/repos/page.tsx",
+    auth: "signed-in",
+    board: "Repos",
+  },
   {
     name: "repo",
     path: `/repos/${ids.repositories.controlPanel}`,
     page: "(app)/repos/[id]/page.tsx",
     auth: "signed-in",
+    board: "Repos",
   },
   {
     name: "repo-coding",
@@ -207,12 +404,40 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
   },
   { name: "analytics", path: "/analytics", page: "(app)/analytics/page.tsx", auth: "signed-in" },
   { name: "help", path: "/help", page: "(app)/help/page.tsx", auth: "signed-in" },
-  { name: "fleet", path: "/fleet", page: "(app)/fleet/page.tsx", auth: "signed-in" },
+  {
+    name: "fleet",
+    path: "/fleet",
+    page: "(app)/fleet/page.tsx",
+    auth: "signed-in",
+    board: "Fleet",
+  },
   {
     name: "fleet-agent",
     path: `/fleet/${ids.agents.online}`,
     page: "(app)/fleet/[id]/page.tsx",
     auth: "signed-in",
+    board: "Fleet",
+  },
+  {
+    // The agent detail toolbar's ⋯ menu, open.
+    name: "fleet-agent-menu",
+    path: `/fleet/${ids.agents.online}`,
+    page: "(app)/fleet/[id]/page.tsx",
+    auth: "signed-in",
+    steps: [OPEN_MORE_ACTIONS],
+    viewportOnly: true,
+  },
+  {
+    // Revoke's typed confirmation, from the ⋯ menu.
+    name: "fleet-agent-revoke",
+    path: `/fleet/${ids.agents.online}`,
+    page: "(app)/fleet/[id]/page.tsx",
+    auth: "signed-in",
+    steps: [
+      OPEN_MORE_ACTIONS,
+      { action: "click", selector: '[role="menuitem"]:has-text("Revoke agent")' },
+    ],
+    viewportOnly: true,
   },
   {
     // The enroll sheet's first step.
@@ -248,7 +473,13 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
   },
   // Settings (2.0): the section nav beside each page.
-  { name: "settings", path: "/settings", page: "(app)/settings/page.tsx", auth: "signed-in" },
+  {
+    name: "settings",
+    path: "/settings",
+    page: "(app)/settings/page.tsx",
+    auth: "signed-in",
+    board: "Settings",
+  },
   ...(
     [
       ["general", "general"],
@@ -265,6 +496,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     path: `/settings/${route}`,
     page: `(app)/settings/${route}/page.tsx`,
     auth: "signed-in",
+    ...(["general", "members", "profile"].includes(name) && { board: "Settings" as const }),
   })),
   {
     name: "settings-advanced-playbook",
@@ -291,6 +523,19 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
   },
   {
+    // With its webhook deliveries (every outcome, and a replay).
+    name: "settings-connection-github",
+    path: `/settings/connections/github/${ids.scmConnections.github}`,
+    page: "(app)/settings/connections/[provider]/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "settings-connection-gitlab",
+    path: `/settings/connections/gitlab/${ids.scmConnections.gitlab}`,
+    page: "(app)/settings/connections/[provider]/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
     name: "settings-advanced-routing-edit",
     path: "/settings/advanced/routing",
     page: "(app)/settings/advanced/routing/page.tsx",
@@ -306,7 +551,59 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
       },
     ],
   },
+
+  // The member's view of the admin screens: Settings, Repos and Fleet, read-only.
+  ...memberRoutes(),
 ];
+
+/** Settings, Repos and Fleet as the fixture member, so admin-only controls show read-only. */
+function memberRoutes(): ScreenRoute[] {
+  const routes: [name: string, path: string, page: string][] = [
+    ["settings", "/settings", "(app)/settings/page.tsx"],
+    ...(
+      [
+        "general",
+        "members",
+        "profile",
+        "linked-accounts",
+        "connections/new",
+        "advanced/routing",
+        "advanced/playbooks",
+        "advanced/chat",
+      ] as const
+    ).map((route): [string, string, string] => [
+      `settings-${route.replace(/\//g, "-")}`,
+      `/settings/${route}`,
+      `(app)/settings/${route}/page.tsx`,
+    ]),
+    [
+      "settings-connection-github",
+      `/settings/connections/github/${ids.scmConnections.github}`,
+      "(app)/settings/connections/[provider]/[id]/page.tsx",
+    ],
+    [
+      "settings-connection-linear",
+      `/settings/connections/linear/${ids.integrations.linear}`,
+      "(app)/settings/connections/[provider]/[id]/page.tsx",
+    ],
+    ["repos", "/repos", "(app)/repos/page.tsx"],
+    ["repo", `/repos/${ids.repositories.controlPanel}`, "(app)/repos/[id]/page.tsx"],
+    [
+      "repo-coding",
+      `/repos/${ids.repositories.controlPanel}?section=coding`,
+      "(app)/repos/[id]/page.tsx",
+    ],
+    ["fleet", "/fleet", "(app)/fleet/page.tsx"],
+    ["fleet-agent", `/fleet/${ids.agents.online}`, "(app)/fleet/[id]/page.tsx"],
+  ];
+  return routes.map(([name, path, page]) => ({
+    name: `member-${name}`,
+    path,
+    page,
+    auth: "signed-in",
+    as: "member",
+  }));
+}
 
 /**
  * Whether a route matches a `--routes` glob, by name or path: `*` matches

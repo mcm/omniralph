@@ -20,32 +20,11 @@ import {
   WEB_DIR,
   type Cleanups,
 } from "../browser/environment";
+import { ORGANIZATION_COOKIE } from "../../src/lib/auth/routes";
 import { FIXTURE_EMAILS } from "../fixtures/ids";
+import { captureFailures, HELP_PAGE, type CaptureResult } from "./checks";
 import { parseScreensOptions, USAGE, VIEWPORTS, type ScreensOptions } from "./options";
-import { routeMatches, SCREEN_ROUTES } from "./routes";
-
-/** A row of the capture script's `results.json`. */
-interface CaptureResult {
-  route: string;
-  path: string;
-  viewport: string;
-  width: number;
-  theme: string;
-  status: number | null;
-  finalPath: string | null;
-  scrollWidth: number | null;
-  overflow: boolean;
-  /** The visible text around each "Ralph" on the page (none expected). */
-  retiredWording: string[];
-  consoleErrors: string[];
-  /** Why the page never showed its content (still loading, or its error boundary). */
-  notRendered: string | null;
-  /** The in-place errors on the page (failed loads), e.g. a code host the fixtures can't reach. */
-  loadErrors: string[];
-  error: string | null;
-  screenshot: string | null;
-  html: string | null;
-}
+import { capturedAt, routeMatches, SCREEN_ROUTES, type ScreenRoute } from "./routes";
 
 async function main(cleanups: Cleanups): Promise<number> {
   let options: ScreensOptions;
@@ -60,7 +39,9 @@ async function main(cleanups: Cleanups): Promise<number> {
     return 0;
   }
   const routes = SCREEN_ROUTES.filter(
-    (route) => options.routes === null || routeMatches(route, options.routes),
+    (route) =>
+      (options.routes === null || routeMatches(route, options.routes)) &&
+      options.viewports.some((viewport) => capturedAt(route, viewport)),
   );
   if (routes.length === 0) {
     console.error(`No route matches --routes ${options.routes}.`);
@@ -81,14 +62,24 @@ async function main(cleanups: Cleanups): Promise<number> {
     outDir,
     config: {
       baseUrl: panel.browserBaseUrl,
-      signInPath: `/sign-in/dev?email=${encodeURIComponent(FIXTURE_EMAILS.admin)}&callbackUrl=/`,
-      routes: routes.map(({ name, path, auth, steps, viewportOnly }) => ({
-        name,
-        path,
-        auth,
-        steps,
-        viewportOnly,
-      })),
+      signInPaths: {
+        admin: devSignInPath(FIXTURE_EMAILS.admin),
+        member: devSignInPath(FIXTURE_EMAILS.member),
+      },
+      organizationCookie: ORGANIZATION_COOKIE,
+      routes: routes.map(
+        ({ name, path, auth, steps, viewportOnly, as, organization, viewports, waitFor }) => ({
+          name,
+          path,
+          auth,
+          steps,
+          viewportOnly,
+          as,
+          organization,
+          viewports,
+          waitFor,
+        }),
+      ),
       themes: options.themes,
       viewports: Object.fromEntries(options.viewports.map((name) => [name, VIEWPORTS[name]])),
       outDir: "/work/out",
@@ -99,7 +90,11 @@ async function main(cleanups: Cleanups): Promise<number> {
     await readFile(join(outDir, "results.json"), "utf8"),
   ) as CaptureResult[];
   await detect(outDir, results);
-  return report(outDir, results, options.strict);
+  return report(outDir, results, routes, options.strict);
+}
+
+function devSignInPath(email: string): string {
+  return `/sign-in/dev?email=${encodeURIComponent(email)}&callbackUrl=/`;
 }
 
 /**
@@ -204,10 +199,19 @@ async function detect(outDir: string, results: CaptureResult[]): Promise<void> {
 }
 
 /** Prints the screenshots (stdout) and a summary (stderr); returns the exit code. */
-async function report(outDir: string, results: CaptureResult[], strict: boolean): Promise<number> {
+async function report(
+  outDir: string,
+  results: CaptureResult[],
+  routes: readonly ScreenRoute[],
+  strict: boolean,
+): Promise<number> {
   const summary: string[] = [];
+  const routeOf = new Map(routes.map((route) => [route.name, route]));
   const failed = results.filter((r) => r.error);
   const overflowing = results.filter((r) => r.overflow);
+  const shortcutIndicators = results.filter(
+    (r) => r.kbdCount > 0 && routeOf.get(r.route)?.page !== HELP_PAGE,
+  );
   const retired = results.filter((r) => r.retiredWording.length > 0);
   const serverErrors = results.filter((r) => r.status !== null && r.status >= 500);
   const redirected = results.filter((r) => r.finalPath && r.finalPath !== r.path);
@@ -228,15 +232,23 @@ async function report(outDir: string, results: CaptureResult[], strict: boolean)
   } else {
     summary.push("No route is wider than its viewport.");
   }
+  if (shortcutIndicators.length > 0) {
+    summary.push(`\nShows keyboard-shortcut indicators (rule 7: only the Help page lists keys):`);
+    for (const r of shortcutIndicators) {
+      summary.push(`  ${r.route} ${r.viewport} ${r.theme}: ${r.kbdCount} visible kbd`);
+    }
+  } else {
+    summary.push("No route outside Help shows a keyboard-shortcut indicator.");
+  }
   if (retired.length > 0) {
-    summary.push(`\nShows "Ralph" (say "Coding" instead):`);
+    summary.push(`\nShows "Ralph" or "harness" (say "Om" for the AI, "agent" for the machine):`);
     for (const r of retired) {
       for (const text of r.retiredWording) {
         summary.push(`  ${r.route} ${r.viewport} ${r.theme}: …${text}…`);
       }
     }
   } else {
-    summary.push('No route shows "Ralph".');
+    summary.push('No route shows "Ralph" or "harness".');
   }
   if (serverErrors.length > 0) {
     summary.push(`\nServer errors:`);
@@ -269,9 +281,10 @@ async function report(outDir: string, results: CaptureResult[], strict: boolean)
   summary.push(`Details: ${join(outDir, "results.json")}`);
   log(summary.join("\n"));
 
-  if (failed.length > 0 || retired.length > 0 || notRendered.length > 0) return 1;
-  if (strict && overflowing.length > 0) return 1;
-  return 0;
+  const failing = results.filter(
+    (r) => captureFailures(r, routeOf.get(r.route), strict).length > 0,
+  );
+  return failing.length > 0 ? 1 : 0;
 }
 
 runMain(main);

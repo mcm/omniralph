@@ -1,10 +1,31 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseScreensOptions } from "./options";
-import { routeMatches, SCREEN_ROUTES, type ScreenRoute } from "./routes";
+import { parseScreensOptions, VIEWPORT_NAMES } from "./options";
+import {
+  CANVAS_BOARDS,
+  capturedAt,
+  PHONE_BOARDS,
+  routeBoards,
+  routeMatches,
+  SCREEN_ROUTES,
+  type ScreenRoute,
+} from "./routes";
 
 const APP_DIR = join(__dirname, "../../src/app");
+
+/** The board names of DESIGN.md's "Canvas boards" table, in order. */
+function designBoards(): string[] {
+  const design = readFileSync(join(__dirname, "../../DESIGN.md"), "utf8");
+  const start = design.indexOf("\n## Canvas boards\n");
+  const rest = design.slice(start + 1);
+  const end = rest.indexOf("\n## ");
+  return (end < 0 ? rest : rest.slice(0, end))
+    .split("\n")
+    .filter((line) => line.startsWith("|") && !/^\|[\s|:-]+\|$/.test(line))
+    .map((line) => line.split("|")[1]!.trim())
+    .slice(1);
+}
 
 function pageFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -58,6 +79,91 @@ describe("SCREEN_ROUTES", () => {
   });
 });
 
+describe("SCREEN_ROUTES boards", () => {
+  it("names the boards of DESIGN.md's table", () => {
+    expect([...CANVAS_BOARDS]).toEqual(designBoards());
+  });
+
+  it("captures every board but CursorAvatars (the glyph on every screen)", () => {
+    const named = new Set(SCREEN_ROUTES.flatMap(routeBoards));
+    const missing = designBoards().filter(
+      (board) => board !== "CursorAvatars" && !named.has(board as never),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  it("captures the phone boards' routes at phone width", () => {
+    for (const board of PHONE_BOARDS) {
+      const routes = SCREEN_ROUTES.filter((route) => routeBoards(route).includes(board));
+      expect(routes, board).not.toEqual([]);
+      for (const route of routes) expect(capturedAt(route, "phone"), route.name).toBe(true);
+    }
+  });
+});
+
+describe("SCREEN_ROUTES states", () => {
+  const byName = new Map(SCREEN_ROUTES.map((route) => [route.name, route]));
+
+  it("opens the Inbox's tabs and an item of each needs-you kind", () => {
+    const inbox = SCREEN_ROUTES.filter((route) => route.page === "(app)/page.tsx");
+    const params = inbox.map((route) => new URLSearchParams(route.path.split("?")[1] ?? ""));
+    expect(new Set(params.map((search) => search.get("tab") ?? "needs-you"))).toEqual(
+      new Set(["needs-you", "problems", "running"]),
+    );
+    // A selected item by key, or a click on its row (keys that carry a time).
+    const items = [
+      ...params.map((search) => search.get("item")),
+      ...inbox.flatMap((route) =>
+        (route.steps ?? []).map((step) =>
+          decodeURIComponent(/item=([^"]+)"/.exec(step.selector)?.[1] ?? ""),
+        ),
+      ),
+    ].filter(Boolean);
+    for (const kind of ["manual_story:", "stopped:", "question:", "prd_ready:", "pr:"]) {
+      expect(
+        items.some((item) => item!.startsWith(kind)),
+        kind,
+      ).toBe(true);
+    }
+  });
+
+  it("captures the empty Inbox in the organization that has nothing for you", () => {
+    expect(byName.get("inbox-empty")?.organization).toBeTruthy();
+  });
+
+  it("captures the phone menu at phone only, and the Ask panel beside the sidebar and rail", () => {
+    expect(byName.get("phone-menu")?.viewports).toEqual(["phone"]);
+    expect(byName.get("ask-panel")?.viewports).toEqual(["desktop", "rail"]);
+  });
+
+  it("captures Settings, Repos and Fleet as the member too", () => {
+    const asMember = SCREEN_ROUTES.filter((route) => route.as === "member");
+    for (const area of ["/settings", "/repos", "/fleet"]) {
+      expect(
+        asMember.some((route) => route.path.startsWith(area)),
+        area,
+      ).toBe(true);
+    }
+    for (const page of new Set(asMember.map((route) => route.page))) {
+      expect(page).toMatch(/^\(app\)\/(settings|repos|fleet)\//);
+    }
+  });
+
+  it("only signs in as the member or picks an organization for signed-in routes", () => {
+    for (const route of SCREEN_ROUTES) {
+      if (route.as || route.organization) expect(route.auth, route.name).toBe("signed-in");
+    }
+  });
+
+  it("limits routes to known, non-empty viewport lists", () => {
+    for (const route of SCREEN_ROUTES) {
+      if (!route.viewports) continue;
+      expect(route.viewports, route.name).not.toEqual([]);
+      for (const viewport of route.viewports) expect(VIEWPORT_NAMES).toContain(viewport);
+    }
+  });
+});
+
 describe("routeMatches", () => {
   const route: ScreenRoute = {
     name: "run-triage-running",
@@ -95,7 +201,7 @@ describe("parseScreensOptions", () => {
     expect(parseScreensOptions([])).toEqual({
       routes: null,
       themes: ["dark", "light"],
-      viewports: ["desktop", "phone"],
+      viewports: ["desktop", "rail", "phone"],
       strict: false,
       skipBuild: false,
       help: false,
@@ -121,11 +227,13 @@ describe("parseScreensOptions", () => {
       "desktop",
       "phone",
     ]);
+    expect(parseScreensOptions(["--viewport", "rail"]).viewports).toEqual(["rail"]);
+    expect(parseScreensOptions(["--viewport", "1024"]).viewports).toEqual(["rail"]);
   });
 
   it("rejects unknown values and flags", () => {
     expect(() => parseScreensOptions(["--theme", "sepia"])).toThrow(/--theme/);
-    expect(() => parseScreensOptions(["--viewport", "1024"])).toThrow(/--viewport/);
+    expect(() => parseScreensOptions(["--viewport", "800"])).toThrow(/--viewport/);
     expect(() => parseScreensOptions(["--theme", ""])).toThrow(/--theme/);
     expect(() => parseScreensOptions(["--nope"])).toThrow();
   });

@@ -236,8 +236,10 @@ loads in development only.
 `scripts/fixtures/README.md` covers the fixture database (`fixtures:up` / `fixtures:down`) and
 the dev-only sign-in.
 
-`verify:screens` screenshots every screen of the panel, signed in against the fixture
-database, at 1440px and 390px in the dark and light themes:
+`verify:screens` screenshots every screen and state of the panel, signed in against the fixture
+database, at the three layouts of DESIGN.md ("Widths and accessibility") in the dark and light
+themes: `desktop` 1440×900 (the full sidebar), `rail` 1024×768 (the 64px icon rail) and `phone`
+390×844 (top bar and tab bar; a mobile, touch, 2× device):
 
 ```sh
 pnpm --filter @omniralph/web verify:screens
@@ -256,7 +258,8 @@ the host. It runs unattended:
    browser opens `host.docker.internal` instead, and `next dev` is started with
    `OMNIRALPH_ALLOWED_DEV_ORIGINS=host.docker.internal` so it allows that origin
    (`allowedDevOrigins` in `next.config.ts`; without it the page never hydrates);
-4. signs in with the dev sign-in and captures each route of `scripts/screens/routes.ts`, once its
+4. signs in with the dev sign-in (as the fixture admin, and as the member for routes with
+   `as: "member"`) and captures each route of `scripts/screens/routes.ts`, once its
    data has loaded: pages poll `/api/ui`, so the network never goes idle, and the capture waits
    instead until no skeleton (`[aria-busy="true"]`) is left, up to 60s;
 5. runs `impeccable detect --json` on each page's HTML snapshot, if the CLI is available
@@ -264,30 +267,48 @@ the host. It runs unattended:
 6. stops the panel and removes the fixture database.
 
 Output goes to `apps/web/.screens/<timestamp>/` (gitignored), one set per route, viewport and
-theme: `<route>.<desktop|phone>.<dark|light>.png` (full page), `.html` (DOM with styles
-inlined) and `.impeccable.json` (detect findings), plus `results.json` (HTTP status, final path,
-`scrollWidth`, visible "Ralph" text, console errors, in-place load errors, and why a page didn't
-render). The screenshot paths go to stdout, the summary to stderr.
+theme: `<route>.<desktop|rail|phone>.<dark|light>.png` (full page), `.html` (DOM with styles
+inlined) and `.impeccable.json` (detect findings), plus `results.json` (per capture: who it was
+captured as, HTTP status, final path, `scrollWidth`, `kbdCount`, `retiredWording`, console
+errors, in-place load errors, and why a page didn't render). The screenshot paths go to stdout,
+the summary to stderr.
 
 | Option              | Effect                                                                |
 | ------------------- | --------------------------------------------------------------------- |
 | `--routes <glob>`   | Routes whose name or path matches (comma-separated; `*`, `**`)        |
 | `--theme <list>`    | `dark`, `light` (default both)                                        |
-| `--viewport <list>` | `desktop`/`1440`, `phone`/`390` (default both)                        |
+| `--viewport <list>` | `desktop`/`1440`, `rail`/`1024`, `phone`/`390` (default all three)    |
 | `--strict`          | Exit non-zero when a route is wider than its viewport (`scrollWidth`) |
 | `--skip-build`      | Don't build the workspace packages first                              |
 
-Routes wider than their viewport are always reported; failed captures always exit non-zero, and
-so does any page whose visible text (`document.body.innerText`) says "Ralph": the product says
-"Coding" (see `src/user-facing-wording.test.ts` for the source-level check). Job types
-(`ralph.story`) and the `ralph-run` sink are identifiers and don't count. A page still loading
-after 60s, or showing its error boundary (`(app)/error.tsx`), exits non-zero too; in-place load
-errors (e.g. the GitHub picker, which can't reach GitHub with fixture credentials) are listed.
+Every capture is checked for the Design rules a machine can check (the logic is
+`scripts/screens/checks.ts`). These always exit non-zero:
+
+- a failed capture, or a page still loading after 60s or showing its error boundary
+  (`(app)/error.tsx`);
+- `kbdCount`: visible `kbd` elements, i.e. keyboard-shortcut indicators (rule 7), on any page but
+  Help (`/help`), which lists every key;
+- `retiredWording`: visible text saying "Ralph" or "harness" (`document.body.innerText`,
+  case-insensitive); the product says "Om" for the AI and "agent" for the machine (see
+  `src/user-facing-wording.test.ts` for the source-level check). Job types (`ralph.story`) and
+  the `ralph-run` sink are identifiers and don't count.
+
+Routes wider than their viewport (`scrollWidth`, at every width including `rail`) are always
+reported, and exit non-zero with `--strict`. In-place load errors (e.g. the GitHub picker, which
+can't reach GitHub with fixture credentials) are listed.
 A new `page.tsx` needs an entry in `scripts/screens/routes.ts` (a test checks every page is
 listed), with fixture IDs from `scripts/fixtures/ids.ts` for its dynamic segments.
 To capture a state that needs interaction (unsaved changes, an open confirmation), add a
 route with `steps`: `{ action: "fill", selector, value }` or `{ action: "click", selector }`,
-run in order before the screenshot (e.g. `settings-profiles-confirm`).
+run in order before the screenshot (e.g. `fleet-agent-revoke`). A route may also set:
+
+| Field          | Effect                                                                                                                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `board`        | The canvas board(s) it is reviewed against (DESIGN.md, "Canvas boards"). A test checks every board but CursorAvatars has a route, and that the phone boards' routes are captured at `phone` |
+| `as: "member"` | Signed in as the fixture member, not the admin. Settings, Repos and Fleet are captured this way too (`member-*`), to review admin-only controls in their read-only form                     |
+| `organization` | Opens it in that organization (the organization cookie), e.g. the empty Inbox of the sandbox organization                                                                                   |
+| `viewports`    | Only at these widths, for states that exist at some only (the phone menu; the Ask panel beside the sidebar and rail)                                                                        |
+| `waitFor`      | A CSS selector to wait for first, for content that loads without a skeleton (Up next in the empty Inbox)                                                                                    |
 
 ## End-to-end tests
 
