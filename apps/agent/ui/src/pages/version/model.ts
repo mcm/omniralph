@@ -29,44 +29,52 @@ export function policyParts(policy: AgentUiState["versionPolicy"]): {
   };
 }
 
+/** A sentence about the agent's version, and the version it names (shown as a badge, Design rule 1). */
+export interface VersionText {
+  text: string;
+  tone: StatusTone;
+  /** The version `text` names, or null. */
+  version: string | null;
+}
+
 /**
  * Why an agent with no update under way runs the version it does, the way the updater decides
  * (`apps/agent/src/update.ts` `wantedVersion`): "Up to date", "Pinned to 2.3.1", "Can't update
  * itself", "Not retrying 2.4.1" (it failed before) or "Updating to 2.4.1 soon" (the next
  * heartbeat starts it).
  */
-export function idleVersionText(state: AgentUiState): { text: string; tone: StatusTone } {
+export function idleVersionText(state: AgentUiState): VersionText {
   const running = state.agent.version;
   const pin = state.settings.effective.versionPin;
   const target = pin ?? state.versionPolicy?.version ?? null;
   if (target === null || target === running) {
-    return { text: pin !== null ? `Pinned to ${pin}` : "Up to date", tone: "neutral" };
+    return pin !== null
+      ? { text: `Pinned to ${pin}`, tone: "neutral", version: pin }
+      : { text: "Up to date", tone: "neutral", version: null };
   }
   if (state.update.selfUpdate === "unsupported") {
-    return { text: "Can't update itself", tone: "neutral" };
+    return { text: "Can't update itself", tone: "neutral", version: null };
   }
   if (state.update.failedVersions.includes(target)) {
-    return { text: `Not retrying ${target}`, tone: "neutral" };
+    return { text: `Not retrying ${target}`, tone: "neutral", version: target };
   }
-  return { text: `Updating to ${target} soon`, tone: "neutral" };
+  return { text: `Updating to ${target} soon`, tone: "neutral", version: target };
 }
 
 /** Where the update is: an "Update now" no heartbeat took yet already reads as the drain. */
-export function updateStateText(agent: AgentUiState): {
-  text: string;
-  tone: StatusTone;
-} {
+export function updateStateText(agent: AgentUiState): VersionText {
   const { update } = agent;
   const report = update.update;
   const state = report?.state ?? "idle";
   if (state === "draining" || (state === "idle" && update.request !== null)) {
-    return { text: FINISHING, tone: "run" };
+    return { text: FINISHING, tone: "run", version: null };
   }
-  if (state === "installing")
-    return { text: `Installing ${report?.version ?? ""}`.trim(), tone: "run" };
-  if (state === "confirming")
-    return { text: `Checking ${report?.version ?? ""}`.trim(), tone: "run" };
-  if (report?.error) return { text: "The last update failed", tone: "fail" };
+  const version = report?.version ?? null;
+  if (state === "installing" || state === "confirming") {
+    const verb = state === "installing" ? "Installing" : "Checking";
+    return { text: version ? `${verb} ${version}` : verb, tone: "run", version };
+  }
+  if (report?.error) return { text: "The last update failed", tone: "fail", version: null };
   return idleVersionText(agent);
 }
 

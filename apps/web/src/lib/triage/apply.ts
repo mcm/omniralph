@@ -155,6 +155,16 @@ const UNANSWERED_ERRORS: Record<Exclude<QueryRunOutcome, "answered">, string> = 
     "Om couldn't check out the repo to read its code. Check the repo's connection, then retry the triage.",
 };
 
+/** Why a triage that ended with a result Omniralph can't use failed, in plain words (as above). */
+const UNUSABLE_ERRORS = {
+  malformed:
+    "The triage finished, but its result couldn't be read. Nothing changed in Linear. Retry the triage.",
+  invalid:
+    "Om's PRD was incomplete, so nothing changed in Linear. Retry the triage, or add detail to the work item first.",
+  tooLarge:
+    "Om's PRD was larger than a triage can keep, so nothing changed in Linear. Split the work item, then retry the triage.",
+} as const;
+
 /**
  * The job's result (a `QueryRunResult` whose structured output is the
  * triage) as a validated triage and the `TriageRunResult` its run keeps, or
@@ -170,7 +180,7 @@ export function readTriageResult(
   const parsed = QueryRunResult.safeParse(result);
   if (!parsed.success) {
     const problem = "the triage job returned a malformed result";
-    return { problem, error: problem, result: null };
+    return { problem, error: UNUSABLE_ERRORS.malformed, result: null };
   }
   const run = parsed.data;
   const base = { usage: run.usage, durationMs: run.durationMs };
@@ -192,12 +202,15 @@ export function readTriageResult(
     );
   }
   const validated = validateTriageOutput(run.structured ?? undefined);
-  if ("problem" in validated) return failed(validated.problem);
+  if ("problem" in validated) return failed(validated.problem, UNUSABLE_ERRORS.invalid);
   const { summary, ...outcome } = validated.result;
   const kept = TriageRunResult.safeParse({ summary: clip(summary), error: null, outcome, ...base });
   if (!kept.success) {
     // E.g. more stories than a triage run keeps.
-    return failed(`the triage result is too large: ${z.prettifyError(kept.error)}`);
+    return failed(
+      `the triage result is too large: ${z.prettifyError(kept.error)}`,
+      UNUSABLE_ERRORS.tooLarge,
+    );
   }
   return { triage: validated.result, result: kept.data };
 }

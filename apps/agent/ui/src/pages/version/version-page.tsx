@@ -146,8 +146,23 @@ function PolicyValue({ state }: { state: AgentUiState }) {
   );
 }
 
+/** The update's sentence, with the version it names as a badge: "Pinned to" 2.3.1. */
+function UpdateValue({ state }: { state: AgentUiState }) {
+  const { text, tone, version } = updateStateText(state);
+  const at = version === null ? -1 : text.indexOf(version);
+  if (version === null || at < 0) return <StatusText tone={tone}>{text}</StatusText>;
+  const before = text.slice(0, at);
+  const after = text.slice(at + version.length);
+  return (
+    <StatusText tone={tone}>
+      {before ? <span>{before}</span> : null}
+      <MetaBadge text={version} mono />
+      {after ? <span>{after}</span> : null}
+    </StatusText>
+  );
+}
+
 function VersionSummary({ state }: { state: AgentUiState }) {
-  const { text, tone } = updateStateText(state);
   return (
     <SummaryCells
       aria-label="Version summary"
@@ -158,7 +173,7 @@ function VersionSummary({ state }: { state: AgentUiState }) {
           value: <MetaBadge text={state.agent.version} mono />,
         },
         { id: "policy", label: "Organization", value: <PolicyValue state={state} /> },
-        { id: "update", label: "Update", value: <StatusText tone={tone}>{text}</StatusText> },
+        { id: "update", label: "Update", value: <UpdateValue state={state} /> },
       ]}
     />
   );

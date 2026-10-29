@@ -476,14 +476,12 @@ describe("AskNewChat", () => {
     mockFetch({ [REPOS_PATH]: { repositories: REPOS } });
     renderNewChat({}, { pageRepositoryId: "repo-2" });
     await waitFor(() => expect(selectedLabel()).toBe("acme/billing"));
-    expect(screen.getByRole("heading", { name: "Ask Om about your code", level: 3 })).toBeTruthy();
     expect(
-      screen.getByText("Om reads billing and answers, citing the files it used."),
+      screen.getByRole("heading", { name: "Answers come from your code", level: 3 }),
     ).toBeTruthy();
+    expect(screen.getByText("Om reads billing and cites the files it used.")).toBeTruthy();
     await pick("All repos");
-    expect(
-      screen.getByText("Om reads your repos and answers, citing the files it used."),
-    ).toBeTruthy();
+    expect(screen.getByText("Om reads your repos and cites the files it used.")).toBeTruthy();
   });
 
   it("leads the picker with the chosen repo's host mark (Design rule 1)", async () => {

@@ -105,7 +105,8 @@ describe("the Overview page", () => {
       Claude: "Signed inClaude login",
       Disk: "120 GB freeof 500 GB",
     });
-    expect(cell("Version").querySelector(".or-mono")?.textContent).toBe("2.0.3");
+    // The running version is a badge, as on the Version page (Design rule 1).
+    expect(cell("Version").querySelector("[data-or-badge]")?.textContent).toBe("2.0.3");
     expect(cell("Disk").querySelector(".or-status--fail")).toBeNull();
   });
 

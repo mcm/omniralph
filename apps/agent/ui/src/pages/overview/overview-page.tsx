@@ -9,6 +9,7 @@ import {
   Card,
   EmptyState,
   IssueBadge,
+  MetaBadge,
   RepoBadge,
   StatusLine,
   StatusText,
@@ -65,7 +66,7 @@ function Summary({ state }: { state: AgentUiState }) {
         {
           id: "version",
           label: "Version",
-          value: <span className="or-mono">{state.agent.version}</span>,
+          value: <MetaBadge text={state.agent.version} mono />,
           detail: toned(version),
         },
         {

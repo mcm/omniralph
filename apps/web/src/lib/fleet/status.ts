@@ -163,11 +163,21 @@ export function versionCounts(rows: readonly VersionCountInput[]): VersionCounts
   return counts;
 }
 
-/** "Track latest", "Pinned to 2.0.3", or "Varies by organization" (null under all organizations). */
-export function versionPolicyLabel(policy: VersionPolicy | null): string {
-  if (!policy) return "Varies by organization";
-  if (policy.mode === "latest") return "Track latest";
-  return policy.mode === "pinned" ? `Pinned to ${policy.version}` : "No version set";
+/**
+ * The policy's words, and the version it pins as a badge (Design rule 1): "Track latest",
+ * "Pinned to" 2.0.3, "No version set", or "Varies by organization" (null under all
+ * organizations).
+ */
+export function versionPolicyParts(policy: VersionPolicy | null): {
+  text: string;
+  version: string | null;
+} {
+  if (!policy) return { text: "Varies by organization", version: null };
+  if (policy.mode === "latest") return { text: "Track latest", version: null };
+  if (policy.mode === "pinned" && policy.version !== null) {
+    return { text: "Pinned to", version: policy.version };
+  }
+  return { text: "No version set", version: null };
 }
 
 /** `pinned`: "1 pinned on the agent" when online agents are pinned there; null otherwise. */
@@ -220,14 +230,17 @@ export interface AcceptedKindsCounts {
 }
 
 /**
- * What kinds of work (review, coding, Ask…) the agents take: "Every agent takes all kinds of
- * work", or "2 of 7 agents take only some kinds of work".
+ * What kinds of work (review, coding, Ask…) the agents take, as a short value and its detail
+ * line, so the tile reads like Health beside it: "All kinds of work" / "on every agent", or "Some
+ * kinds of work" / "on 2 of 7 agents".
  */
-export function acceptedKindsSummary(counts: AcceptedKindsCounts): string {
-  if (counts.limited === 0) return "Every agent takes all kinds of work";
-  if (counts.total === 1) return "The agent takes only some kinds of work";
-  const verb = counts.limited === 1 ? "takes" : "take";
-  return `${counts.limited} of ${counts.total} agents ${verb} only some kinds of work`;
+export function acceptedKindsSummary(counts: AcceptedKindsCounts): {
+  value: string;
+  detail: string;
+} {
+  if (counts.limited === 0) return { value: "All kinds of work", detail: "on every agent" };
+  if (counts.total === 1) return { value: "Some kinds of work", detail: "on the agent" };
+  return { value: "Some kinds of work", detail: `on ${counts.limited} of ${counts.total} agents` };
 }
 
 /** The pinned repos a row shows: one or two badges, or the first and a "+N" badge. */

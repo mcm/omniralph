@@ -99,7 +99,11 @@ export function BarChart({
   const style =
     height === undefined ? undefined : ({ "--or-chart-height": `${height}px` } as CSSProperties);
   return (
-    <figure className={["or-chart", className].filter(Boolean).join(" ")} style={style}>
+    <figure
+      className={["or-chart", className].filter(Boolean).join(" ")}
+      // dynamic-style: the plot's height is the caller's `height` prop
+      style={style}
+    >
       <figcaption className={hideTitle ? "or-sr-only" : "or-chart__title"}>{title}</figcaption>
       <div className="or-chart__plot">
         <div className="or-chart__y" aria-hidden="true">
@@ -143,6 +147,7 @@ export function BarChart({
                 key={position}
                 className={`or-chart__label or-chart__label--${position}`}
                 // The first label starts at the plot's left edge, the last ends at its right.
+                // dynamic-style: a middle label sits under its bar, from the data's length
                 style={
                   position === "middle" ? { left: `${((index + 0.5) / count) * 100}%` } : undefined
                 }

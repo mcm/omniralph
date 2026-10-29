@@ -219,6 +219,8 @@ describe("the summary", () => {
       }),
     );
     expect(value("Version policy").textContent).toBe("Pinned to 2.0.3");
+    // The pinned version is a badge, like the version in the detail line (Design rule 1).
+    expect(value("Version policy").querySelector("[data-or-badge]")?.textContent).toBe("2.0.3");
     expect(detail("Version policy")!.textContent).toBe("2 agents behind");
     expect(cell("Version policy").querySelector(".or-fleet__fail")).toBeNull();
   });
@@ -246,14 +248,16 @@ describe("the summary", () => {
 
   it("shows the accepted kinds without an Edit link", () => {
     renderCells(summary());
-    expect(value("Org defaults").textContent).toBe("Every agent takes all kinds of work");
-    expect(detail("Org defaults")).toBeNull();
+    expect(value("Org defaults").textContent).toBe("All kinds of work");
+    expect(detail("Org defaults")!.textContent).toBe("on every agent");
     expect(within(cell("Org defaults")).queryByRole("link")).toBeNull();
   });
 
   it("counts agents that limit their kinds", () => {
     renderCells(summary({ acceptedKinds: { limited: 2, total: 7 } }));
-    expect(value("Org defaults").textContent).toBe("2 of 7 agents take only some kinds of work");
+    // A short value with the count under it, like Health, so it fits the tile at 1024 px.
+    expect(value("Org defaults").textContent).toBe("Some kinds of work");
+    expect(detail("Org defaults")!.textContent).toBe("on 2 of 7 agents");
   });
 });
 

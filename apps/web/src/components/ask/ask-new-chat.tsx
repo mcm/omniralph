@@ -285,8 +285,9 @@ export function AskNewChat({
             className="or-ask-new__empty"
             icon={IconMessage}
             headingLevel={headingLevel === 1 ? 2 : 3}
-            title="Ask Om about your code"
-            description={`Om reads ${repository ? repoShortName(repository.fullPath) : "your repos"} and answers, citing the files it used.`}
+            // The composer already says "Ask about …": the title says what an answer is.
+            title="Answers come from your code"
+            description={`Om reads ${repository ? repoShortName(repository.fullPath) : "your repos"} and cites the files it used.`}
           />
         )}
       </div>

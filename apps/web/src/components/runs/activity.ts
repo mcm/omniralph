@@ -66,14 +66,14 @@ function normalized(text: string): string {
 
 /**
  * The reason's line: a waiting run's whole reason, but only the event of a stopped or failed
- * one ("The run failed"), because the page's header already shows its error.
+ * one ("The run failed", "The run was stopped"), because the page's header already shows its error.
  */
 function reasonSentence(detail: RunDetail, reason: string): string {
   switch (detail.status) {
     case "failed":
       return "The run failed";
     case "stopped":
-      return `The ${KIND_NAMES[detail.kind].toLowerCase()} was stopped`;
+      return "The run was stopped";
     default:
       return reason;
   }
@@ -82,7 +82,8 @@ function reasonSentence(detail: RunDetail, reason: string): string {
 /**
  * A run's activity, newest first (Design rule 4: sentences, never job types): its start and
  * routing ("Routed by team `SOC` and label `product:portal` to customer-portal"), each
- * finished attempt's `label` at its finish (numbered "(attempt 2)" when the label repeats; a
+ * finished attempt's `label` at its finish (numbered "(attempt 2)" when its step, or its label
+ * outside the steps, has more than one; a
  * failed one adds its error's first line unless the `reason` the header shows already says it),
  * and, for a waiting, stopped or failed run, the current `reason` (only its event for a stopped
  * or failed run). An error is shown once in the header and once where it happened, never
@@ -104,18 +105,20 @@ export function runActivity(detail: RunDetail, reason: string | null): RunActivi
   const done = detail.attempts
     .filter((attempt) => attempt.finishedAt !== null)
     .sort((a, b) => Date.parse(a.finishedAt!) - Date.parse(b.finishedAt!));
-  // A label that repeats ("Built FIX-107" three times) carries its attempt's number, so the
-  // lines say which try each was (Design rule 4).
+  // A step (story) with more than one attempt numbers each of them, whatever its label says
+  // ("Tried to build FIX-102 (attempt 1)" … "Built FIX-102 (attempt 3)"), so the lines say
+  // which try each was (Design rule 4). Work outside the steps is grouped by its label.
+  const tryOf = (attempt: (typeof done)[number]) =>
+    attempt.step === null ? `label:${attempt.label}` : `step:${attempt.step}`;
   const repeats = new Map<string, number>();
-  for (const attempt of done) repeats.set(attempt.label, (repeats.get(attempt.label) ?? 0) + 1);
+  for (const attempt of done) repeats.set(tryOf(attempt), (repeats.get(tryOf(attempt)) ?? 0) + 1);
   const seen = new Map<string, number>();
   const finished = done.map((attempt) => {
-    const number = (seen.get(attempt.label) ?? 0) + 1;
-    seen.set(attempt.label, number);
+    const key = tryOf(attempt);
+    const number = (seen.get(key) ?? 0) + 1;
+    seen.set(key, number);
     const label =
-      (repeats.get(attempt.label) ?? 0) > 1
-        ? `${attempt.label} (attempt ${number})`
-        : attempt.label;
+      (repeats.get(key) ?? 0) > 1 ? `${attempt.label} (attempt ${number})` : attempt.label;
     const line = attempt.status === "failed" ? firstLine(attempt.error) : null;
     const error = line && reason && normalized(reason).includes(normalized(line)) ? null : line;
     return {

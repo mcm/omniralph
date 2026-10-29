@@ -24,7 +24,7 @@ import type { SettingsHistoryEntry } from "@/lib/api/settings-history";
 import {
   acceptedKindsSummary,
   pinBadges,
-  versionPolicyLabel,
+  versionPolicyParts,
   versionSummary,
 } from "@/lib/fleet/status";
 import { agentHref, FLEET_PATH } from "@/lib/runs/hrefs";
@@ -56,6 +56,17 @@ function HealthValue({ summary }: { summary: FleetSummary }) {
         </>
       ) : null}
     </>
+  );
+}
+
+/** "Track latest", or "Pinned to" with the version as a badge (Design rule 1). */
+function VersionPolicyValue({ summary }: { summary: FleetSummary }) {
+  const { text, version } = versionPolicyParts(summary.versionPolicy);
+  if (version === null) return <>{text}</>;
+  return (
+    <span className="or-fleet__on">
+      {text} <MetaBadge text={version} mono />
+    </span>
   );
 }
 
@@ -111,7 +122,7 @@ export function fleetSummaryCells(
     {
       id: "version",
       label: "Version policy",
-      value: versionPolicyLabel(summary.versionPolicy),
+      value: <VersionPolicyValue summary={summary} />,
       detail: (
         <span className="or-fleet__version">
           <VersionDetail summary={summary} />
@@ -131,7 +142,7 @@ export function fleetSummaryCells(
     {
       id: "defaults",
       label: "Org defaults",
-      value: acceptedKindsSummary(summary.acceptedKinds),
+      ...acceptedKindsSummary(summary.acceptedKinds),
     },
   ];
 }
