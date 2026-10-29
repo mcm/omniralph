@@ -2,7 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { IconX } from "@tabler/icons-react";
-import { type ReactElement, type ReactNode } from "react";
+import { type ReactElement, type ReactNode, type RefObject } from "react";
 import { returnFocusTo, useOpener } from "../actions/opener.js";
 
 export interface SheetProps {
@@ -19,6 +19,11 @@ export interface SheetProps {
   footer?: ReactNode;
   /** An optional element that opens the sheet. */
   trigger?: ReactElement;
+  /**
+   * Where focus returns on close when no control in the page opened the sheet (it opened
+   * from a link, say) or that control is gone: e.g. the page's own "Add" button.
+   */
+  returnFocus?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -34,6 +39,7 @@ export function Sheet({
   children,
   footer,
   trigger,
+  returnFocus,
 }: SheetProps) {
   // Without a `trigger`, Radix has nothing to refocus on close: remember who opened it (the
   // menu's trigger when a menu item opened it).
@@ -48,7 +54,7 @@ export function Sheet({
           className="or-root or-sheet"
           // Radix links the description itself; without one, say there is none.
           {...(description === undefined ? { "aria-describedby": undefined } : {})}
-          onCloseAutoFocus={returnFocusTo(opener)}
+          onCloseAutoFocus={returnFocusTo(opener, returnFocus)}
         >
           <div className="or-sheet__head">
             <div className="or-sheet__heading">

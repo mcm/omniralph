@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { describe, expect, it } from "vitest";
 import { Sheet } from "../surfaces/sheet.js";
 import { Button } from "./button.js";
@@ -69,5 +69,28 @@ describe("menu and dialog focus", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it("returns focus to `returnFocus` when the sheet opened without a control (from a link)", async () => {
+    function OpenedFromLink() {
+      const [open, setOpen] = useState(true);
+      const add = useRef<HTMLButtonElement>(null);
+      return (
+        <main>
+          <Button ref={add} onClick={() => setOpen(true)}>
+            Add repo
+          </Button>
+          <Sheet open={open} onOpenChange={setOpen} title="Add repos" returnFocus={add}>
+            <p>Body</p>
+          </Sheet>
+        </main>
+      );
+    }
+    const user = userEvent.setup();
+    render(<OpenedFromLink />);
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add repo" }));
   });
 });

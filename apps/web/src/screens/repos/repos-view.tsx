@@ -17,8 +17,11 @@ import {
 } from "@omniralph/ui";
 import {
   IconCode,
+  IconCodeOff,
   IconEye,
+  IconEyeOff,
   IconFolder,
+  IconMessageOff,
   IconMessageQuestion,
   IconPlus,
   type TablerIcon,
@@ -60,8 +63,19 @@ function canAddRepos(user: SessionUser): boolean {
   return user.role === "admin";
 }
 
-/** A Reviews, Coding or Ask switch on a rail row (Design rule 2): dimmed when off. */
-function SwitchIcon({ icon: Icon, name, on }: { icon: TablerIcon; name: string; on: boolean }) {
+/** A Reviews, Coding or Ask switch on a rail row (Design rule 2), with its slashed icon when off. */
+const SWITCH_ICONS = {
+  Reviews: { on: IconEye, off: IconEyeOff },
+  Coding: { on: IconCode, off: IconCodeOff },
+  Ask: { on: IconMessageQuestion, off: IconMessageOff },
+} as const satisfies Record<string, { on: TablerIcon; off: TablerIcon }>;
+
+/**
+ * A switch's icon on a rail row. Off is told by the slashed icon's shape (WCAG 1.4.1), drawn
+ * in the tertiary text color so it still meets 3:1 (1.4.11).
+ */
+function SwitchIcon({ name, on }: { name: keyof typeof SWITCH_ICONS; on: boolean }) {
+  const Icon = SWITCH_ICONS[name][on ? "on" : "off"];
   return (
     <Icon
       className={["or-repo-row__switch", on ? null : "or-repo-row__switch--off"]
@@ -124,9 +138,9 @@ function RepoRow({
           {repository.group ? <MetaBadge icon={IconFolder} text={repository.group} /> : null}
         </span>,
         <span className="or-repo-row__switches">
-          <SwitchIcon icon={IconEye} name="Reviews" on={repository.reviewsEnabled} />
-          <SwitchIcon icon={IconCode} name="Coding" on={repository.codingEnabled} />
-          <SwitchIcon icon={IconMessageQuestion} name="Ask" on={repository.askEnabled} />
+          <SwitchIcon name="Reviews" on={repository.reviewsEnabled} />
+          <SwitchIcon name="Coding" on={repository.codingEnabled} />
+          <SwitchIcon name="Ask" on={repository.askEnabled} />
         </span>,
         <RowDot status={repository.status} />,
       )}
@@ -176,8 +190,11 @@ export function ReposView({ repositoryId = null, renderDetail = defaultDetail }:
     window.history.replaceState(window.history.state, "", url);
   }, []);
 
+  // The sheet's focus target on close when it opened from a link (no control opened it).
+  const addButton = useRef<HTMLButtonElement>(null);
   const addRepo = (
     <IconButton
+      ref={addButton}
       label="Add repo"
       icon={IconPlus}
       variant="outline"
@@ -261,6 +278,7 @@ export function ReposView({ repositoryId = null, renderDetail = defaultDetail }:
             if (!open) setStart(null);
           }}
           start={start}
+          returnFocus={addButton}
           onAdded={(id) => {
             setAdding(false);
             setStart(null);

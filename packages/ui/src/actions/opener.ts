@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type RefObject } from "react";
 
 /**
  * The element focus should return to when an overlay opened from `focused` closes: `focused`
@@ -31,11 +31,19 @@ export function useOpener(open: boolean): HTMLElement | null {
   return opener;
 }
 
-/** `onCloseAutoFocus` for an overlay: focus `opener` (when still in the page) instead of Radix's target. */
-export function returnFocusTo(opener: HTMLElement | null) {
+/**
+ * `onCloseAutoFocus` for an overlay: focus `opener` (when still in the page) instead of
+ * Radix's target, else `fallback` (for an overlay opened without a control, e.g. from a link
+ * into the page, or whose opener is gone).
+ */
+export function returnFocusTo(
+  opener: HTMLElement | null,
+  fallback?: RefObject<HTMLElement | null>,
+) {
   return (event: Event) => {
-    if (!opener?.isConnected) return;
+    const target = opener?.isConnected ? opener : fallback?.current;
+    if (!target?.isConnected) return;
     event.preventDefault();
-    opener.focus();
+    target.focus();
   };
 }

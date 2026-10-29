@@ -313,6 +313,26 @@ export function agentUnpinnedEffect(
   };
 }
 
+/**
+ * A rule's text cut to one short line (at a word's end when one is near), to name the rule
+ * in its controls and changes.
+ */
+export function ruleExcerpt(text: string, max = 48): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  if (line.length <= max) return line;
+  const cut = line.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+/** A review rule switched on or off (the Rules section's "Use rule" switch). */
+export function ruleEnabledEffect(rule: { id: string; text: string }, to: boolean): FieldEffect {
+  return toggle(`rule:${rule.id}`, `Rule “${ruleExcerpt(rule.text)}”`, to, {
+    on: "Om follows it in new reviews.",
+    off: "Om stops following it in new reviews.",
+  });
+}
+
 /** A playbook binding, e.g. role "review" or "story" (`label` is the binding's field label). */
 export function playbookBindingEffect(
   binding: string,

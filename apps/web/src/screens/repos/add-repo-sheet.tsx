@@ -20,7 +20,7 @@ import {
   IconRefresh,
 } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type RefObject } from "react";
 import type { z } from "zod";
 import { ConnectGitHubButton } from "@/components/connect-github-button";
 import { ConnectGitLabForm } from "@/components/connect-gitlab-form";
@@ -511,6 +511,8 @@ export interface AddRepoSheetProps {
   start?: AddRepoStart | null;
   /** After repos were added: the first one, to open. */
   onAdded: (repositoryId: string) => void;
+  /** Where focus returns on close when the sheet opened from a link (the rail's "Add repo"). */
+  returnFocus?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -518,9 +520,15 @@ export interface AddRepoSheetProps {
  * Connect GitHub and Connect GitLab, and a connection's picker, which adds the chosen repos
  * (add-only). Under "All organizations" it starts with the organization to add to.
  */
-export function AddRepoSheet({ open, onOpenChange, start = null, onAdded }: AddRepoSheetProps) {
+export function AddRepoSheet({
+  open,
+  onOpenChange,
+  start = null,
+  onAdded,
+  returnFocus,
+}: AddRepoSheetProps) {
   return (
-    <Sheet title="Add repos" open={open} onOpenChange={onOpenChange}>
+    <Sheet title="Add repos" open={open} onOpenChange={onOpenChange} returnFocus={returnFocus}>
       {/* Mounted only while open: every opening starts over. */}
       <AddRepoFlow start={start} onAdded={onAdded} />
     </Sheet>

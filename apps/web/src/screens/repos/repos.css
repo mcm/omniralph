@@ -89,7 +89,7 @@
 }
 
 .or-repo-row__switch--off {
-  opacity: 0.35;
+  color: var(--or-ter);
 }
 
 .or-repo-row__dot {

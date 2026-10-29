@@ -16,6 +16,8 @@ import {
   reviewOnOpenEffect,
   reviewOnPushEffect,
   reviewsEnabledEffect,
+  ruleEnabledEffect,
+  ruleExcerpt,
   skipPathEffects,
   workItemMatchEffect,
   workItemMatchText,
@@ -217,5 +219,27 @@ describe("Ask, Agents and Playbooks effects", () => {
     expect(
       playbookBindingEffect("story", "Stories playbook", "story", "Built-in", "Careful").effect,
     ).toBe("New story runs use Careful.");
+  });
+});
+
+describe("Rules effects", () => {
+  it("collapses a rule to one line and cuts a long one at a word's end", () => {
+    expect(ruleExcerpt("Ignore  generated\nfiles")).toBe("Ignore generated files");
+    expect(ruleExcerpt("Don't flag missing tests in the migrations folder ever", 22)).toBe(
+      "Don't flag missing…",
+    );
+    expect(ruleExcerpt("Supercalifragilisticexpialidocious", 10)).toBe("Supercali…");
+  });
+
+  it("names the rule and says what switching it does", () => {
+    const rule = { id: "r1", text: "Ignore generated files" };
+    expect(ruleEnabledEffect(rule, false)).toEqual({
+      id: "rule:r1",
+      label: "Rule “Ignore generated files”",
+      from: "On",
+      to: "Off",
+      effect: "Om stops following it in new reviews.",
+    });
+    expect(ruleEnabledEffect(rule, true).effect).toBe("Om follows it in new reviews.");
   });
 });
