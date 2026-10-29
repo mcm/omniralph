@@ -3,7 +3,7 @@
 import { Button, EmptyState, StatusLine, TextLink } from "@omniralph/ui";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRef } from "react";
-import { stepStatusLine } from "@/components/runs/progress";
+import { stepLabel, stepStatusLine } from "@/components/runs/progress";
 import { reviewFindingsTabs } from "@/components/runs/review-findings";
 import { StepPanel } from "@/components/runs/step-panel";
 import { storyDiffTabs } from "@/components/runs/story-diff";
@@ -62,8 +62,9 @@ function RunStepContent({ run, stepId }: { run: RunDetail; stepId: string }) {
   return (
     <article className="or-run-step" aria-label={run.title}>
       <BackLink href={back} label={run.title} />
+      <h1 className="or-run-step__title">{stepLabel(step)}</h1>
       <StatusLine tone={status.tone} dotLabel={status.state}>
-        {status.text}
+        {status.state}
       </StatusLine>
       <StepPanel
         run={run}
@@ -88,7 +89,7 @@ function RunStepContent({ run, stepId }: { run: RunDetail; stepId: string }) {
 
 /**
  * A step of a run as its own view (Design board MobileRun, rule 16): "‹ {run title}" back to
- * the run, the step's name and state in a `StatusLine`, and the shared `StepPanel` (tabs,
+ * the run, the step's name (the page's `h1`) and its state in a `StatusLine`, and the shared `StepPanel` (tabs,
  * transcript, attempts, retry) at full width, at every viewport. The phone run detail links
  * here from each step's chevron. A live query: the run's change events refetch it.
  */

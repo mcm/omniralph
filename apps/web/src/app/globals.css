@@ -1,377 +1,139 @@
-/* McMaster App Template — global overrides */
-/* All design tokens (colors, fonts, spacing, radius) come from @iamthemcmaster/ui/styles */
+/* The control panel's global styles: the base layer under every page, then the pieces
+   of the signed-out, public and legal pages. Every component's look comes from
+   @omniralph/ui; the screens' own styles sit beside them (src/screens/<screen>/*.css). */
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
+/* The base every page is written against: no default margins, padding or borders,
+   headings and links in their surroundings' type and color, unstyled lists and form
+   controls in the page's font. A layer, so any class wins over it. */
+@layer base {
+  *,
+  ::before,
+  ::after,
+  ::backdrop {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0 solid;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    tab-size: 4;
+    line-height: 1.5;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.55;
+  }
+  hr {
+    height: 0;
+    color: inherit;
+    border-top-width: 1px;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+  a {
+    color: inherit;
+    text-decoration: inherit;
+  }
+  b,
+  strong {
+    font-weight: bolder;
+  }
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--or-font-mono);
+    font-size: 1em;
+  }
+  small {
+    font-size: 80%;
+  }
+  table {
+    text-indent: 0;
+    border-color: inherit;
+    border-collapse: collapse;
+  }
+  summary {
+    display: list-item;
+  }
+  ol,
+  ul,
+  menu {
+    list-style: none;
+  }
+  img,
+  svg,
+  video,
+  canvas {
+    display: block;
+    vertical-align: middle;
+  }
+  img,
+  video {
+    max-width: 100%;
+    height: auto;
+  }
+  button,
+  input,
+  select,
+  optgroup,
+  textarea {
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    background-color: transparent;
+    border-radius: 0;
+    opacity: 1;
+  }
+  textarea {
+    resize: vertical;
+  }
+  ::placeholder {
+    opacity: 1;
+    color: color-mix(in oklab, currentcolor 50%, transparent);
+  }
+  [hidden]:where(:not([hidden="until-found"])) {
+    display: none !important;
+  }
+  :focus-visible {
+    outline: 2px solid var(--or-acc);
+    outline-offset: 2px;
+  }
 }
 
 html,
 body {
-  margin: 0;
-  padding: 0;
   min-height: 100vh;
   background: var(--or-page);
   color: var(--or-text);
   font-family: var(--or-font-sans);
 }
 
-/* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-page);
+  background: var(--or-page);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: var(--radius-full);
+  background: var(--or-border);
+  border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
+  background: var(--or-ter);
 }
 
-/* Today's pages inside the 2.0 shell (app/(app)/legacy-frame.tsx): the page fills the
-   main column's height, so the unsaved-changes bar sticks to the bottom of the viewport. */
-.legacy-page {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-  min-height: 100dvh;
-}
-
-/* App header (components/app-header.tsx): today's breadcrumbs, one line at every width. It
-   grows rather than clips if its content ever needs more room, and the breadcrumbs truncate
-   instead of wrapping. */
-.app-header {
-  position: sticky;
-  top: 0;
-  z-index: var(--z-sticky);
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 52px;
-  padding: var(--space-2) var(--space-6);
-  background: color-mix(in srgb, var(--bg-page) 88%, transparent);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.app-crumbs {
-  min-width: 0;
-}
-.app-crumbs-list {
-  flex-wrap: nowrap;
-  min-width: 0;
-}
-/* Parents keep their (capped) width; the current page takes what is left and truncates. */
-.app-crumb {
-  flex-shrink: 0;
-  min-width: 0;
-}
-.app-crumb:last-child {
-  flex-shrink: 1;
-}
-.app-crumb-label {
-  display: block;
-  max-width: 32ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.app-crumb-ellipsis {
-  display: none;
-}
-.app-crumb-ellipsis-icon {
-  width: auto;
-  height: auto;
-}
-
-/* Phone: only the first and current crumbs. */
-@media (max-width: 767.98px) {
-  .app-header {
-    padding: var(--space-2) var(--space-3);
-  }
-  .app-crumb-middle {
-    display: none;
-  }
-  /* The parents give way first, so the current page keeps at least its first word. */
-  .app-crumb:not(:last-child) {
-    flex-shrink: 4;
-  }
-  .app-crumb:not(:last-child) .app-crumb-label {
-    max-width: 14ch;
-  }
-  .app-crumb-long:last-child {
-    min-width: 9ch;
-  }
-  .app-crumb-ellipsis {
-    display: inline-flex;
-  }
-}
-
-/* Page header (components/page-header.tsx): the title block takes the row and the actions
-   sit to its right; when the row is narrower than the title block's basis (phones, long
-   titles), the actions wrap below the title instead of squeezing it. */
-.page-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3) var(--space-4);
-}
-.page-header-text {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  flex: 1 1 28rem;
-  min-width: 0;
-}
-.page-header-title {
-  overflow-wrap: anywhere;
-}
-/* A provider icon leading the title stays on the title's first line. */
-.page-header-title > svg {
-  display: inline-block;
-  margin-right: var(--space-2);
-  vertical-align: -0.125em;
-}
-.page-header-description {
-  max-width: 75ch;
-  font-size: var(--text-sm);
-  line-height: 1.5;
-  color: var(--text-secondary);
-}
-.page-header-meta {
-  min-width: 0;
-}
-.page-header-actions {
-  flex: 0 1 auto;
-  max-width: 100%;
-}
-@media (max-width: 639.98px) {
-  .page-header-title {
-    font-size: var(--text-headline-sm);
-    line-height: 1.25;
-  }
-}
-
-/* Mono values (components/mono-value.tsx): one line, truncated in the middle. */
-.mono-value {
-  display: inline-flex;
-  max-width: 100%;
-  min-width: 0;
-  white-space: nowrap;
-  vertical-align: bottom;
-}
-.mono-value-head {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.mono-value-tail {
-  flex-shrink: 0;
-}
-.mono-path-segment {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
-}
-
-/* Unsaved-changes bar (components/unsaved-changes.tsx): sticks to the bottom of the main
-   column while any card on the page has unsaved changes, linking to each. */
-.unsaved-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: var(--z-sticky);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
-  padding: var(--space-2) var(--space-6);
-  background: var(--bg-surface);
-  border-top: 1px solid var(--border-default);
-  box-shadow: var(--shadow-md);
-  font-size: var(--text-sm);
-}
-.unsaved-bar-icon {
-  flex-shrink: 0;
-  color: var(--warning-fg);
-}
-.unsaved-bar-summary {
-  font-weight: 600;
-}
-.unsaved-bar-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-@media (max-width: 767px) {
-  .unsaved-bar {
-    padding-inline: var(--space-4);
-  }
-}
-/* Phone: the shell's top bar (52px) and tab bar are fixed over the page, so today's header
-   sticks below the one and the unsaved-changes bar above the other. */
-@media (max-width: 768px) {
-  .app-header {
-    top: 52px;
-  }
-  .or-frame--tabs .unsaved-bar {
-    bottom: calc(66px + env(safe-area-inset-bottom));
-  }
-}
-
-/* A detail page's main column. */
-.detail-main {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--space-8);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-}
-
-.fact {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-@media (max-width: 767px) {
-  /* A timestamp never wraps; on phone its fact takes the row so it fits. */
-  .fact:has(time) {
-    grid-column: 1 / -1;
-  }
-}
-.fact-label {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-.fact-value {
-  margin: 0;
-  min-width: 0;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  overflow-wrap: anywhere;
-}
-.fact-inline {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
-}
-.fact-secondary {
-  color: var(--text-secondary);
-}
-/* A qualifier on its own line under a fact's value. */
-.fact-note {
-  display: block;
-  font-size: var(--text-xs);
-}
-
-.run-lane-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  overflow-wrap: anywhere;
-}
-
-/* Finding severity chips: one ramp that only gets quieter, critical > high > medium > low >
-   info, in both themes. Text, border and fill contrast against the surface each fall (or
-   hold) step by step; `severity-ramp.test.ts` measures it from the theme tokens. Critical
-   and high lift their hue toward primary text and outline in it, so the tinted chips stay
-   louder than the neutral ones in dark too. Medium is the neutral well with secondary text
-   and a border a step above low's (never the info hue running states wear); low dims its
-   text halfway to tertiary; info has no fill, a dashed outline and tertiary text. */
-.severity-critical.severity-critical {
-  background-color: var(--danger-tint);
-  border-color: color-mix(in srgb, var(--danger-fg) 80%, transparent);
-  color: color-mix(in srgb, var(--danger-fg) 60%, var(--text-primary));
-}
-.severity-high.severity-high {
-  background-color: var(--warning-tint);
-  border-color: color-mix(in srgb, var(--warning-fg) 70%, transparent);
-  color: color-mix(in srgb, var(--warning-fg) 75%, var(--text-primary));
-}
-.severity-medium.severity-medium {
-  background-color: var(--bg-raised);
-  border-color: color-mix(in srgb, var(--border-strong) 25%, var(--border-default));
-  color: var(--text-secondary);
-}
-.severity-low.severity-low {
-  background-color: var(--bg-raised);
-  border-color: var(--border-default);
-  color: color-mix(in srgb, var(--text-secondary) 50%, var(--text-tertiary));
-}
-.severity-info.severity-info {
-  background-color: transparent;
-  border-color: var(--border-default);
-  border-style: dashed;
-  color: var(--text-tertiary);
-}
-.review-findings {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* agent: agent detail. */
-.agent-install-name {
-  flex: 2;
-  min-width: 16rem;
-}
-.agent-install-version {
-  flex: 1;
-  min-width: 10rem;
-}
-.agent-status-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: var(--space-4);
-}
-/* Phone: two columns of short facts; the running jobs (and timestamps) take the row. */
-@media (max-width: 639.98px) {
-  .agent-status-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .agent-fact-wide {
-    grid-column: 1 / -1;
-  }
-}
-/* A pinned repository and its pre-clone's state (agent-detail-view.tsx), one per line. */
-.agent-pin-syncs {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.agent-pin-syncs li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-/* The install job the form started, live (agent-installables.tsx). */
-.agent-started-install {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-.agent-update-failed {
-  color: var(--danger-fg);
-}
 /* Signed-out pages (components/auth-shell.tsx, legal-shell.tsx): Ultraviolet on --or-page. */
 .auth-main,
 .legal-main {
@@ -649,37 +411,6 @@ body {
   text-underline-offset: 0.2em;
 }
 
-/* run, review, repo, jobs: list and detail pieces. */
-/* A run's source (Linear issue or chat thread), linked or plain. */
-/* Inline text, not flex: a wrapping title flows under the identifier instead of becoming
-   a second column. */
-.run-source {
-  display: inline;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  text-decoration: none;
-}
-.run-source > * + * {
-  margin-left: var(--space-1);
-}
-.run-source > svg {
-  display: inline-block;
-  vertical-align: -0.125em;
-}
-/* Issue lists in the "Waiting" alert and the "Not in a repository here" card. */
-.run-issue-list {
-  margin: 0;
-  padding-left: var(--space-6);
-}
-.run-feedback-preview {
-  max-width: calc(var(--space-8) * 12);
-  overflow-wrap: anywhere;
-}
-.repo-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
 /* A link inside running text: underlined, in the text's own color. */
 .inline-link {
   color: inherit;
@@ -690,12 +421,11 @@ body {
   text-decoration-thickness: 2px;
 }
 
-/* A failed load in place of its content (app/(app)/error.tsx). */
-.query-error-body {
+/* The error boundary of a signed-in page (app/(app)/error.tsx), in place of the page. */
+.or-app-error {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
+  justify-content: center;
+  padding: 48px 16px;
 }
 
 /* Navigation feedback (components/link.tsx): a link whose

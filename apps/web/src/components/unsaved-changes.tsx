@@ -3,15 +3,11 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "@omniralph/ui";
-import { IconAlertTriangle } from "@tabler/icons-react";
 import { installUnsavedGuard, unsavedSummary } from "@/lib/unsaved-changes";
 
-/** A form with unsaved changes: its name and the id of the element to scroll to. */
+/** A form with unsaved changes, by its name. */
 interface UnsavedEntry {
   label: string;
-  anchorId: string;
-  /** False when the form shows its own unsaved state where it is (a settings section's footer). */
-  listed: boolean;
 }
 
 interface UnsavedContextValue {
@@ -23,7 +19,8 @@ const UnsavedContext = React.createContext<UnsavedContextValue | null>(null);
 
 /**
  * Tracks which forms on the page have unsaved changes, and asks before leaving the page (an
- * in-app link or a browser unload) while any has. `UnsavedChangesBar` shows them.
+ * in-app link or a browser unload) while any has. Each form shows its own unsaved state
+ * where it is (a staged card's save bar), so the guard only names them when it asks.
  */
 export function UnsavedChangesProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -81,59 +78,14 @@ export function UnsavedChangesProvider({ children }: { children: React.ReactNode
   );
 }
 
-/**
- * Marks a form as having unsaved changes while `dirty` (no-op outside the provider). Leaving the
- * page asks first; `listed: false` keeps the form out of `UnsavedChangesBar`.
- */
-export function useUnsavedChanges(
-  label: string,
-  anchorId: string,
-  dirty: boolean,
-  { listed = true }: { listed?: boolean } = {},
-) {
+/** Marks a form as having unsaved changes while `dirty` (no-op outside the provider). */
+export function useUnsavedChanges(label: string, dirty: boolean) {
   const context = React.useContext(UnsavedContext);
   const set = context?.set;
   const key = React.useId();
   React.useEffect(() => {
     if (!set || !dirty) return;
-    set(key, { label, anchorId, listed });
+    set(key, { label });
     return () => set(key, null);
-  }, [set, key, label, anchorId, dirty, listed]);
-}
-
-/** In page order: entries register in the order they became dirty. */
-function inPageOrder(entries: readonly UnsavedEntry[]): UnsavedEntry[] {
-  const position = (entry: UnsavedEntry) => document.getElementById(entry.anchorId);
-  return [...entries].sort((a, b) => {
-    const left = position(a);
-    const right = position(b);
-    if (!left || !right) return 0;
-    return left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
-  });
-}
-
-/**
- * Sticks to the bottom of the page while any form has unsaved changes: how many, with a link
- * to each, since a dirty card is often scrolled out of view.
- */
-export function UnsavedChangesBar() {
-  const context = React.useContext(UnsavedContext);
-  const listed = context?.entries.filter((entry) => entry.listed) ?? [];
-  if (listed.length === 0) return null;
-  const entries = inPageOrder(listed);
-  return (
-    <div role="status" className="unsaved-bar">
-      <IconAlertTriangle size={16} aria-hidden="true" className="unsaved-bar-icon" />
-      <span className="unsaved-bar-summary">{unsavedSummary(entries.length)}:</span>
-      <ul className="unsaved-bar-links">
-        {entries.map((entry) => (
-          <li key={entry.anchorId}>
-            <a href={`#${entry.anchorId}`} className="inline-link">
-              {entry.label}
-            </a>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
+  }, [set, key, label, dirty]);
 }

@@ -1,4 +1,4 @@
-import { act, render, renderHook, screen, within } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -259,5 +259,42 @@ describe("SplitView shortcuts", () => {
     await user.keyboard("u");
     expect(followed).toEqual(["/runs"]);
     expect(screen.getByText("Detail shown")).toBeTruthy();
+  });
+});
+
+describe("SplitView's title", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function renderSplit(view: "list" | "detail", width: number) {
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({ width } as DOMRect);
+    return render(
+      <SplitView
+        list={<h1>Inbox</h1>}
+        detail={<h2>Fix the login</h2>}
+        view={view}
+        listLabel="Inbox"
+        title="Inbox"
+      />,
+    );
+  }
+
+  const detail = () => screen.getByRole("region", { name: "Details" });
+
+  it("is a visually hidden h1 in the detail pane while the detail shows alone", () => {
+    renderSplit("detail", 600);
+    const heading = within(detail()).getByRole("heading", { level: 1, name: "Inbox" });
+    expect(heading.className).toBe("or-sr-only");
+    // The detail's own title stays the h2 under it.
+    expect(within(detail()).getByRole("heading", { level: 2, name: "Fix the login" })).toBeTruthy();
+  });
+
+  it("is left to the list while both panes show, or the list shows alone", () => {
+    renderSplit("detail", SPLIT_WIDE_MIN_WIDTH);
+    expect(within(detail()).queryByRole("heading", { level: 1 })).toBeNull();
+    cleanup();
+    renderSplit("list", 600);
+    expect(within(detail()).queryByRole("heading", { level: 1 })).toBeNull();
   });
 });

@@ -146,7 +146,7 @@ export function ReviewsCard({ detail, titleId }: { detail: RepositoryDetail; tit
           (row) => ({ ...row, reviewsEnabled: result.card.enabled }),
         ),
     }),
-    onDirtyChange: useUnsavedCard("Reviews", "reviews"),
+    onDirtyChange: useUnsavedCard("Reviews"),
   });
   const { draft, set, fieldErrors } = card;
   const disabled = !canEdit || card.saving;

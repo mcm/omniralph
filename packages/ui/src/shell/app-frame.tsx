@@ -7,7 +7,14 @@ import { Tooltip } from "../actions/tooltip.js";
 import { BrandLockup } from "../brand/wordmark.js";
 import { useLinkComponent } from "../provider/ui-provider.js";
 import { StatusDot } from "../status/status.js";
-import { isNavActive, isNavAlert, menuButtonName, navAccessibleName, type NavItem } from "./nav.js";
+import {
+  isNavActive,
+  isNavAlert,
+  menuButtonName,
+  navAccessibleName,
+  navAlertTone,
+  type NavItem,
+} from "./nav.js";
 
 /** The signed-in user, as the footer and the phone avatar show them. */
 export interface FrameUser {
@@ -222,6 +229,7 @@ export function AppFrame({
   const tabs = hideTabBar ? [] : nav.filter((item) => item.phone === "tab");
   const drawerEntries = nav.filter((item) => item.phone === "drawer");
   const alerts = drawerEntries.filter((item) => isNavAlert(item.indicator)).length;
+  const alertTone = navAlertTone(drawerEntries.map((item) => item.indicator));
 
   function closeOnLink(event: MouseEvent<HTMLDivElement>) {
     // Router links (e.g. Next's) prevent the default, so `defaultPrevented` isn't checked;
@@ -252,7 +260,12 @@ export function AppFrame({
               aria-label={menuButtonName(alerts)}
             >
               <IconMenu2 size={20} stroke={1.75} aria-hidden="true" />
-              {alerts > 0 ? <span className="or-topbar__alert" aria-hidden="true" /> : null}
+              {alertTone ? (
+                <span
+                  className={`or-topbar__alert or-topbar__alert--${alertTone}`}
+                  aria-hidden="true"
+                />
+              ) : null}
             </button>
           </Dialog.Trigger>
           <BrandLockup href={brandHref} className="or-topbar__brand" />

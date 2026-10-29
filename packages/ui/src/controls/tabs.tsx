@@ -6,7 +6,10 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 /** The selected tab's value, for panels kept mounted while hidden. */
 const SelectedTab = createContext<string | undefined>(undefined);
 
-/** `need` draws the count in the accent (needs you), `fail` in coral, otherwise tertiary. */
+/**
+ * `need` draws the count in the accent (needs you), `fail` in coral, otherwise tertiary. A
+ * count of 0 is always tertiary: nothing needs you or failed (Design rules 9, 15).
+ */
 export type TabCountTone = "default" | "need" | "fail";
 
 export interface TabItem<Value extends string = string> {
@@ -83,7 +86,10 @@ export function Tabs<Value extends string = string>({
               <span
                 className={[
                   "or-tab__count",
-                  tab.countTone && tab.countTone !== "default" && `or-tab__count--${tab.countTone}`,
+                  tab.count > 0 &&
+                    tab.countTone &&
+                    tab.countTone !== "default" &&
+                    `or-tab__count--${tab.countTone}`,
                 ]
                   .filter(Boolean)
                   .join(" ")}

@@ -59,7 +59,8 @@ describe("BarChart", () => {
   it("draws one bar per bucket with a value, scaled to niceMax, each with a title", () => {
     const { container } = renderChart();
     const bars = [...container.querySelectorAll("rect.or-chart__bar")];
-    // The null bucket has no bar; the zero bucket has an empty one.
+    // The null bucket has no bar; the zero bucket has a stub on the baseline, so it doesn't
+    // look like the null one.
     expect(bars).toHaveLength(4);
     expect(bars.map((bar) => bar.querySelector("title")!.textContent)).toEqual([
       "Oct 3: 4",
@@ -71,7 +72,8 @@ describe("BarChart", () => {
     expect(Number(bars[2]!.getAttribute("height"))).toBeCloseTo(70);
     expect(Number(bars[2]!.getAttribute("y"))).toBeCloseTo(30);
     expect(Number(bars[0]!.getAttribute("height"))).toBeCloseTo(40);
-    expect(Number(bars[1]!.getAttribute("height"))).toBe(0);
+    expect(Number(bars[1]!.getAttribute("height"))).toBe(1.5);
+    expect(Number(bars[1]!.getAttribute("y"))).toBe(98.5);
     // Each bar sits in its bucket's slot: the fourth bar is the fifth bucket.
     expect(Number(bars[3]!.getAttribute("x"))).toBeGreaterThan(4);
     expect(Number(bars[3]!.getAttribute("x"))).toBeLessThan(5);

@@ -517,7 +517,7 @@ export function CodingCard({ detail, titleId }: { detail: RepositoryDetail; titl
           (row) => ({ ...row, codingEnabled: result.card.enabled }),
         ),
     }),
-    onDirtyChange: useUnsavedCard("Coding", "coding"),
+    onDirtyChange: useUnsavedCard("Coding"),
   });
   const { draft, set, fieldErrors } = card;
   // The conflicts query follows the draft's match (discard, a save or a live update move it).

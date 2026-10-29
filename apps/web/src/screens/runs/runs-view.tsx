@@ -201,6 +201,7 @@ export function RunsView({ runId = null, renderDetail = defaultDetail }: RunsVie
       view={runId ? "detail" : "list"}
       backLink={{ label: "Runs", href: runFiltersHref(filters) }}
       listLabel="Runs"
+      title="Runs"
       detailLabel="Run"
     />
   );

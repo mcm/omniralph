@@ -543,7 +543,7 @@ function DomainsCard({ settings }: { settings: OrganizationSettings }) {
       // A refusal part-way leaves some changes saved: the refetch shows which.
       invalidate: (keys) => [settingsKey(keys)],
     }),
-    onDirtyChange: useUnsavedCard("Joining by domain", "joining-by-domain"),
+    onDirtyChange: useUnsavedCard("Joining by domain"),
   });
   const { domains, allowDomainJoin } = card.draft;
   const shownAllow = allowDomainJoin && domains.length > 0;

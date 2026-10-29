@@ -8,15 +8,6 @@ export function unsavedSummary(count: number): string {
   return count === 1 ? "1 card has unsaved changes" : `${count} cards have unsaved changes`;
 }
 
-/** An id for a settings card's anchor, from its title: "Ralph › Tools" → "settings-ralph-tools". */
-export function unsavedAnchorId(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  return `settings-${slug || "card"}`;
-}
-
 /** The parts of a click the guard reads. */
 export interface GuardClick {
   button: number;

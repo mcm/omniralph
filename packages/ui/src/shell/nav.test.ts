@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isNavActive, isNavAlert, menuButtonName, navAccessibleName } from "./nav.js";
+import { isNavActive, isNavAlert, menuButtonName, navAccessibleName, navAlertTone } from "./nav.js";
 
 describe("isNavActive", () => {
   const settings = { href: "/settings" };
@@ -57,6 +57,24 @@ describe("menuButtonName", () => {
     expect(menuButtonName(0)).toBe("Open menu");
     expect(menuButtonName(1)).toBe("Open menu, 1 alert");
     expect(menuButtonName(3)).toBe("Open menu, 3 alerts");
+  });
+});
+
+describe("navAlertTone", () => {
+  const fail = { kind: "dot", tone: "fail", label: "1 agent offline" } as const;
+  const run = { kind: "dot", tone: "run", label: "Deliveries retrying" } as const;
+  const need = { kind: "count", value: 2, label: "2 need you" } as const;
+  const items = { kind: "count", value: 3, label: "3 items", tone: "neutral" } as const;
+
+  it("takes the most pressing alert's tone: failed, then needs you, then running", () => {
+    expect(navAlertTone([run, need, fail])).toBe("fail");
+    expect(navAlertTone([run, need])).toBe("need");
+    expect(navAlertTone([undefined, run])).toBe("run");
+  });
+
+  it("is null without an alert: a neutral count is information", () => {
+    expect(navAlertTone([])).toBeNull();
+    expect(navAlertTone([undefined, items])).toBeNull();
   });
 });
 

@@ -118,16 +118,12 @@ describe("progressTitle", () => {
 });
 
 describe("stepStatusLine", () => {
-  it("reads the step's name and state, toned like its dot", () => {
-    expect(stepStatusLine(storyStep("2", "running"))).toEqual({
-      tone: "run",
-      text: "Story 2 · Running",
-      state: "Running",
-    });
+  it("reads the step's state, toned like its dot", () => {
+    expect(stepStatusLine(storyStep("2", "running"))).toEqual({ tone: "run", state: "Running" });
     expect(stepStatusLine(storyStep("3", "exhausted")).tone).toBe("fail");
-    expect(stepStatusLine(storyStep("4", "manual"))).toMatchObject({
+    expect(stepStatusLine(storyStep("4", "manual"))).toEqual({
       tone: "need",
-      text: "Story 4 · Waiting on you",
+      state: "Waiting on you",
     });
     expect(stepStatusLine(storyStep("1", "completed")).tone).toBe("neutral");
   });

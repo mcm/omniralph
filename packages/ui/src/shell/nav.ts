@@ -69,6 +69,28 @@ export function isNavAlert(indicator: NavIndicator | undefined): boolean {
   return indicator !== undefined && !(indicator.kind === "count" && indicator.tone === "neutral");
 }
 
+/** The tone of an alert: failed (coral), needs you (lavender) or running (mint). */
+export type NavAlertTone = "fail" | "need" | "run";
+
+const ALERT_TONE_ORDER: readonly NavAlertTone[] = ["fail", "need", "run"];
+
+/**
+ * The tone of the hamburger's alert dot: the most pressing of the drawer's alerts (failed,
+ * then needs you, then running; Design rule 15), or null when none is an alert.
+ */
+export function navAlertTone(
+  indicators: readonly (NavIndicator | undefined)[],
+): NavAlertTone | null {
+  const tones = new Set<NavAlertTone>(
+    indicators.flatMap((indicator) =>
+      indicator && isNavAlert(indicator)
+        ? [indicator.kind === "dot" ? indicator.tone : "need"]
+        : [],
+    ),
+  );
+  return ALERT_TONE_ORDER.find((tone) => tones.has(tone)) ?? null;
+}
+
 /** The hamburger's accessible name: "Open menu", plus ", N alerts" for drawer indicators. */
 export function menuButtonName(alerts: number): string {
   if (alerts <= 0) return "Open menu";

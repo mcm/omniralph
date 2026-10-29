@@ -1,22 +1,21 @@
 # @omniralph/web
 
 The Omniralph control panel: a Next.js 16 app created from `mcmaster-app-template`
-and built with `@iamthemcmaster/ui` (Precision Aurora v3).
+and built with `@omniralph/ui` (Ultraviolet).
 
 Run it from the repo root with `pnpm dev`, or from here with `pnpm dev`.
 
 ## UI conventions
 
-- All UI uses `@iamthemcmaster/ui` components, `@tabler/icons-react` icons and `sonner` toasts.
-  No other component or styling library.
+- All UI uses `@omniralph/ui` components and toasts and `@tabler/icons-react` icons. No other
+  component or styling library: `@iamthemcmaster/ui` (1.x) is retired, and lint refuses an import
+  of it. `src/app/globals.css` holds the base layer every page is written against.
 - Library components need `"use client"`. Pages read and write through the `/api/ui` route handlers
   with TanStack Query (see [Data fetching](#data-fetching)).
 - Links use `Link` from `src/components/link.tsx`, not `next/link` (lint-enforced under `(app)` and
   in `src/components`): it shows a pending state while the page it opens loads (`useLinkStatus`).
-- Custom styling uses design tokens only (`--bg-*`, `--text-*`, `--border-*`, `--space-*`,
-  `--radius-*`, `--font-*`, `--spring-*`, `--t-*`).
-- Keep the `AppShell` layering: `AuroraField` paints at `z-0`, so the shell keeps
-  `position: relative; z-index: 1`.
+- Custom styling uses the `--or-` design tokens only (`--or-page`, `--or-text`, `--or-acc`,
+  `--or-radius` …).
 - Sidebar navigation lives in `src/lib/navigation.ts`.
 
 ## Data fetching

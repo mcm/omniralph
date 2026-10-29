@@ -38,6 +38,12 @@ export interface SplitViewProps {
   backLink?: { label: string; href: string };
   /** Names the list pane, e.g. "Inbox". */
   listLabel: string;
+  /**
+   * The page's title, the `h1` the list pane shows (e.g. "Inbox"). While the detail shows
+   * alone, the detail pane carries it as a visually hidden `h1`, so the page keeps its `h1`
+   * and the detail's own title stays the `h2` under it.
+   */
+  title?: string;
   /** Names the detail pane; defaults to "Details". */
   detailLabel?: string;
   /** The fixed pane's width in px; defaults to 340 (wide) and 300 (narrow). */
@@ -73,6 +79,9 @@ function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
  * does, the detail with its back link. One rule covers phone width and the narrower
  * content area beside a side panel.
  *
+ * While the detail shows alone, the list (and the page's `h1` in it) is hidden: the detail
+ * pane then carries `title` as a visually hidden `h1`.
+ *
  * Keyboard: while both panes show, Next item and Previous item open the row they move to
  * (replacing the history entry), so the detail follows the selection. While the detail
  * shows alone, Back follows its back link.
@@ -83,6 +92,7 @@ export function SplitView({
   view,
   backLink,
   listLabel,
+  title,
   detailLabel = "Details",
   listWidth = DEFAULT_SPLIT_LIST_WIDTH,
   fixedPane = "list",
@@ -130,6 +140,9 @@ export function SplitView({
               <span aria-hidden="true">‹ </span>
               {backLink.label}
             </Link>
+          ) : null}
+          {title !== undefined && !wide && view === "detail" ? (
+            <h1 className="or-sr-only">{title}</h1>
           ) : null}
           <DetailShownContext.Provider value={detailShown}>{detail}</DetailShownContext.Provider>
         </section>

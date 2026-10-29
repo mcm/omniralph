@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./app-shell";
 import type { SessionUser } from "./current-user";
 import { mockFetch, TEST_ORGANIZATION_ID, testUser } from "./query-test-utils";
+import { useUnsavedChanges } from "./unsaved-changes";
 
 const nav = vi.hoisted(() => ({
   pathname: "/analytics",
@@ -405,6 +406,49 @@ describe("AppShell shortcuts", () => {
     renderShell("/backlog/linear-issue-1");
     await userEvent.setup().keyboard("n");
     expect(screen.queryByRole("dialog", { name: "New work item" })).toBeNull();
+  });
+});
+
+function DirtyPage() {
+  useUnsavedChanges("Routing rules", true);
+  return <h1>Routing</h1>;
+}
+
+describe("AppShell unsaved changes", () => {
+  function renderDirtyPage() {
+    nav.pathname = "/settings/routing";
+    render(
+      <AppShell
+        user={testUser}
+        themePreference="dark"
+        organizationCookie={null}
+        scopeCookie={null}
+        showAdvanced={false}
+      >
+        <DirtyPage />
+      </AppShell>,
+    );
+  }
+
+  it("asks before a sidebar link leaves a page with unsaved changes, naming them", async () => {
+    renderDirtyPage();
+    const user = userEvent.setup();
+    await user.click(within(sidebar()).getByRole("link", { name: "Repos" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Leave without saving?" });
+    expect(dialog.textContent).toContain("1 card has unsaved changes: Routing rules.");
+    expect(nav.router.push).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Discard and leave" }));
+    expect(nav.router.push).toHaveBeenCalledWith("/repos");
+  });
+
+  it("asks before a phone drawer link leaves a page with unsaved changes", async () => {
+    renderDirtyPage();
+    const { user, drawer } = await openDrawer();
+    await user.click(within(drawer).getByRole("link", { name: "Fleet" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Leave without saving?" });
+    expect(nav.router.push).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Discard and leave" }));
+    expect(nav.router.push).toHaveBeenCalledWith("/fleet");
   });
 });
 

@@ -6,7 +6,10 @@ export interface BarChartDatum {
   key: string;
   /** The bucket's label, e.g. "Oct 5" or "Week of Oct 5": axis, bar title and table row. */
   label: string;
-  /** The bucket's value; null draws no bar (e.g. a rate with nothing to rate). */
+  /**
+   * The bucket's value; null draws no bar (e.g. a rate with nothing to rate), while 0 draws
+   * a stub on the baseline.
+   */
   value: number | null;
   /** The bucket's name in its bar's title when `label` is short for it, e.g. "Week of Oct 5". */
   title?: string;
@@ -49,6 +52,12 @@ export function niceMax(max: number): number {
 
 /** A bar's share of its bucket's width; the rest is the gap between bars. */
 const BAR_WIDTH = 0.7;
+
+/**
+ * The shortest bar, in the plot's 100 units (about 2–3 px): a 0 still draws a stub on the
+ * baseline, so it never looks like a bucket with nothing to measure (null, no bar).
+ */
+const MIN_BAR_HEIGHT = 1.5;
 
 /** Which buckets name the x axis: the first, the middle and the last. */
 function axisLabels(count: number): { index: number; position: "first" | "middle" | "last" }[] {
@@ -107,7 +116,10 @@ export function BarChart({
           >
             {data.map((datum, index) => {
               if (datum.value === null) return null;
-              const barHeight = Math.min(Math.max(datum.value / top, 0), 1) * 100;
+              const barHeight = Math.max(
+                Math.min(Math.max(datum.value / top, 0), 1) * 100,
+                MIN_BAR_HEIGHT,
+              );
               return (
                 <rect
                   key={datum.key}

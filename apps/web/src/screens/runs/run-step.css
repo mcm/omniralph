@@ -1,6 +1,6 @@
 /*
  * A step of a run as its own view (Design board MobileRun): the back link to the run, the
- * step's status line and its panel at full width, at every viewport. Only `--or-` tokens.
+ * step's name and status line and its panel at full width, at every viewport. Only `--or-` tokens.
  */
 .or-run-step {
   display: flex;
@@ -25,6 +25,14 @@
 
 .or-run-step__back:hover {
   color: var(--or-text);
+}
+
+.or-run-step__title {
+  color: var(--or-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .or-run-step .or-step-panel {

@@ -129,6 +129,22 @@
       }
     },
     {
+      "files": ["src/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@iamthemcmaster/**"],
+                "message": "The 2.0 panel builds on @omniralph/ui only: @iamthemcmaster/ui (1.x) is retired."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["src/app/(app)/**/*.tsx", "src/components/**/*.tsx"],
       "rules": {
         "no-restricted-imports": [
@@ -139,6 +155,12 @@
                 "name": "next/link",
                 "message": "Use Link from @/components/link: it shows the pending navigation."
               }
+            ],
+            "patterns": [
+              {
+                "group": ["@iamthemcmaster/**"],
+                "message": "The 2.0 panel builds on @omniralph/ui only: @iamthemcmaster/ui (1.x) is retired."
+              }
             ]
           }
         ]
@@ -147,7 +169,17 @@
     {
       "files": ["src/components/link.tsx", "src/components/auth-shell.tsx", "src/**/*.test.tsx"],
       "rules": {
-        "no-restricted-imports": "off"
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@iamthemcmaster/**"],
+                "message": "The 2.0 panel builds on @omniralph/ui only: @iamthemcmaster/ui (1.x) is retired."
+              }
+            ]
+          }
+        ]
       }
     }
   ]

@@ -112,14 +112,10 @@ const STEP_TONES: Record<StepState, StatusTone> = {
 };
 
 /**
- * A step's status line on its own view (the phone step page): its name and state, e.g.
- * "Build the API · Running", toned like its progress card dot.
+ * A step's status line on its own view (the phone step page), under its name: its state,
+ * e.g. "Running", toned like its progress card dot.
  */
-export function stepStatusLine(step: RunStep): { tone: StatusTone; text: string; state: string } {
+export function stepStatusLine(step: RunStep): { tone: StatusTone; state: string } {
   const state = stepState(step.status);
-  return {
-    tone: STEP_TONES[state],
-    text: `${stepLabel(step)} · ${STEP_STATE_LABELS[state]}`,
-    state: STEP_STATE_LABELS[state],
-  };
+  return { tone: STEP_TONES[state], state: STEP_STATE_LABELS[state] };
 }
