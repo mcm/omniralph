@@ -35,8 +35,6 @@ describe("runReason for a failed or stopped run", () => {
     expect(
       runReason({ kind: "failed", error: "the triage ended without a result (max_turns)" }),
     ).toBe("The run failed. The triage ended without a result (max_turns)");
-    expect(runReason({ kind: "stopped", error: "  " })).toBe(
-      "The run was stopped.",
-    );
+    expect(runReason({ kind: "stopped", error: "  " })).toBe("The run was stopped.");
   });
 });

@@ -8,7 +8,12 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "@/components/app-shell";
-import { jsonResponse, mockFetch, TEST_ORGANIZATION_ID, testUser } from "@/components/query-test-utils";
+import {
+  jsonResponse,
+  mockFetch,
+  TEST_ORGANIZATION_ID,
+  testUser,
+} from "@/components/query-test-utils";
 import type { AskChat as AskChatModel, AskChatDetail, AskChatList } from "@/lib/api/ask";
 import {
   ASK_PANEL_STORAGE_KEY,

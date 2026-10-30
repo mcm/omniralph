@@ -325,9 +325,7 @@ describe("header", () => {
   it("is a busy status while the connections load, never a blank page", async () => {
     holdReads = true;
     renderConnection("gitlab");
-    const loading = (await screen.findByText("Loading the connection")).closest(
-      '[role="status"]',
-    )!;
+    const loading = (await screen.findByText("Loading the connection")).closest('[role="status"]')!;
     expect(loading.getAttribute("aria-busy")).toBe("true");
     expect(screen.queryByRole("region", { name: "Connection summary" })).toBeNull();
     expect(toolbar()).toBeNull();

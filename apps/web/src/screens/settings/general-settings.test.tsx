@@ -322,7 +322,9 @@ describe("leaving the organization", () => {
   it("says what leaving costs instead of repeating the title on its button", async () => {
     renderGeneral();
     const card = await screen.findByRole("region", { name: "Leave organization" });
-    expect(within(card).getByText("You lose access to Acme's repos, runs and agents.")).toBeTruthy();
+    expect(
+      within(card).getByText("You lose access to Acme's repos, runs and agents."),
+    ).toBeTruthy();
     expect(within(card).queryByRole("button", { name: "Leave organization" })).toBeNull();
     expect(await leaveButton()).toBeTruthy();
   });
