@@ -355,10 +355,10 @@ describe("parseScreensOptions", () => {
 });
 
 describe("SCREEN_ROUTES steps", () => {
-  it("only fills or clicks", () => {
+  it("only fills, clicks or presses", () => {
     for (const route of SCREEN_ROUTES) {
       for (const step of route.steps ?? []) {
-        expect(["fill", "click"], route.name).toContain(step.action);
+        expect(["fill", "click", "press"], route.name).toContain(step.action);
         expect(step.selector, route.name).not.toBe("");
       }
     }

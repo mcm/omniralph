@@ -351,6 +351,9 @@
 
 .or-menu__item[data-highlighted] {
   background: var(--or-hover);
+  /* The keyboard highlight: the hover background alone is under 3:1 on the menu (WCAG 2.4.7). */
+  outline: 2px solid var(--or-acc);
+  outline-offset: -2px;
 }
 
 .or-menu__item[data-disabled] {
