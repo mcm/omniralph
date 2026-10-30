@@ -1,10 +1,27 @@
+import type * as Db from "@omniralph/db";
 import type { RepositoryStatusFacts, StatusAgent } from "@omniralph/db";
 import { describe, expect, it, vi } from "vitest";
 import type { StatusRepository } from "./status";
 
 vi.mock("server-only", () => ({}));
+const stub = vi.hoisted(() => ({
+  facts: undefined as unknown as RepositoryStatusFacts,
+  lastSeen: new Map<string, string>(),
+}));
+vi.mock("@omniralph/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof Db>()),
+  loadRepositoryStatusFacts: async () => stub.facts,
+}));
+vi.mock("@/lib/hot-state", () => ({
+  hotStateEnabled: () => true,
+  getRedis: () => ({
+    mget: async (keys: string[]) => keys.map((key) => stub.lastSeen.get(key) ?? null),
+  }),
+}));
 
-const { repositoryStatus, REPOSITORY_PROBLEM_ORDER } = await import("./status");
+const { loadRepositoryStatuses, repositoryStatus, REPOSITORY_PROBLEM_ORDER } =
+  await import("./status");
+const { agentLastSeenKey } = await import("@/lib/agents/last-seen");
 
 const NOW = new Date("2026-10-26T12:00:00.000Z");
 const ORG = "org-1";
@@ -125,5 +142,28 @@ describe("repositoryStatus", () => {
       },
     };
     expect(repositoryStatus(repository(gitlab), facts(), NOW).problems).toEqual([]);
+  });
+});
+
+describe("loadRepositoryStatuses", () => {
+  const db = {} as Parameters<typeof loadRepositoryStatuses>[0];
+  const stale = { lastHeartbeatAt: new Date(NOW.getTime() - 3600_000) };
+
+  it("counts an agent online from its Redis last-seen when its row's heartbeat is stale", async () => {
+    stub.facts = facts({ agents: [agent("a1", stale)], pins: new Map([[REPO, ["a1"]]]) });
+    stub.lastSeen = new Map([[agentLastSeenKey("a1"), String(NOW.getTime() - 5_000)]]);
+
+    const statuses = await loadRepositoryStatuses(db, [repository()], NOW);
+
+    expect(statuses.get(REPO)).toEqual({ running: 0, problems: [] });
+  });
+
+  it("still reports no agent online when neither Redis nor the row has a recent heartbeat", async () => {
+    stub.facts = facts({ agents: [agent("a1", stale)] });
+    stub.lastSeen = new Map([[agentLastSeenKey("a1"), String(NOW.getTime() - 120_000)]]);
+
+    const statuses = await loadRepositoryStatuses(db, [repository()], NOW);
+
+    expect(statuses.get(REPO)?.problems.map((p) => p.code)).toEqual(["no_agent_online"]);
   });
 });
