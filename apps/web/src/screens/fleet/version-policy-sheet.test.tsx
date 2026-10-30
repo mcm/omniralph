@@ -402,7 +402,7 @@ describe("withVersionPolicy", () => {
           name: "manual",
           version: "2.0.3",
           selfUpdate: "unsupported",
-          status: { kind: "idle", label: "Idle", tone: "neutral" },
+          status: { kind: "idle", label: "Idle", tone: "good" },
         }),
         agentRow({
           name: "beta",

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentPropsWithRef, ReactNode } from "react";
 
 /**
  * What a state means (Design rule 15): `need` (lavender, needs you), `run` and `good`
@@ -8,7 +8,10 @@ export type StatusTone = "need" | "run" | "good" | "fail" | "neutral";
 
 export const STATUS_TONES: readonly StatusTone[] = ["need", "run", "good", "fail", "neutral"];
 
-export interface StatusDotProps {
+/** Extra attributes and handlers for a status's `<span>` (e.g. from a tooltip trigger). */
+type SpanProps = Omit<ComponentPropsWithRef<"span">, "children" | "className" | "role">;
+
+export interface StatusDotProps extends Omit<SpanProps, "aria-label"> {
   tone: StatusTone;
   /** Required: the dot's accessible name, e.g. "Running". */
   label: string;
@@ -16,9 +19,10 @@ export interface StatusDotProps {
 }
 
 /** A colored dot on its own, named by `label`. */
-export function StatusDot({ tone, label, className }: StatusDotProps) {
+export function StatusDot({ tone, label, className, ...rest }: StatusDotProps) {
   return (
     <span
+      {...rest}
       className={["or-dot", `or-dot--${tone}`, className].filter(Boolean).join(" ")}
       role="img"
       aria-label={label}
@@ -26,7 +30,7 @@ export function StatusDot({ tone, label, className }: StatusDotProps) {
   );
 }
 
-export interface StatusTextProps {
+export interface StatusTextProps extends SpanProps {
   tone: StatusTone;
   /** The visible label next to the dot. */
   children: ReactNode;
@@ -34,9 +38,12 @@ export interface StatusTextProps {
 }
 
 /** A dot followed by its label, both in the tone's color. */
-export function StatusText({ tone, children, className }: StatusTextProps) {
+export function StatusText({ tone, children, className, ...rest }: StatusTextProps) {
   return (
-    <span className={["or-status", `or-status--${tone}`, className].filter(Boolean).join(" ")}>
+    <span
+      {...rest}
+      className={["or-status", `or-status--${tone}`, className].filter(Boolean).join(" ")}
+    >
       <span className={`or-dot or-dot--${tone}`} aria-hidden="true" />
       {children}
     </span>

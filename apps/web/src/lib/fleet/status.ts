@@ -8,8 +8,11 @@
 import type { AgentUpdateReport, SelfUpdateSupport } from "@omniralph/shared";
 import type { AuditEventName } from "@/lib/agents/display";
 
-/** Fleet's tones (Design rule 15): mint for running, coral for trouble, neutral otherwise. */
-export type FleetTone = "run" | "fail" | "neutral";
+/**
+ * Fleet's tones (Design rule 15): mint for online (`good` idle, `run` with a glow while
+ * running), coral for trouble, neutral otherwise.
+ */
+export type FleetTone = "good" | "run" | "fail" | "neutral";
 
 export const AGENT_STATUS_KINDS = [
   "revoked",
@@ -107,7 +110,7 @@ export function agentStatus(agent: AgentStatusInput, now: Date = new Date()): Ag
   if (agent.updateStatus === "updating") {
     return { kind: "updating", label: "Updating", tone: "neutral" };
   }
-  return { kind: "idle", label: "Idle", tone: "neutral" };
+  return { kind: "idle", label: "Idle", tone: "good" };
 }
 
 /**
@@ -247,6 +250,16 @@ export function relativeAgo(from: Date | string, now: Date): string {
   if (elapsed < HOUR_MS) return count(Math.floor(elapsed / MINUTE_MS), "minute");
   if (elapsed < DAY_MS) return count(Math.floor(elapsed / HOUR_MS), "hour");
   return count(Math.floor(elapsed / DAY_MS), "day");
+}
+
+/** "Last seen 2 minutes ago", or "Never connected" before an agent's first heartbeat. */
+export function lastSeenText(
+  lastHeartbeatAt: Date | string | null,
+  now: Date = new Date(),
+): string {
+  return lastHeartbeatAt === null
+    ? "Never connected"
+    : `Last seen ${relativeAgo(lastHeartbeatAt, now)}`;
 }
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;

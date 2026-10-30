@@ -8,7 +8,7 @@ import {
   OrgBadge,
   RepoBadge,
   SplitView,
-  StatusText,
+  StatusIndicator,
   SummaryCells,
   useSplitWide,
   type DataTableColumn,
@@ -22,11 +22,13 @@ import type { FleetAgentRow, FleetSummary } from "@/lib/api/agents";
 import type { SettingsHistoryEntry } from "@/lib/api/settings-history";
 import {
   acceptedKindsSummary,
+  lastSeenText,
   pinBadges,
   versionPolicyLabel,
   versionSummary,
 } from "@/lib/fleet/status";
 import { agentHref, FLEET_PATH } from "@/lib/runs/hrefs";
+import { useClock } from "../clock";
 import { AgentPanel } from "./agent-panel";
 import { EnrollSheet } from "./enroll-sheet";
 import { useFleet } from "./queries";
@@ -136,7 +138,14 @@ export function fleetSummaryCells(
 }
 
 function AgentStatus({ agent }: { agent: FleetAgentRow }) {
-  return <StatusText tone={agent.status.tone}>{agent.status.label}</StatusText>;
+  const now = useClock();
+  return (
+    <StatusIndicator
+      tone={agent.status.tone}
+      label={agent.status.label}
+      tooltip={lastSeenText(agent.lastHeartbeatAt, new Date(now))}
+    />
+  );
 }
 
 /** One or two repo badges, or the first and "+N". */
