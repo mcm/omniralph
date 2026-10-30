@@ -41,6 +41,16 @@
   min-width: 0;
 }
 
+/* A segmented control keeps its natural width; inputs, selects and tokens fill the column. */
+.or-field__control > .or-seg {
+  align-self: flex-start;
+}
+
+/* Consecutive setting rows in a card: one gap, so no screen spaces its own rows. */
+.or-card__body > .or-field + .or-field {
+  margin-top: 16px;
+}
+
 /* Stacked: the label above the control at every width (narrow surfaces). */
 .or-field--stacked {
   grid-template-columns: minmax(0, 1fr);

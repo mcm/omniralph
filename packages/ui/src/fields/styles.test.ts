@@ -59,6 +59,20 @@ describe("fields.css", () => {
     );
   });
 
+  it("separates consecutive rows in a card by one non-zero gap", () => {
+    expect(declarationsFor(".or-card__body > .or-field + .or-field")["margin-top"]).toBe("16px");
+    expect(declarationsFor(".or-field").margin).toBeUndefined();
+  });
+
+  it("keeps a segmented control at its natural width while other controls fill the column", () => {
+    expect(declarationsFor(".or-field__control > .or-seg")["align-self"]).toBe("flex-start");
+    expect(declarationsFor(".or-field__control")["align-items"]).toBeUndefined();
+    for (const control of [".or-input", ".or-tokens"]) {
+      expect(declarationsFor(control).width).toBe("100%");
+    }
+    expect(declarationsFor(".or-select").width).toBe("100%");
+  });
+
   it("stacks the label above the control at every width when stacked", () => {
     expect(declarationsFor(".or-field--stacked")["grid-template-columns"]).toBe("minmax(0, 1fr)");
     expect(declarationsFor(".or-field--stacked .or-field__head")["padding-top"]).toBe("0");
