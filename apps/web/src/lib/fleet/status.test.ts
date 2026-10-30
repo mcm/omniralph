@@ -9,6 +9,7 @@ import {
   auditEventLabel,
   compactSince,
   pinBadges,
+  lastSeenText,
   relativeAgo,
   versionCounts,
   securityLine,
@@ -73,7 +74,7 @@ describe("agentStatus", () => {
       label: "Updating",
       tone: "neutral",
     });
-    expect(status({})).toEqual({ kind: "idle", label: "Idle", tone: "neutral" });
+    expect(status({})).toEqual({ kind: "idle", label: "Idle", tone: "good" });
     expect(status({ updateStatus: "manual" }).kind).toBe("idle");
   });
 
@@ -281,8 +282,8 @@ describe("agentStatusLine", () => {
 
   it("says what the agent does and where its version stands", () => {
     expect(line({ runningCount: 2 })).toEqual({ label: "Running · up to date", tone: "run" });
-    expect(line({})).toEqual({ label: "Idle · up to date", tone: "neutral" });
-    expect(line({ desiredVersion: null })).toEqual({ label: "Idle · up to date", tone: "neutral" });
+    expect(line({})).toEqual({ label: "Idle · up to date", tone: "good" });
+    expect(line({ desiredVersion: null })).toEqual({ label: "Idle · up to date", tone: "good" });
     expect(
       line({
         online: false,
@@ -293,7 +294,7 @@ describe("agentStatusLine", () => {
     ).toEqual({ label: "Offline 3d · 1 version behind", tone: "fail" });
     expect(line({ version: "1.9.0", updateStatus: "manual" })).toEqual({
       label: "Idle · behind 2.0.3",
-      tone: "neutral",
+      tone: "good",
     });
   });
 
@@ -338,7 +339,7 @@ describe("agentStatusLine with a local pin", () => {
       label: "Running · up to date · pinned to 2.0.3",
       tone: "run",
     });
-    expect(line({})).toEqual({ label: "Idle · up to date · pinned to 2.0.3", tone: "neutral" });
+    expect(line({})).toEqual({ label: "Idle · up to date · pinned to 2.0.3", tone: "good" });
     expect(line({ online: false, lastHeartbeatAt: ago(DAY), version: "2.0.2" })).toEqual({
       label: "Offline 1d · 1 version behind · pinned to 2.0.3",
       tone: "fail",
@@ -378,6 +379,14 @@ describe("relativeAgo", () => {
     expect(relativeAgo(ago(2 * MINUTE + 5_000), NOW)).toBe("2 minutes ago");
     expect(relativeAgo(ago(3 * HOUR), NOW)).toBe("3 hours ago");
     expect(relativeAgo(ago(DAY), NOW)).toBe("1 day ago");
+  });
+});
+
+describe("lastSeenText", () => {
+  it("says when the agent last heartbeated, or that it never has", () => {
+    expect(lastSeenText(ago(2 * MINUTE + 5_000), NOW)).toBe("Last seen 2 minutes ago");
+    expect(lastSeenText(ago(10_000), NOW)).toBe("Last seen just now");
+    expect(lastSeenText(null, NOW)).toBe("Never connected");
   });
 });
 

@@ -7,7 +7,7 @@ import {
   MetaBadge,
   OrgBadge,
   RepoBadge,
-  StatusText,
+  StatusIndicator,
   TextLink,
   Tooltip,
 } from "@omniralph/ui";
@@ -15,7 +15,7 @@ import type { ReactNode } from "react";
 import { formatDuration } from "@/components/runs/progress";
 import { ApiError } from "@/lib/api/client";
 import type { AgentDetail, FleetAgentRow, RecentAttempt } from "@/lib/api/agents";
-import { agentStatusLine, securityLine, shortDate } from "@/lib/fleet/status";
+import { agentStatusLine, lastSeenText, securityLine, shortDate } from "@/lib/fleet/status";
 import { runHref } from "@/lib/runs/hrefs";
 import { useClock } from "../clock";
 import { AgentActions } from "./agent-actions";
@@ -234,13 +234,18 @@ export function AgentPanelContent({
 }) {
   const { agent } = detail;
   const status = agentStatusLine(agent);
+  const now = useClock();
   return (
     <article className="or-fleet-agent" aria-labelledby={`agent-${agent.id}`}>
       <div className="or-fleet-agent__top">
         {showOrganization ? <OrgBadge name={agent.organization.name} /> : <span />}
         <AgentActions detail={detail} />
       </div>
-      <StatusText tone={status.tone}>{status.label}</StatusText>
+      <StatusIndicator
+        tone={status.tone}
+        label={status.label}
+        tooltip={lastSeenText(agent.lastHeartbeatAt, new Date(now))}
+      />
       <h2 id={`agent-${agent.id}`} className="or-fleet-agent__name or-mono">
         {agent.name}
       </h2>

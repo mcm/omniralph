@@ -301,6 +301,32 @@ describe("the rail", () => {
     expect(found!.getAttribute("aria-label")).toBe(expected.label);
   });
 
+  it("says what the dot means in its tooltip, counting the other problems", async () => {
+    rows = [
+      portalRow({
+        status: {
+          running: 0,
+          problems: [
+            { code: "sync_failed", message: "Couldn't update this repo's checkout." },
+            { code: "no_agent_online", message: "No agent online" },
+          ],
+        },
+      }),
+      webRow({ status: { running: 2, problems: [] } }),
+    ];
+    renderRepos();
+    await waitFor(() => expect(railRows()).toHaveLength(2));
+    const [portal, web] = railRows().map((row) => dot(row)!);
+    expect(portal!.getAttribute("aria-description")).toBe(
+      "Couldn't update this repo's checkout. and 1 more",
+    );
+    expect(web!.getAttribute("aria-label")).toBe("2 running");
+    await userEvent.setup().hover(portal!);
+    expect((await screen.findByRole("tooltip")).textContent).toBe(
+      "Couldn't update this repo's checkout. and 1 more",
+    );
+  });
+
   it("makes each row one link to its repo, wrapping nothing interactive", async () => {
     renderRepos({ repositoryId: REPO_WEB });
     await waitFor(() => expect(railRows()).toHaveLength(2));

@@ -18,7 +18,7 @@ import { settingsHistoryEntrySchema } from "./settings-history";
 /** Wire formats of the agent endpoints under `/api/ui`. */
 
 /** `AgentRow` on the wire. */
-const fleetTone = z.enum(["run", "fail", "neutral"]);
+const fleetTone = z.enum(["good", "run", "fail", "neutral"]);
 
 export const agentRowSchema = z.object({
   id: z.string(),

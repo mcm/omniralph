@@ -239,7 +239,7 @@ describe("the Agents card", () => {
         .getByRole("link", { name: /build-1/ })
         .getAttribute("href"),
     ).toBe(`/fleet/${BUILD_1}`);
-    expect(items[1]!.querySelector(".or-status--neutral")?.textContent).toBe("Idle");
+    expect(items[1]!.querySelector(".or-status--good")?.textContent).toBe("Idle");
     expect(items[2]!.querySelector(".or-status--fail")?.textContent).toBe("Offline");
     expect(items[3]!.querySelector(".or-status--neutral")?.textContent).toBe("Updating");
     expect(within(items[1]!).getByRole("button", { name: "Unpin build-2" })).toBeTruthy();

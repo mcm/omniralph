@@ -8,7 +8,7 @@ import {
   MetaBadge,
   SaveBar,
   StatusDot,
-  StatusText,
+  StatusIndicator,
   type StatusTone,
   useStagedCard,
   type StagedChange,
@@ -49,7 +49,7 @@ export function agentStateText(agent: PinnedAgent): { text: string; tone: Status
     case "running":
       return { text: `Running ${agent.runningForRepo}`, tone: "run" };
     case "idle":
-      return { text: "Idle", tone: "neutral" };
+      return { text: "Idle", tone: "good" };
     case "offline":
       return { text: "Offline", tone: "fail" };
     case "updating":
@@ -193,9 +193,9 @@ export function AgentsCard({ detail, titleId }: { detail: RepositoryDetail; titl
             const state = agentStateText(agent);
             return (
               <li key={agent.id} className="or-repo-agents__row">
-                <StatusDot tone={state.tone} label={state.text} />
+                <StatusIndicator variant="dot" tone={state.tone} label={state.text} />
                 <AgentBadge name={agent.name} href={agentHref(agent.id)} />
-                <StatusText tone={state.tone}>{state.text}</StatusText>
+                <StatusIndicator tone={state.tone} label={state.text} />
                 {canEdit ? (
                   <IconButton
                     className="or-repo-agents__unpin"

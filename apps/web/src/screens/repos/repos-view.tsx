@@ -10,7 +10,7 @@ import {
   rowLinkProps,
   rowListProps,
   SplitView,
-  StatusDot,
+  StatusIndicator,
   useLinkComponent,
   useSplitWide,
 } from "@omniralph/ui";
@@ -76,19 +76,35 @@ function SwitchIcon({ icon: Icon, name, on }: { icon: TablerIcon; name: string; 
 }
 
 /**
+ * What the row's dot means, its tooltip: the first problem ("No agent online and 1 more" when
+ * there are others), else "2 running"; null for no dot.
+ */
+export function rowDotMeaning(status: RepositoryListItem["status"]): string | null {
+  const [problem, ...others] = status.problems;
+  if (problem) {
+    return others.length > 0 ? `${problem.message} and ${others.length} more` : problem.message;
+  }
+  return status.running > 0 ? `${status.running} running` : null;
+}
+
+/**
  * The row's dot (Design rule 9): coral with the first problem when the repo has one, else
- * mint while its work runs, else none.
+ * mint while its work runs, else none. Its tooltip says what it means; the trigger adds no
+ * tab stop, so the row stays a single link.
  */
 function RowDot({ status }: { status: RepositoryListItem["status"] }) {
+  const meaning = rowDotMeaning(status);
+  if (meaning === null) return null;
   const problem = status.problems[0];
-  if (problem)
-    return <StatusDot className="or-repo-row__dot" tone="fail" label={problem.message} />;
-  if (status.running > 0) {
-    return (
-      <StatusDot className="or-repo-row__dot" tone="run" label={`${status.running} running`} />
-    );
-  }
-  return null;
+  return (
+    <StatusIndicator
+      variant="dot"
+      className="or-repo-row__dot"
+      tone={problem ? "fail" : "run"}
+      label={problem ? problem.message : meaning}
+      tooltip={meaning}
+    />
+  );
 }
 
 /**

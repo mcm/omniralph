@@ -432,7 +432,7 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
     ]);
     expect(body.agents.map((a) => a.status.tone)).toEqual([
       "run",
-      "neutral",
+      "good",
       "fail",
       "neutral",
       "fail",

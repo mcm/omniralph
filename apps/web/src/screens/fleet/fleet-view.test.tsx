@@ -299,6 +299,19 @@ describe("the agents table", () => {
     expect(status(2).className).toContain("or-status--neutral");
   });
 
+  it("says when each agent was last seen in its status's tooltip", async () => {
+    renderFleet();
+    await waitFor(() => expect(bodyRows()).toHaveLength(3));
+    const status = within(bodyRows()[0]!).getAllByRole("cell")[1]!.querySelector(".or-status")!;
+    expect(status.getAttribute("aria-description")).toMatch(
+      /^Last seen \d+ (minute|hour|day)s? ago$/,
+    );
+    await userEvent.setup().hover(status);
+    expect((await screen.findByRole("tooltip")).textContent).toBe(
+      status.getAttribute("aria-description"),
+    );
+  });
+
   it("shows two pins as badges, and three as the first and +2", async () => {
     renderFleet();
     await waitFor(() => expect(bodyRows()).toHaveLength(3));
