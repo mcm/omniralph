@@ -11,14 +11,12 @@ const packageJson = JSON.parse(readFileSync(path.join(packageDir, "package.json"
 };
 
 describe("@omniralph/ui package", () => {
-  it("depends on neither Next.js nor @iamthemcmaster", () => {
+  it("doesn't depend on Next.js", () => {
     const names = [
       ...Object.keys(packageJson.dependencies ?? {}),
       ...Object.keys(packageJson.peerDependencies ?? {}),
     ];
-    const forbidden = names.filter(
-      (name) => name.startsWith("next") || name.startsWith("@iamthemcmaster/"),
-    );
+    const forbidden = names.filter((name) => name.startsWith("next"));
     expect(forbidden).toEqual([]);
   });
 

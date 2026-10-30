@@ -1,5 +1,5 @@
 // Local lint rules that keep the panel's styling inside the design system
-// (apps/web/DESIGN.md, @iamthemcmaster/ui): no raw color literals, no inline
+// (apps/web/DESIGN.md, @omniralph/ui): no raw color literals, no inline
 // layout/spacing/color/typography/size styles, no arbitrary Tailwind values,
 // no timestamps rendered outside <Timestamp>.
 // Tested in design-system.test.ts; wired up in apps/web/.oxlintrc.json.

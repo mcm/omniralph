@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { isValidElement, type ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { RunsView } from "@/screens/runs/runs-view";
@@ -13,7 +11,5 @@ describe("the run page", () => {
     expect(isValidElement(page)).toBe(true);
     expect(page.props.children.type).toBe(RunsView);
     expect(page.props.children.props.runId).toBe("run-1");
-    const source = readFileSync(path.join(__dirname, "page.tsx"), "utf8");
-    expect(source).not.toMatch(/@iamthemcmaster\/ui/);
   });
 });

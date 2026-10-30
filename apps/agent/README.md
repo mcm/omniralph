@@ -130,21 +130,11 @@ pnpm changeset --empty
 
 Pull requests that touch neither the agent nor its workspace packages need no changeset.
 
-#### Changesets for the old name during the 2.0 freeze
-
-Until the 2.0 cutover, other 2.0 epics still write changesets for `@omniralph/harness`, the
-package's old name. The check accepts those too, and `scripts/check-harness-changeset.ts` still
-runs it from the old path. Before `pnpm changeset version`, the workflow runs
-`scripts/rewrite-legacy-changesets.ts`, which renames the `@omniralph/harness` key to
-`@omniralph/agent` in every pending changeset (keeping the larger bump if a changeset names both),
-so they release as `@omniralph/agent`. Run it yourself after rebasing onto a branch that added
-one. At the cutover, the check stops accepting the old name and the old path is deleted.
-
 ### The Version Packages pull request
 
 When changesets reach `main`, the workflow opens a pull request titled "Version Packages" (branch
 `changeset-release/main`), and updates it on every later push to `main`. The pull request runs
-`scripts/rewrite-legacy-changesets.ts`, then `pnpm changeset version`, which:
+`pnpm changeset version`, which:
 
 - bumps `version` in `apps/agent/package.json` by the largest bump the changesets declare;
 - writes their notes to `apps/agent/CHANGELOG.md`, linking each entry's pull request and author;

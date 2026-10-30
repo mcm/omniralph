@@ -1,11 +1,6 @@
 name: Set up the workspace
 description: pnpm, Node and the workspace's dependencies, after actions/checkout.
 
-inputs:
-  npm-token:
-    description: Token for the private @iamthemcmaster/ui package
-    required: true
-
 runs:
   using: composite
   steps:
@@ -15,14 +10,6 @@ runs:
       with:
         node-version-file: .nvmrc
         cache: pnpm
-
-    # @iamthemcmaster/ui is a private package on the public npm registry.
-    # .npmrc is gitignored; never commit one containing a token.
-    - name: Authenticate to npm
-      shell: bash
-      run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
-      env:
-        NPM_TOKEN: ${{ inputs.npm-token }}
 
     - name: Install
       shell: bash

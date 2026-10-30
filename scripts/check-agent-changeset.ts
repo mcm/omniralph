@@ -7,10 +7,6 @@
 // packages/ui into the agent page (dist/ui). They are derived from the workspace graph
 // (`agentPackageDirs`), devDependencies included, so a new one counts as soon as it's added.
 //
-// Until the 2.0 cutover (Epic 14), a changeset naming the package's old name,
-// @omniralph/harness, passes too: other 2.0 epics still write those, and
-// scripts/rewrite-legacy-changesets.ts renames them before `pnpm changeset version`.
-//
 // The bundled packages are private devDependencies, so `changeset status` doesn't map their
 // changes to the agent: this check does.
 //
@@ -23,8 +19,6 @@ import { fileURLToPath } from "node:url";
 import { AGENT_PACKAGE } from "../packages/shared/src/agent-version.js";
 
 export const AGENT = AGENT_PACKAGE;
-/** The package's name before 2.0. Epic 14 stops accepting it. */
-export const LEGACY_AGENT = "@omniralph/harness";
 
 export interface Changeset {
   path: string;
@@ -89,9 +83,8 @@ export function checkAgentChangeset({
     if (releases.length === 0) {
       return { ok: true, message: `${changeset.path} is an empty changeset: no release note.` };
     }
-    const named = [AGENT, LEGACY_AGENT].find((name) => releases.includes(name));
-    if (named) {
-      return { ok: true, message: `${changeset.path} adds a changeset for ${named}.` };
+    if (releases.includes(AGENT)) {
+      return { ok: true, message: `${changeset.path} adds a changeset for ${AGENT}.` };
     }
   }
 

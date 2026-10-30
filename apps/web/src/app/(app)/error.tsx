@@ -1,18 +1,15 @@
 "use client";
 
 // Error boundaries must be client components.
-import { Alert, AlertDescription, AlertTitle, Button } from "@iamthemcmaster/ui";
+import { Button, EmptyState } from "@omniralph/ui";
 import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
 import * as React from "react";
-import { AppHeader } from "@/components/app-header";
-import { MonoValue } from "@/components/mono-value";
-import { PageHeader } from "@/components/page-header";
+import "./error.css";
 
 /**
- * Any unexpected render error of a signed-in page, in place of the page (the sidebar and
- * the header stay): what happened and a Retry that renders the page again (DESIGN.md:
- * errors are shown in place with a retry). Failed loads don't get here: `QueryBoundary`
- * shows those in the page itself.
+ * Any unexpected render error of a signed-in page, in place of the page (the shell stays):
+ * what happened and a Retry that renders the page again (DESIGN.md: errors are shown in place
+ * with a retry). Failed loads don't get here: each screen shows those itself.
  */
 export default function AppError({
   error,
@@ -25,30 +22,28 @@ export default function AppError({
     console.error(error);
   }, [error]);
   return (
-    <>
-      <AppHeader />
-      <div className="detail-main">
-        <PageHeader title="Something went wrong" />
-        <Alert variant="danger" className="query-error">
-          <IconAlertTriangle size={16} />
-          <AlertTitle as="h2">Couldn&apos;t show this page</AlertTitle>
-          <AlertDescription className="query-error-body">
-            <span>
-              The page hit an unexpected error. Try again; if it keeps happening, reload the page.
-              {error.digest && (
-                <>
-                  {" "}
-                  Reference: <MonoValue value={error.digest} />
-                </>
-              )}
-            </span>
-            <Button variant="secondary" size="sm" onClick={() => retry()}>
-              <IconRefresh size={14} />
-              Retry
-            </Button>
-          </AlertDescription>
-        </Alert>
-      </div>
-    </>
+    <div className="or-app-error">
+      <h1 className="or-app-error__title">Something went wrong</h1>
+      <EmptyState
+        icon={IconAlertTriangle}
+        title="Couldn't show this page"
+        description={
+          <>
+            The page hit an unexpected error. Try again; if it keeps happening, reload the page.
+            {error.digest && (
+              <>
+                {" "}
+                Reference: <code className="or-app-error__digest">{error.digest}</code>
+              </>
+            )}
+          </>
+        }
+        action={
+          <Button icon={IconRefresh} onClick={() => retry()}>
+            Retry
+          </Button>
+        }
+      />
+    </div>
   );
 }

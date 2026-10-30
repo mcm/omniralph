@@ -238,8 +238,7 @@ details.
 
 ## Development
 
-Requires Node 22 and pnpm 10 (`corepack enable`). `@iamthemcmaster/ui` is a private npm package:
-your `~/.npmrc` must be authenticated. Don't commit an `.npmrc` containing a token.
+Requires Node 22 and pnpm 10 (`corepack enable`).
 
 ```bash
 pnpm install

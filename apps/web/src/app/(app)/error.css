@@ -1,0 +1,26 @@
+/*
+ * A signed-in page's render error (`(app)/error.tsx`): the page's title, then the error in
+ * place with a Retry, in one column like the other screens. Only `--or-` tokens.
+ */
+.or-app-error {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 800px;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.or-app-error__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.or-app-error__digest {
+  font-family: var(--or-font-mono);
+  overflow-wrap: anywhere;
+}

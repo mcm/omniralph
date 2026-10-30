@@ -2,7 +2,7 @@
 
 The Ultraviolet design system: tokens, fonts, the theme runtime and the shared components
 used by `apps/web` and the agent's local UI. It runs in plain React: it imports nothing from
-`next` or `@iamthemcmaster/*` (enforced by lint and a test), so routing comes in through
+`next` (enforced by lint and a test), so routing comes in through
 props and context.
 
 ## Styles
@@ -14,8 +14,7 @@ import "@omniralph/ui/fonts.css"; // Instrument Sans and Geist Mono, self-hosted
 import "@omniralph/ui/styles.css"; // tokens and every component stylesheet
 ```
 
-In `apps/web` they go in `src/app/layout.tsx`, after the `@iamthemcmaster/ui` styles and
-before `globals.css`. The CSS ships as authored (no build step).
+In `apps/web` they go in `src/app/layout.tsx`, before `globals.css`. The CSS ships as authored (no build step).
 
 Tokens are CSS custom properties with the `--or-` prefix (`--or-page`, `--or-text`,
 `--or-acc`, `--or-radius`, `--or-side-w` …), and classes use `or-`. Dark is the default

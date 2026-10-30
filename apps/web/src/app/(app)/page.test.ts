@@ -20,6 +20,5 @@ describe("the home page", () => {
   it("no longer redirects anywhere", () => {
     const source = readFileSync(path.join(__dirname, "page.tsx"), "utf8");
     expect(source).not.toMatch(/\bredirect\(/);
-    expect(source).not.toMatch(/@iamthemcmaster\/ui/);
   });
 });
