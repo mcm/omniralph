@@ -14,7 +14,7 @@ export function agentRow(overrides: Partial<FleetAgentRow> = {}): FleetAgentRow 
     name: "coder-1",
     online: true,
     revoked: false,
-    status: { kind: "idle", label: "Idle", tone: "neutral" },
+    status: { kind: "idle", label: "Idle", tone: "good" },
     runningCount: 0,
     host: { hostname: "build-1", coder: null },
     organization: { id: TEST_ORGANIZATION_ID, name: "Acme", role: "admin" },
