@@ -3,14 +3,20 @@ import type { HostToolReport } from "@omniralph/shared";
 import { eq } from "drizzle-orm";
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  createAgentEnrollment,
+  enrollAgent,
+  revokeAgent,
+  rotateRefreshToken,
+} from "./agent-auth.js";
 import { markAgentLiveOnline, markAgentsLiveOffline } from "./agents.js";
 import { captureChanges } from "./changes.js";
 import { closeDb, createDb, type Database } from "./client.js";
 import {
   claimJob,
+  failJob,
   insertJob,
   recordAgentHeartbeat,
-  refreshAllHostToolWaits,
   refreshHostToolWaits,
   setQueuedJobTarget,
 } from "./jobs.js";
@@ -113,11 +119,8 @@ describe.skipIf(!databaseAvailable)("host tool waits", () => {
     const job = await enqueue(org, ["gh"]);
     expect(job.waitingReason).toBeNull();
 
-    await markAgentsLiveOffline(db, [id]);
-    const offline = await captureChanges(() => refreshHostToolWaits({ db, organizationId: org }));
-    expect(offline.result).toEqual([
-      { id: job.id, waitingReason: { code: "host_tools_missing", hostTools: ["gh"] } },
-    ]);
+    const offline = await captureChanges(() => markAgentsLiveOffline(db, [id]));
+    expect(await reasonOf(job.id)).toEqual({ code: "host_tools_missing", hostTools: ["gh"] });
     expect(runChanges(offline.changes)).toEqual([job.id]);
 
     // Its next heartbeat announces it online, which refreshes the waits.
@@ -205,12 +208,66 @@ describe.skipIf(!databaseAvailable)("host tool waits", () => {
     expect(await reasonOf(job.id)).toBeNull();
   });
 
-  it("refreshes every organization with waiting jobs", async () => {
+  const claim = (agentId: string, organizationId: string) =>
+    claimJob(db, {
+      agentId,
+      organizationId,
+      acceptedTaskTypes: ["query"],
+      pools: ["short"],
+      agentVersion: "2.0.4",
+      maxDeliveries: 3,
+    });
+
+  it("sets it when the only agent with the tool is revoked, on the jobs it ran too", async () => {
+    const org = await organization();
+    const id = await agent(org, [gh]);
+    const running = await enqueue(org, ["gh"]);
+    expect((await claim(id, org)).claim?.job.id).toBe(running.id);
+    const queued = await enqueue(org, ["gh"]);
+    expect(queued.waitingReason).toBeNull();
+
+    const revoked = await captureChanges(() => revokeAgent(db, id));
+    expect(revoked.result?.requeuedJobs.map((j) => j.id)).toEqual([running.id]);
+    for (const job of [running, queued]) {
+      expect(await reasonOf(job.id)).toEqual({ code: "host_tools_missing", hostTools: ["gh"] });
+    }
+    expect(runChanges(revoked.changes)).toEqual(expect.arrayContaining([running.id, queued.id]));
+  });
+
+  it("sets it when a reused refresh token revokes the only agent with the tool", async () => {
+    const org = await organization();
+    const { token } = await createAgentEnrollment(db, { organizationId: org });
+    const enrolled = await enrollAgent(db, {
+      enrollmentToken: token,
+      name: "agent",
+      version: "2.0.4",
+    });
+    await db
+      .update(agents)
+      .set({ reportedHostTools: [gh], liveOnline: true })
+      .where(eq(agents.id, enrolled!.agentId));
+    const job = await enqueue(org, ["gh"]);
+    expect(job.waitingReason).toBeNull();
+
+    await rotateRefreshToken(db, enrolled!.refreshToken);
+    expect((await rotateRefreshToken(db, enrolled!.refreshToken)).status).toBe("reused");
+    expect(await reasonOf(job.id)).toEqual({ code: "host_tools_missing", hostTools: ["gh"] });
+  });
+
+  it("sets it on a retried job when no online agent has the tool any more", async () => {
     const org = await organization();
     const id = await agent(org, [gh]);
     const job = await enqueue(org, ["gh"]);
-    await db.update(agents).set({ liveOnline: false }).where(eq(agents.id, id));
-    expect(await refreshAllHostToolWaits(db)).toBeGreaterThanOrEqual(1);
+    expect((await claim(id, org)).claim?.job.id).toBe(job.id);
+    await markAgentsLiveOffline(db, [id]);
+
+    const retried = await failJob(db, {
+      jobId: job.id,
+      agentId: id,
+      retryable: true,
+      maxDeliveries: 3,
+    });
+    expect(retried.status).toBe("retry");
     expect(await reasonOf(job.id)).toEqual({ code: "host_tools_missing", hostTools: ["gh"] });
   });
 });

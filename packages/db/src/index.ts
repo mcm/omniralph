@@ -302,7 +302,6 @@ export {
   hasClaimableJob,
   listJobDueStates,
   refreshHostToolWaits,
-  refreshAllHostToolWaits,
   type CancelJobResult,
   type ClaimCandidatesInput,
   type ClaimJobResult,

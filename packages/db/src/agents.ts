@@ -726,7 +726,8 @@ export async function listLiveOnlineAgents(
 
 /**
  * Announces agents offline (clears `live_online`), recording a live `agent` change for
- * each that was still online. Returns their IDs.
+ * each that was still online and refreshing their organizations' host tool waits
+ * (`refreshHostToolWaits`). Returns their IDs.
  */
 export async function markAgentsLiveOffline(
   db: Database,
@@ -739,6 +740,10 @@ export async function markAgentsLiveOffline(
     .where(and(inArray(agents.id, [...agentIds]), eq(agents.liveOnline, true)))
     .returning({ id: agents.id, organizationId: agents.organizationId });
   for (const row of rows) recordAgentChange(db, row);
+  // Their host tools no longer count for the organizations' queued jobs.
+  for (const organizationId of new Set(rows.map((row) => row.organizationId))) {
+    await refreshHostToolWaits({ db, organizationId });
+  }
   return rows.map((row) => row.id);
 }
 

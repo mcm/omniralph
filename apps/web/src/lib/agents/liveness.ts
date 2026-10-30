@@ -5,9 +5,10 @@ import {
   markAgentsLiveOffline,
   type Database,
 } from "@omniralph/db";
-import { getRedis, hotStateEnabled } from "@/lib/hot-state";
+import { readHotState, registerHotStateRebuilder, writeHotState } from "@/lib/hot-state";
+import "@/lib/hot-state/rebuilders";
 import { AGENT_ONLINE_WINDOW_MS } from "./display";
-import { withLastSeen } from "./last-seen";
+import { readAgentLastSeen, withLastSeen } from "./last-seen";
 
 /**
  * Agent online/offline transitions for live change events. Only transitions publish:
@@ -15,53 +16,65 @@ import { withLastSeen } from "./last-seen";
  * (`noteAgentOnline`), and the `agent-liveness` cron announces it offline once its
  * last heartbeat is older than `AGENT_ONLINE_WINDOW_MS` (`sweepAgentLiveness`).
  *
- * With hot state on, `agent-live:{id}` in Redis remembers for a short while that the
- * agent was announced, so a steady heartbeat doesn't touch Postgres for it. The key
- * lives no longer than the online window, so a cron flip that raced a heartbeat is
- * corrected by a heartbeat within that window.
+ * With hot state on, the `agents-live-online` set in Redis holds the agents announced
+ * online, so neither a steady heartbeat nor a sweep that finds every one of them fresh
+ * (by Redis's last-seen) queries Postgres. It's derived from `live_online` (rebuilt
+ * with the epoch). A heartbeat adds its agent after its Postgres write; the sweep
+ * removes the agents Postgres no longer has online.
  */
 
-const LIVE_PREFIX = "agent-live:";
+export const LIVE_ONLINE_KEY = "agents-live-online";
 
-export function agentLiveKey(agentId: string): string {
-  return `${LIVE_PREFIX}${agentId}`;
+function isStale(lastHeartbeatAt: Date | null | undefined, now: Date): boolean {
+  return !lastHeartbeatAt || now.getTime() - lastHeartbeatAt.getTime() >= AGENT_ONLINE_WINDOW_MS;
 }
 
 /** After a heartbeat (its last-seen recorded): announces the agent online if it wasn't. */
 export async function noteAgentOnline(db: Database, agentId: string): Promise<void> {
-  if (!hotStateEnabled()) {
-    await markAgentLiveOnline(db, agentId);
-    return;
-  }
-  try {
-    const redis = getRedis();
-    if ((await redis.get(agentLiveKey(agentId))) === "1") return;
-    await markAgentLiveOnline(db, agentId);
-    await redis.set(agentLiveKey(agentId), "1", "PX", AGENT_ONLINE_WINDOW_MS);
-  } catch (error) {
-    console.warn("hot-state: noting the agent online falling back to Postgres", error);
-    await markAgentLiveOnline(db, agentId);
-  }
+  const announced = await readHotState(
+    db,
+    async (redis) => (await redis.sismember(LIVE_ONLINE_KEY, agentId)) === 1,
+    async () => false,
+  );
+  if (announced) return;
+  await markAgentLiveOnline(db, agentId);
+  // Added even when it was already online (a write that missed the set): a revoked
+  // agent added here is removed by the sweep once its heartbeats stop.
+  await writeHotState((redis) => redis.sadd(LIVE_ONLINE_KEY, agentId));
 }
 
 /**
  * Announces offline every agent announced online whose last heartbeat (Redis's
  * last-seen, else the row's) is older than the online window. Returns their IDs.
+ * With hot state on, Postgres is only read when an agent in `agents-live-online` has no
+ * recent last-seen.
  */
 export async function sweepAgentLiveness(db: Database, now: Date = new Date()): Promise<string[]> {
+  // The set's agents without a recent last-seen; null: read Postgres for all of them.
+  const candidates = await readHotState<string[] | null>(
+    db,
+    async (redis) => {
+      const ids = await redis.smembers(LIVE_ONLINE_KEY);
+      const lastSeen = await readAgentLastSeen(ids);
+      return ids.filter((id) => isStale(lastSeen.get(id), now));
+    },
+    async () => null,
+  );
+  if (candidates?.length === 0) return [];
   const online = await withLastSeen(await listLiveOnlineAgents(db));
-  const stale = online
-    .filter(
-      (h) =>
-        h.lastHeartbeatAt === null ||
-        now.getTime() - h.lastHeartbeatAt.getTime() >= AGENT_ONLINE_WINDOW_MS,
-    )
-    .map((h) => h.id);
+  const stale = online.filter((h) => isStale(h.lastHeartbeatAt, now)).map((h) => h.id);
   const offline = await markAgentsLiveOffline(db, stale);
-  if (offline.length > 0 && hotStateEnabled()) {
-    await getRedis()
-      .del(...offline.map(agentLiveKey))
-      .catch((error: unknown) => console.warn("hot-state: clearing agent liveness failed", error));
-  }
+  // Candidates still online (a fresh row: a heartbeat that missed Redis) stay in the set.
+  const fresh = new Set(online.map((h) => h.id).filter((id) => !stale.includes(id)));
+  const gone = (candidates ?? offline).filter((id) => !fresh.has(id));
+  if (gone.length > 0) await writeHotState((redis) => redis.srem(LIVE_ONLINE_KEY, ...gone));
   return offline;
 }
+
+registerHotStateRebuilder("agent-liveness", async (redis, db) => {
+  const ids = (await listLiveOnlineAgents(db)).map((h) => h.id);
+  const multi = redis.multi().del(LIVE_ONLINE_KEY);
+  if (ids.length > 0) multi.sadd(LIVE_ONLINE_KEY, ...ids);
+  const results = await multi.exec();
+  if (!results || results.some(([error]) => error)) throw new Error("MULTI failed");
+});
