@@ -108,7 +108,12 @@ describe("expectedFailures through a capture", () => {
       <div class="or-empty"><h2 class="or-empty__title">Couldn't load the diff</h2></div>`;
     const result = capture([
       TRANSCRIPT_404,
-      { method: "GET", path: "/api/ui/runs/r1/steps/s1/diff", status: 200, contentType: "text/html" },
+      {
+        method: "GET",
+        path: "/api/ui/runs/r1/steps/s1/diff",
+        status: 200,
+        contentType: "text/html",
+      },
     ]);
     expect(captureFailures(result, brokenTranscript, { strict: true })).toEqual([
       "load error: Couldn't load the diff",

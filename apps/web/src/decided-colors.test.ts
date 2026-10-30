@@ -67,8 +67,7 @@ const ALLOWED: Allowed[] = [
   },
   {
     family: "lavender",
-    selector:
-      /^\.or-(?:menu__item\[data-highlighted\]|palette__option\[aria-selected="true"\])$/,
+    selector: /^\.or-(?:menu__item\[data-highlighted\]|palette__option\[aria-selected="true"\])$/,
     property: /^(?:outline|outline-color)$/,
     reason:
       "the keyboard highlight in menus and the palette: focus stays on the list, so the highlighted item is its focus indicator (WCAG 2.4.7)",
