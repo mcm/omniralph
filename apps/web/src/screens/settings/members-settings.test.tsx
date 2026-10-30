@@ -355,10 +355,58 @@ describe("invitations", () => {
     expect(
       within(card).getByText("That email isn't in one of this organization's email domains."),
     ).toBeTruthy();
-    expect(within(card).getByRole("button", { name: "Invite" }).hasAttribute("disabled")).toBe(
-      true,
-    );
     expect(invitationEmailError("x@any.com", [])).toBeNull();
+  });
+
+  it("explains how to add emails under the input", async () => {
+    renderMembers();
+    const card = await invitationsCard();
+    expect(
+      within(card).getByRole("textbox", {
+        name: "Emails",
+        description: "Press Enter or comma to add. Separate multiple emails with commas.",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("invites a typed email without Enter, along with the chips", async () => {
+    renderMembers();
+    const card = await invitationsCard();
+    const invite = within(card).getByRole("button", { name: "Invite" });
+    expect(invite.hasAttribute("disabled")).toBe(true);
+    await addTokens("Emails", card, "cy@acme.io");
+    await userEvent.type(within(card).getByLabelText("Emails"), "Dee@acme.io");
+    expect(invite.hasAttribute("disabled")).toBe(false);
+    await userEvent.click(invite);
+    await waitFor(() => expect(ui.toast).toHaveBeenCalledWith("Invited 2 people"));
+    expect(requests("POST", "/api/ui/organization/invitations").map((r) => r.body)).toEqual([
+      { email: "cy@acme.io", role: "member" },
+      { email: "dee@acme.io", role: "member" },
+    ]);
+    expect(within(card).getByLabelText("Emails")).toHaveProperty("value", "");
+  });
+
+  it("splits typed emails on spaces", async () => {
+    renderMembers();
+    const card = await invitationsCard();
+    await userEvent.type(within(card).getByLabelText("Emails"), "cy@acme.io dee@acme.io ");
+    expect(within(card).getByRole("button", { name: "Remove cy@acme.io" })).toBeTruthy();
+    expect(within(card).getByRole("button", { name: "Remove dee@acme.io" })).toBeTruthy();
+  });
+
+  it("sends nothing when the typed email is invalid, keeping it with its error", async () => {
+    renderMembers();
+    const card = await invitationsCard();
+    await addTokens("Emails", card, "cy@acme.io");
+    const input = within(card).getByLabelText("Emails");
+    await userEvent.type(input, "eve@elsewhere.com");
+    await userEvent.click(within(card).getByRole("button", { name: "Invite" }));
+    expect(
+      within(card).getByText("That email isn't in one of this organization's email domains."),
+    ).toBeTruthy();
+    expect(input).toHaveProperty("value", "eve@elsewhere.com");
+    expect(within(card).getByRole("button", { name: "Remove cy@acme.io" })).toBeTruthy();
+    expect(requests("POST", "/api/ui/organization/invitations")).toEqual([]);
   });
 
   it("invites every email with the chosen role and shows them at once", async () => {

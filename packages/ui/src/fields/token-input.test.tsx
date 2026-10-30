@@ -1,9 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { useState } from "react";
+import { createRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { Field } from "./field.js";
-import { TokenInput, type TokenInputProps } from "./token-input.js";
+import { TokenInput, type TokenInputHandle, type TokenInputProps } from "./token-input.js";
 
 function Subject(
   props: Partial<TokenInputProps> & { initial?: string[]; onValues?: (v: string[]) => void },
@@ -184,6 +184,109 @@ describe("TokenInput", () => {
     expect(tokens()).toEqual(["good", "fine"]);
     expect(input).toHaveProperty("value", "bad one");
     expect(screen.getByRole("textbox", { description: "No spaces." })).toBe(input);
+  });
+
+  it("adds the typed value on Tab, letting focus move on", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <Subject />
+        <button type="button">Next</button>
+      </>,
+    );
+    const input = screen.getByRole("textbox");
+    await user.type(input, "src/**");
+    await user.tab();
+    expect(tokens()).toEqual(["src/**"]);
+    expect(input).toHaveProperty("value", "");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Next" }));
+  });
+
+  it("adds the typed value on blur, and keeps an invalid one in the input with its error", async () => {
+    const user = userEvent.setup();
+    const validate = (value: string) => (value.startsWith("/") ? "Use a relative path." : null);
+    render(
+      <>
+        <Subject validate={validate} />
+        <button type="button">Elsewhere</button>
+      </>,
+    );
+    const input = screen.getByRole("textbox", { name: "Paths" });
+    await user.type(input, "docs");
+    await user.click(screen.getByRole("button", { name: "Elsewhere" }));
+    expect(tokens()).toEqual(["docs"]);
+    await user.type(input, "/etc");
+    await user.click(screen.getByRole("button", { name: "Elsewhere" }));
+    expect(tokens()).toEqual(["docs"]);
+    expect(input).toHaveProperty("value", "/etc");
+    expect(screen.getByRole("textbox", { description: "Use a relative path." })).toBe(input);
+  });
+
+  it("keeps spaces in a value unless splitOnWhitespace is on", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<Subject />);
+    await user.type(screen.getByRole("textbox"), "my docs/*.md{Enter}");
+    expect(tokens()).toEqual(["my docs/*.md"]);
+    unmount();
+
+    render(<Subject splitOnWhitespace />);
+    const input = screen.getByRole("textbox");
+    await user.type(input, "a.io b.io ");
+    expect(tokens()).toEqual(["a.io", "b.io"]);
+    expect(input).toHaveProperty("value", "");
+    await user.paste("c.io\td.io  e.io");
+    expect(tokens()).toEqual(["a.io", "b.io", "c.io", "d.io", "e.io"]);
+  });
+
+  it("lets the parent control the draft", async () => {
+    const user = userEvent.setup();
+    const onDraftChange = vi.fn();
+    function Controlled() {
+      const [draft, setDraft] = useState("seed");
+      return (
+        <Subject
+          draft={draft}
+          onDraftChange={(next) => {
+            onDraftChange(next);
+            setDraft(next);
+          }}
+        />
+      );
+    }
+    render(<Controlled />);
+    const input = screen.getByRole("textbox");
+    expect(input).toHaveProperty("value", "seed");
+    await user.type(input, "s{Enter}");
+    expect(onDraftChange).toHaveBeenNthCalledWith(1, "seeds");
+    expect(onDraftChange).toHaveBeenLastCalledWith("");
+    expect(tokens()).toEqual(["seeds"]);
+  });
+
+  it("commits the draft through its handle, returning the values or null when invalid", async () => {
+    const user = userEvent.setup();
+    const handle = createRef<TokenInputHandle>();
+    const validate = (value: string) => (value.startsWith("/") ? "Use a relative path." : null);
+    render(<Subject initial={["a"]} handle={handle} validate={validate} />);
+    const input = screen.getByRole("textbox", { name: "Paths" });
+    expect(handle.current!.commit()).toEqual(["a"]);
+
+    await user.type(input, "b");
+    let committed: string[] | null = null;
+    act(() => {
+      committed = handle.current!.commit();
+    });
+    expect(committed).toEqual(["a", "b"]);
+    expect(tokens()).toEqual(["a", "b"]);
+    expect(input).toHaveProperty("value", "");
+
+    await user.type(input, "/c");
+    act(() => {
+      committed = handle.current!.commit();
+    });
+    expect(committed).toBeNull();
+    expect(tokens()).toEqual(["a", "b"]);
+    expect(input).toHaveProperty("value", "/c");
+    expect(screen.getByText("Use a relative path.")).toBeTruthy();
   });
 
   it("can be named without a Field", () => {
