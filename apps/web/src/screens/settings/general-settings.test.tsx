@@ -316,8 +316,16 @@ describe("live updates", () => {
 describe("leaving the organization", () => {
   const leaveButton = async () =>
     within(await screen.findByRole("region", { name: "Leave organization" })).getByRole("button", {
-      name: "Leave organization",
+      name: "Leave",
     });
+
+  it("says what leaving costs instead of repeating the title on its button", async () => {
+    renderGeneral();
+    const card = await screen.findByRole("region", { name: "Leave organization" });
+    expect(within(card).getByText("You lose access to Acme's repos, runs and agents.")).toBeTruthy();
+    expect(within(card).queryByRole("button", { name: "Leave organization" })).toBeNull();
+    expect(await leaveButton()).toBeTruthy();
+  });
 
   it("confirms, leaves and starts over from the dashboard", async () => {
     renderGeneral();

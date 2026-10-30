@@ -232,7 +232,9 @@ describe("the Agents card", () => {
     const list = within(card).getByRole("list", { name: "Pinned agents" });
     const items = within(list).getAllByRole("listitem");
     expect(items).toHaveLength(4);
-    expect(within(items[0]!).getByRole("img", { name: "Running 2" })).toBeTruthy();
+    // One status per row: the status text's own dot, no second labeled dot.
+    expect(within(items[0]!).queryByRole("img", { name: "Running 2" })).toBeNull();
+    expect(items[0]!.querySelectorAll(".or-dot")).toHaveLength(1);
     expect(items[0]!.querySelector(".or-status--run")?.textContent).toBe("Running 2");
     expect(
       within(items[0]!)

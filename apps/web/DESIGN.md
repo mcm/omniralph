@@ -188,6 +188,12 @@ facts, both self-hosted through `@omniralph/ui/fonts.css`.
 token counts, costs and timestamps are set in mono, and long ones truncate with the full value
 available on hover and copy.
 
+**The 12 px floor.** No text is smaller than 12 px: chart ticks, menu group labels, phone tab
+labels, avatar initials and size badges included. The one exception is the navigation's counts,
+at 11 px: the accent pill (`.or-nav__count`) is 18 px tall (16 px on the icon rail) and a
+two-digit count at 12 px no longer fits inside it, and the neutral count (`.or-nav__n2`)
+matches it so the two read as one kind of figure.
+
 ## Layout
 
 - **The shell** (`components/app-shell.tsx`, `AppFrame` from `@omniralph/ui`) at the three

@@ -41,7 +41,7 @@
 .or-chart__label {
   color: var(--or-ter);
   font-family: var(--or-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   white-space: nowrap;
 }

@@ -268,7 +268,7 @@
   border-radius: 50%;
   background: var(--or-sel);
   color: var(--or-sec);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
 }
@@ -367,7 +367,7 @@
   gap: 3px;
   height: 52px;
   padding: 0 4px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .or-nav__item--tab:hover,

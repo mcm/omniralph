@@ -337,7 +337,7 @@ function detailReasonFacts(
       // Attempts are newest first.
       return waitingReasonFacts(attempts[0]?.waitingReason);
     case "stopped":
-      return { kind: "stopped", runKind: row.kind, error: facts.details.error };
+      return { kind: "stopped", error: facts.details.error };
     case "failed":
       return { kind: "failed", error: facts.details.error };
     default:
