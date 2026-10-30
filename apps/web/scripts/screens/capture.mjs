@@ -356,6 +356,9 @@ async function openRoute(context, page, route, theme, record, viewportName) {
       .catch(() => {});
     if (step.action === "fill") {
       await target.fill(step.value);
+    } else if (step.action === "press") {
+      // To the focused element, as a user's key goes (focusing the target would move it).
+      await page.keyboard.press(step.key);
     } else {
       await target.evaluate(
         (element, index) => element.setAttribute("data-a11y-opener", index),

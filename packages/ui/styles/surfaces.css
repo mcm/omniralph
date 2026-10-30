@@ -761,6 +761,9 @@
 
 .or-palette__option[aria-selected="true"] {
   background: var(--or-sel);
+  /* What Enter opens: the selection background alone is under 3:1 on the palette (WCAG 2.4.7). */
+  outline: 2px solid var(--or-acc);
+  outline-offset: -2px;
 }
 
 .or-palette__message:not(:empty) {

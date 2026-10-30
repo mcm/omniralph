@@ -28,6 +28,8 @@ const PAIRS: (readonly [string, string, number])[] = [
   // The neutral status dot (done, pending, blocked steps; idle agents) is a graphic that
   // can be the only cue of a state (WCAG 1.4.11).
   ...SURFACES.map((bg) => ["done", bg, 3] as const),
+  // The keyboard highlight's outline inside a highlighted danger menu item (WCAG 2.4.7).
+  ["acc", "fail-tint", 3],
 ];
 
 describe("contrastRatio", () => {

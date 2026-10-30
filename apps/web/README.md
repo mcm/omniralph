@@ -403,8 +403,10 @@ To read the reports of a capture:
 A new `page.tsx` needs an entry in `scripts/screens/routes.ts` (a test checks every page is
 listed), with fixture IDs from `scripts/fixtures/ids.ts` for its dynamic segments.
 To capture a state that needs interaction (unsaved changes, an open confirmation), add a
-route with `steps`: `{ action: "fill", selector, value }` or `{ action: "click", selector }`,
-run in order before the screenshot (e.g. `fleet-agent-revoke`). A route may also set:
+route with `steps`: `{ action: "fill", selector, value }`, `{ action: "click", selector }` or
+`{ action: "press", selector, key }` (the key goes to the focused element once `selector` shows,
+e.g. ↓ in an open menu), run in order before the screenshot (e.g. `fleet-agent-revoke`,
+`fleet-agent-menu-highlight`). A route may also set:
 
 | Field          | Effect                                                                                                                                                                                      |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

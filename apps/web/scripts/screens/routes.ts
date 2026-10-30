@@ -125,10 +125,15 @@ export function capturedAt(route: Pick<ScreenRoute, "viewports">, viewport: View
   return route.viewports === undefined || route.viewports.includes(viewport);
 }
 
-/** One interaction: type into a field, or click an element (CSS selectors). */
+/**
+ * One interaction: type into a field, click an element, or press a key (CSS selectors). A
+ * `press` goes to the focused element once `selector` shows (e.g. ArrowDown in an open menu),
+ * so it moves a keyboard highlight the way a user does.
+ */
 export type ScreenStep =
   | { action: "fill"; selector: string; value: string }
-  | { action: "click"; selector: string };
+  | { action: "click"; selector: string }
+  | { action: "press"; selector: string; key: string };
 
 const ids = FIXTURE_IDS;
 
@@ -335,6 +340,26 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     auth: "signed-in",
     list: true,
     board: "Runs",
+  },
+  {
+    // The search palette with a result selected from the keyboard (WCAG 2.4.7): opened by the
+    // frame's search button, three agents match "build", ↓ moves to the second.
+    name: "search-palette",
+    path: "/runs",
+    page: "(app)/runs/page.tsx",
+    auth: "signed-in",
+    list: true,
+    steps: [
+      {
+        action: "click",
+        selector:
+          'button[aria-haspopup="dialog"]:is(.or-search-btn, [aria-label="Search or jump to…"]):visible',
+      },
+      { action: "fill", selector: ".or-palette__input", value: "build" },
+      { action: "press", selector: '.or-palette__option:has-text("build-02")', key: "ArrowDown" },
+    ],
+    waitFor: '.or-palette__option[aria-selected="true"][data-index="1"]',
+    viewportOnly: true,
   },
   // The Backlog (the fixture Linear workspace's FIX items): its Ready to start and Needs
   // refining lists, and one item open beside it on its PRD.
@@ -559,6 +584,32 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     detail: true,
     auth: "signed-in",
     steps: [OPEN_MORE_ACTIONS],
+    viewportOnly: true,
+  },
+  {
+    // The ⋯ menu with an item highlighted from the keyboard (WCAG 2.4.7).
+    name: "fleet-agent-menu-highlight",
+    path: `/fleet/${ids.agents.online}`,
+    page: "(app)/fleet/[id]/page.tsx",
+    detail: true,
+    auth: "signed-in",
+    steps: [
+      OPEN_MORE_ACTIONS,
+      { action: "press", selector: '[role="menu"]', key: "ArrowDown" },
+      { action: "press", selector: '[role="menuitem"][data-highlighted]', key: "ArrowDown" },
+    ],
+    waitFor: '[role="menuitem"][data-highlighted]:has-text("Audit log")',
+    viewportOnly: true,
+  },
+  {
+    // The ⋯ menu with its danger item (Revoke) highlighted from the keyboard.
+    name: "fleet-agent-menu-danger",
+    path: `/fleet/${ids.agents.online}`,
+    page: "(app)/fleet/[id]/page.tsx",
+    detail: true,
+    auth: "signed-in",
+    steps: [OPEN_MORE_ACTIONS, { action: "press", selector: '[role="menu"]', key: "End" }],
+    waitFor: '[role="menuitem"][data-highlighted]:has-text("Revoke agent")',
     viewportOnly: true,
   },
   {
