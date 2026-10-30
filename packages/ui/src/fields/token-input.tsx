@@ -3,9 +3,11 @@
 import { IconX } from "@tabler/icons-react";
 import {
   useCallback,
+  useImperativeHandle,
   useRef,
   useState,
   type ClipboardEvent,
+  type FocusEvent,
   type InputHTMLAttributes,
   type KeyboardEvent,
   type MouseEvent,
@@ -16,6 +18,17 @@ import { FieldError } from "./field-error.js";
 
 /** Pasted or typed text splits into one token per line or comma. */
 const SEPARATORS = /[,\r\n]/;
+/** With `splitOnWhitespace`, any whitespace separates tokens too. */
+const WHITESPACE_SEPARATORS = /[,\s]/;
+
+/** What a parent can ask of a `TokenInput` (through `handle`). */
+export type TokenInputHandle = {
+  /**
+   * Commits the typed draft as `blur` would and returns the resulting values, or null when
+   * part of the draft is invalid (its error shows and it stays in the input).
+   */
+  commit: () => string[] | null;
+};
 
 export type TokenInputProps = {
   values: string[];
@@ -25,6 +38,16 @@ export type TokenInputProps = {
   validate?: (value: string) => string | null;
   /** Geist Mono for the tokens and the input (paths, globs). Default true. */
   mono?: boolean;
+  /**
+   * Space and whitespace in pasted text separate tokens too. Off by default: globs and paths
+   * can contain spaces.
+   */
+  splitOnWhitespace?: boolean;
+  /** The typed, not yet committed text, when the parent controls it. */
+  draft?: string;
+  onDraftChange?: (draft: string) => void;
+  /** Lets the parent commit the draft (e.g. before submitting the form). */
+  handle?: Ref<TokenInputHandle>;
   ref?: Ref<HTMLInputElement>;
 } & Omit<
   InputHTMLAttributes<HTMLInputElement>,
@@ -33,8 +56,9 @@ export type TokenInputProps = {
 
 /**
  * A list of values edited one chip at a time (Design rule 18). Enter or comma adds the
- * typed value; pasting lines or comma-separated text adds one token per part; Backspace in
- * the empty input removes the last token. Focus stays in the text input throughout.
+ * typed value, as does leaving the input (Tab or a click elsewhere); pasting lines or
+ * comma-separated text adds one token per part; Backspace in the empty input removes the
+ * last token. Focus stays in the text input throughout.
  */
 export function TokenInput(props: TokenInputProps) {
   const {
@@ -43,6 +67,10 @@ export function TokenInput(props: TokenInputProps) {
     placeholder,
     validate,
     mono = true,
+    splitOnWhitespace = false,
+    draft: draftProp,
+    onDraftChange,
+    handle,
     className,
     id: idProp,
     "aria-describedby": describedByProp,
@@ -50,9 +78,12 @@ export function TokenInput(props: TokenInputProps) {
     disabled,
     onKeyDown,
     onPaste,
+    onBlur,
     ...rest
   } = props;
-  const [draft, setDraft] = useState("");
+  const [ownDraft, setOwnDraft] = useState("");
+  const draft = draftProp ?? ownDraft;
+  const separators = splitOnWhitespace ? WHITESPACE_SEPARATORS : SEPARATORS;
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const ids = useControlIds({
@@ -70,15 +101,20 @@ export function TokenInput(props: TokenInputProps) {
     [ref],
   );
 
+  function setDraft(next: string) {
+    if (draftProp === undefined) setOwnDraft(next);
+    if (next !== draft) onDraftChange?.(next);
+  }
+
   /**
    * Adds every non-empty, new, valid part of `text`. Returns the parts that failed
    * validation (joined back up) so they stay in the input, and shows the first error.
    */
-  function commit(text: string): string {
+  function commit(text: string): { values: string[]; rejected: string } {
     const next = [...values];
     const rejected: string[] = [];
     let firstError: string | null = null;
-    for (const part of text.split(SEPARATORS)) {
+    for (const part of text.split(separators)) {
       const value = part.trim();
       if (value === "" || next.includes(value)) continue;
       const message = validate?.(value) ?? null;
@@ -91,8 +127,18 @@ export function TokenInput(props: TokenInputProps) {
     }
     if (next.length !== values.length) onChange(next);
     setError(firstError);
-    return rejected.join(", ");
+    return { values: next, rejected: rejected.join(", ") };
   }
+
+  /** Commits the whole draft, leaving any rejected parts in the input. */
+  function commitDraft(): string[] | null {
+    if (draft.trim() === "") return values;
+    const { values: next, rejected } = commit(draft);
+    setDraft(rejected);
+    return rejected === "" ? next : null;
+  }
+
+  useImperativeHandle(handle, () => ({ commit: commitDraft }));
 
   function remove(index: number) {
     onChange(values.filter((_, i) => i !== index));
@@ -102,11 +148,11 @@ export function TokenInput(props: TokenInputProps) {
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     onKeyDown?.(event);
     if (event.defaultPrevented || event.nativeEvent.isComposing) return;
-    if (event.key === "Enter" || event.key === ",") {
+    if (event.key === "Enter" || event.key === "," || (splitOnWhitespace && event.key === " ")) {
       // Enter in an empty input keeps its default (e.g. submitting the form).
       if (event.key === "Enter" && draft.trim() === "") return;
       event.preventDefault();
-      setDraft(commit(draft));
+      commitDraft();
       return;
     }
     if (event.key === "Backspace" && draft === "" && values.length > 0) {
@@ -119,10 +165,16 @@ export function TokenInput(props: TokenInputProps) {
     onPaste?.(event);
     if (event.defaultPrevented) return;
     const text = event.clipboardData.getData("text");
-    if (!SEPARATORS.test(text)) return;
+    if (!separators.test(text)) return;
     event.preventDefault();
-    const rejected = commit(text);
+    const { rejected } = commit(text);
     if (rejected !== "") setDraft(rejected);
+  }
+
+  /** Leaving the input (Tab, a click elsewhere) commits what was typed. */
+  function handleBlur(event: FocusEvent<HTMLInputElement>) {
+    onBlur?.(event);
+    commitDraft();
   }
 
   function handleRemoveClick(index: number) {
@@ -177,6 +229,7 @@ export function TokenInput(props: TokenInputProps) {
           }}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
+          onBlur={handleBlur}
         />
       </div>
       {error === null ? null : <FieldError id={ids.errorId}>{error}</FieldError>}

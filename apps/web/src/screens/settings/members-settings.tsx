@@ -14,6 +14,7 @@ import {
   Select,
   Switch,
   TokenInput,
+  type TokenInputHandle,
   toast,
   type DataTableColumn,
   useStagedCard,
@@ -21,7 +22,7 @@ import {
 } from "@omniralph/ui";
 import { IconMailPlus, IconTrash, IconX } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
 import { ChangeHistoryPopover } from "@/components/change-history-popover";
 import { useApiMutation, type MutationCache } from "@/components/use-api-mutation";
@@ -309,6 +310,8 @@ function pendingInvitation(email: string, role: Role, now: Date): InvitationRow 
 function InvitationsCard({ settings }: { settings: OrganizationSettings }) {
   const { invitations, domains } = settings;
   const [emails, setEmails] = useState<string[]>([]);
+  const [draft, setDraft] = useState("");
+  const emailsInput = useRef<TokenInputHandle>(null);
   const [role, setRole] = useState<Role>("member");
   const [target, setTarget] = useState<InvitationRow | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -368,10 +371,15 @@ function InvitationsCard({ settings }: { settings: OrganizationSettings }) {
     success: (_, invitation) => `Revoked ${invitation.email}`,
   });
 
+  // A typed email counts without Enter: submitting commits the draft first, and an invalid
+  // one keeps its error in the input and sends nothing.
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (emails.length === 0) return;
-    invite.mutate({ emails, role });
+    const committed = emailsInput.current ? emailsInput.current.commit() : emails;
+    if (committed === null) return;
+    const toInvite = [...new Set(committed.map((email) => email.toLowerCase()))];
+    if (toInvite.length === 0) return;
+    invite.mutate({ emails: toInvite, role });
     setEmails([]);
     setRole("member");
   };
@@ -379,17 +387,22 @@ function InvitationsCard({ settings }: { settings: OrganizationSettings }) {
   return (
     <Card title="Invitations" titleId="invitations">
       <form className="or-invite" onSubmit={submit}>
-        <Field label="Emails" htmlFor="invite-emails" className="or-invite__emails">
+        <Field label="Emails" htmlFor="invite-emails" className="or-invite__emails" stacked>
           <TokenInput
             id="invite-emails"
+            handle={emailsInput}
             values={emails}
             onChange={(values) => setEmails([...new Set(values.map((v) => v.toLowerCase()))])}
+            draft={draft}
+            onDraftChange={setDraft}
+            splitOnWhitespace
             validate={(value) => invitationEmailError(value, domains)}
             placeholder="name@example.com"
             autoComplete="off"
+            aria-describedby="invite-emails-hint"
           />
         </Field>
-        <Field label="Role" htmlFor="invite-role">
+        <Field label="Role" htmlFor="invite-role" stacked>
           <Select
             id="invite-role"
             value={role}
@@ -401,9 +414,17 @@ function InvitationsCard({ settings }: { settings: OrganizationSettings }) {
             <option value="admin">{ROLE_LABELS.admin}</option>
           </Select>
         </Field>
-        <Button type="submit" variant="primary" icon={IconMailPlus} disabled={emails.length === 0}>
+        <Button
+          type="submit"
+          variant="primary"
+          icon={IconMailPlus}
+          disabled={emails.length === 0 && draft.trim() === ""}
+        >
           Invite
         </Button>
+        <p id="invite-emails-hint" className="or-invite__hint">
+          Press Enter or comma to add. Separate multiple emails with commas.
+        </p>
       </form>
       {invitations.length === 0 ? (
         <p className="or-members__note">No pending invitations</p>
@@ -559,6 +580,7 @@ function DomainsCard({ settings }: { settings: OrganizationSettings }) {
             onChange={(values) =>
               card.set("domains", [...new Set(values.map(normalizeDomain))].sort())
             }
+            splitOnWhitespace
             validate={domainError}
             placeholder="example.com"
             autoComplete="off"

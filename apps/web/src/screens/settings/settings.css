@@ -132,9 +132,18 @@
   gap: 12px;
 }
 
+/* The emails take what the role and the button (natural widths) leave. */
 .or-invite__emails {
   flex: 1 1 280px;
   min-width: 0;
+}
+
+.or-invite__hint {
+  flex-basis: 100%;
+  margin: -6px 0 0;
+  color: var(--or-sec);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .or-invitations,
