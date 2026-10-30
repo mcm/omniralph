@@ -9,7 +9,7 @@ import { and, eq, gt, gte, isNull, lt, sql } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { hashToken } from "./crypto.js";
-import { recordJobChanges, type Job } from "./jobs.js";
+import { recordJobChanges, refreshHostToolWaits, type Job } from "./jobs.js";
 import {
   agentAudit,
   agentEnrollments,
@@ -206,19 +206,22 @@ export type RotateRefreshTokenResult =
 /**
  * Rotates a refresh token: marks it used and issues a new one in the same
  * family. Presenting an already-used token revokes the whole family and the
- * agent. Rows are locked, so concurrent presentations of one token resolve to
- * exactly one rotation (the other is treated as reuse).
+ * agent, then refreshes its organization's host tool waits. Rows are locked, so
+ * concurrent presentations of one token resolve to exactly one rotation (the
+ * other is treated as reuse).
  */
 export async function rotateRefreshToken(
   db: Database,
   refreshToken: string,
   now: Date = new Date(),
 ): Promise<RotateRefreshTokenResult> {
-  return db.transaction(async (tx) => {
+  let revokedOrganizationId: string | null = null;
+  const result = await db.transaction(async (tx): Promise<RotateRefreshTokenResult> => {
     const [token] = await tx
       .select({
         id: agentRefreshTokens.id,
         agentId: agentRefreshTokens.agentId,
+        organizationId: agents.organizationId,
         familyId: agentRefreshTokens.familyId,
         usedAt: agentRefreshTokens.usedAt,
         revokedAt: agentRefreshTokens.revokedAt,
@@ -240,6 +243,7 @@ export async function rotateRefreshToken(
           and(eq(agentRefreshTokens.familyId, familyId), isNull(agentRefreshTokens.revokedAt)),
         );
       await tx.update(agents).set({ revokedAt: now }).where(eq(agents.id, agentId));
+      revokedOrganizationId = token.organizationId;
       return { status: "reused", agentId, familyId };
     }
     if (token.revokedAt) return { status: "invalid", agentId, reason: "revoked" };
@@ -254,6 +258,11 @@ export async function rotateRefreshToken(
       .values({ agentId, familyId, tokenHash: hashToken(next), createdAt: now });
     return { status: "rotated", agentId, familyId, refreshToken: next };
   });
+  // The revoked agent's host tools no longer count for the organization's queued jobs.
+  if (revokedOrganizationId) {
+    await refreshHostToolWaits({ db, organizationId: revokedOrganizationId });
+  }
+  return result;
 }
 
 export interface RevokeAgentResult {
@@ -272,7 +281,8 @@ export interface RevokeAgentResult {
  * Outstanding access and job tokens stop working immediately because every
  * authenticated request checks `revoked_at`. Its running jobs are failed as
  * retryable (back to `queued`, or `failed` once `maxDeliveries` is reached,
- * like `failJob`), so other agents claim them again, and its repository pins are removed. Returns null
+ * like `failJob`), so other agents claim them again, and its repository pins are removed.
+ * Then refreshes the organization's host tool waits (`refreshHostToolWaits`). Returns null
  * for unknown agents (with `organizationId`, also for agents of another
  * organization).
  */
@@ -283,7 +293,8 @@ export async function revokeAgent(
 ): Promise<RevokeAgentResult | null> {
   const now = options.now ?? new Date();
   const maxDeliveries = options.maxDeliveries ?? 3;
-  return db.transaction(async (tx) => {
+  let organizationId: string | null = null;
+  const result = await db.transaction(async (tx): Promise<RevokeAgentResult | null> => {
     const [agent] = await tx
       .update(agents)
       .set({ revokedAt: sql`coalesce(${agents.revokedAt}, ${now})` })
@@ -295,6 +306,7 @@ export async function revokeAgent(
       )
       .returning({ id: agents.id, organizationId: agents.organizationId });
     if (!agent) return null;
+    organizationId = agent.organizationId;
     recordChange(tx, { resource: "agent", ids: [agent.id], organizationId: agent.organizationId });
     await tx
       .update(agentRefreshTokens)
@@ -339,6 +351,9 @@ export async function revokeAgent(
       unpinnedRepositoryIds: unpinned.map((p) => p.repositoryId),
     };
   });
+  // Its host tools no longer count, and its requeued jobs may wait for one.
+  if (organizationId) await refreshHostToolWaits({ db, organizationId });
+  return result;
 }
 
 /** Whether the agent is active, revoked, or doesn't exist. */

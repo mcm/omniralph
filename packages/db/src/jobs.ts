@@ -232,8 +232,8 @@ export async function setQueuedJobTarget(
  * `jobIds` when given): `{ code: "host_tools_missing", hostTools }` with the required names
  * that no online (`live_online`), non-revoked agent of the organization reports with a path
  * (`listAgentsUsableHostTools`), sorted; null when every name is covered. A job targeted at
- * one agent (`target_agent_id`) checks only that agent. Runs after an enqueue, when an
- * agent's reported host tools or `live_online` change, and in the `agent-liveness` cron.
+ * one agent (`target_agent_id`) checks only that agent. Runs after an enqueue or a requeue,
+ * and when an agent's reported host tools, `live_online`, revocation or deletion change.
  * Records a live `run` change for each job whose reason changed (none when nothing did).
  * Returns the jobs whose reason changed, with their new reason.
  */
@@ -278,27 +278,6 @@ export async function refreshHostToolWaits(input: {
       .returning(jobChangeColumns);
     recordJobChanges(db, rows);
     if (rows.length > 0) changed.push({ id: job.id, waitingReason });
-  }
-  return changed;
-}
-
-/**
- * `refreshHostToolWaits` for every organization with a `queued` job that requires host tools
- * or has a waiting reason (the `agent-liveness` cron). Returns how many jobs changed.
- */
-export async function refreshAllHostToolWaits(db: Database): Promise<number> {
-  const organizations = await db
-    .selectDistinct({ id: jobs.organizationId })
-    .from(jobs)
-    .where(
-      and(
-        eq(jobs.status, "queued"),
-        or(sql`cardinality(${jobs.requiredHostTools}) > 0`, sql`${jobs.waitingReason} is not null`),
-      ),
-    );
-  let changed = 0;
-  for (const { id } of organizations) {
-    changed += (await refreshHostToolWaits({ db, organizationId: id })).length;
   }
   return changed;
 }
@@ -765,7 +744,8 @@ export async function failJob(
   },
 ): Promise<FinishJobResult> {
   const now = input.now ?? new Date();
-  return db.transaction(async (tx): Promise<FinishJobResult> => {
+  const requeued: Job[] = [];
+  const result = await db.transaction(async (tx): Promise<FinishJobResult> => {
     const locked = await lockRunningJob(tx, input.jobId, input.agentId);
     if ("rejected" in locked) return locked.rejected;
     const { job } = locked;
@@ -796,8 +776,14 @@ export async function failJob(
         leaseExpiresAt: null,
       })
       .where(eq(jobs.id, job.id));
+    requeued.push(job);
     return { status: "retry" };
   });
+  // Queued again: it may wait for a host tool no online agent has (the claim cleared it).
+  for (const job of requeued.filter((j) => j.requiredHostTools.length > 0)) {
+    await refreshHostToolWaits({ db, organizationId: job.organizationId, jobIds: [job.id] });
+  }
+  return result;
 }
 
 /**

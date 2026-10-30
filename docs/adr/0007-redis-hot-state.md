@@ -57,6 +57,7 @@ query or write on the next request.
 | `ralph:reconciled`                                                       | own              | The last full reconcile run, 24h TTL                                                                                                                          | The reconcile cron                                                                                                                                                                                                                                                                                                                                                                           | `lib/ralph/active.ts`            |
 | `ralph:backoff`                                                          | own              | `{interval}\|{due}\|{fingerprint}`: when the reconcile cron next runs a pass while ralph work exists, and the work's fingerprint after the last pass, 24h TTL | The reconcile cron after a pass with work left; deleted by `markRalphActive` outside the cron's pass, by a pass that found no work and by the rebuild                                                                                                                                                                                                                                        | `lib/ralph/active.ts`            |
 | `chat-run-events:pending`                                                | derived (signal) | A random value: there may be chat run events to relay                                                                                                         | Set after a run event is recorded (`recordChatRunEvent`); compare-and-deleted by the `chat-run-events` cron after a run that left no event pending. The rebuild sets it                                                                                                                                                                                                                      | `lib/chat/pending-run-events.ts` |
+| `agents-live-online`                                                     | derived          | Set of the agents announced online (`live_online`)                                                                                                            | The heartbeat adds its agent after `markAgentLiveOnline` (even when it was already online); the liveness sweep removes the agents it announces offline and those Postgres no longer has online. Rebuilt from `live_online`                                                                                                                                                                   | `lib/agents/liveness.ts`         |
 | `harness-organization:{harnessId}`                                       | own              | The harness's organization, 7-day TTL                                                                                                                         | Readers on a miss. A harness never changes organization, so there's no writer                                                                                                                                                                                                                                                                                                                | `lib/agents/organization.ts`     |
 | `harness-last-seen:{harnessId}`                                          | own              | The last heartbeat (ms), 30-day TTL                                                                                                                           | Every heartbeat. Read where the UI, chat and pinning show or sort by last heartbeat (`withLastSeen`, `readHarnessLastSeen`): the later of it and the row's `last_heartbeat_at` wins                                                                                                                                                                                                          | `lib/agents/last-seen.ts`        |
 | `harness-report:{harnessId}`                                             | own              | Fingerprint of the report last written to the harness row, 24h TTL                                                                                            | The heartbeat: deleted before it writes the row, set after                                                                                                                                                                                                                                                                                                                                   | `lib/agents/last-seen.ts`        |
@@ -88,6 +89,11 @@ What each idle request does with them:
   (`ralph:active` set) it also skips until `ralph:backoff` is due: see _Reconcile backoff_.
 - **`chat-run-events` cron**: returns `{ skipped: true }` while `chat-run-events:pending` is
   absent, before initialising the chat bot (whose state is in Postgres).
+- **Announcing an agent online** (every heartbeat, `noteAgentOnline`): nothing in Postgres while
+  the agent is in `agents-live-online`.
+- **`agent-liveness` cron** (every minute): returns `{ offline: 0 }` without querying Postgres
+  while every agent in `agents-live-online` has a last-seen younger than the online window. See
+  _Agent liveness_.
 - **`prune-rate-limits` cron**: prunes nothing in Postgres unless `rate-limit:postgres-fallback-at`
   says rate limiting fell back to it.
 
@@ -173,6 +179,28 @@ stale state until a TTL runs out:
 Tests prove an idle path makes no Postgres query by passing a `Proxy` around the database that
 counts or throws on any query method.
 
+### Agent liveness
+
+Live change events (TOOL-631) added the every-minute `agent-liveness` cron
+and the `live_online` flag. Both reached production with the 2.0 cutover and kept Neon awake on
+their own: the sweep read `agents where live_online` every minute, TOOL-766 added a query for the
+organizations with jobs waiting on host tools to every sweep, and each heartbeating agent updated
+its row (a no-op) once a minute, when its 60s `agent-live:{id}` marker expired.
+
+`agents-live-online` replaces the per-agent marker. A heartbeat checks membership and only runs
+`markAgentLiveOnline` when its agent isn't in the set, then adds it. The sweep reads the set and
+the agents' last-seen times: when every member is fresh, it's done; otherwise it reads the
+online agents from Postgres (the row's `last_heartbeat_at` still counts, for a heartbeat that
+missed Redis), announces the stale ones offline and removes from the set every candidate that
+isn't still online. With hot state off, or while the epoch is being rebuilt, it reads Postgres
+as before.
+
+The sweep no longer refreshes every organization's host tool waits. The waits change only with
+the agents that count for them and the jobs that need them, so each of those writes refreshes the
+organization's waits itself: an enqueue or a target change, a retried job (`failJob`), an agent
+announced online or offline, a host tool report, a deletion, a revocation and a refresh-token
+reuse (which revokes).
+
 ### The epoch rebuild
 
 `hot-state:epoch` has no TTL. When it's missing (a new Redis, a flush, an eviction, or a writer
@@ -181,7 +209,8 @@ whose Redis update failed), the next `readHotState` call:
 1. takes `hot-state:rebuild-lock` (`SET NX PX 30s` with a random token);
 2. runs every registered rebuilder: `job-due` deletes every `job-due:*` and `job-queued-since` and
    reloads them from the queued and running jobs; `harness-auth` deletes every `harness-auth:*`
-   (they refill on the next miss); `ralph-active` sets `ralph:active` (and deletes `ralph:backoff`) and `chat-run-events-pending` sets
+   (they refill on the next miss); `agent-liveness` reloads `agents-live-online` from
+   `live_online`; `ralph-active` sets `ralph:active` (and deletes `ralph:backoff`) and `chat-run-events-pending` sets
    `chat-run-events:pending`;
 3. sets the epoch and releases the lock (compare-and-delete on its token).
 

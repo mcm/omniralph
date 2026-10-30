@@ -24,7 +24,18 @@ vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 
 process.env.CRON_SECRET = "cron-secret";
 
-const { agentLiveKey, noteAgentOnline, sweepAgentLiveness } = await import("./liveness");
+const QUERY_METHODS = new Set([
+  "select",
+  "selectDistinct",
+  "insert",
+  "update",
+  "delete",
+  "execute",
+  "transaction",
+  "query",
+]);
+
+const { LIVE_ONLINE_KEY, noteAgentOnline, sweepAgentLiveness } = await import("./liveness");
 const { AGENT_ONLINE_WINDOW_MS } = await import("./display");
 const { agentLastSeenKey } = await import("./last-seen");
 const { closeRedis, getRedis } = await import("@/lib/hot-state");
@@ -88,7 +99,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent liveness", () => {
         for (let i = 0; i < 3; i++) {
           expect((await captureChanges(() => noteAgentOnline(db, id))).changes).toEqual([]);
         }
-        if (hotState) expect(await getRedis().get(agentLiveKey(id))).toBe("1");
+        if (hotState) expect(await getRedis().sismember(LIVE_ONLINE_KEY, id)).toBe(1);
       });
 
       it("publishes an agent event when its heartbeats stop, and again when they resume", async () => {
@@ -103,7 +114,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent liveness", () => {
         expect(agentEvents(swept.changes)).toEqual([id]);
         expect(await liveOnline(id)).toBe(false);
         expect(await liveOnline(fresh)).toBe(true);
-        if (hotState) expect(await getRedis().get(agentLiveKey(id))).toBeNull();
+        if (hotState) expect(await getRedis().sismember(LIVE_ONLINE_KEY, id)).toBe(0);
         // Already offline: the next sweep publishes nothing.
         expect((await captureChanges(() => sweepAgentLiveness(db, now))).changes).toEqual([]);
         // Its next heartbeat brings it online again.
@@ -134,6 +145,82 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent liveness", () => {
     });
   }
 
+  describe("the online agents in Redis", () => {
+    /** Postgres calls made through the returned database. */
+    let postgresCalls = 0;
+    const counted = (): Database =>
+      new Proxy(db, {
+        get(target, property, receiver) {
+          if (typeof property === "string" && QUERY_METHODS.has(property)) postgresCalls += 1;
+          return Reflect.get(target, property, receiver);
+        },
+      });
+
+    beforeEach(async () => {
+      vi.stubEnv("REDIS_URL", testRedis.url);
+      await closeRedis();
+      await getRedis().flushdb();
+      postgresCalls = 0;
+    });
+
+    const heartbeat = async (id: string, at: Date) => {
+      await getRedis().set(agentLastSeenKey(id), String(at.getTime()));
+      await noteAgentOnline(counted(), id);
+    };
+
+    it("doesn't query Postgres for steady heartbeats or a sweep that finds every agent fresh", async () => {
+      const now = new Date();
+      const id = await newAgent(now);
+      await heartbeat(id, now);
+      postgresCalls = 0;
+
+      for (let i = 0; i < 3; i++) await heartbeat(id, now);
+      expect(await sweepAgentLiveness(counted(), now)).toEqual([]);
+      expect(postgresCalls).toBe(0);
+      expect(await liveOnline(id)).toBe(true);
+    });
+
+    it("doesn't query Postgres to sweep while no agent is online", async () => {
+      await newAgent();
+      await sweepAgentLiveness(db);
+      postgresCalls = 0;
+      expect(await sweepAgentLiveness(counted())).toEqual([]);
+      expect(postgresCalls).toBe(0);
+    });
+
+    it("keeps an agent online whose row has a recent heartbeat but Redis has no last-seen", async () => {
+      const now = new Date();
+      const id = await newAgent(new Date(now.getTime() - 5_000));
+      await noteAgentOnline(db, id);
+      expect(await sweepAgentLiveness(db, now)).toEqual([]);
+      expect(await liveOnline(id)).toBe(true);
+      expect(await getRedis().sismember(LIVE_ONLINE_KEY, id)).toBe(1);
+    });
+
+    it("adds an agent Postgres already has online back to Redis on its next heartbeat", async () => {
+      const now = new Date();
+      const id = await newAgent(now);
+      await heartbeat(id, now);
+      await getRedis().srem(LIVE_ONLINE_KEY, id);
+
+      const repaired = await captureChanges(() => heartbeat(id, now));
+      expect(repaired.changes).toEqual([]);
+      expect(await getRedis().sismember(LIVE_ONLINE_KEY, id)).toBe(1);
+      postgresCalls = 0;
+      await heartbeat(id, now);
+      expect(postgresCalls).toBe(0);
+    });
+
+    it("rebuilds the online agents from Postgres after Redis is flushed, and sweeps them", async () => {
+      const now = new Date();
+      const id = await newAgent(new Date(now.getTime() - AGENT_ONLINE_WINDOW_MS - 1_000));
+      await db.update(agents).set({ liveOnline: true }).where(eq(agents.id, id));
+      expect(await sweepAgentLiveness(db, now)).toEqual([id]);
+      expect(await liveOnline(id)).toBe(false);
+      expect(await getRedis().sismember(LIVE_ONLINE_KEY, id)).toBe(0);
+    });
+  });
+
   async function newAgentKeepingOthers(lastHeartbeatAt: Date): Promise<string> {
     const [agent] = await db
       .insert(agents)
@@ -158,7 +245,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent liveness", () => {
           headers: { authorization: "Bearer cron-secret" },
         }),
       );
-      expect(await response.json()).toEqual({ offline: 1, waits: 0 });
+      expect(await response.json()).toEqual({ offline: 1 });
       expect(await liveOnline(id)).toBe(false);
     });
 
@@ -209,7 +296,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent liveness", () => {
         changes.filter((c) => c.resource === "run" && c.ids.includes(job.id));
 
       const swept = await cron();
-      expect(swept.result).toEqual({ offline: 1, waits: 1 });
+      expect(swept.result).toEqual({ offline: 1 });
       expect(runEvents(swept.changes)).toEqual([
         expect.objectContaining({ resource: "run", ids: [job.id], runId: triage!.id }),
       ]);
@@ -217,7 +304,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent liveness", () => {
       expect(row!.waitingReason).toEqual({ code: "host_tools_missing", hostTools: ["gh"] });
       // Unchanged on the next sweep: nothing published.
       const again = await cron();
-      expect(again.result).toEqual({ offline: 0, waits: 0 });
+      expect(again.result).toEqual({ offline: 0 });
       expect(runEvents(again.changes)).toEqual([]);
     });
   });
