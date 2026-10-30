@@ -101,14 +101,13 @@ const RALPH_ALLOWED: Allowed[] = [
   },
 ];
 
-/** Also scanned for "harness": the agent, the packages it bundles and the release scripts. */
+/** Also scanned for "harness": the agent, the packages it bundles and the release script. */
 const HARNESS_SCANNED = [
   ...SCANNED,
   "apps/agent/src",
   "packages/tasks/src",
   "packages/shared/src",
   "scripts/check-agent-changeset.ts",
-  "scripts/rewrite-legacy-changesets.ts",
 ];
 
 const HARNESS_ALLOWED: Allowed[] = [
@@ -131,11 +130,6 @@ const HARNESS_ALLOWED: Allowed[] = [
     text: /(~\/\.config\/omniralph\/)?harness\.json\b/g,
     files: ["apps/agent/src/import.ts", "apps/agent/src/main.ts"],
     reason: "`import` reads the old config file",
-  },
-  {
-    text: /^@omniralph\/harness$/g,
-    files: ["scripts/check-agent-changeset.ts"],
-    reason: "legacy changesets: other 2.0 epics write them until Epic 14 removes the old name",
   },
 ];
 

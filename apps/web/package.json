@@ -19,7 +19,6 @@
     "@chat-adapter/discord": "4.41.1",
     "@chat-adapter/slack": "4.41.1",
     "@chat-adapter/state-pg": "4.41.1",
-    "@iamthemcmaster/ui": "~1.1.0",
     "@linear/sdk": "^97.0.0",
     "@omniralph/db": "workspace:*",
     "@omniralph/engine": "workspace:*",

@@ -60,20 +60,9 @@ const ALLOWED: Allowed[] = [
     reason: "the usage text's `import` section names the old package, env var and config",
   },
   {
-    paths: [
-      "scripts/check-agent-changeset.ts",
-      "scripts/check-harness-changeset.ts",
-      "scripts/rewrite-legacy-changesets.ts",
-      "apps/agent/src/release/check-agent-changeset.test.ts",
-      "apps/agent/src/release/rewrite-legacy-changesets.test.ts",
-    ],
-    reason:
-      "other 2.0 epics write @omniralph/harness changesets until cutover; the check accepts them, the rewrite renames them, the wrapper keeps the old command path (Epic 14 removes all three)",
-  },
-  {
-    paths: [".github/workflows/publish-agent.yml"],
-    text: /@omniralph\/harness changesets/g,
-    reason: "the comment on the version script that rewrites legacy changesets",
+    paths: ["apps/agent/src/release/check-agent-changeset.test.ts"],
+    text: /@omniralph\/harness/g,
+    reason: "the check's test shows a changeset for the old name no longer counts",
   },
   {
     paths: [/^\.changeset\/[^/]*\.md$/],
@@ -100,11 +89,8 @@ const ALLOWED: Allowed[] = [
   },
   {
     paths: ["apps/agent/README.md"],
-    text: new RegExp(
-      `${OLD_INSTALL.source}|${/check-harness-changeset\.ts/.source}`,
-      OLD_INSTALL.flags,
-    ),
-    reason: "the From @omniralph/harness and legacy-changeset sections",
+    text: OLD_INSTALL,
+    reason: "the From @omniralph/harness section",
   },
   {
     paths: ["docs/deploy-agent.md", "docs/env.md"],

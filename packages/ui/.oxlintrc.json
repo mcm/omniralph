@@ -22,10 +22,6 @@
               {
                 "group": ["@tanstack/*"],
                 "message": "@omniralph/ui has no data layer: apps bring their own (props and callbacks)."
-              },
-              {
-                "group": ["@iamthemcmaster/*"],
-                "message": "@omniralph/ui must not depend on @iamthemcmaster packages."
               }
             ]
           }

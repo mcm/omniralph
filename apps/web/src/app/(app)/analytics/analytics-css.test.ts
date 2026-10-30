@@ -153,9 +153,8 @@ describe("the Analytics page's files", () => {
     .filter((file) => /\.tsx?$/.test(file))
     .map((file) => [file, read(file)] as const);
 
-  it("import neither @iamthemcmaster/ui nor a chart library", () => {
+  it("import no chart library", () => {
     for (const [file, source] of sources) {
-      expect(source, file).not.toMatch(/["']@iamthemcmaster\//);
       expect(source, file).not.toMatch(
         /["'](recharts|d3[\w-]*|chart\.js|@nivo\/[\w-]+|victory)["']/,
       );

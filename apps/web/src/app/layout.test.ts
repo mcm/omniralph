@@ -19,12 +19,10 @@ describe("root layout metadata", () => {
 });
 
 describe("root layout stylesheets", () => {
-  it("loads @omniralph/ui after the library's styles and before globals.css", () => {
+  it("loads @omniralph/ui before globals.css", () => {
     const source = readFileSync(path.join(__dirname, "layout.tsx"), "utf8");
     const stylesheets = Array.from(source.matchAll(/^import\s+"([^"]+)";$/gm), ([, s]) => s);
-    // The first two are the library's styles (legacy-ui-boundary.test.ts names them).
-    expect(stylesheets).toHaveLength(5);
-    expect(stylesheets.slice(2)).toEqual([
+    expect(stylesheets).toEqual([
       "@omniralph/ui/fonts.css",
       "@omniralph/ui/styles.css",
       "./globals.css",

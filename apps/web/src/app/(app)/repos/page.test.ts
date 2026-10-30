@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { isValidElement, type ReactElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ReposView } from "@/screens/repos/repos-view";
@@ -14,7 +12,5 @@ describe("the Repos page", () => {
     expect(isValidElement(page)).toBe(true);
     expect(page.props.children.type).toBe(ReposView);
     expect(page.props.children.props.repositoryId).toBeUndefined();
-    const source = readFileSync(path.join(__dirname, "page.tsx"), "utf8");
-    expect(source).not.toMatch(/@iamthemcmaster\/ui/);
   });
 });

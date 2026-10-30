@@ -5,7 +5,7 @@ code hosts send webhooks to it, it owns job state in Postgres, where agents clai
 agent tokens with Vercel KMS and brokers short-lived clone credentials. Every variable mentioned below is described in [env.md](env.md).
 
 Prerequisites: a Vercel team with KMS available (beta), the Vercel CLI
-(`npm i -g vercel`, logged in), an npm token that can read `@iamthemcmaster/ui`, a Neon API key, and
+(`npm i -g vercel`, logged in), a Neon API key, and
 admin access to this repository and to the GitHub organization and/or GitLab projects you'll connect.
 
 Vercel doesn't build the control panel: GitHub Actions does (`.github/workflows/deploy-web.yml`) and
@@ -50,14 +50,11 @@ Set these under the repository's **Settings › Secrets and variables › Action
 | `VERCEL_TOKEN`               | secret              | A Vercel access token (**Account Settings › Tokens**) scoped to the team that owns the project                     |
 | `VERCEL_ORG_ID`              | variable            | `orgId` from `.vercel/project.json` (the team ID)                                                                  |
 | `VERCEL_PROJECT_ID`          | variable            | `projectId` from `.vercel/project.json`                                                                            |
-| `NPM_TOKEN`                  | secret              | npm token that can read `@iamthemcmaster/ui` (also used by CI)                                                     |
 | `NEON_API_KEY`               | secret              | A Neon API key (**Neon Console › Account settings › API keys**)                                                    |
 | `NEON_PROJECT_ID`            | variable            | The Neon project's ID (**Project settings › General**)                                                             |
 | `NEON_DATABASE`, `NEON_ROLE` | variables, optional | Database and role of preview connection strings; default `neondb` and `neondb_owner`, the Neon integration's names |
 
-`@iamthemcmaster/ui` is a private package on the public npm registry: the workflow writes
-`NPM_TOKEN` to `.npmrc` before building. Use a read-only (or granular, read-only on
-`@iamthemcmaster`) npm token. Never commit an `.npmrc` with a token. Vercel no longer installs
+Every dependency is public, so installing needs no npm token. Vercel doesn't install
 anything, so the project doesn't need `NPM_RC`.
 
 ## 3. Postgres (Neon)
@@ -245,8 +242,6 @@ gone (404). Each user can replay 10 deliveries a minute.
 
 ## Troubleshooting
 
-- **Install fails with 401/404 for `@iamthemcmaster/ui`:** the `NPM_TOKEN` Actions secret is
-  missing, or the token can't read the package.
 - **The deploy workflow fails at `vercel pull`:** `VERCEL_TOKEN` is missing or can't access the
   team, or `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` are wrong.
 - **Migrations fail with `getaddrinfo EAI_AGAIN base`:** the database URL was empty (`pg` parses

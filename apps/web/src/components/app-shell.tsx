@@ -60,10 +60,7 @@ export function AppShell({
   scopeCookie: string | null;
   /** The user's saved "Show advanced settings" preference (see `useShowAdvanced`). */
   showAdvanced: boolean;
-  /**
-   * The page. Today's pages come wrapped in `app/(app)/legacy-frame.tsx` (the library's
-   * tooltips and the unsaved-changes guard and bar) until Epics 5–10 replace them.
-   */
+  /** The page, wrapped in `app/(app)/page-frame.tsx` (the unsaved-changes guard and bar). */
   children: React.ReactNode;
 }) {
   const pathname = usePathname();

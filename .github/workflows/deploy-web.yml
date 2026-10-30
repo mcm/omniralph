@@ -58,13 +58,6 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
-      # @iamthemcmaster/ui is a private package on the public npm registry.
-      # .npmrc is gitignored; never commit one containing a token.
-      - name: Authenticate to npm
-        run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Install the Vercel CLI
         run: npm install -g "vercel@${VERCEL_CLI_VERSION}"
 

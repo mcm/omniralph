@@ -52,8 +52,8 @@ record lives.
   handlers) with TanStack Query, polling every 3s while the tab is visible (settings 30s, analytics 60s) and on focus; every
   change invalidates the views it affects. Only the signed-in layout runs on the server (the
   session gate). No server actions, and no page reads the database (README, Data fetching).
-- All UI uses `@iamthemcmaster/ui` (Precision Aurora), `@tabler/icons-react` and `sonner`. No
-  other component or styling library. Custom styling uses the library's design tokens only.
+- All UI uses `@omniralph/ui` (Ultraviolet) and `@tabler/icons-react`. No other component or
+  styling library. Custom styling uses its design tokens only.
 - Terminology to keep: organization, repository, agent, ralph run, story, lane, review run,
   finding, learned rule, review depth, job, triage, follow-up, manual story.
 - Settings are dense and interdependent (verify commands, quality gates, task
@@ -61,9 +61,8 @@ record lives.
 
 ## Brand Commitments
 
-Stay close to the Precision Aurora design system (`@iamthemcmaster/ui`), but deviating is fine
-where it clearly benefits this product (for example, denser data views than the library's
-defaults).
+Stay inside the Ultraviolet design system (`@omniralph/ui`, see DESIGN.md). When a screen needs
+something it lacks, add it to the package rather than styling around it.
 
 ## Evidence on Hand
 

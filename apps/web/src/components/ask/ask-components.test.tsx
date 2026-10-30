@@ -143,12 +143,6 @@ describe("Ask's components", () => {
       expect(components.find((c) => c.file === file)!.text).toContain('from "@/lib/runs/hrefs"');
     }
   });
-
-  it("import nothing from @iamthemcmaster/ui", () => {
-    for (const { file, text } of components) {
-      expect({ file, legacy: text.includes("@iamthemcmaster/") }).toEqual({ file, legacy: false });
-    }
-  });
 });
 
 describe("Ask's stylesheets", () => {

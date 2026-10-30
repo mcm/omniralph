@@ -4,8 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import AppError from "./error";
 
-vi.mock("@/components/app-header", () => ({ AppHeader: () => null }));
-
 afterEach(cleanup);
 
 describe("AppError", () => {

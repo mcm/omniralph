@@ -1,18 +1,16 @@
 // @vitest-environment jsdom
 import "@/components/pickers/test-dom";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@iamthemcmaster/ui";
 import { toast } from "@omniralph/ui";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AppHeader } from "@/components/app-header";
 import { AppShell } from "@/components/app-shell";
 import { testUser } from "@/components/query-test-utils";
 import { useUnsavedChanges } from "@/components/unsaved-changes";
-import { LegacyFrame } from "./legacy-frame";
+import { PageFrame } from "./page-frame";
 
-// Today's pages inside the 2.0 shell, composed as `(app)/layout.tsx` does: the breadcrumbs,
-// the library's tooltips, the unsaved-changes guard and bar, and the shell's toasts all work.
+// A page inside the shell, composed as `(app)/layout.tsx` does: the unsaved-changes guard and
+// bar, and the shell's toasts all work.
 
 const nav = vi.hoisted(() => ({ router: { push: vi.fn(), refresh: vi.fn() } }));
 vi.mock("next/navigation", () => ({
@@ -26,27 +24,18 @@ vi.mock("next/link", async (importOriginal) => ({
 vi.mock("@/lib/theme-actions", () => ({ saveThemePreference: vi.fn(async () => ({ ok: true })) }));
 vi.mock("@/lib/auth/actions", () => ({ signOutAction: vi.fn(async () => {}) }));
 
-function TodaysPage() {
+function RoutingPage() {
   useUnsavedChanges("Routing rules", "settings-routing-rules", true);
   return (
-    <>
-      <AppHeader
-        breadcrumbs={[{ label: "Settings", href: "/settings/organization" }, { label: "Routing" }]}
-      />
-      <section id="settings-routing-rules">
-        <Tooltip>
-          <TooltipTrigger>Rule help</TooltipTrigger>
-          <TooltipContent>Rules run top to bottom</TooltipContent>
-        </Tooltip>
-        <button type="button" onClick={() => toast("Routing saved")}>
-          Save routing
-        </button>
-      </section>
-    </>
+    <section id="settings-routing-rules">
+      <button type="button" onClick={() => toast("Routing saved")}>
+        Save routing
+      </button>
+    </section>
   );
 }
 
-function renderTodaysPage() {
+function renderPage() {
   return render(
     <AppShell
       user={testUser}
@@ -55,9 +44,9 @@ function renderTodaysPage() {
       scopeCookie={null}
       showAdvanced={false}
     >
-      <LegacyFrame>
-        <TodaysPage />
-      </LegacyFrame>
+      <PageFrame>
+        <RoutingPage />
+      </PageFrame>
     </AppShell>,
   );
 }
@@ -67,28 +56,17 @@ beforeEach(() => {
   nav.router.refresh.mockReset();
 });
 
-describe("today's pages inside the 2.0 shell", () => {
-  it("show their breadcrumbs and unsaved-changes bar in the frame's main", () => {
-    renderTodaysPage();
+describe("a page inside the shell", () => {
+  it("shows its unsaved-changes bar in the frame's main", () => {
+    renderPage();
     const main = screen.getByRole("main");
-    const crumbs = within(main).getByRole("navigation", { name: "breadcrumb" });
-    expect(within(crumbs).getByRole("link", { name: "Settings" }).getAttribute("href")).toBe(
-      "/settings/organization",
-    );
     const bar = main.querySelector<HTMLElement>(".unsaved-bar")!;
     expect(bar.textContent).toContain("1 card has unsaved changes");
     expect(within(bar).getByRole("link", { name: "Routing rules" })).toBeTruthy();
   });
 
-  it("keep the library's tooltips working", async () => {
-    renderTodaysPage();
-    const user = userEvent.setup();
-    await user.hover(screen.getByRole("button", { name: "Rule help" }));
-    expect((await screen.findByRole("tooltip")).textContent).toBe("Rules run top to bottom");
-  });
-
-  it("show their toasts in the shell's toaster", async () => {
-    renderTodaysPage();
+  it("shows its toasts in the shell's toaster", async () => {
+    renderPage();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Save routing" }));
     const region = screen.getByRole("region", { name: "Notifications" });
@@ -96,8 +74,8 @@ describe("today's pages inside the 2.0 shell", () => {
     act(() => within(region).getByRole("button", { name: "Dismiss" }).click());
   });
 
-  it("ask before a shell nav link leaves unsaved changes", async () => {
-    renderTodaysPage();
+  it("asks before a shell nav link leaves unsaved changes", async () => {
+    renderPage();
     const user = userEvent.setup();
     const sidebar = screen.getAllByRole("navigation", { name: "Primary" })[0]!;
     await user.click(within(sidebar).getByRole("link", { name: "Repos" }));
@@ -107,8 +85,8 @@ describe("today's pages inside the 2.0 shell", () => {
     expect(nav.router.push).toHaveBeenCalledWith("/repos");
   });
 
-  it("ask before a phone drawer link leaves unsaved changes", async () => {
-    renderTodaysPage();
+  it("asks before a phone drawer link leaves unsaved changes", async () => {
+    renderPage();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Open menu" }));
     const drawer = await screen.findByRole("dialog", { name: "Menu" });

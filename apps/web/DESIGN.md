@@ -11,13 +11,10 @@ README lists them, and the canvas "Omniralph 2.0 — Primary Screens" (page "Ult
 final") is the source the tokens come from. This file doesn't repeat token values: it records
 how the panel applies the system. When the two disagree, this file wins for `apps/web`.
 
-**Coexistence until Epic 14.** The signed-in shell, the signed-out pages (sign-in, onboarding,
-access denied, chat link, terms, privacy) and every toast are Ultraviolet. Today's screens under
-`src/app/(app)` render inside the Ultraviolet shell but keep **Precision Aurora 1.1**
-(`@iamthemcmaster/ui`) and the components only they use, until Epics 5–10 replace each one;
-Epic 14 then removes the library. `src/legacy-ui-boundary.test.ts` keeps the library inside
-those screens. No bridge tokens: a page is either Ultraviolet or Precision Aurora, never a mix.
-New screens and components use `@omniralph/ui` only.
+Every page is Ultraviolet: the signed-in shell and its screens, the signed-out pages (sign-in,
+onboarding, access denied, chat link, terms, privacy, the shared review page) and every toast.
+Screens and components use `@omniralph/ui` and its `--or-` tokens only; there is no other
+component or styling library.
 
 ## Overview
 
@@ -131,7 +128,7 @@ Everything comes from `@omniralph/ui`. The rules its components make the default
 
 ### Don't:
 
-- **Don't** import `@iamthemcmaster/ui` outside today's screens (the boundary test fails).
+- **Don't** add a second component or styling library next to `@omniralph/ui`.
 - **Don't** add colors, hex or rgba literals, or inline layout styles in panel code.
 - **Don't** show a control that does nothing yet, or a nav entry without a page.
 - **Don't** let a table or long ID widen the page at 390 px.

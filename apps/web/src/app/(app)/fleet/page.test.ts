@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { isValidElement, type ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { FleetView } from "@/screens/fleet/fleet-view";
@@ -22,12 +20,5 @@ describe("the Fleet pages", () => {
     })) as ReactElement<{ agentId?: string }>;
     expect(page.type).toBe(FleetView);
     expect(page.props.agentId).toBe(AGENT_ID);
-  });
-
-  it("don't use the legacy library", () => {
-    for (const file of ["page.tsx", "[id]/page.tsx"]) {
-      const source = readFileSync(path.join(__dirname, file), "utf8");
-      expect(source).not.toMatch(/@iamthemcmaster\/ui/);
-    }
   });
 });

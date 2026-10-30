@@ -1,7 +1,6 @@
-// Tests scripts/check-agent-changeset.ts (and its old path, scripts/check-harness-changeset.ts), the CI check that agent changes come with a
+// Tests scripts/check-agent-changeset.ts, the CI check that agent changes come with a
 // changeset. It lives at the repo root (CI runs it with tsx); it's tested here so
 // `pnpm turbo run test` covers it.
-import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -13,7 +12,6 @@ import {
   main,
   touchedPackageDirs,
 } from "../../../../scripts/check-agent-changeset.js";
-import { main as wrapperMain } from "../../../../scripts/check-harness-changeset.js";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -129,16 +127,14 @@ describe("checkAgentChangeset", () => {
     });
   });
 
-  it("passes with a changeset that names the package's old name", () => {
+  it("fails when the only changeset names the package's old name", () => {
     const result = checkAgentChangeset({
       changedFiles: ["apps/agent/src/cli.ts", legacyMinor.path],
       packageDirs: PACKAGE_DIRS,
       changesets: [legacyMinor],
     });
-    expect(result).toEqual({
-      ok: true,
-      message: ".changeset/calm-owls-sing.md adds a changeset for @omniralph/harness.",
-    });
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("adds no changeset for @omniralph/agent");
   });
 
   it("accepts an empty changeset as a deliberate opt-out", () => {
@@ -150,7 +146,7 @@ describe("checkAgentChangeset", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("fails when the only changeset names neither the agent nor its old name", () => {
+  it("fails when the only changeset names another package", () => {
     const result = checkAgentChangeset({
       changedFiles: ["apps/agent/src/cli.ts"],
       packageDirs: PACKAGE_DIRS,
@@ -218,26 +214,4 @@ describe("main", () => {
   it("returns 0 when nothing changed since the base ref", () => {
     expect(main(["HEAD"])).toBe(0);
   });
-});
-
-describe("scripts/check-harness-changeset.ts", () => {
-  it("is the new check's main", () => {
-    expect(wrapperMain).toBe(main);
-  });
-
-  it("runs the new check with the same arguments and exit code", () => {
-    const run = (args: string[]) =>
-      spawnSync("pnpm", ["exec", "tsx", "scripts/check-harness-changeset.ts", ...args], {
-        cwd: REPO_ROOT,
-        encoding: "utf8",
-      });
-
-    const usage = run([]);
-    expect(usage.status).toBe(2);
-    expect(usage.stderr).toContain("Usage: check-agent-changeset.ts <base-ref>");
-
-    const clean = run(["HEAD"]);
-    expect(clean.status).toBe(0);
-    expect(clean.stdout).toContain("check-agent-changeset: No changes to @omniralph/agent");
-  }, 60_000);
 });

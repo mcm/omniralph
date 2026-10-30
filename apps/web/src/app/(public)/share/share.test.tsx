@@ -292,12 +292,11 @@ describe("the review page's modules", () => {
         ? [entry]
         : [];
 
-  it("import nothing from @iamthemcmaster/ui nor the app's link or shell components", () => {
+  it("import nothing from the app's link or shell components", () => {
     const sources = roots.flatMap(files);
     expect(sources.length).toBeGreaterThanOrEqual(6);
     for (const file of sources) {
       const source = readFileSync(file, "utf8");
-      expect(source, file).not.toMatch(/@iamthemcmaster\/ui/);
       expect(source, file).not.toMatch(/@\/components\/(link|auth-shell|legal-shell)/);
       expect(source, file).not.toMatch(/from "next\/link"/);
     }
