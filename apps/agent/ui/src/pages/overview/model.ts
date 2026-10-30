@@ -102,7 +102,8 @@ export function slotsText(state: AgentUiState): string {
 
 /**
  * Under the running version: "Updating to 2.0.4", "Update to 2.0.4 failed", or why it runs
- * this one (`idleVersionText`: "Up to date", "Pinned to 2.0.3", …).
+ * this one (`idleVersionText`: "Up to date", "Not retrying 2.0.4", …), or "Pinned" when it is
+ * pinned to the version it runs.
  */
 export function versionDetail(state: AgentUiState): Sentence {
   const target = updatingTo(state);
@@ -115,7 +116,10 @@ export function versionDetail(state: AgentUiState): Sentence {
       tone: "fail",
     };
   }
-  return { text: idleVersionText(state).text };
+  const idle = idleVersionText(state);
+  // Pinned to the running version: the badge above already names it.
+  if (idle.version === state.agent.version) return { text: "Pinned" };
+  return { text: idle.text };
 }
 
 /** "Signed in" with its source, or "Not signed in" in the fail tone. */

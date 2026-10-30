@@ -8,7 +8,6 @@ import {
   Menu,
   MetaBadge,
   SaveBar,
-  StatusDot,
   StatusText,
   type StatusTone,
   useStagedCard,
@@ -197,7 +196,6 @@ export function AgentsCard({ detail, titleId }: { detail: RepositoryDetail; titl
             const state = agentStateText(agent);
             return (
               <li key={agent.id} className="or-repo-agents__row">
-                <StatusDot tone={state.tone} label={state.text} />
                 <AgentBadge name={agent.name} href={agentHref(agent.id)} />
                 <StatusText tone={state.tone}>{state.text}</StatusText>
                 {canEdit ? (
@@ -219,7 +217,6 @@ export function AgentsCard({ detail, titleId }: { detail: RepositoryDetail; titl
               className="or-repo-agents__row or-repo-agents__row--pending"
               data-pending="true"
             >
-              <StatusDot tone="neutral" label="Pending" />
               <AgentBadge name={agent.name} href={agentHref(agent.id)} />
               <MetaBadge text="Pending" />
               <IconButton

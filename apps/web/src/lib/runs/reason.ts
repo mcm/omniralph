@@ -4,7 +4,7 @@
  * the run detail's (`GET /api/ui/runs/{id}`) come from `runReason` and `runReasonLink`, so
  * both say the same thing.
  */
-import type { InboxQuestionKind, JobWaitingReason, RunKind } from "@omniralph/db";
+import type { InboxQuestionKind, JobWaitingReason } from "@omniralph/db";
 import type { ReasonLink } from "@/lib/api/runs";
 import { truncate } from "@/lib/ralph/display";
 
@@ -32,7 +32,7 @@ export type RunReasonFacts =
     }
   /** A queued run whose newest attempt needs host tools no online agent has. */
   | { kind: "host_tools_missing"; hostTools: readonly string[] }
-  | { kind: "stopped"; runKind: RunKind; error: string | null }
+  | { kind: "stopped"; error: string | null }
   | { kind: "failed"; error: string | null };
 
 /** "pull request #42" on GitHub, "merge request !7" on GitLab. */
@@ -51,14 +51,6 @@ export function withError(sentence: string, error: string | null): string {
   const capitalized = message.charAt(0).toUpperCase() + message.slice(1);
   return `${sentence} ${truncate(capitalized, REASON_ERROR_MAX_LENGTH)}`;
 }
-
-const KIND_NAMES: Record<RunKind, string> = {
-  epic: "epic",
-  request: "request",
-  review: "review",
-  triage: "triage",
-  ask: "ask",
-};
 
 function questionReason(facts: Extract<RunReasonFacts, { kind: "question" }>): string {
   switch (facts.question) {
@@ -111,7 +103,7 @@ export function runReason(facts: RunReasonFacts): string {
     case "host_tools_missing":
       return `Waiting for an agent with ${listOf([...facts.hostTools].sort())} installed`;
     case "stopped":
-      return withError(`The ${KIND_NAMES[facts.runKind]} was stopped.`, facts.error);
+      return withError("The run was stopped.", facts.error);
     case "failed":
       return withError("The run failed.", facts.error);
   }

@@ -111,7 +111,7 @@ function runningEpic(overrides: Partial<RunDetail> = {}): RunDetail {
 function stoppedEpic(): RunDetail {
   const run = runningEpic({
     status: "stopped",
-    reason: "The epic was stopped. Stopped by Ada.",
+    reason: "The run was stopped. Stopped by Ada.",
     steps: [
       storyStep("1", "completed", 13 * MINUTE),
       storyStep("2", "exhausted", 5 * MINUTE),
@@ -279,7 +279,7 @@ describe("the run detail", () => {
     await loaded();
     expect(statusLine().textContent).toContain("Stopped");
     expect(pane().querySelector(".or-run-detail__reason")!.textContent).toBe(
-      "The epic was stopped. Stopped by Ada.",
+      "The run was stopped. Stopped by Ada.",
     );
   });
 

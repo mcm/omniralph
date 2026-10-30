@@ -106,11 +106,11 @@ describe("runActivity", () => {
       text: "The run failed",
     });
     const stopped = runDetail(null, { status: "stopped", finishedAt: NOW_AT(-5) });
-    expect(runActivity(stopped, "The epic was stopped. By hand.")[0]?.text).toBe(
+    expect(runActivity(stopped, "The run was stopped. By hand.")[0]?.text).toBe(
       "The run was stopped",
     );
     const ask = runDetail(null, { kind: "ask", status: "stopped", finishedAt: NOW_AT(-5) });
-    expect(runActivity(ask, "The ask was stopped.")[0]?.text).toBe("The run was stopped");
+    expect(runActivity(ask, "The run was stopped.")[0]?.text).toBe("The run was stopped");
     const waiting = runDetail(null, { status: "waiting", finishedAt: null, updatedAt: NOW_AT(-2) });
     expect(runActivity(waiting, "Om is waiting on you.")[0]).toEqual({
       id: "reason",

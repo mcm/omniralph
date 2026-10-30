@@ -160,7 +160,7 @@ describe("an item with a run", () => {
         key: "stopped:run-1:x",
         kind: "stopped_epic",
         run: { id: "run-1", kind: "epic", status: "stopped" },
-        reason: "The epic was stopped.",
+        reason: "The run was stopped.",
         actions: ["resume", "done", "snooze"],
       }),
     ];

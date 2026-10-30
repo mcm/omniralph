@@ -291,7 +291,7 @@ describe("describeAttempt", () => {
     expect(describeAttempt({ type, status: "failed", context })).toBe(failed);
     const doing = `${progressive.charAt(0).toLowerCase()}${progressive.slice(1)}`;
     expect(describeAttempt({ type, status: "canceled", context })).toBe(`Stopped ${doing}`);
-    expect(describeAttempt({ type, status: "expired", context })).toBe(`Ran out of time ${doing}`);
+    expect(describeAttempt({ type, status: "expired", context })).toBe(`Never started ${doing}`);
     expect(describeAttempt({ type, status: "completed", context, unfinished: true })).toBe(
       failed.replace("Couldn't", "Tried to"),
     );
@@ -300,13 +300,13 @@ describe("describeAttempt", () => {
     );
   });
 
-  it("says a canceled story attempt stopped, an expired one ran out of time, and an unfinished one tried", () => {
+  it("says a canceled story attempt stopped, an expired one never started, and an unfinished one tried", () => {
     const context = { story: "BIL-90" };
     expect(describeAttempt({ type: "ralph.story", status: "canceled", context })).toBe(
       "Stopped building BIL-90",
     );
     expect(describeAttempt({ type: "ralph.story", status: "expired", context })).toBe(
-      "Ran out of time building BIL-90",
+      "Never started building BIL-90",
     );
     expect(
       describeAttempt({ type: "ralph.story", status: "completed", context, unfinished: true }),

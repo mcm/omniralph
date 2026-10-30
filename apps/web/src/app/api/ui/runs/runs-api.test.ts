@@ -1184,7 +1184,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     const stopped = await newRun();
     await updateRun(db, stopped.id, { status: "stopped", error: "Stopped by Ada Admin." });
     expect((await detailPage(stopped.id)).reason).toBe(
-      "The epic was stopped. Stopped by Ada Admin.",
+      "The run was stopped. Stopped by Ada Admin.",
     );
 
     const failed = await newRun({ mode: "request", kind: "single" });

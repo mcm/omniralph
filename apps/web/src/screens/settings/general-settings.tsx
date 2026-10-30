@@ -40,6 +40,11 @@ export function generalChanges(saved: GeneralDraft, draft: GeneralDraft): Staged
 /** The leave dialog's text. */
 export const LEAVE_DESCRIPTION = "You lose access to its repos, runs and agents.";
 
+/** The Leave card's line: what leaving costs, so its button needn't repeat the title. */
+function leaveConsequence(name: string): string {
+  return `You lose access to ${name}'s repos, runs and agents.`;
+}
+
 /**
  * The Organization card (the page is General, so the card names what it holds): the organization's name (required, at most
  * `MAX_ORGANIZATION_NAME_LENGTH`), staged in its save bar and saved in one
@@ -134,14 +139,15 @@ function LeaveCard({ name }: { name: string }) {
   });
   return (
     <Card title="Leave organization" titleId="leave">
-      <div>
+      <div className="or-leave">
+        <p className="or-leave__note">{leaveConsequence(name)}</p>
         <Button
           variant="danger"
           icon={IconDoorExit}
           disabled={leave.isPending || leave.isSuccess}
           onClick={() => setConfirming(true)}
         >
-          Leave organization
+          Leave
         </Button>
       </div>
       <ConfirmDialog

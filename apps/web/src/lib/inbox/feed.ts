@@ -192,7 +192,6 @@ function itemFields(
         ...base,
         reason: runReason({
           kind: "stopped",
-          runKind: item.run?.kind === "epic" ? "epic" : "request",
           error: facts.error,
         }),
       };
