@@ -359,7 +359,7 @@ export async function listRepositoryCodingAgentIds(
 }
 
 /** Records a live `agent` change for the agent. */
-function recordAgentChange(db: Database, agent: { id: string; organizationId: string }): void {
+function recordAgentChange(db: unknown, agent: { id: string; organizationId: string }): void {
   recordChange(db, {
     resource: "agent",
     ids: [agent.id],
@@ -378,24 +378,26 @@ export async function markAgentDeleted(
   agentId: string,
   now: Date = new Date(),
 ): Promise<boolean> {
-  const rows = await db
-    .update(agents)
-    .set({ deletedAt: now })
-    .where(
-      and(
-        eq(agents.organizationId, organizationId),
-        eq(agents.id, agentId),
-        isNotNull(agents.revokedAt),
-        isNull(agents.deletedAt),
-      ),
-    )
-    .returning({ id: agents.id, organizationId: agents.organizationId });
-  for (const row of rows) {
-    recordAgentChange(db, row);
-    // Its host tools count again for the organization's queued jobs.
-    await refreshHostToolWaits({ db, organizationId: row.organizationId });
-  }
-  return rows.length > 0;
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .update(agents)
+      .set({ deletedAt: now })
+      .where(
+        and(
+          eq(agents.organizationId, organizationId),
+          eq(agents.id, agentId),
+          isNotNull(agents.revokedAt),
+          isNull(agents.deletedAt),
+        ),
+      )
+      .returning({ id: agents.id, organizationId: agents.organizationId });
+    for (const row of rows) {
+      recordAgentChange(tx, row);
+      // Its host tools count again for the organization's queued jobs.
+      await refreshHostToolWaits({ db: tx, organizationId: row.organizationId });
+    }
+    return rows.length > 0;
+  });
 }
 
 /** An audit event with the name (else email) of the user who revoked or deleted the agent. */
@@ -690,24 +692,28 @@ export async function listQueuedJobsTargetingAgent(db: Database, agentId: string
  * deleted or unknown: a steady heartbeat records nothing.
  */
 export async function markAgentLiveOnline(db: Database, agentId: string): Promise<boolean> {
-  const rows = await db
-    .update(agents)
-    .set({ liveOnline: true })
-    .where(
-      and(
-        eq(agents.id, agentId),
-        eq(agents.liveOnline, false),
-        isNull(agents.revokedAt),
-        isNull(agents.deletedAt),
-      ),
-    )
-    .returning({ id: agents.id, organizationId: agents.organizationId });
-  for (const row of rows) {
-    recordAgentChange(db, row);
-    // Its host tools count again for the organization's queued jobs.
-    await refreshHostToolWaits({ db, organizationId: row.organizationId });
-  }
-  return rows.length > 0;
+  // The flag and the waits refresh commit together: a failed refresh leaves the agent
+  // offline, so its next heartbeat announces it (and refreshes) again.
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .update(agents)
+      .set({ liveOnline: true })
+      .where(
+        and(
+          eq(agents.id, agentId),
+          eq(agents.liveOnline, false),
+          isNull(agents.revokedAt),
+          isNull(agents.deletedAt),
+        ),
+      )
+      .returning({ id: agents.id, organizationId: agents.organizationId });
+    for (const row of rows) {
+      recordAgentChange(tx, row);
+      // Its host tools count again for the organization's queued jobs.
+      await refreshHostToolWaits({ db: tx, organizationId: row.organizationId });
+    }
+    return rows.length > 0;
+  });
 }
 
 /** The agents the live events last announced online, with their row's last heartbeat. */
@@ -734,17 +740,21 @@ export async function markAgentsLiveOffline(
   agentIds: readonly string[],
 ): Promise<string[]> {
   if (agentIds.length === 0) return [];
-  const rows = await db
-    .update(agents)
-    .set({ liveOnline: false })
-    .where(and(inArray(agents.id, [...agentIds]), eq(agents.liveOnline, true)))
-    .returning({ id: agents.id, organizationId: agents.organizationId });
-  for (const row of rows) recordAgentChange(db, row);
-  // Their host tools no longer count for the organizations' queued jobs.
-  for (const organizationId of new Set(rows.map((row) => row.organizationId))) {
-    await refreshHostToolWaits({ db, organizationId });
-  }
-  return rows.map((row) => row.id);
+  // The flags and the waits refresh commit together: a failed refresh leaves the agents
+  // online, so the next sweep announces them offline (and refreshes) again.
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .update(agents)
+      .set({ liveOnline: false })
+      .where(and(inArray(agents.id, [...agentIds]), eq(agents.liveOnline, true)))
+      .returning({ id: agents.id, organizationId: agents.organizationId });
+    for (const row of rows) recordAgentChange(tx, row);
+    // Their host tools no longer count for the organizations' queued jobs.
+    for (const organizationId of new Set(rows.map((row) => row.organizationId))) {
+      await refreshHostToolWaits({ db: tx, organizationId });
+    }
+    return rows.map((row) => row.id);
+  });
 }
 
 /** An attempt (job) an agent claimed, for Fleet's Running now and Recent work. */

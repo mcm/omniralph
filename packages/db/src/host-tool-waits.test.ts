@@ -1,6 +1,6 @@
 // A queued job says when no online agent of its organization has the host tools it needs.
 import type { HostToolReport } from "@omniralph/shared";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -127,6 +127,31 @@ describe.skipIf(!databaseAvailable)("host tool waits", () => {
     const online = await captureChanges(() => markAgentLiveOnline(db, id));
     expect(await reasonOf(job.id)).toBeNull();
     expect(runChanges(online.changes)).toEqual([job.id]);
+  });
+
+  it("leaves the agent online when the refresh fails, so the next sweep sets it", async () => {
+    const org = await organization();
+    const id = await agent(org, [gh]);
+    const job = await enqueue(org, ["gh"]);
+    // Writing the organization's waiting reasons fails until the trigger is dropped.
+    await db.execute(
+      sql.raw(`
+      create function fail_waits() returns trigger language plpgsql as $$
+        begin raise exception 'waits unavailable'; end $$;
+      create trigger fail_waits before update of waiting_reason on jobs for each row
+        when (new.organization_id = '${org}') execute function fail_waits();
+    `),
+    );
+    try {
+      await expect(markAgentsLiveOffline(db, [id])).rejects.toThrow();
+    } finally {
+      await db.execute(sql.raw("drop trigger fail_waits on jobs; drop function fail_waits();"));
+    }
+    expect((await db.select().from(agents).where(eq(agents.id, id)))[0]!.liveOnline).toBe(true);
+    expect(await reasonOf(job.id)).toBeNull();
+
+    expect(await markAgentsLiveOffline(db, [id])).toEqual([id]);
+    expect(await reasonOf(job.id)).toEqual({ code: "host_tools_missing", hostTools: ["gh"] });
   });
 
   it("sets it when the only agent with the tool reports it blocked, from the heartbeat", async () => {

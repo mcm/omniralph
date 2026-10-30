@@ -45,6 +45,8 @@ import {
   type JobWaitingReason,
 } from "./schema.js";
 
+type Queryable = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
+
 export type Job = typeof jobs.$inferSelect;
 export type JobStatus = Job["status"];
 
@@ -148,37 +150,39 @@ export async function insertJob(
 ): Promise<{ job: Job; created: boolean }> {
   // A conflicting job can finish between the insert and the lookup; then insert again.
   for (let attempt = 0; attempt < 3; attempt++) {
-    const [row] = await db
-      .insert(jobs)
-      .values({
-        organizationId: input.organizationId,
-        type: input.type,
-        taskType: input.taskType,
-        taskId: input.taskId ?? null,
-        minAgentVersion: input.minAgentVersion ?? null,
-        requiredInstallables: [...(input.requiredInstallables ?? [])],
-        requiredHostTools: [...(input.requiredHostTools ?? [])],
-        payload: input.payload ?? {},
-        repositoryId: input.repositoryId ?? null,
-        dedupeKey: input.dedupeKey ?? null,
-        ralphRunId: input.ralphRunId ?? null,
-        ralphStoryId: input.ralphStoryId ?? null,
-        reviewRunId: input.reviewRunId ?? null,
-        triageRunId: input.triageRunId ?? null,
-        chatThreadRunId: input.chatThreadRunId ?? null,
-        targetAgentId: input.targetAgentId ?? null,
-      })
-      .onConflictDoNothing({
-        target: jobs.dedupeKey,
-        where: sql`status in ('queued', 'running')`,
-      })
-      .returning();
-    if (row) {
-      recordJobChanges(db, [row]);
+    // The insert and the wait it starts with commit together.
+    const created = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(jobs)
+        .values({
+          organizationId: input.organizationId,
+          type: input.type,
+          taskType: input.taskType,
+          taskId: input.taskId ?? null,
+          minAgentVersion: input.minAgentVersion ?? null,
+          requiredInstallables: [...(input.requiredInstallables ?? [])],
+          requiredHostTools: [...(input.requiredHostTools ?? [])],
+          payload: input.payload ?? {},
+          repositoryId: input.repositoryId ?? null,
+          dedupeKey: input.dedupeKey ?? null,
+          ralphRunId: input.ralphRunId ?? null,
+          ralphStoryId: input.ralphStoryId ?? null,
+          reviewRunId: input.reviewRunId ?? null,
+          triageRunId: input.triageRunId ?? null,
+          chatThreadRunId: input.chatThreadRunId ?? null,
+          targetAgentId: input.targetAgentId ?? null,
+        })
+        .onConflictDoNothing({
+          target: jobs.dedupeKey,
+          where: sql`status in ('queued', 'running')`,
+        })
+        .returning();
+      if (!row) return null;
+      recordJobChanges(tx, [row]);
       // A job no online agent can run says so from the start.
       if (row.requiredHostTools.length > 0) {
         const [refreshed] = await refreshHostToolWaits({
-          db,
+          db: tx,
           organizationId: row.organizationId,
           jobIds: [row.id],
         });
@@ -186,14 +190,15 @@ export async function insertJob(
       }
       // A job only one agent may claim (an install, a pin sync) shows on that agent.
       if (row.targetAgentId) {
-        recordChange(db, {
+        recordChange(tx, {
           resource: "agent",
           ids: [row.targetAgentId],
           organizationId: row.organizationId,
         });
       }
-      return { job: row, created: true };
-    }
+      return row;
+    });
+    if (created) return { job: created, created: true };
 
     const [active] = await db
       .select()
@@ -214,17 +219,19 @@ export async function setQueuedJobTarget(
   jobId: string,
   targetAgentId: string | null,
 ): Promise<boolean> {
-  const rows = await db
-    .update(jobs)
-    .set({ targetAgentId })
-    .where(and(eq(jobs.id, jobId), eq(jobs.status, "queued")))
-    .returning(jobChangeColumns);
-  recordJobChanges(db, rows);
-  // Another agent (or any) may now claim it: what it waits for changes with it.
-  for (const row of rows) {
-    await refreshHostToolWaits({ db, organizationId: row.organizationId, jobIds: [row.id] });
-  }
-  return rows.length > 0;
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .update(jobs)
+      .set({ targetAgentId })
+      .where(and(eq(jobs.id, jobId), eq(jobs.status, "queued")))
+      .returning(jobChangeColumns);
+    recordJobChanges(tx, rows);
+    // Another agent (or any) may now claim it: what it waits for changes with it.
+    for (const row of rows) {
+      await refreshHostToolWaits({ db: tx, organizationId: row.organizationId, jobIds: [row.id] });
+    }
+    return rows.length > 0;
+  });
 }
 
 /**
@@ -238,7 +245,7 @@ export async function setQueuedJobTarget(
  * Returns the jobs whose reason changed, with their new reason.
  */
 export async function refreshHostToolWaits(input: {
-  db: Database;
+  db: Queryable;
   organizationId: string;
   jobIds?: readonly string[];
 }): Promise<{ id: string; waitingReason: JobWaitingReason | null }[]> {
@@ -744,8 +751,7 @@ export async function failJob(
   },
 ): Promise<FinishJobResult> {
   const now = input.now ?? new Date();
-  const requeued: Job[] = [];
-  const result = await db.transaction(async (tx): Promise<FinishJobResult> => {
+  return db.transaction(async (tx): Promise<FinishJobResult> => {
     const locked = await lockRunningJob(tx, input.jobId, input.agentId);
     if ("rejected" in locked) return locked.rejected;
     const { job } = locked;
@@ -776,14 +782,12 @@ export async function failJob(
         leaseExpiresAt: null,
       })
       .where(eq(jobs.id, job.id));
-    requeued.push(job);
+    // Queued again: it may wait for a host tool no online agent has (the claim cleared it).
+    if (job.requiredHostTools.length > 0) {
+      await refreshHostToolWaits({ db: tx, organizationId: job.organizationId, jobIds: [job.id] });
+    }
     return { status: "retry" };
   });
-  // Queued again: it may wait for a host tool no online agent has (the claim cleared it).
-  for (const job of requeued.filter((j) => j.requiredHostTools.length > 0)) {
-    await refreshHostToolWaits({ db, organizationId: job.organizationId, jobIds: [job.id] });
-  }
-  return result;
 }
 
 /**
@@ -885,6 +889,16 @@ export async function expireQueuedJobs(
  */
 export async function recordAgentHeartbeat(
   db: Database,
+  agentId: string,
+  input: Parameters<typeof writeAgentHeartbeat>[2],
+): Promise<typeof agents.$inferSelect | null> {
+  // The row write and the waits refresh it may need commit together: a failed refresh
+  // leaves the old report, so the next heartbeat sees the change and refreshes again.
+  return db.transaction((tx) => writeAgentHeartbeat(tx, agentId, input));
+}
+
+async function writeAgentHeartbeat(
+  db: Queryable,
   agentId: string,
   input: {
     version: string;

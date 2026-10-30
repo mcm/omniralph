@@ -199,7 +199,10 @@ The sweep no longer refreshes every organization's host tool waits. The waits ch
 the agents that count for them and the jobs that need them, so each of those writes refreshes the
 organization's waits itself: an enqueue or a target change, a retried job (`failJob`), an agent
 announced online or offline, a host tool report, a deletion, a revocation and a refresh-token
-reuse (which revokes).
+reuse (which revokes). Each refreshes in the same transaction as its write, since nothing sweeps
+the waits any more: a refresh that fails rolls the write back, and whatever made it retries (the
+next liveness sweep still finds the agent online, the next heartbeat still sees the changed
+report, the agent retries its `fail`).
 
 ### The epoch rebuild
 
