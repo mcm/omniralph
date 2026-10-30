@@ -11,6 +11,8 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { agents, playbooks } from "./schema.js";
 
+type Queryable = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
+
 /** Most host tool names a heartbeat response asks about (as the protocol allows). */
 const MAX_REQUIRED_HOST_TOOLS = 100;
 
@@ -83,7 +85,7 @@ export async function listHostToolSuggestions(
  * against.
  */
 export async function listAgentsUsableHostTools(
-  db: Database,
+  db: Queryable,
   organizationId: string,
   agentIds?: readonly string[],
   options: { online?: boolean } = {},
