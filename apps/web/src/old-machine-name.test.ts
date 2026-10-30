@@ -24,8 +24,7 @@ interface Allowed {
 const OLD_INSTALL =
   /@omniralph\/harness|omniralph-harness|OMNIRALPH_HARNESS_CONFIG|harness\.json|moving-from-omniralphharness/gi;
 /** Links to ADRs whose filenames keep the old word. */
-const ADR_LINKS =
-  /0008-agents-tasks-and-the-harness\.md|0010-harness-becomes-agent\.md/g;
+const ADR_LINKS = /0008-agents-tasks-and-the-harness\.md|0010-harness-becomes-agent\.md/g;
 
 const ALLOWED: Allowed[] = [
   {
@@ -39,17 +38,12 @@ const ALLOWED: Allowed[] = [
   },
   {
     paths: [/^docs\/adr\/00(0[1-9]|10)-[^/]*\.md$/],
-    reason:
-      "ADRs 0001–0009 keep their text as history; ADR 0010 records the rename",
+    reason: "ADRs 0001–0009 keep their text as history; ADR 0010 records the rename",
   },
-  {
-    paths: ["apps/agent/CHANGELOG.md"],
-    reason: "release history of @omniralph/harness versions",
-  },
+  { paths: ["apps/agent/CHANGELOG.md"], reason: "release history of @omniralph/harness versions" },
   {
     paths: [".impeccable/critique/"],
-    reason:
-      "dated design critiques of the screens as they were, kept as history",
+    reason: "dated design critiques of the screens as they were, kept as history",
   },
   {
     paths: [
@@ -58,14 +52,12 @@ const ALLOWED: Allowed[] = [
       "apps/agent/src/test/fixtures/import/",
       "scripts/smoke-agent-package.sh",
     ],
-    reason:
-      "`omniralph-agent import` reads an @omniralph/harness install; its fixtures are one",
+    reason: "`omniralph-agent import` reads an @omniralph/harness install; its fixtures are one",
   },
   {
     paths: ["apps/agent/src/main.ts", "apps/agent/src/main.test.ts"],
     text: /@omniralph\/harness|OMNIRALPH_HARNESS_CONFIG|harness\.json|not\.toMatch\(\/harness\/i\)/g,
-    reason:
-      "the usage text's `import` section names the old package, env var and config",
+    reason: "the usage text's `import` section names the old package, env var and config",
   },
   {
     paths: [
@@ -88,12 +80,8 @@ const ALLOWED: Allowed[] = [
     reason: "this epic's pending release notes say what was renamed from what",
   },
   {
-    paths: [
-      "apps/web/src/user-facing-wording.test.ts",
-      "apps/web/src/old-machine-name.test.ts",
-    ],
-    reason:
-      "the tests that keep the old word out of copy and out of the repository",
+    paths: ["apps/web/src/user-facing-wording.test.ts", "apps/web/src/old-machine-name.test.ts"],
+    reason: "the tests that keep the old word out of copy and out of the repository",
   },
   {
     paths: [
@@ -120,12 +108,8 @@ const ALLOWED: Allowed[] = [
   },
   {
     paths: ["docs/deploy-agent.md", "docs/env.md"],
-    text: new RegExp(
-      `${OLD_INSTALL.source}|${ADR_LINKS.source}`,
-      OLD_INSTALL.flags,
-    ),
-    reason:
-      "Moving from @omniralph/harness, and where only `import` reads the old config",
+    text: new RegExp(`${OLD_INSTALL.source}|${ADR_LINKS.source}`, OLD_INSTALL.flags),
+    reason: "Moving from @omniralph/harness, and where only `import` reads the old config",
   },
   {
     paths: [
@@ -135,18 +119,11 @@ const ALLOWED: Allowed[] = [
       "docs/installables.md",
       "docs/linear.md",
     ],
-    text: new RegExp(
-      `${ADR_LINKS.source}|ADR 0010: the harness becomes the agent`,
-      "g",
-    ),
-    reason:
-      "links to ADRs by filename, and ADR 0010's title in the README's ADR list",
+    text: new RegExp(`${ADR_LINKS.source}|ADR 0010: the harness becomes the agent`, "g"),
+    reason: "links to ADRs by filename, and ADR 0010's title in the README's ADR list",
   },
   {
-    paths: [
-      "apps/web/src/definitions-docs.test.ts",
-      "apps/web/src/docs-links.test.ts",
-    ],
+    paths: ["apps/web/src/definitions-docs.test.ts", "apps/web/src/docs-links.test.ts"],
     text: new RegExp(
       `${ADR_LINKS.source}|Moving from @omniralph\\/harness|${OLD_INSTALL.source}`,
       "gi",
@@ -162,9 +139,7 @@ function matches(pattern: string | RegExp, file: string): boolean {
 }
 
 function allowedFor(file: string): Allowed | undefined {
-  return ALLOWED.find((rule) =>
-    rule.paths.some((pattern) => matches(pattern, file)),
-  );
+  return ALLOWED.find((rule) => rule.paths.some((pattern) => matches(pattern, file)));
 }
 
 /** Why `file` (path and text) may not say "harness", or [] when it may. */
@@ -175,17 +150,13 @@ function problems(file: string, text: string): string[] {
   if (/harness/i.test(file)) found.push(`${file}: the path says "harness"`);
   text.split("\n").forEach((line, index) => {
     const rest = rule?.text ? line.replace(rule.text, "") : line;
-    if (/harness/i.test(rest))
-      found.push(`${file}:${index + 1}: ${line.trim().slice(0, 160)}`);
+    if (/harness/i.test(rest)) found.push(`${file}:${index + 1}: ${line.trim().slice(0, 160)}`);
   });
   return found;
 }
 
 function trackedFiles(): string[] {
-  return execFileSync("git", ["ls-files", "-z"], {
-    cwd: root,
-    encoding: "utf8",
-  })
+  return execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" })
     .split("\0")
     .filter((file) => file && existsSync(path.join(root, file)));
 }
@@ -206,38 +177,26 @@ describe("the old machine name", () => {
         !(typeof pattern === "string" && existsSync(path.join(root, pattern))),
     );
     // apps/agent/CHANGELOG.md appears with the first Version Packages pull request.
-    expect(
-      unused.filter((pattern) => pattern !== "apps/agent/CHANGELOG.md"),
-    ).toEqual([]);
+    expect(unused.filter((pattern) => pattern !== "apps/agent/CHANGELOG.md")).toEqual([]);
   });
 
   it("flags a harness word in a file or path that isn't allowlisted", () => {
-    expect(
-      problems("apps/web/src/lib/agents/x.ts", 'const a = "Harness";'),
-    ).toEqual(['apps/web/src/lib/agents/x.ts:1: const a = "Harness";']);
+    expect(problems("apps/web/src/lib/agents/x.ts", 'const a = "Harness";')).toEqual([
+      'apps/web/src/lib/agents/x.ts:1: const a = "Harness";',
+    ]);
     expect(problems("apps/web/src/harness.ts", "")).toEqual([
       'apps/web/src/harness.ts: the path says "harness"',
     ]);
-    expect(
-      problems("packages/db/drizzle/0105_new.sql", "ALTER TABLE harnesses;"),
-    ).toHaveLength(1);
+    expect(problems("packages/db/drizzle/0105_new.sql", "ALTER TABLE harnesses;")).toHaveLength(1);
   });
 
   it("allows only the listed words in a partly allowlisted file", () => {
-    expect(
-      problems(
-        "docs/env.md",
-        "Only `import` reads `OMNIRALPH_HARNESS_CONFIG`.",
-      ),
-    ).toEqual([]);
+    expect(problems("docs/env.md", "Only `import` reads `OMNIRALPH_HARNESS_CONFIG`.")).toEqual([]);
     expect(problems("docs/env.md", "The harness reads it.")).toEqual([
       "docs/env.md:1: The harness reads it.",
     ]);
     expect(
-      problems(
-        "README.md",
-        "[ADR 0008](docs/adr/0008-agents-tasks-and-the-harness.md)",
-      ),
+      problems("README.md", "[ADR 0008](docs/adr/0008-agents-tasks-and-the-harness.md)"),
     ).toEqual([]);
   });
 });
