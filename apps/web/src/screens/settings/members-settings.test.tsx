@@ -487,6 +487,14 @@ describe("joining by domain", () => {
     expect(within(card).queryByText("acme.dev")).toBeNull();
   });
 
+  it("splits typed domains on spaces", async () => {
+    renderMembers();
+    const card = await domainsCard();
+    await userEvent.type(within(card).getByLabelText("Email domains"), "acme.dev acme.co ");
+    expect(within(card).getByRole("button", { name: "Remove acme.dev" })).toBeTruthy();
+    expect(within(card).getByRole("button", { name: "Remove acme.co" })).toBeTruthy();
+  });
+
   it("saves domains and the switch together, shown before any refetch", async () => {
     renderMembers();
     const card = await domainsCard();
