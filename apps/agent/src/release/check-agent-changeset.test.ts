@@ -1,6 +1,7 @@
 // Tests scripts/check-agent-changeset.ts, the CI check that agent changes come with a
 // changeset. It lives at the repo root (CI runs it with tsx); it's tested here so
 // `pnpm turbo run test` covers it.
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -135,6 +136,7 @@ describe("checkAgentChangeset", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.message).toContain("adds no changeset for @omniralph/agent");
+    expect(result.message).toContain("pick @omniralph/agent");
   });
 
   it("accepts an empty changeset as a deliberate opt-out", () => {
@@ -203,6 +205,21 @@ describe("agentPackageDirs", () => {
       changesets: [changeset],
     });
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("the pending changesets", () => {
+  it("never name the package's old name, which the check no longer accepts", () => {
+    const dir = path.join(REPO_ROOT, ".changeset");
+    const files = readdirSync(dir)
+      .map((name) => `.changeset/${name}`)
+      .filter(isChangesetPath);
+    const legacy = files.filter((file) =>
+      changesetReleases(readFileSync(path.join(REPO_ROOT, file), "utf8"))?.includes(
+        "@omniralph/harness",
+      ),
+    );
+    expect(legacy).toEqual([]);
   });
 });
 
