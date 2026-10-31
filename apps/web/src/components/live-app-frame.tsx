@@ -2,6 +2,7 @@
 
 import { AppFrame } from "@omniralph/ui";
 import type { ComponentProps } from "react";
+import { useInboxCountSounds } from "@/components/sound";
 import { withNavIndicators } from "@/lib/navigation";
 import { useBacklogCounts } from "@/screens/backlog/queries";
 import { useInboxCounts } from "@/screens/inbox/queries";
@@ -16,6 +17,8 @@ import { useNavIndicators } from "@/screens/nav-indicators";
  */
 export function LiveAppFrame({ nav, ...props }: ComponentProps<typeof AppFrame>) {
   const counts = useInboxCounts();
+  // Something new in the Inbox plays a cue on every page (`SoundProvider`).
+  useInboxCountSounds(counts.data);
   const backlog = useBacklogCounts();
   const indicators = useNavIndicators();
   return (

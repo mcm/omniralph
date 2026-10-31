@@ -15,14 +15,21 @@ import { SHORTCUTS } from "@/lib/shortcuts";
 import { CurrentUserProvider } from "./current-user";
 import { testUser } from "./query-test-utils";
 import { SavedThemeProvider, THEME_SAVE_FAILED } from "./saved-theme";
+import { SoundProvider } from "./sound-provider";
 import { UserMenu } from "./user-menu";
+import type { SoundPreference } from "@/lib/sound/preference";
+import { fakeSoundService } from "@/lib/sound/test-utils";
 
 const actions = vi.hoisted(() => ({
   saveThemePreference: vi.fn<(preference: string) => Promise<ActionResult>>(),
+  saveSoundPreference: vi.fn<(sound: SoundPreference) => Promise<ActionResult>>(),
   signOutAction: vi.fn(async () => {}),
   toast: vi.fn(),
 }));
-vi.mock("@/lib/theme-actions", () => ({ saveThemePreference: actions.saveThemePreference }));
+vi.mock("@/lib/theme-actions", () => ({
+  saveThemePreference: actions.saveThemePreference,
+  saveSoundPreference: actions.saveSoundPreference,
+}));
 vi.mock("@/lib/auth/actions", () => ({ signOutAction: actions.signOutAction }));
 vi.mock("@omniralph/ui", async (importOriginal) => ({
   ...(await importOriginal<typeof OmniralphUi>()),
@@ -53,18 +60,20 @@ function installMatchMedia(light: boolean) {
   };
 }
 
-function renderShell(preference: ThemePreference) {
+function renderShell(preference: ThemePreference, sound = fakeSoundService()) {
   render(
     <ShortcutProvider definitions={SHORTCUTS} platform="other">
       <SavedThemeProvider preference={preference}>
         <CurrentUserProvider user={testUser}>
-          <AppFrame
-            currentPath="/runs"
-            brandHref="/"
-            nav={[]}
-            user={{ name: "Ada", initials: "A" }}
-            userMenu={(trigger) => <UserMenu trigger={trigger} />}
-          />
+          <SoundProvider initial={{ enabled: true, volume: 0.7 }} service={sound}>
+            <AppFrame
+              currentPath="/runs"
+              brandHref="/"
+              nav={[]}
+              user={{ name: "Ada", initials: "A" }}
+              userMenu={(trigger) => <UserMenu trigger={trigger} />}
+            />
+          </SoundProvider>
         </CurrentUserProvider>
       </SavedThemeProvider>
     </ShortcutProvider>,
@@ -113,7 +122,7 @@ describe("UserMenu", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
-    ).toEqual(["Help", "Sign out"]);
+    ).toEqual(["Mute sounds", "Help", "Sign out"]);
     // Help sits between the theme and Sign out, links to the Help page and carries its key.
     const help = within(menu).getByRole("menuitem", { name: "Help" });
     expect(themes.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -148,13 +157,25 @@ describe("UserMenu", () => {
     expect(screen.getByRole("menu")).toBeTruthy();
   });
 
+  it("mutes sounds from the menu, and offers to turn them back on", async () => {
+    actions.saveSoundPreference.mockResolvedValue({ ok: true });
+    const sound = fakeSoundService();
+    renderShell("dark", sound);
+    const { user } = await openFrom(sidebarFooter());
+    await user.click(screen.getByRole("menuitem", { name: "Mute sounds" }));
+    expect(sound.configure).toHaveBeenLastCalledWith({ enabled: false, volume: 0.7 });
+    expect(actions.saveSoundPreference).toHaveBeenCalledWith({ enabled: false, volume: 0.7 });
+    await openFrom(sidebarFooter());
+    expect(screen.getByRole("menuitem", { name: "Turn on sounds" })).toBeTruthy();
+  });
+
   it("chooses with the keyboard inside the menu", async () => {
     renderShell("dark");
     const user = userEvent.setup();
     sidebarFooter().focus();
     await user.keyboard("{Enter}");
     await screen.findByRole("menu");
-    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Help" }));
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Mute sounds" }));
     await user.tab();
     expect(document.activeElement).toBe(option("Dark"));
     await user.keyboard("{ArrowRight}");

@@ -22,6 +22,7 @@ export {
   listUsers,
   normalizeEmail,
   setUserShowAdvanced,
+  setUserSound,
   setUserTheme,
   type NewUser,
   type UiTheme,

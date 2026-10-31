@@ -41,6 +41,7 @@ function renderShell(pathname: string, user: SessionUser = testUser) {
       organizationCookie={null}
       scopeCookie={null}
       showAdvanced={false}
+      sound={{ enabled: true, volume: 0.7 }}
     >
       <h1>Page content</h1>
     </AppShell>,
@@ -210,6 +211,7 @@ describe("AppShell", () => {
         organizationCookie={null}
         scopeCookie={null}
         showAdvanced={false}
+        sound={{ enabled: true, volume: 0.7 }}
       >
         <Probe />
       </AppShell>
@@ -416,7 +418,7 @@ describe("AppShell nav indicators", () => {
   it("counts what needs the user on Inbox in the sidebar, the rail and the tab bar", async () => {
     const seen = mockFetch({
       "GET /api/ui/live/token": { token: null },
-      "GET /api/ui/inbox/counts": { needsYou: 4, problems: 1, running: 2 },
+      "GET /api/ui/inbox/counts": { needsYou: 4, problems: 1, running: 2, questions: 0 },
       "GET /api/ui/backlog/counts": { readyToStart: 0, needsRefining: 0, total: 0 },
     });
     renderShell("/analytics");
@@ -441,7 +443,7 @@ describe("AppShell nav indicators", () => {
   it("shows the Backlog's items as a neutral count, named, never as the accent pill", async () => {
     const seen = mockFetch({
       "GET /api/ui/live/token": { token: null },
-      "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 0 },
+      "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 0, questions: 0 },
       "GET /api/ui/backlog/counts": { readyToStart: 2, needsRefining: 1, total: 3 },
     });
     renderShell("/analytics");
@@ -464,7 +466,7 @@ describe("AppShell nav indicators", () => {
   it("puts the running dot on the phone tab bar's Runs tab, on a run's page too", async () => {
     mockFetch({
       "GET /api/ui/live/token": { token: null },
-      "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 3 },
+      "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 3, questions: 0 },
       "GET /api/ui/backlog/counts": { readyToStart: 0, needsRefining: 0, total: 0 },
     });
     renderShell("/runs/123/steps/456");
@@ -476,7 +478,7 @@ describe("AppShell nav indicators", () => {
   it("hides the count at 0 and asks for every organization under All organizations", async () => {
     const seen = mockFetch({
       "GET /api/ui/live/token": { token: null },
-      "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 0 },
+      "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 0, questions: 0 },
       "GET /api/ui/backlog/counts": { readyToStart: 0, needsRefining: 0, total: 0 },
     });
     renderShell("/analytics", { ...twoOrganizations, scope: "all" });

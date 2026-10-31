@@ -238,6 +238,10 @@ export const users = pgTable("users", {
    * overrides). A UI preference only: no API, routing or run code reads it.
    */
   showAdvanced: boolean("show_advanced").notNull().default(false),
+  /** Whether the control panel plays sounds (notifications, Ask replies). On by default. */
+  soundEnabled: boolean("sound_enabled").notNull().default(true),
+  /** The control panel's sound volume, 0 to 1. */
+  soundVolume: real("sound_volume").notNull().default(0.7),
   createdAt: createdAt(),
 });
 

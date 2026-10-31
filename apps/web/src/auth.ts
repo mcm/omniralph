@@ -15,18 +15,22 @@ import GitLab from "next-auth/providers/gitlab";
 import { isEmailAllowed, parseAllowedDomains } from "@/lib/auth/allowlist";
 import { ACCESS_DENIED_PATH, SIGN_IN_PATH } from "@/lib/auth/routes";
 import { getDb } from "@/lib/db";
+import { parseSoundPreference, type SoundPreference } from "@/lib/sound/preference";
 import { parseTheme } from "@/lib/theme";
 
 declare module "next-auth" {
   interface User {
     theme?: UiTheme | null;
     showAdvanced?: boolean;
+    soundEnabled?: boolean;
+    soundVolume?: number;
   }
   interface Session {
     user: {
       id: string;
       theme: UiTheme | null;
       showAdvanced: boolean;
+      sound: SoundPreference;
     } & DefaultSession["user"];
   }
 }
@@ -96,6 +100,7 @@ function authConfig(): NextAuthConfig {
         session.user.id = user.id;
         session.user.theme = parseTheme(user.theme);
         session.user.showAdvanced = user.showAdvanced === true;
+        session.user.sound = parseSoundPreference(user.soundEnabled, user.soundVolume);
         return session;
       },
     },

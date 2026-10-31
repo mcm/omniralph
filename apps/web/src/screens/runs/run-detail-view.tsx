@@ -19,6 +19,7 @@ import { IconFileText, IconGitMerge, IconGitPullRequest, IconRefresh } from "@ta
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useCurrentUser } from "@/components/current-user";
+import { useRunOutcomeSound } from "@/components/sound";
 import { RUN_KIND_ICONS } from "@/components/row-avatars";
 import { QuestionForm } from "@/components/runs/question-form";
 import { RunActivity } from "@/components/runs/run-activity";
@@ -131,6 +132,8 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
   const overlay = useRunDetailOverlay();
   const [confirmStop, setConfirmStop] = useState(false);
 
+  // The run finishing or failing while it's watched plays a cue.
+  useRunOutcomeSound(run);
   const step = selectedStep(run, searchParams.get("step"));
   const retry = useRunRetry(run.id, (result) => {
     if (result.id !== run.id) router.push(runInListHref(result.id, filters));

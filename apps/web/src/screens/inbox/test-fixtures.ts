@@ -105,7 +105,7 @@ export function runningItem(id: string, title: string, minutes: number): InboxIt
   });
 }
 
-export const COUNTS: InboxCountsResponse = { needsYou: 2, problems: 1, running: 0 };
+export const COUNTS: InboxCountsResponse = { needsYou: 2, problems: 1, running: 0, questions: 0 };
 
 /** The manual story's work item detail (`GET /api/ui/work-items/linear-story-42`), with overrides. */
 export function storyDetail(overrides: Partial<WorkItemDetail> = {}): WorkItemDetail {

@@ -124,6 +124,12 @@ Everything comes from `@omniralph/ui`. The rules its components make the default
   ⓘ button next to a card's title; details behind an ID-card button; lists of values are token
   inputs; ordered steps are numbered lists.
 - **Empty states** (`EmptyState`) say what will appear and how to make it happen.
+- **Sounds** (`uisfx`, the `minimal` pack; `SoundProvider`): only for attention and replies,
+  never for routine clicks. Something new in the Inbox (`notification`, Om's question
+  `mention`, a new problem `warning`, one per burst), the run on screen finishing
+  (`complete`) or failing (`error`), and Ask's message sent and reply received (`send`,
+  `receive`). Each user turns them off or sets the volume in Profile & theme or the user
+  menu; on by default. A sound always repeats something the screen shows.
 - **Toasts** (`toast()` and the shell's `Toaster`): bottom right, above the tab bar on a phone,
   with a status dot in their tone and a dismiss button.
 - **Live data.** Every page reads its data in the browser from `/api/ui` through TanStack

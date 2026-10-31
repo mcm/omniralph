@@ -77,6 +77,7 @@ function renderApp(initial: { user?: SessionUser; theme?: ThemePreference } = {}
         organizationCookie={null}
         scopeCookie={null}
         showAdvanced={false}
+        sound={{ enabled: true, volume: 0.7 }}
       >
         <h1>Page content</h1>
       </AppShell>

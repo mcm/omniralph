@@ -20,6 +20,9 @@ import {
 } from "@/components/query-test-utils";
 import { SavedThemeProvider } from "@/components/saved-theme";
 import { ShowAdvancedProvider } from "@/components/show-advanced";
+import { SoundProvider } from "@/components/sound-provider";
+import type { SoundPreference } from "@/lib/sound/preference";
+import { fakeSoundService } from "@/lib/sound/test-utils";
 import type { ActionResult } from "@/lib/action-result";
 import { SHOW_ADVANCED_DESCRIPTION } from "./profile-settings";
 import { SettingsLayoutView } from "./settings-layout-view";
@@ -28,6 +31,7 @@ import { organizationSettings } from "./test-fixtures";
 const actions = vi.hoisted(() => ({
   saveThemePreference: vi.fn<(preference: string) => Promise<ActionResult>>(),
   saveShowAdvancedPreference: vi.fn<(value: boolean) => Promise<ActionResult>>(),
+  saveSoundPreference: vi.fn<(sound: SoundPreference) => Promise<ActionResult>>(),
   toast: vi.fn(),
 }));
 vi.mock("@/lib/theme-actions", () => actions);
@@ -100,8 +104,15 @@ interface Preferences {
  * live layer, given `live`). `rerender` renders it again as a fresh server render would.
  */
 function renderProfile(
-  options: { user?: SessionUser; showAdvanced?: boolean; live?: ReturnType<typeof fakeAbly> } = {},
+  options: {
+    user?: SessionUser;
+    showAdvanced?: boolean;
+    live?: ReturnType<typeof fakeAbly>;
+    sound?: SoundPreference;
+    soundService?: ReturnType<typeof fakeSoundService>;
+  } = {},
 ) {
+  const soundService = options.soundService ?? fakeSoundService();
   const client = createTestQueryClient();
   const tree = ({ theme, showAdvanced }: Preferences) => {
     const page = (
@@ -113,17 +124,22 @@ function renderProfile(
       <SavedThemeProvider preference={theme}>
         <CurrentUserProvider user={options.user ?? member}>
           <ShowAdvancedProvider initial={showAdvanced}>
-            <QueryClientProvider client={client}>
-              <UiProvider linkComponent={TestLink}>
-                {options.live ? (
-                  <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
-                    {page}
-                  </LiveProvider>
-                ) : (
-                  page
-                )}
-              </UiProvider>
-            </QueryClientProvider>
+            <SoundProvider
+              initial={options.sound ?? { enabled: true, volume: 0.7 }}
+              service={soundService}
+            >
+              <QueryClientProvider client={client}>
+                <UiProvider linkComponent={TestLink}>
+                  {options.live ? (
+                    <LiveProvider createClient={options.live.createClient} fetchToken={fakeToken}>
+                      {page}
+                    </LiveProvider>
+                  ) : (
+                    page
+                  )}
+                </UiProvider>
+              </QueryClientProvider>
+            </SoundProvider>
           </ShowAdvancedProvider>
         </CurrentUserProvider>
       </SavedThemeProvider>
@@ -193,6 +209,37 @@ describe("the theme", () => {
     );
     await waitFor(() => expect(actions.saveThemePreference).toHaveBeenCalledTimes(1));
     expect(actions.saveThemePreference).toHaveBeenCalledWith("light");
+  });
+});
+
+describe("Sounds", () => {
+  const soundsSwitch = () => screen.getByRole("switch", { name: "Play sounds" });
+  const volume = () => screen.queryByRole("radiogroup", { name: "Volume" });
+
+  it("is on by default, at the saved volume", () => {
+    renderProfile({ sound: { enabled: true, volume: 0.35 } });
+    expect(soundsSwitch().getAttribute("aria-checked")).toBe("true");
+    expect(within(volume()!).getByRole("radio", { name: "Low" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+  });
+
+  it("mutes at once (the player stops first) and hides the volume while off", async () => {
+    actions.saveSoundPreference.mockReturnValue(new Promise(() => {}));
+    const soundService = fakeSoundService();
+    renderProfile({ soundService });
+    await userEvent.click(soundsSwitch());
+    expect(soundsSwitch().getAttribute("aria-checked")).toBe("false");
+    expect(volume()).toBeNull();
+    expect(soundService.configure).toHaveBeenLastCalledWith({ enabled: false, volume: 0.7 });
+    expect(actions.saveSoundPreference).toHaveBeenLastCalledWith({ enabled: false, volume: 0.7 });
+  });
+
+  it("saves the volume step's level", async () => {
+    actions.saveSoundPreference.mockResolvedValue({ ok: true });
+    renderProfile();
+    await userEvent.click(within(volume()!).getByRole("radio", { name: "High" }));
+    expect(actions.saveSoundPreference).toHaveBeenLastCalledWith({ enabled: true, volume: 1 });
   });
 });
 
