@@ -1,5 +1,15 @@
 # @omniralph/agent
 
+## 2.0.1
+
+### Patch Changes
+
+- [#105](https://github.com/mcm/omniralph/pull/105) [`02044cd`](https://github.com/mcm/omniralph/commit/02044cddf08ffb680b451675b4725bb48d6cbf1f) Thanks [@omniralph](https://github.com/apps/omniralph)! - Space consecutive setting rows in a card evenly, and keep segmented controls in a setting row at their natural width.
+
+- [#105](https://github.com/mcm/omniralph/pull/105) [`c3ee86b`](https://github.com/mcm/omniralph/commit/c3ee86b8d2a42e6fccc18bb41e0782f1626f41b6) Thanks [@omniralph](https://github.com/apps/omniralph)! - Add a shared status indicator with an optional tooltip, and let status dots and text take extra attributes.
+
+- [#105](https://github.com/mcm/omniralph/pull/105) [`762a95f`](https://github.com/mcm/omniralph/commit/762a95f0b5bb5bf7519a0542816f4b7b8cd40230) Thanks [@omniralph](https://github.com/apps/omniralph)! - Token inputs (such as the Packages page's) add what you typed when you Tab away or click elsewhere, not only on Enter or comma.
+
 ## 2.0.0
 
 ### Major Changes
