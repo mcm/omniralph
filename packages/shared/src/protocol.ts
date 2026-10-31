@@ -299,6 +299,24 @@ export const AgentHostReport = z.object({
 });
 export type AgentHostReport = z.infer<typeof AgentHostReport>;
 
+/**
+ * The agent's failing streak of access-token refreshes (`Heartbeat.tokenRefresh`),
+ * reported only while refreshes fail: absent once one succeeds.
+ */
+export const TokenRefreshReport = z.object({
+  /** The first failed refresh since the last one that succeeded. */
+  failingSince: z.iso.datetime(),
+  /** Failed refreshes in a row (a refresh token that couldn't be saved counts as one). */
+  consecutiveFailures: z.int().min(1),
+  /** The last failure: `network`, `http_<status>`, `rate_limited` or `persist_failed`. */
+  lastError: z.string().min(1).max(64),
+  /** When the agent's access token expires; null when it has none. */
+  accessTokenExpiresAt: z.iso.datetime().nullable(),
+  /** The signed refresh token's `exp`; null for a legacy opaque token. */
+  refreshTokenExpiresAt: z.iso.datetime().nullable(),
+});
+export type TokenRefreshReport = z.infer<typeof TokenRefreshReport>;
+
 /** A host tool's name (`HostToolName` of `@omniralph/tasks`, which task definitions require by). */
 export { HOST_TOOL_NAME_PATTERN, HostToolName };
 
@@ -374,6 +392,8 @@ export const Heartbeat = z.object({
   host: AgentHostReport.optional(),
   /** The agent's machine settings in force. */
   local: LocalSettingsReport,
+  /** Sent only while the agent's token refreshes are failing (absent when healthy and from older agents). */
+  tokenRefresh: TokenRefreshReport.optional(),
 });
 export type Heartbeat = z.infer<typeof Heartbeat>;
 

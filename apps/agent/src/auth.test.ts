@@ -4,7 +4,7 @@ import path from "node:path";
 import type { TokenResponse } from "@omniralph/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "./api.js";
-import { ReenrollmentRequiredError, TokenManager } from "./auth.js";
+import { ReenrollmentRequiredError, TokenManager, refreshTokenExpiry } from "./auth.js";
 import { writeConfig, type AgentConfig } from "./config.js";
 import { silentLogger } from "./logger.js";
 
@@ -157,6 +157,108 @@ describe("TokenManager", () => {
     await expect(tokens.getAccessToken()).rejects.toBe(error);
     await vi.advanceTimersByTimeAsync(3_600_000);
     expect(exchange).toHaveBeenCalledTimes(2);
+  });
+});
+
+/** A signed-looking refresh token (unverified by the agent) with the given claims. */
+function jwt(claims: Record<string, unknown>): string {
+  const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${part({ alg: "EdDSA", typ: "JWT" })}.${part(claims)}.c2lnbmF0dXJl`;
+}
+
+describe("refreshTokenExpiry", () => {
+  it("reads a signed token's exp claim", () => {
+    expect(refreshTokenExpiry(jwt({ sub: CONFIG.agentId, exp: 1_800_000_000 }))).toEqual(
+      new Date(1_800_000_000_000),
+    );
+  });
+
+  it("is null for a legacy opaque token or one that doesn't decode", () => {
+    expect(refreshTokenExpiry("orr_legacyopaquetoken")).toBeNull();
+    expect(refreshTokenExpiry("a.not-json.c")).toBeNull();
+    expect(refreshTokenExpiry(jwt({ sub: CONFIG.agentId }))).toBeNull();
+    expect(refreshTokenExpiry(jwt({ exp: "soon" }))).toBeNull();
+    expect(refreshTokenExpiry(`a.${Buffer.from("null").toString("base64url")}.c`)).toBeNull();
+  });
+});
+
+describe("TokenManager.refreshStatus", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: new Date("2026-10-31T10:00:00.000Z") });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("is null while refreshes succeed", async () => {
+    const tokens = manager();
+    expect(tokens.refreshStatus()).toBeNull();
+    await tokens.start();
+    expect(tokens.refreshStatus()).toBeNull();
+    tokens.stop();
+  });
+
+  it("tracks the failing streak from its first failure and resets it on success", async () => {
+    const refreshToken = jwt({
+      sub: CONFIG.agentId,
+      exp: Date.parse("2026-11-30T10:00:00Z") / 1000,
+    });
+    const exchange = vi
+      .fn<(token: string) => Promise<TokenResponse>>()
+      .mockResolvedValueOnce({ accessToken: "a1", expiresIn: 900, refreshToken })
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockRejectedValueOnce(new ApiError(503, "unavailable", "503"))
+      .mockRejectedValueOnce(new ApiError(429, "rate_limited", "429", 10))
+      .mockResolvedValue({ accessToken: "a2", expiresIn: 900, refreshToken: "orr_opaque" });
+    const tokens = manager({ exchange });
+    await tokens.start();
+
+    // The scheduled refresh at 80% of the TTL fails: the streak starts then.
+    await vi.advanceTimersByTimeAsync(720_000);
+    expect(tokens.refreshStatus()).toEqual({
+      failingSince: "2026-10-31T10:12:00.000Z",
+      consecutiveFailures: 1,
+      lastError: "network",
+      accessTokenExpiresAt: "2026-10-31T10:15:00.000Z",
+      refreshTokenExpiresAt: "2026-11-30T10:00:00.000Z",
+    });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(tokens.refreshStatus()).toMatchObject({
+      failingSince: "2026-10-31T10:12:00.000Z",
+      consecutiveFailures: 2,
+      lastError: "http_503",
+    });
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(tokens.refreshStatus()).toMatchObject({
+      consecutiveFailures: 3,
+      lastError: "rate_limited",
+    });
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(exchange).toHaveBeenCalledTimes(5);
+    expect(tokens.currentAccessToken()).toBe("a2");
+    expect(tokens.refreshStatus()).toBeNull();
+    tokens.stop();
+  });
+
+  it("counts a refresh token that couldn't be saved as a failure", async () => {
+    const persist = vi.fn(async () => {}).mockRejectedValueOnce(new Error("EROFS"));
+    const tokens = manager({ persist });
+    await expect(tokens.start()).rejects.toThrow("EROFS");
+    expect(tokens.refreshStatus()).toEqual({
+      failingSince: "2026-10-31T10:00:00.000Z",
+      consecutiveFailures: 1,
+      lastError: "persist_failed",
+      // No access token was handed out yet.
+      accessTokenExpiresAt: null,
+      // The kept (rotated) token is opaque.
+      refreshTokenExpiresAt: null,
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(tokens.refreshStatus()).toBeNull();
+    tokens.stop();
   });
 });
 

@@ -101,10 +101,10 @@ export function agentDetail(agent: FleetAgentRow = agentRow()): AgentDetail {
     runningNow: [],
     recentWork: [],
     security: {
-      lastTokenRefreshAt: null,
       reuseAlerts30d: 0,
       lastReuseAt: null,
-      authFailures30d: 0,
+      lastRefreshRejection: null,
+      tokenRefresh: null,
     },
     globalDesiredVersion: "2.0.3 (latest on npm)",
     local: {
@@ -120,11 +120,15 @@ export function agentDetail(agent: FleetAgentRow = agentRow()): AgentDetail {
   };
 }
 
-/** The detail route of every agent of `list`, plus a 404 for `missing` IDs. */
+/**
+ * The detail and last-seen routes of every agent of `list` (last-seen from `lastSeen`, null by
+ * default), plus a 404 for `missing` IDs.
+ */
 export function detailRoutes(
   list: () => AgentList,
   overrides: () => Record<string, AgentDetail> = () => ({}),
   missing: readonly string[] = [],
+  lastSeen: () => Record<string, string | null> = () => ({}),
 ) {
   const routes: Record<string, () => Response> = {};
   for (const agent of list().agents) {
@@ -132,9 +136,13 @@ export function detailRoutes(
       const current = list().agents.find((row) => row.id === agent.id)!;
       return jsonResponse(overrides()[agent.id] ?? agentDetail(current));
     };
+    routes[`GET /api/ui/agents/${agent.id}/last-seen`] = () =>
+      jsonResponse({ lastHeartbeatAt: lastSeen()[agent.id] ?? null });
   }
   for (const id of missing) {
     routes[`GET /api/ui/agents/${id}`] = () => jsonResponse({ ok: false, error: "Not found" }, 404);
+    routes[`GET /api/ui/agents/${id}/last-seen`] = () =>
+      jsonResponse({ ok: false, error: "Not found" }, 404);
   }
   return routes;
 }

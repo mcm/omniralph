@@ -1,4 +1,5 @@
 import { agentAuditEvent } from "@omniralph/db";
+import type { TokenRefreshReport } from "@omniralph/shared";
 import { describe, expect, it } from "vitest";
 import { AUDIT_EVENTS } from "@/lib/agents/display";
 import {
@@ -8,11 +9,16 @@ import {
   agentUpdateStatus,
   auditEventLabel,
   compactSince,
+  heartbeatAgo,
+  latestHeartbeat,
   pinBadges,
   lastSeenText,
   relativeAgo,
   versionCounts,
-  securityLine,
+  refreshRejectionLabel,
+  roughDuration,
+  tokenHealth,
+  type TokenHealthInput,
   versionsBehind,
   versionPolicyLabel,
   versionSummary,
@@ -382,6 +388,40 @@ describe("relativeAgo", () => {
   });
 });
 
+describe("heartbeatAgo", () => {
+  it.each([
+    [0, "Less than a minute ago"],
+    [59_999, "Less than a minute ago"],
+    [MINUTE, "About 1 min ago"],
+    [1.4 * MINUTE, "About 1 min ago"],
+    [2.5 * MINUTE, "About 3 min ago"],
+    [59.4 * MINUTE, "About 59 min ago"],
+    [59.6 * MINUTE, "About 1 hr ago"],
+    [90 * MINUTE, "About 2 hr ago"],
+    [23.4 * HOUR, "About 23 hr ago"],
+    [23.6 * HOUR, "About 1 day ago"],
+    [1.4 * DAY, "About 1 day ago"],
+    [1.5 * DAY, "About 2 days ago"],
+    [30 * DAY, "About 30 days ago"],
+  ])("%d ms ago → %s", (elapsed, text) => {
+    expect(heartbeatAgo(ago(elapsed), NOW)).toBe(text);
+  });
+
+  it("says less than a minute for a heartbeat stamped after the browser's clock", () => {
+    expect(heartbeatAgo(new Date(NOW.getTime() + 5_000), NOW)).toBe("Less than a minute ago");
+  });
+});
+
+describe("latestHeartbeat", () => {
+  it("picks the later time, skipping missing ones", () => {
+    expect(latestHeartbeat(ago(HOUR), ago(MINUTE))).toEqual(new Date(ago(MINUTE)));
+    expect(latestHeartbeat(ago(MINUTE), ago(HOUR))).toEqual(new Date(ago(MINUTE)));
+    expect(latestHeartbeat(null, ago(HOUR))).toEqual(new Date(ago(HOUR)));
+    expect(latestHeartbeat(ago(HOUR), undefined)).toEqual(new Date(ago(HOUR)));
+    expect(latestHeartbeat(null, undefined)).toBeNull();
+  });
+});
+
 describe("lastSeenText", () => {
   it("says when an offline agent last heartbeated, or that it never has", () => {
     const offline = (lastHeartbeatAt: Date | string | null) => ({ online: false, lastHeartbeatAt });
@@ -395,38 +435,150 @@ describe("lastSeenText", () => {
   });
 });
 
-describe("securityLine", () => {
-  const security = {
-    lastTokenRefreshAt: ago(2 * MINUTE),
+describe("roughDuration", () => {
+  it("rounds and picks the unit after rounding", () => {
+    expect(roughDuration(59_000)).toBe("less than a minute");
+    expect(roughDuration(-5_000)).toBe("less than a minute");
+    expect(roughDuration(2 * MINUTE + 29_000)).toBe("2 min");
+    expect(roughDuration(59.6 * MINUTE)).toBe("1 hr");
+    expect(roughDuration(23.6 * HOUR)).toBe("1 day");
+    expect(roughDuration(3 * DAY)).toBe("3 days");
+  });
+});
+
+describe("refreshRejectionLabel", () => {
+  it("names expired and invalid tokens, else spells the reason out", () => {
+    expect(refreshRejectionLabel("refresh_expired")).toBe("expired");
+    expect(refreshRejectionLabel("refresh_invalid_claims")).toBe("invalid");
+    expect(refreshRejectionLabel("refresh_wrong_typ")).toBe("invalid");
+    expect(refreshRejectionLabel("refresh_agent_revoked")).toBe("agent revoked");
+    expect(refreshRejectionLabel("refresh_unknown")).toBe("unknown");
+  });
+});
+
+describe("tokenHealth", () => {
+  const healthy: TokenHealthInput = {
+    revoked: false,
+    online: true,
+    lastHeartbeatAt: ago(10_000),
     reuseAlerts30d: 0,
     lastReuseAt: null,
-    connected: true,
+    lastRefreshRejection: null,
+    tokenRefresh: null,
   };
+  const failing: TokenRefreshReport = {
+    failingSince: ago(2 * MINUTE),
+    consecutiveFailures: 3,
+    lastError: "network",
+    accessTokenExpiresAt: new Date(NOW.getTime() + 70_000).toISOString(),
+    refreshTokenExpiresAt: "2027-01-29T12:00:00.000Z",
+  };
+  const health = (overrides: Partial<TokenHealthInput>) =>
+    tokenHealth({ ...healthy, ...overrides }, NOW);
 
-  it("says when the token was refreshed, with no reuse alerts", () => {
-    expect(securityLine(security, NOW)).toEqual({
-      label: "Token refreshed 2 minutes ago · no reuse alerts",
-      tone: "neutral",
-    });
-    expect(securityLine({ ...security, lastTokenRefreshAt: null }, NOW)).toEqual({
-      label: "Token not refreshed yet · no reuse alerts",
-      tone: "neutral",
-    });
+  it("is null for a healthy agent", () => {
+    expect(health({})).toBeNull();
+    expect(health({ online: false, lastHeartbeatAt: ago(DAY) })).toBeNull();
   });
 
-  it("reports token reuse in the fail tone", () => {
+  it("reports token reuse first", () => {
     expect(
-      securityLine(
-        { ...security, reuseAlerts30d: 2, lastReuseAt: "2026-10-20T12:00:00.000Z" },
-        NOW,
-      ),
+      health({
+        reuseAlerts30d: 2,
+        lastReuseAt: "2026-10-20T12:00:00.000Z",
+        tokenRefresh: failing,
+        online: false,
+        lastRefreshRejection: { at: ago(0), reason: "refresh_expired" },
+      }),
     ).toEqual({ label: "Token reuse detected Oct 20", tone: "fail" });
   });
 
-  it("says Never connected before the first heartbeat", () => {
-    expect(securityLine({ ...security, lastTokenRefreshAt: null, connected: false }, NOW)).toEqual({
-      label: "Never connected",
-      tone: "neutral",
+  it("says an offline agent whose refresh token was rejected needs re-enrollment", () => {
+    const offline = { online: false, lastHeartbeatAt: ago(10 * MINUTE), tokenRefresh: failing };
+    expect(
+      health({
+        ...offline,
+        lastRefreshRejection: { at: ago(9 * MINUTE), reason: "refresh_expired" },
+      }),
+    ).toEqual({ label: "Needs re-enrollment: refresh token rejected (expired)", tone: "fail" });
+    // Up to a minute before the last heartbeat still counts.
+    expect(
+      health({
+        ...offline,
+        lastRefreshRejection: { at: ago(10 * MINUTE + 59_000), reason: "refresh_wrong_typ" },
+      })?.label,
+    ).toBe("Needs re-enrollment: refresh token rejected (invalid)");
+  });
+
+  it("ignores a rejection that is older, or an agent that is online or revoked", () => {
+    const rejection = { at: ago(12 * MINUTE), reason: "refresh_expired" };
+    expect(
+      health({ online: false, lastHeartbeatAt: ago(10 * MINUTE), lastRefreshRejection: rejection }),
+    ).toBeNull();
+    const recent = { at: ago(MINUTE), reason: "refresh_expired" };
+    expect(health({ lastRefreshRejection: recent })).toBeNull();
+    expect(
+      health({
+        revoked: true,
+        online: false,
+        lastHeartbeatAt: ago(10 * MINUTE),
+        lastRefreshRejection: recent,
+      }),
+    ).toBeNull();
+  });
+
+  it("explains an offline agent by its failing refreshes, with the re-enrollment date when known", () => {
+    const offline = { online: false, lastHeartbeatAt: ago(MINUTE) };
+    expect(
+      health({
+        ...offline,
+        tokenRefresh: { ...failing, failingSince: ago(12 * MINUTE), consecutiveFailures: 9 },
+      }),
+    ).toEqual({
+      label:
+        "Likely offline because token refresh is failing (since 12 min ago, 9 attempts). Needs re-enrollment after Jan 29 unless a refresh succeeds",
+      detail: "Last error: network",
+      tone: "fail",
+    });
+    expect(
+      health({
+        ...offline,
+        tokenRefresh: { ...failing, consecutiveFailures: 1, refreshTokenExpiresAt: null },
+      })?.label,
+    ).toBe("Likely offline because token refresh is failing (since 2 min ago, 1 attempt).");
+  });
+
+  it("counts down to the access token's expiry while an online agent fails to refresh", () => {
+    expect(health({ tokenRefresh: failing })).toEqual({
+      label:
+        "Token refresh failing for 2 min (3 attempts): goes offline in about 1 min unless a refresh succeeds",
+      detail: "Last error: network",
+      tone: "fail",
+    });
+    expect(
+      health({
+        tokenRefresh: {
+          ...failing,
+          accessTokenExpiresAt: new Date(NOW.getTime() + 20_000).toISOString(),
+        },
+      })?.label,
+    ).toBe(
+      "Token refresh failing for 2 min (3 attempts): goes offline in less than a minute unless a refresh succeeds",
+    );
+    expect(
+      health({
+        tokenRefresh: {
+          ...failing,
+          failingSince: ago(4 * MINUTE),
+          consecutiveFailures: 6,
+          lastError: "http_503",
+          accessTokenExpiresAt: ago(30_000),
+        },
+      }),
+    ).toEqual({
+      label: "Token refresh failing for 4 min (6 attempts): access token expired",
+      detail: "Last error: http_503",
+      tone: "fail",
     });
   });
 });

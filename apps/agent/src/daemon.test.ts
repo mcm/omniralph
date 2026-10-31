@@ -6,15 +6,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   effectiveLocalSettings,
+  Heartbeat,
   type AgentLocalSettings,
   type ClaimRequest,
-  type Heartbeat,
   type HeartbeatResponse,
   type JobFailure,
   type JobOutcomeResponse,
   type JobPayload,
   type JobStartResponse,
   type RunSpec,
+  type TokenRefreshReport,
 } from "@omniralph/shared";
 import { RunSpecAgent, TaskDefinition } from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -332,7 +333,10 @@ function setup(options: {
   const claims = new FakeClaims();
   const { api, state } = fakeApi(claims, options.config);
   const local = new FakeSettings({ v: 1, maxConcurrency: 1, ...options.local });
-  const tokens = { refresh: vi.fn(async () => "access") };
+  const tokens = {
+    refresh: vi.fn(async () => "access"),
+    refreshStatus: vi.fn<() => TokenRefreshReport | null>(() => null),
+  };
   const wakes: FakeWake[] = [];
   const wakeSubscription = options.wake
     ? (organizationId: string) => {
@@ -438,6 +442,29 @@ describe("AgentDaemon", () => {
     const { api, daemon } = setup({ host: () => host });
     await daemon.heartbeat();
     expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ host }));
+  });
+
+  it("reports its token refreshes in the heartbeat only while they fail", async () => {
+    const { api, daemon, tokens } = setup({});
+    await daemon.heartbeat();
+    expect(api.heartbeat.mock.lastCall![0]).not.toHaveProperty("tokenRefresh");
+
+    const tokenRefresh: TokenRefreshReport = {
+      failingSince: "2026-10-31T10:00:00.000Z",
+      consecutiveFailures: 3,
+      lastError: "network",
+      accessTokenExpiresAt: "2026-10-31T10:03:00.000Z",
+      refreshTokenExpiresAt: null,
+    };
+    tokens.refreshStatus.mockReturnValue(tokenRefresh);
+    await daemon.heartbeat();
+    expect(api.heartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ tokenRefresh }));
+    // What it sends is a valid heartbeat.
+    expect(Heartbeat.parse(api.heartbeat.mock.lastCall![0]).tokenRefresh).toEqual(tokenRefresh);
+
+    tokens.refreshStatus.mockReturnValue(null);
+    await daemon.heartbeat();
+    expect(api.heartbeat.mock.lastCall![0]).not.toHaveProperty("tokenRefresh");
   });
 
   it("keeps the repositories the last heartbeat pinned to it", async () => {

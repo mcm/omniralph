@@ -29,11 +29,16 @@ export function StatusIndicator({
 }: StatusIndicatorProps) {
   // A tooltip that only repeats the label describes nothing new.
   const description = tooltip !== label ? tooltip : undefined;
+  // A trigger takes this class so a linked row's stretched link doesn't cover it (lists.css).
+  const classes =
+    tooltip === undefined
+      ? className
+      : ["or-status-indicator", className].filter(Boolean).join(" ");
   const status =
     variant === "dot" ? (
-      <StatusDot tone={tone} label={label} className={className} aria-description={description} />
+      <StatusDot tone={tone} label={label} className={classes} aria-description={description} />
     ) : (
-      <StatusText tone={tone} className={className} aria-description={description}>
+      <StatusText tone={tone} className={classes} aria-description={description}>
         {label}
       </StatusText>
     );

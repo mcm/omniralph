@@ -95,6 +95,7 @@ async function post(req: Request): Promise<Response> {
     local: body.data.local,
     hostTools: body.data.hostTools,
     claude: body.data.claude,
+    tokenRefresh: body.data.tokenRefresh ?? null,
   };
   // Running jobs (leases, tokens, cancels, messages) and acknowledgements need Postgres.
   const cacheable =

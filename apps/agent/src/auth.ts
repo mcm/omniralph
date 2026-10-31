@@ -1,4 +1,4 @@
-import type { TokenResponse } from "@omniralph/shared";
+import type { TokenRefreshReport, TokenResponse } from "@omniralph/shared";
 import { ApiError } from "./api.js";
 import type { AgentConfig } from "./config.js";
 import type { Logger } from "./logger.js";
@@ -26,6 +26,33 @@ export interface TokenManagerOptions {
   retryDelayMs?: (failures: number) => number;
 }
 
+/**
+ * The `exp` claim of a signed (JWT) refresh token, decoded without verifying
+ * it: only reported, never trusted. Null for a legacy opaque token or one that
+ * doesn't decode.
+ */
+export function refreshTokenExpiry(token: string): Date | null {
+  const parts = token.split(".");
+  if (parts.length !== 3 || !parts[1]) return null;
+  try {
+    const payload: unknown = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    if (typeof payload !== "object" || payload === null) return null;
+    const exp = (payload as { exp?: unknown }).exp;
+    if (typeof exp !== "number" || !Number.isFinite(exp)) return null;
+    const date = new Date(exp * 1000);
+    return Number.isNaN(date.getTime()) ? null : date;
+  } catch {
+    return null;
+  }
+}
+
+/** The short code a failed exchange is reported as (`TokenRefreshReport.lastError`). */
+function refreshErrorCode(error: unknown): string {
+  if (error instanceof ApiError)
+    return error.status === 429 ? "rate_limited" : `http_${error.status}`;
+  return "network";
+}
+
 const defaultRetryDelayMs = (failures: number) => Math.min(60_000, 5_000 * 2 ** (failures - 1));
 
 /**
@@ -46,6 +73,9 @@ export class TokenManager {
   private timer: NodeJS.Timeout | null = null;
   private inflight: Promise<string> | null = null;
   private failures = 0;
+  /** The first failure since the last successful refresh (null while healthy). */
+  private failingSince: Date | null = null;
+  private lastError: string | null = null;
   private fatal: ReenrollmentRequiredError | null = null;
   private stopped = false;
   private readonly refreshAt: number;
@@ -88,6 +118,22 @@ export class TokenManager {
     return this.inflight;
   }
 
+  /**
+   * The current failing streak of refreshes, for the heartbeat's
+   * `tokenRefresh`; null while healthy (no failure since the last success).
+   */
+  refreshStatus(): TokenRefreshReport | null {
+    if (this.failures === 0 || !this.failingSince || !this.lastError) return null;
+    const refreshExpiry = refreshTokenExpiry(this.config.refreshToken);
+    return {
+      failingSince: this.failingSince.toISOString(),
+      consecutiveFailures: this.failures,
+      lastError: this.lastError,
+      accessTokenExpiresAt: this.accessToken ? new Date(this.expiresAt).toISOString() : null,
+      refreshTokenExpiresAt: refreshExpiry?.toISOString() ?? null,
+    };
+  }
+
   stop(): void {
     this.stopped = true;
     this.clearTimer();
@@ -110,7 +156,7 @@ export class TokenManager {
         this.options.onFatal?.(this.fatal);
         throw this.fatal;
       }
-      this.failures++;
+      this.recordFailure(refreshErrorCode(error));
       const delay =
         error instanceof ApiError && error.retryAfterSeconds
           ? error.retryAfterSeconds * 1000
@@ -126,7 +172,7 @@ export class TokenManager {
     try {
       await this.options.persist(this.config);
     } catch (error) {
-      this.failures++;
+      this.recordFailure("persist_failed");
       const delay = this.retryDelayMs(this.failures);
       this.options.logger.error(
         { err: error, retryInMs: delay },
@@ -137,11 +183,19 @@ export class TokenManager {
     }
 
     this.failures = 0;
+    this.failingSince = null;
+    this.lastError = null;
     this.accessToken = response.accessToken;
     this.expiresAt = Date.now() + response.expiresIn * 1000;
     this.schedule(response.expiresIn * 1000 * this.refreshAt);
     this.options.logger.debug({ expiresIn: response.expiresIn }, "access token refreshed");
     return response.accessToken;
+  }
+
+  private recordFailure(code: string): void {
+    this.failures++;
+    this.failingSince ??= new Date();
+    this.lastError = code;
   }
 
   private schedule(delayMs: number): void {

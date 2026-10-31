@@ -296,6 +296,30 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     ).toBeGreaterThan(0);
   });
 
+  it("takes the Postgres path while a token-refresh report starts, changes or clears", async () => {
+    const { agentId } = await newAgent();
+    await warm(agentId);
+    const stored = async () =>
+      (await db.select().from(agents).where(eq(agents.id, agentId)))[0]!.reportedTokenRefresh;
+    const tokenRefresh = {
+      failingSince: new Date(Date.now() - 60_000).toISOString(),
+      consecutiveFailures: 1,
+      lastError: "network",
+      accessTokenExpiresAt: new Date(Date.now() + 120_000).toISOString(),
+      refreshTokenExpiresAt: null,
+    };
+    expect((await send(agentId, { tokenRefresh })).calls).toBeGreaterThan(0);
+    expect(await stored()).toEqual(tokenRefresh);
+    expect((await send(agentId, { tokenRefresh })).calls).toBe(0);
+    const again = { ...tokenRefresh, consecutiveFailures: 2, lastError: "http_502" };
+    expect((await send(agentId, { tokenRefresh: again })).calls).toBeGreaterThan(0);
+    expect(await stored()).toEqual(again);
+    // The first healthy heartbeat clears it, then is answered from Redis again.
+    expect((await send(agentId)).calls).toBeGreaterThan(0);
+    expect(await stored()).toBeNull();
+    expect((await send(agentId)).calls).toBe(0);
+  });
+
   type Change = (ids: { agentId: string; orgId: string }) => Promise<void>;
   const changes: [string, Change, (response: HeartbeatResponse) => void][] = [
     [

@@ -5,7 +5,7 @@
  * never from a client clock.
  */
 
-import type { AgentUpdateReport, SelfUpdateSupport } from "@omniralph/shared";
+import type { AgentUpdateReport, SelfUpdateSupport, TokenRefreshReport } from "@omniralph/shared";
 import type { AuditEventName } from "@/lib/agents/display";
 
 /**
@@ -253,6 +253,45 @@ export function relativeAgo(from: Date | string, now: Date): string {
 }
 
 /**
+ * How long ago an agent's last heartbeat was, for its panel badge: "Less than a minute ago",
+ * else "About N min ago", "About N hr ago" or "About N days ago" ("About 1 day ago"). N is
+ * rounded and the unit picked after rounding, so 59.6 minutes is "About 1 hr ago".
+ */
+export function heartbeatAgo(from: Date | string, now: Date): string {
+  const elapsed = now.getTime() - new Date(from).getTime();
+  if (elapsed < MINUTE_MS) return "Less than a minute ago";
+  return `About ${roughDuration(elapsed)} ago`;
+}
+
+/**
+ * A duration as the agent panel words it: "less than a minute", else "N min", "N hr" or
+ * "N days" ("1 day"). N is rounded and the unit picked after rounding, so 59.6 minutes is
+ * "1 hr". Negative durations read as "less than a minute".
+ */
+export function roughDuration(ms: number): string {
+  if (ms < MINUTE_MS) return "less than a minute";
+  const minutes = Math.round(ms / MINUTE_MS);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.round(ms / HOUR_MS);
+  if (hours < 24) return `${hours} hr`;
+  const days = Math.round(ms / DAY_MS);
+  return `${days} ${days === 1 ? "day" : "days"}`;
+}
+
+/** The later of two heartbeat times (either may be missing); null when both are. */
+export function latestHeartbeat(
+  ...times: readonly (Date | string | null | undefined)[]
+): Date | null {
+  let latest: Date | null = null;
+  for (const time of times) {
+    if (time === null || time === undefined) continue;
+    const date = new Date(time);
+    if (latest === null || date.getTime() > latest.getTime()) latest = date;
+  }
+  return latest;
+}
+
+/**
  * "Online" for an online agent (`live_online`: its row's heartbeat can be up to a day old),
  * else "Last seen 2 minutes ago" (an offline agent's row heartbeat is exact), or "Never
  * connected" before its first heartbeat.
@@ -334,39 +373,104 @@ function statusLineHead(agent: AgentStatusLineInput): { label: string; tone: Fle
   return { label: `${head} · ${versionPart}`, tone: status.tone };
 }
 
-export interface SecurityInput {
-  lastTokenRefreshAt: Date | string | null;
+export interface TokenHealthInput {
+  revoked: boolean;
+  /** `agents.live_online`. */
+  online: boolean;
+  lastHeartbeatAt: Date | string | null;
+  /** `refresh_reuse` audit events in the last 30 days. */
   reuseAlerts30d: number;
   lastReuseAt: Date | string | null;
-  /** Whether the agent has ever heartbeated. */
-  connected: boolean;
+  /** The agent's latest refresh-token rejection (`auth_failed` on `/api/agent/token`). */
+  lastRefreshRejection: { at: Date | string; reason: string } | null;
+  /** The failing refresh streak its last heartbeat reported; null while refreshes succeed. */
+  tokenRefresh: TokenRefreshReport | null;
 }
 
+/** A token-health problem: its line (fail tone) and, for a failing streak, its last error. */
+export interface TokenHealth {
+  label: string;
+  /** "Last error: network"; only while refreshes are failing. */
+  detail?: string;
+  tone: "fail";
+}
+
+/** A rejection newer than this before the agent's last heartbeat still explains it going quiet. */
+const REJECTION_SLACK_MS = MINUTE_MS;
+
+/** Signed refresh tokens rejected for their claims or type: "invalid". */
+const INVALID_REFRESH_REASONS = new Set(["refresh_invalid_claims", "refresh_wrong_typ"]);
+
 /**
- * The agent detail's Security line: "Token reuse detected Oct 20" (fail) when a refresh token
- * was reused in the last 30 days, else "Token refreshed 2 minutes ago · no reuse alerts", or
- * "Never connected" before its first heartbeat.
+ * A refresh rejection's reason for the panel: `refresh_expired` → "expired", a signed token
+ * with bad claims or type → "invalid", else the reason without `refresh_`, spaced out
+ * (`refresh_agent_revoked` → "agent revoked").
  */
-export function securityLine(
-  security: SecurityInput,
-  now: Date = new Date(),
-): { label: string; tone: FleetTone } {
-  if (security.reuseAlerts30d > 0) {
+export function refreshRejectionLabel(reason: string): string {
+  if (reason === "refresh_expired") return "expired";
+  if (INVALID_REFRESH_REASONS.has(reason)) return "invalid";
+  return reason.replace(/^refresh_/, "").replaceAll("_", " ");
+}
+
+const attempts = (n: number) => (n === 1 ? "1 attempt" : `${n} attempts`);
+
+/**
+ * The agent panel's Security line, only when the agent's authentication is at risk; the first
+ * match wins:
+ * 1. a refresh token reused in the last 30 days: "Token reuse detected Oct 20";
+ * 2. a non-revoked agent that isn't online, whose refresh token was rejected no earlier than a
+ *    minute before its last heartbeat: "Needs re-enrollment: refresh token rejected (expired)";
+ * 3. an agent that isn't online and last reported failing refreshes: "Likely offline because
+ *    token refresh is failing (since 12 min ago, 9 attempts). Needs re-enrollment after Jan 29
+ *    unless a refresh succeeds" (the second sentence only when the refresh token's expiry is known);
+ * 4. an online agent reporting failing refreshes: "Token refresh failing for 2 min (3 attempts):
+ *    goes offline in about 1 min unless a refresh succeeds", or "…: access token expired";
+ * 5. otherwise null: a healthy agent shows no Security section.
+ */
+export function tokenHealth(input: TokenHealthInput, now: Date): TokenHealth | null {
+  if (input.reuseAlerts30d > 0) {
     return {
-      label: security.lastReuseAt
-        ? `Token reuse detected ${shortDate(security.lastReuseAt)}`
+      label: input.lastReuseAt
+        ? `Token reuse detected ${shortDate(input.lastReuseAt)}`
         : "Token reuse detected",
       tone: "fail",
     };
   }
-  if (!security.connected) return { label: "Never connected", tone: "neutral" };
-  if (!security.lastTokenRefreshAt) {
-    return { label: "Token not refreshed yet · no reuse alerts", tone: "neutral" };
+  const rejection = input.lastRefreshRejection;
+  if (!input.revoked && !input.online && rejection) {
+    const heartbeat = input.lastHeartbeatAt === null ? null : new Date(input.lastHeartbeatAt);
+    if (
+      heartbeat === null ||
+      new Date(rejection.at).getTime() >= heartbeat.getTime() - REJECTION_SLACK_MS
+    ) {
+      return {
+        label: `Needs re-enrollment: refresh token rejected (${refreshRejectionLabel(rejection.reason)})`,
+        tone: "fail",
+      };
+    }
   }
-  return {
-    label: `Token refreshed ${relativeAgo(security.lastTokenRefreshAt, now)} · no reuse alerts`,
-    tone: "neutral",
-  };
+  const report = input.tokenRefresh;
+  if (!report) return null;
+  const detail = `Last error: ${report.lastError}`;
+  const failing = now.getTime() - new Date(report.failingSince).getTime();
+  const count = attempts(report.consecutiveFailures);
+  if (!input.online) {
+    const since = `Likely offline because token refresh is failing (since ${roughDuration(failing)} ago, ${count}).`;
+    const label = report.refreshTokenExpiresAt
+      ? `${since} Needs re-enrollment after ${shortDate(report.refreshTokenExpiresAt)} unless a refresh succeeds`
+      : since;
+    return { label, detail, tone: "fail" };
+  }
+  const head = `Token refresh failing for ${roughDuration(failing)} (${count})`;
+  const left =
+    report.accessTokenExpiresAt === null
+      ? 0
+      : new Date(report.accessTokenExpiresAt).getTime() - now.getTime();
+  const label =
+    left > 0
+      ? `${head}: goes offline in ${left < MINUTE_MS ? "" : "about "}${roughDuration(left)} unless a refresh succeeds`
+      : `${head}: access token expired`;
+  return { label, detail, tone: "fail" };
 }
 
 /** An audit event as the audit log shows it: what happened, in a sentence. */

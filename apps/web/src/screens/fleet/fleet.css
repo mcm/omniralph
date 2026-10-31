@@ -99,6 +99,10 @@
   outline-offset: 2px;
 }
 
+.or-fleet-agent__heartbeat {
+  display: inline-flex;
+}
+
 .or-fleet-agent__section {
   display: flex;
   flex-direction: column;
@@ -162,7 +166,8 @@
   line-height: 1.4;
 }
 
-.or-fleet-agent__none {
+.or-fleet-agent__none,
+.or-fleet-agent__line--muted {
   color: var(--or-sec);
 }
 

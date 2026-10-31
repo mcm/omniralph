@@ -1,5 +1,5 @@
 // Agents, enrollments and agent settings are scoped to organizations.
-import type { ClaudeLoginReport, HostToolReport } from "@omniralph/shared";
+import type { ClaudeLoginReport, HostToolReport, TokenRefreshReport } from "@omniralph/shared";
 import { createTestDatabase, testDatabaseAvailable, type TestDatabase } from "../testing/index.js";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -266,6 +266,36 @@ describe.skipIf(!databaseAvailable)("organization-scoped agents", () => {
     const kept = await heartbeat();
     expect(kept.result?.reportedClaude).toEqual(signedOut);
     expect(agentChanges(kept.changes)).toEqual([]);
+  });
+
+  it("stores the token-refresh streak while it's reported and clears it on the first heartbeat without one", async () => {
+    const a = await enroll(orgA, "a-token-refresh");
+    const failing: TokenRefreshReport = {
+      failingSince: "2026-10-31T10:00:00.000Z",
+      consecutiveFailures: 1,
+      lastError: "network",
+      accessTokenExpiresAt: "2026-10-31T10:03:00.000Z",
+      refreshTokenExpiresAt: "2026-11-30T10:00:00.000Z",
+    };
+    const heartbeat = (tokenRefresh?: TokenRefreshReport | null) =>
+      captureChanges(() => recordAgentHeartbeat(db, a, { version: "1.0.0", tokenRefresh }));
+    const agentChanges = (changes: { resource: string }[]) =>
+      changes.filter((change) => change.resource === "agent");
+
+    await heartbeat();
+    const first = await heartbeat(failing);
+    expect(first.result?.reportedTokenRefresh).toEqual(failing);
+    expect(agentChanges(first.changes)).toHaveLength(1);
+    const more = { ...failing, consecutiveFailures: 2, lastError: "http_503" };
+    const again = await heartbeat(more);
+    expect(again.result?.reportedTokenRefresh).toEqual(more);
+    expect(agentChanges(again.changes)).toHaveLength(1);
+    expect(agentChanges((await heartbeat(more)).changes)).toEqual([]);
+    const healthy = await heartbeat(null);
+    expect(healthy.result?.reportedTokenRefresh).toBeNull();
+    expect(agentChanges(healthy.changes)).toHaveLength(1);
+    await heartbeat(failing);
+    expect((await heartbeat()).result?.reportedTokenRefresh).toBeNull();
   });
 
   describe("listReportedModels", () => {

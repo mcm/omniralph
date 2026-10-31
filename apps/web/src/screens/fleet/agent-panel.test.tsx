@@ -2,7 +2,7 @@
 import "@/components/pickers/test-dom";
 import type * as OmniralphUi from "@omniralph/ui";
 import { UiProvider, type LinkProps } from "@omniralph/ui";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -64,6 +64,8 @@ const allOrganizations: SessionUser = {
 let data: AgentList;
 let details: Record<string, AgentDetail>;
 let seen: SeenRequest[];
+/** What each agent's last-seen poll answers (null when missing). */
+let lastSeen: Record<string, string | null>;
 
 function serve() {
   seen = mockFetch({
@@ -72,6 +74,7 @@ function serve() {
       () => data,
       () => details,
       [UNKNOWN, AGENT_BETA],
+      () => lastSeen,
     ),
   });
 }
@@ -103,6 +106,9 @@ const section = (name: string) => within(panel()).queryByRole("region", { name }
 const split = () => document.querySelector<HTMLElement>(".or-split")!;
 const detailRequests = (id: string) =>
   seen.filter((request) => request.path === `/api/ui/agents/${id}`);
+const lastSeenRequests = (id: string) =>
+  seen.filter((request) => request.path === `/api/ui/agents/${id}/last-seen`);
+const heartbeatBadge = () => panel().querySelector<HTMLElement>(".or-fleet-agent__heartbeat");
 const badgeTexts = (element: HTMLElement) =>
   [...element.querySelectorAll(".or-ref__text")].map((badge) => badge.textContent!.trim());
 
@@ -117,6 +123,7 @@ async function openAgent(
 }
 
 const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 
 /** coder-1, busy: a story of an epic running, ten finished attempts, reports and installs. */
@@ -126,6 +133,7 @@ function busyDetail(): AgentDetail {
     ...agentDetail({
       ...agent,
       host: { hostname: "ws-1", coder: { owner: "steve", workspace: "omni" } },
+      lastHeartbeatAt: ago(20_000),
     }),
     runningNow: [
       {
@@ -196,10 +204,10 @@ function busyDetail(): AgentDetail {
       },
     ],
     security: {
-      lastTokenRefreshAt: ago(2 * MINUTE + 5_000),
       reuseAlerts30d: 0,
       lastReuseAt: null,
-      authFailures30d: 0,
+      lastRefreshRejection: null,
+      tokenRefresh: null,
     },
   };
 }
@@ -208,6 +216,7 @@ beforeEach(() => {
   ui.toast.mockReset();
   data = fleet();
   details = { [AGENT_ALPHA]: busyDetail() };
+  lastSeen = {};
   serve();
 });
 
@@ -217,7 +226,7 @@ afterEach(() => {
 });
 
 describe("the agent panel's head", () => {
-  it("shows the ⋯ button, status line, mono name, host and Enrolled badges, in order", async () => {
+  it("shows the ⋯ button, status line, mono name, host, Enrolled and heartbeat badges, in order", async () => {
     await openAgent(AGENT_ALPHA, "coder-1");
     const toolbar = within(panel()).getByRole("toolbar", { name: "Agent actions" });
     const status = within(panel()).getByText("Running · up to date");
@@ -230,7 +239,12 @@ describe("the agent panel's head", () => {
       ).toBeTruthy();
     }
     expect(name.classList.contains("or-mono")).toBe(true);
-    expect(badgeTexts(badges)).toEqual(["Coder workspace", "Enrolled Oct 7"]);
+    expect(badgeTexts(badges)).toEqual([
+      "Coder workspace",
+      "Enrolled Oct 7",
+      "Less than a minute ago",
+    ]);
+    expect(heartbeatBadge()!.textContent).toContain("Last heartbeat: ");
     // No organization badge with one organization selected.
     expect(panel().querySelector(".or-ref--org")).toBeNull();
   });
@@ -244,20 +258,29 @@ describe("the agent panel's head", () => {
 
   it("shows the hostname, or no host badge before the agent reports one", async () => {
     details[AGENT_BRAVO] = agentDetail(
-      agentRow({ id: AGENT_BRAVO, name: "coder-2", host: { hostname: "build-7", coder: null } }),
+      agentRow({
+        id: AGENT_BRAVO,
+        name: "coder-2",
+        host: { hostname: "build-7", coder: null },
+        lastHeartbeatAt: ago(3 * MINUTE),
+      }),
     );
     await openAgent(AGENT_BRAVO, "coder-2");
     expect(badgeTexts(panel().querySelector(".or-fleet-agent__badges")!)).toEqual([
       "build-7",
       "Enrolled Oct 7",
+      "About 3 min ago",
     ]);
   });
 
   it("leaves out the host badge when no host is reported", async () => {
-    details[AGENT_BRAVO] = agentDetail(agentRow({ id: AGENT_BRAVO, name: "coder-2", host: null }));
+    details[AGENT_BRAVO] = agentDetail(
+      agentRow({ id: AGENT_BRAVO, name: "coder-2", host: null, lastHeartbeatAt: ago(2 * HOUR) }),
+    );
     await openAgent(AGENT_BRAVO, "coder-2");
     expect(badgeTexts(panel().querySelector(".or-fleet-agent__badges")!)).toEqual([
       "Enrolled Oct 7",
+      "About 2 hr ago",
     ]);
   });
 
@@ -328,6 +351,71 @@ describe("the agent panel's head", () => {
   });
 });
 
+describe("the agent panel's heartbeat badge", () => {
+  afterEach(() => {
+    focusManager.setFocused(undefined);
+    vi.useRealTimers();
+  });
+
+  const heartbeatText = () => heartbeatBadge()?.querySelector(".or-ref__text")?.textContent;
+
+  it("shows the later of the polled last-seen and the detail's heartbeat", async () => {
+    details[AGENT_BRAVO] = agentDetail(
+      agentRow({ id: AGENT_BRAVO, name: "coder-2", lastHeartbeatAt: ago(3 * HOUR) }),
+    );
+    lastSeen[AGENT_BRAVO] = ago(5 * MINUTE);
+    await openAgent(AGENT_BRAVO, "coder-2");
+    await waitFor(() => expect(heartbeatText()).toBe("About 5 min ago"));
+    expect(lastSeenRequests(AGENT_BRAVO)).toHaveLength(1);
+  });
+
+  it("keeps the detail's heartbeat when the polled one is older or missing", async () => {
+    details[AGENT_BRAVO] = agentDetail(
+      agentRow({ id: AGENT_BRAVO, name: "coder-2", lastHeartbeatAt: ago(4 * MINUTE) }),
+    );
+    lastSeen[AGENT_BRAVO] = ago(2 * HOUR);
+    await openAgent(AGENT_BRAVO, "coder-2");
+    await waitFor(() => expect(lastSeenRequests(AGENT_BRAVO)).toHaveLength(1));
+    expect(heartbeatText()).toBe("About 4 min ago");
+  });
+
+  it("shows no badge for an agent that has never connected", async () => {
+    details[AGENT_BRAVO] = agentDetail(
+      agentRow({ id: AGENT_BRAVO, name: "coder-2", lastHeartbeatAt: null, online: false }),
+    );
+    await openAgent(AGENT_BRAVO, "coder-2");
+    await waitFor(() => expect(lastSeenRequests(AGENT_BRAVO)).toHaveLength(1));
+    expect(heartbeatBadge()).toBeNull();
+  });
+
+  it("polls every 10 s while the document is visible and updates without a reload", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    lastSeen[AGENT_ALPHA] = ago(3 * MINUTE);
+    await openAgent(AGENT_ALPHA, "coder-1");
+    await waitFor(() => expect(heartbeatText()).toBe("Less than a minute ago"));
+    await waitFor(() => expect(lastSeenRequests(AGENT_ALPHA)).toHaveLength(1));
+    const detailsBefore = detailRequests(AGENT_ALPHA).length;
+
+    // Two minutes on, with no heartbeat since: the clock moves the badge on its own.
+    await act(() => vi.advanceTimersByTimeAsync(2 * MINUTE));
+    await waitFor(() => expect(heartbeatText()).toBe("About 2 min ago"));
+    const polls = lastSeenRequests(AGENT_ALPHA).length;
+    expect(polls).toBeGreaterThanOrEqual(12);
+
+    // A new heartbeat reaches the badge on the next poll.
+    lastSeen[AGENT_ALPHA] = new Date().toISOString();
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    await waitFor(() => expect(heartbeatText()).toBe("Less than a minute ago"));
+    expect(detailRequests(AGENT_ALPHA)).toHaveLength(detailsBefore);
+
+    // Hidden: no polling.
+    act(() => focusManager.setFocused(false));
+    const hidden = lastSeenRequests(AGENT_ALPHA).length;
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(lastSeenRequests(AGENT_ALPHA)).toHaveLength(hidden);
+  });
+});
+
 describe("the agent panel's sections", () => {
   it("lists each running attempt as its run's title with repo, work item and step badges", async () => {
     await openAgent(AGENT_ALPHA, "coder-1");
@@ -377,22 +465,49 @@ describe("the agent panel's sections", () => {
     ]);
   });
 
-  it("says when the token was last refreshed", async () => {
+  it("shows no Security section while the agent's tokens are healthy", async () => {
     await openAgent(AGENT_ALPHA, "coder-1");
-    const line = within(section("Security")!).getByText(
-      "Token refreshed 2 minutes ago · no reuse alerts",
+    expect(section("Recent work")).toBeTruthy();
+    expect(section("Security")).toBeNull();
+    expect(
+      within(panel()).queryByText(/Token refreshed|reuse alerts|Token not refreshed/),
+    ).toBeNull();
+  });
+
+  it("shows a failing refresh streak in the fail tone, with its last error muted", async () => {
+    details[AGENT_ALPHA] = {
+      ...busyDetail(),
+      security: {
+        reuseAlerts30d: 0,
+        lastReuseAt: null,
+        lastRefreshRejection: null,
+        tokenRefresh: {
+          failingSince: ago(2 * MINUTE),
+          consecutiveFailures: 3,
+          lastError: "network",
+          accessTokenExpiresAt: new Date(Date.now() + 70_000).toISOString(),
+          refreshTokenExpiresAt: null,
+        },
+      },
+    };
+    await openAgent(AGENT_ALPHA, "coder-1");
+    const security = section("Security")!;
+    const line = within(security).getByText(
+      "Token refresh failing for 2 min (3 attempts): goes offline in about 1 min unless a refresh succeeds",
     );
-    expect(line.getAttribute("data-tone")).toBe("neutral");
+    expect(line.getAttribute("data-tone")).toBe("fail");
+    const detail = within(security).getByText("Last error: network");
+    expect(detail.getAttribute("data-tone")).toBeNull();
   });
 
   it("reports token reuse in the fail tone", async () => {
     details[AGENT_ALPHA] = {
       ...busyDetail(),
       security: {
-        lastTokenRefreshAt: ago(MINUTE),
         reuseAlerts30d: 1,
         lastReuseAt: "2026-10-20T12:00:00.000Z",
-        authFailures30d: 0,
+        lastRefreshRejection: null,
+        tokenRefresh: null,
       },
     };
     await openAgent(AGENT_ALPHA, "coder-1");
@@ -415,7 +530,7 @@ describe("the agent panel's sections", () => {
     expect(within(section("Recent work")!).getByText("No recent work")).toBeTruthy();
     expect(within(section("Models reported")!).getByText("None reported")).toBeTruthy();
     expect(within(section("Packages")!).getByText("None installed")).toBeTruthy();
-    expect(within(section("Security")!).getByText("Never connected")).toBeTruthy();
+    expect(section("Security")).toBeNull();
   });
 
   it("says Claude isn't signed in, in the fail tone, only when the agent reports it signed out", async () => {

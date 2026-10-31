@@ -884,13 +884,25 @@ export async function listAgentAttempts(
   return { running: running.map(attempt), recent: recent.map(attempt) };
 }
 
-/** An agent's token health: its last refresh, and refresh-token reuse and auth failures since `since`. */
+/** The agent API path a refresh token is presented to (`auth_failed` rows' `detail.path`). */
+const TOKEN_REFRESH_PATH = "/api/agent/token";
+
+/** The latest rejection of an agent's refresh token: when, and its `refresh_*` reason. */
+export interface AgentRefreshRejection {
+  at: Date;
+  reason: string;
+}
+
+/**
+ * An agent's token health: refresh-token reuse since `since`, and the latest rejection of its
+ * refresh token (whenever it was).
+ */
 export interface AgentSecuritySummary {
-  lastTokenRefreshAt: Date | null;
   reuseAlerts: number;
   /** The latest `refresh_reuse` since `since`; null when none. */
   lastReuseAt: Date | null;
-  authFailures: number;
+  /** The newest `auth_failed` row for the agent on `/api/agent/token`; null when none. */
+  lastRefreshRejection: AgentRefreshRejection | null;
 }
 
 export async function getAgentSecuritySummary(
@@ -898,31 +910,41 @@ export async function getAgentSecuritySummary(
   agentId: string,
   since: Date,
 ): Promise<AgentSecuritySummary> {
-  const [row] = await db
-    .select({
-      lastTokenRefreshAt:
-        sql<Date | null>`max(${agentAudit.createdAt}) filter (where ${agentAudit.event} = 'token_refresh')`.mapWith(
+  const [[row], [rejection]] = await Promise.all([
+    db
+      .select({
+        reuseAlerts: sql<number>`count(*)`.mapWith(Number),
+        lastReuseAt: sql<Date | null>`max(${agentAudit.createdAt})`.mapWith(
           (value: string | Date | null) => (value === null ? null : new Date(value)),
         ),
-      reuseAlerts:
-        sql<number>`count(*) filter (where ${agentAudit.event} = 'refresh_reuse' and ${agentAudit.createdAt} >= ${since})`.mapWith(
-          Number,
+      })
+      .from(agentAudit)
+      .where(
+        and(
+          eq(agentAudit.agentId, agentId),
+          eq(agentAudit.event, "refresh_reuse"),
+          gte(agentAudit.createdAt, since),
         ),
-      lastReuseAt:
-        sql<Date | null>`max(${agentAudit.createdAt}) filter (where ${agentAudit.event} = 'refresh_reuse' and ${agentAudit.createdAt} >= ${since})`.mapWith(
-          (value: string | Date | null) => (value === null ? null : new Date(value)),
+      ),
+    db
+      .select({ at: agentAudit.createdAt, detail: agentAudit.detail })
+      .from(agentAudit)
+      .where(
+        and(
+          eq(agentAudit.agentId, agentId),
+          eq(agentAudit.event, "auth_failed"),
+          sql`${agentAudit.detail}->>'path' = ${TOKEN_REFRESH_PATH}`,
         ),
-      authFailures:
-        sql<number>`count(*) filter (where ${agentAudit.event} = 'auth_failed' and ${agentAudit.createdAt} >= ${since})`.mapWith(
-          Number,
-        ),
-    })
-    .from(agentAudit)
-    .where(eq(agentAudit.agentId, agentId));
+      )
+      .orderBy(desc(agentAudit.createdAt))
+      .limit(1),
+  ]);
+  const reason = rejection?.detail.reason;
   return {
-    lastTokenRefreshAt: row?.lastTokenRefreshAt ?? null,
     reuseAlerts: row?.reuseAlerts ?? 0,
     lastReuseAt: row?.lastReuseAt ?? null,
-    authFailures: row?.authFailures ?? 0,
+    lastRefreshRejection: rejection
+      ? { at: rejection.at, reason: typeof reason === "string" ? reason : "unknown" }
+      : null,
   };
 }

@@ -6,6 +6,7 @@ import {
   HOST_TOOL_PROBLEMS,
   HOST_TOOL_SOURCES,
   SELF_UPDATE_SUPPORT,
+  TokenRefreshReport,
 } from "@omniralph/shared";
 import { z } from "zod";
 import { AUDIT_EVENTS } from "@/lib/agents/display";
@@ -225,13 +226,21 @@ export type RecentAttempt = z.infer<typeof recentAttemptSchema>;
 
 /** The agent's token health (the Security line). */
 export const agentSecuritySchema = z.object({
-  lastTokenRefreshAt: isoDate.nullable(),
   /** `refresh_reuse` audit events in the last 30 days. */
   reuseAlerts30d: z.number(),
   /** The latest of them; null when none. */
   lastReuseAt: isoDate.nullable(),
-  /** `auth_failed` audit events in the last 30 days. */
-  authFailures30d: z.number(),
+  /**
+   * The latest rejection of the agent's refresh token (its newest `auth_failed` audit row on
+   * `/api/agent/token`): when, and its `refresh_*` reason (`refresh_expired`, ...); null when none.
+   */
+  lastRefreshRejection: z.object({ at: isoDate, reason: z.string() }).nullable(),
+  /**
+   * The agent's failing token-refresh streak as its last heartbeat reported it (when it
+   * started, failed attempts, the last error, its tokens' expiries); null while refreshes
+   * succeed or the agent never reported one.
+   */
+  tokenRefresh: TokenRefreshReport.nullable(),
 });
 
 /** An install on the agent that is queued or running, or failed in the last 24 hours (Packages). */
@@ -302,6 +311,13 @@ export const agentDetailSchema = z.object({
   pinSyncJobs: z.array(pinSyncJobSchema),
 });
 export type AgentDetail = z.infer<typeof agentDetailSchema>;
+
+/**
+ * `GET /api/ui/agents/{id}/last-seen`: the agent's last heartbeat as Redis holds it; null
+ * when Redis has none (hot state off, no key, a Redis error), so the panel uses the detail's.
+ */
+export const agentLastSeenSchema = z.object({ lastHeartbeatAt: isoDate.nullable() });
+export type AgentLastSeen = z.infer<typeof agentLastSeenSchema>;
 
 /** An `install` job targeted at the agent. */
 export const installJobRowSchema = z.object({

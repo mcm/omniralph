@@ -11,15 +11,23 @@ import {
   TextLink,
   Tooltip,
 } from "@omniralph/ui";
+import { IconHeartbeat } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import { formatDuration } from "@/components/runs/progress";
 import { ApiError } from "@/lib/api/client";
 import type { AgentDetail, FleetAgentRow, RecentAttempt } from "@/lib/api/agents";
-import { agentStatusLine, lastSeenText, securityLine, shortDate } from "@/lib/fleet/status";
+import {
+  agentStatusLine,
+  heartbeatAgo,
+  lastSeenText,
+  latestHeartbeat,
+  shortDate,
+  tokenHealth,
+} from "@/lib/fleet/status";
 import { runHref } from "@/lib/runs/hrefs";
 import { useClock } from "../clock";
 import { AgentActions } from "./agent-actions";
-import { useAgentDetail } from "./queries";
+import { LAST_SEEN_POLL_MS, useAgentDetail, useAgentLastSeen } from "./queries";
 
 /** `/fleet/{id}` for an agent that isn't there (or not in the user's organizations). */
 export const AGENT_NOT_FOUND = "This agent doesn't exist.";
@@ -41,6 +49,25 @@ function HostBadge({ host }: { host: FleetAgentRow["host"] }) {
         <MetaBadge text="Coder workspace" />
       </span>
     </Tooltip>
+  );
+}
+
+/**
+ * "About 2 min ago": the agent's last heartbeat, the later of the one polled from Redis every
+ * 10 s and the detail's, with its clock ticking as often. None for an agent that has never
+ * connected (its status says so).
+ */
+function HeartbeatBadge({ agent }: { agent: AgentDetail["agent"] }) {
+  const lastSeen = useAgentLastSeen(agent.id);
+  const now = useClock(LAST_SEEN_POLL_MS);
+  const heartbeat = latestHeartbeat(agent.lastHeartbeatAt, lastSeen.data?.lastHeartbeatAt);
+  if (heartbeat === null) return null;
+  const text = heartbeatAgo(heartbeat, new Date(now));
+  return (
+    <span className="or-fleet-agent__heartbeat" title="Last heartbeat">
+      <span className="or-sr-only">Last heartbeat: </span>
+      <MetaBadge icon={IconHeartbeat} text={text} />
+    </span>
   );
 }
 
@@ -196,24 +223,28 @@ function Packages({ detail }: { detail: AgentDetail }) {
   );
 }
 
-function Security({ detail }: { detail: AgentDetail }) {
-  const now = useClock();
-  const line = securityLine(
-    { ...detail.security, connected: detail.agent.lastHeartbeatAt !== null },
+/**
+ * The agent's token health (`tokenHealth`): nothing while it can authenticate, else a
+ * Security section with the problem (fail tone) and, while refreshes fail, its last error.
+ */
+function Security({ detail, now }: { detail: AgentDetail; now: number }) {
+  const { agent, security } = detail;
+  const health = tokenHealth(
+    {
+      revoked: agent.revoked,
+      online: agent.online,
+      lastHeartbeatAt: agent.lastHeartbeatAt,
+      ...security,
+    },
     new Date(now),
   );
+  if (!health) return null;
   return (
     <Section title="Security">
-      <p
-        className={
-          line.tone === "fail"
-            ? "or-fleet-agent__line or-fleet-agent__line--fail"
-            : "or-fleet-agent__line"
-        }
-        data-tone={line.tone}
-      >
-        {line.label}
-      </p>
+      <FailLine>{health.label}</FailLine>
+      {health.detail ? (
+        <p className="or-fleet-agent__line or-fleet-agent__line--muted">{health.detail}</p>
+      ) : null}
     </Section>
   );
 }
@@ -252,6 +283,7 @@ export function AgentPanelContent({
       <div className="or-fleet-agent__badges">
         <HostBadge host={agent.host} />
         <MetaBadge text={`Enrolled ${shortDate(agent.createdAt)}`} />
+        <HeartbeatBadge agent={agent} />
       </div>
       {detail.missingRequiredHostTools.length > 0 ? (
         <FailLine>Missing host tools: {detail.missingRequiredHostTools.join(", ")}</FailLine>
@@ -260,7 +292,7 @@ export function AgentPanelContent({
       <RecentWork attempts={detail.recentWork} />
       <Models models={detail.models} claude={detail.claude} />
       <Packages detail={detail} />
-      <Security detail={detail} />
+      <Security detail={detail} now={now} />
     </article>
   );
 }

@@ -841,6 +841,13 @@
       "when": 1793413244936,
       "tag": "0119_agent_refresh_generation",
       "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1793476034661,
+      "tag": "0120_agent_reported_token_refresh",
+      "breakpoints": true
     }
   ]
 }
