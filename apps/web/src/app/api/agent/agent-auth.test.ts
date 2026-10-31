@@ -325,6 +325,47 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
       expect(agent!.revokedAt).toBeNull();
     });
 
+    it("audits a rejected signed refresh token against its agent", async () => {
+      const past = new LocalTokenSigner({
+        privateKey: SIGNING_KEY,
+        env: {},
+        now: () => Date.now() - (AGENT_REFRESH_TOKEN_TTL_SECONDS + 1) * 1000,
+      });
+      const signRefresh = (claims: Record<string, unknown>) =>
+        new SignJWT({ typ: "refresh", aud: "omniralph-agent", ...claims })
+          .setProtectedHeader({ alg: "RS256" })
+          .setIssuedAt()
+          .setExpirationTime("15m")
+          .sign(privateKey);
+      // One agent per case: auth_failed rows are sampled to one per agent per minute.
+      const cases: [(agentId: string) => Promise<string>, string][] = [
+        [
+          (agentId) => past.signRefreshToken({ agentId, generation: 1, tokenId: "a" }),
+          "refresh_expired",
+        ],
+        [(agentId) => getTokenSigner().signAccessToken(agentId), "refresh_wrong_typ"],
+        // No `gen` claim.
+        [(agentId) => signRefresh({ sub: agentId, jti: "a" }), "refresh_invalid_claims"],
+      ];
+      for (const [presented, reason] of cases) {
+        const { agentId } = await enrollNew();
+        expect((await refresh(await presented(agentId))).status).toBe(401);
+        const failures = await listAgentAudit(db, { agentId, event: "auth_failed" });
+        expect(failures.map((f) => f.detail)).toEqual([{ reason, path: "/api/agent/token" }]);
+      }
+    });
+
+    it("doesn't attribute a refresh token we didn't sign to the agent it names", async () => {
+      const { agentId } = await enrollNew();
+      const forged = await new LocalTokenSigner({ env: {} }).signRefreshToken({
+        agentId,
+        generation: 1,
+        tokenId: "z",
+      });
+      expect((await refresh(forged)).status).toBe(401);
+      expect(await listAgentAudit(db, { agentId, event: "auth_failed" })).toEqual([]);
+    });
+
     it("redeems a legacy refresh token once for a signed one", async () => {
       const { agentId, refreshToken } = await legacyToken();
       const res = await refresh(refreshToken);

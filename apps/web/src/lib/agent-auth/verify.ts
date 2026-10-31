@@ -38,6 +38,11 @@ class AuthError extends Error {
      * the IP's lockout.
      */
     readonly signed = agentId !== null,
+    /**
+     * The claims of a token whose signature verified but which was rejected (expired, wrong
+     * `typ`, invalid claims): jose checks the signature before the claims, so they're ours.
+     */
+    readonly claims: JWTPayload | null = null,
   ) {
     super(reason);
   }
@@ -45,6 +50,12 @@ class AuthError extends Error {
 
 /** jose errors thrown only after the signature has been verified (claim checks). */
 const SIGNED_TOKEN_ERRORS = new Set(["ERR_JWT_EXPIRED", "ERR_JWT_CLAIM_VALIDATION_FAILED"]);
+
+/** The payload a jose claim-validation error carries, or null. */
+function signedPayload(error: unknown): JWTPayload | null {
+  const payload = (error as { payload?: unknown }).payload;
+  return typeof payload === "object" && payload !== null ? (payload as JWTPayload) : null;
+}
 
 function bearerToken(req: Request): string | null {
   const header = req.headers.get("authorization");
@@ -69,9 +80,11 @@ async function verifyToken(token: string, typ: TokenType): Promise<JWTPayload> {
   } catch (error) {
     const code = (error as { code?: unknown }).code;
     if (typeof code !== "string") throw new AuthError("invalid_token");
-    throw new AuthError(code, null, SIGNED_TOKEN_ERRORS.has(code));
+    const signed = SIGNED_TOKEN_ERRORS.has(code);
+    // jose's claim errors (JWTExpired, JWTClaimValidationFailed) carry the verified payload.
+    throw new AuthError(code, null, signed, signed ? signedPayload(error) : null);
   }
-  if (payload.typ !== typ) throw new AuthError("wrong_typ", null, true);
+  if (payload.typ !== typ) throw new AuthError("wrong_typ", null, true, payload);
   return payload;
 }
 
@@ -92,6 +105,15 @@ function uuidClaim(value: unknown): string {
   return value;
 }
 
+/**
+ * A refresh token's rejection reason, as audited (`refresh_<reason>`): jose's claim errors
+ * become `expired` and `invalid_claims`, so Fleet can say why an agent needs re-enrollment.
+ */
+const REFRESH_REASONS: Record<string, string> = {
+  ERR_JWT_EXPIRED: "expired",
+  ERR_JWT_CLAIM_VALIDATION_FAILED: "invalid_claims",
+};
+
 /** A signed refresh token's claims, or why it was rejected. */
 export type VerifiedRefreshToken =
   | { ok: true; agentId: string; generation: number; tokenId: string }
@@ -100,12 +122,16 @@ export type VerifiedRefreshToken =
       reason: string;
       /** The token carries our signature: a stale client, not a guessing attempt. */
       signed: boolean;
+      /** A signed token's `sub` (its agent) when it is a UUID; null otherwise. */
+      agentId: string | null;
     };
 
 /** Verifies a signed refresh token (signature, `aud`, `exp`, `typ: "refresh"`, claims). */
 export async function verifyRefreshToken(token: string): Promise<VerifiedRefreshToken> {
+  let claims: JWTPayload | null = null;
   try {
     const payload = await verifyToken(token, "refresh");
+    claims = payload;
     const agentId = uuidClaim(payload.sub);
     const generation = payload.gen;
     const tokenId = payload.jti;
@@ -121,7 +147,11 @@ export async function verifyRefreshToken(token: string): Promise<VerifiedRefresh
     return { ok: true, agentId, generation, tokenId };
   } catch (error) {
     if (!(error instanceof AuthError)) throw error;
-    return { ok: false, reason: error.reason, signed: error.signed };
+    const signedClaims = error.signed ? (error.claims ?? claims) : null;
+    const sub = signedClaims?.sub;
+    const agentId = typeof sub === "string" && UUID.test(sub) ? sub : null;
+    const reason = REFRESH_REASONS[error.reason] ?? error.reason;
+    return { ok: false, reason, signed: error.signed, agentId };
   }
 }
 

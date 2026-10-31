@@ -253,10 +253,12 @@ export async function loadAgentDetail(
     runningNow,
     recentWork,
     security: {
-      lastTokenRefreshAt: security.lastTokenRefreshAt?.toISOString() ?? null,
       reuseAlerts30d: security.reuseAlerts,
       lastReuseAt: security.lastReuseAt?.toISOString() ?? null,
-      authFailures30d: security.authFailures,
+      lastRefreshRejection: security.lastRefreshRejection && {
+        at: security.lastRefreshRejection.at.toISOString(),
+        reason: security.lastRefreshRejection.reason,
+      },
     },
     globalDesiredVersion: version.tracksLatest
       ? version.version

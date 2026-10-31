@@ -104,8 +104,13 @@ async function refreshSigned(
   const fail = (input: FailureInput) => authFailure(db, req, input, now);
   const verified = await verifyRefreshToken(refreshToken);
   if (!verified.ok) {
-    // A token we signed (expired, say) is a stale client, not a guessing attempt.
-    return fail({ agentId: null, reason: `refresh_${verified.reason}`, lockout: !verified.signed });
+    // A token we signed (expired, say) is a stale client, not a guessing attempt: its audit
+    // row names its agent, so Fleet can say the agent needs re-enrollment and why.
+    return fail({
+      agentId: verified.agentId,
+      reason: `refresh_${verified.reason}`,
+      lockout: !verified.signed,
+    });
   }
   const { agentId, generation, tokenId } = verified;
   const agentLimit = await hitRateLimit(db, AGENT_RATE_LIMITS.tokenPerAgent(agentId), now);

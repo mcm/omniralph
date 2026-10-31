@@ -224,11 +224,10 @@ function Packages({ detail }: { detail: AgentDetail }) {
 }
 
 function Security({ detail }: { detail: AgentDetail }) {
-  const now = useClock();
-  const line = securityLine(
-    { ...detail.security, connected: detail.agent.lastHeartbeatAt !== null },
-    new Date(now),
-  );
+  const line = securityLine({
+    ...detail.security,
+    connected: detail.agent.lastHeartbeatAt !== null,
+  });
   return (
     <Section title="Security">
       <p
