@@ -115,6 +115,8 @@ export interface StatusAgent {
   organizationId: string;
   name: string;
   lastHeartbeatAt: Date | null;
+  /** `live_online`: heartbeats set it, the liveness sweep clears it. */
+  online: boolean;
   revoked: boolean;
 }
 
@@ -181,6 +183,7 @@ export async function loadRepositoryStatusFacts(
         organizationId: agents.organizationId,
         name: agents.name,
         lastHeartbeatAt: agents.lastHeartbeatAt,
+        online: agents.liveOnline,
         revokedAt: agents.revokedAt,
       })
       .from(agents)

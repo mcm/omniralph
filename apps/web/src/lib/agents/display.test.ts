@@ -1,14 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enrollCommand, AGENT_INSTALL_COMMAND, isAgentOnline, jobTarget } from "./display";
-
-describe("isAgentOnline", () => {
-  const now = new Date("2026-10-05T12:00:00Z");
-  it("is online while the last heartbeat is under 60s old", () => {
-    expect(isAgentOnline(new Date("2026-10-05T11:59:01Z"), now)).toBe(true);
-    expect(isAgentOnline(new Date("2026-10-05T11:59:00Z"), now)).toBe(false);
-    expect(isAgentOnline(null, now)).toBe(false);
-  });
-});
+import { enrollCommand, AGENT_INSTALL_COMMAND, jobTarget } from "./display";
 
 describe("AGENT_INSTALL_COMMAND", () => {
   it("installs the agent package", () => {

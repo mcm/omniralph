@@ -299,10 +299,13 @@ describe("the agents table", () => {
     expect(status(2).className).toContain("or-status--neutral");
   });
 
-  it("says when each agent was last seen in its status's tooltip", async () => {
+  it("says Online, or when an offline agent was last seen, in its status's tooltip", async () => {
     renderFleet();
     await waitFor(() => expect(bodyRows()).toHaveLength(3));
-    const status = within(bodyRows()[0]!).getAllByRole("cell")[1]!.querySelector(".or-status")!;
+    const statusOf = (index: number) =>
+      within(bodyRows()[index]!).getAllByRole("cell")[1]!.querySelector(".or-status")!;
+    expect(statusOf(0).getAttribute("aria-description")).toBe("Online");
+    const status = statusOf(1);
     expect(status.getAttribute("aria-description")).toMatch(
       /^Last seen \d+ (minute|hour|day)s? ago$/,
     );

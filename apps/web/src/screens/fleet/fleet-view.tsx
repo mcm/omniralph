@@ -143,7 +143,7 @@ function AgentStatus({ agent }: { agent: FleetAgentRow }) {
     <StatusIndicator
       tone={agent.status.tone}
       label={agent.status.label}
-      tooltip={lastSeenText(agent.lastHeartbeatAt, new Date(now))}
+      tooltip={lastSeenText(agent, new Date(now))}
     />
   );
 }

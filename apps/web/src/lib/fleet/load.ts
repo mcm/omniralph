@@ -35,7 +35,6 @@ import {
   organizationAgentVersion,
   type OrganizationAgentVersion,
 } from "@/lib/agents/desired-version";
-import { withAgentLastSeen, withLastSeen } from "@/lib/agents/last-seen";
 import { agentRow } from "@/lib/agents/rows";
 import { describeAttempt, type AttemptLabelContext } from "@omniralph/shared";
 import { attemptLabelBase } from "@/lib/runs/detail";
@@ -113,7 +112,7 @@ export async function loadFleet(
   const perOrganization = await Promise.all(
     organizations.map(async (organization) => {
       const [agents, version] = await Promise.all([
-        listAgentOverview(db, organization.id).then(withLastSeen),
+        listAgentOverview(db, organization.id),
         organizationAgentVersion(db, organization.id, { timeoutMs: NPM_TIMEOUT_MS }),
       ]);
       return {
@@ -157,7 +156,7 @@ export async function loadAgentDetail(
   const now = new Date();
   const [agent, version, attempts, security, audit, pinSyncJobs, installJobs, requiredHostTools] =
     await Promise.all([
-      getAgentOverview(db, organization.id, agentId).then(withAgentLastSeen),
+      getAgentOverview(db, organization.id, agentId),
       organizationAgentVersion(db, organization.id, { timeoutMs: NPM_TIMEOUT_MS }),
       listAgentAttempts(db, agentId, RECENT_WORK_LIMIT),
       getAgentSecuritySummary(db, agentId, new Date(now.getTime() - SECURITY_WINDOW_MS)),

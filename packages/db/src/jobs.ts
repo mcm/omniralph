@@ -314,19 +314,14 @@ export async function getJobForAgent(
 
 /**
  * The agent to send a pinned repo's jobs to: among its pinned, non-revoked
- * agents, the one with the fewest active jobs (then the most recent
- * heartbeat). Null when the repo isn't pinned (any agent of the organization
- * may serve it). Only agents of `organizationId` count. `lastHeartbeats`
- * supplies heartbeats more recent than `last_heartbeat_at` (the control
- * panel's Redis), used where later than the row's.
+ * agents, an online one (`live_online`) first, then the one with the fewest
+ * active jobs (then the most recent heartbeat). Null when the repo isn't pinned
+ * (any agent of the organization may serve it). Only agents of `organizationId` count.
  */
 export async function pinnedAgentFor(
   db: Database,
   organizationId: string,
   repositoryId: string,
-  options: {
-    lastHeartbeats?: (agentIds: string[]) => Promise<ReadonlyMap<string, Date>>;
-  } = {},
 ): Promise<string | null> {
   const active = db
     .select({ agentId: jobs.agentId, n: count().as("n") })
@@ -334,12 +329,8 @@ export async function pinnedAgentFor(
     .where(inArray(jobs.status, ["queued", "running"]))
     .groupBy(jobs.agentId)
     .as("active");
-  const rows = await db
-    .select({
-      agentId: agents.id,
-      activeJobs: sql<number>`coalesce(${active.n}, 0)`.mapWith(Number),
-      lastHeartbeatAt: agents.lastHeartbeatAt,
-    })
+  const [row] = await db
+    .select({ agentId: agents.id })
     .from(agentRepoPins)
     .innerJoin(agents, eq(agents.id, agentRepoPins.agentId))
     .leftJoin(active, eq(active.agentId, agents.id))
@@ -351,17 +342,13 @@ export async function pinnedAgentFor(
       ),
     )
     .orderBy(
+      desc(agents.liveOnline),
       asc(sql`coalesce(${active.n}, 0)`),
       sql`${agents.lastHeartbeatAt} desc nulls last`,
       asc(agents.id),
-    );
-  if (!options.lastHeartbeats || rows.length < 2) return rows[0]?.agentId ?? null;
-  const live = await options.lastHeartbeats(rows.map((r) => r.agentId));
-  const seen = (row: (typeof rows)[number]) =>
-    Math.max(row.lastHeartbeatAt?.getTime() ?? 0, live.get(row.agentId)?.getTime() ?? 0);
-  // Stable: equal heartbeats keep the query's ID order.
-  const [best] = [...rows].sort((a, b) => a.activeJobs - b.activeJobs || seen(b) - seen(a));
-  return best!.agentId;
+    )
+    .limit(1);
+  return row?.agentId ?? null;
 }
 
 export type CancelJobResult = "canceled" | "cancel_requested" | "not_cancelable" | "not_found";

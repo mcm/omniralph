@@ -1,27 +1,10 @@
-import type * as Db from "@omniralph/db";
 import type { RepositoryStatusFacts, StatusAgent } from "@omniralph/db";
 import { describe, expect, it, vi } from "vitest";
 import type { StatusRepository } from "./status";
 
 vi.mock("server-only", () => ({}));
-const stub = vi.hoisted(() => ({
-  facts: undefined as unknown as RepositoryStatusFacts,
-  lastSeen: new Map<string, string>(),
-}));
-vi.mock("@omniralph/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof Db>()),
-  loadRepositoryStatusFacts: async () => stub.facts,
-}));
-vi.mock("@/lib/hot-state", () => ({
-  hotStateEnabled: () => true,
-  getRedis: () => ({
-    mget: async (keys: string[]) => keys.map((key) => stub.lastSeen.get(key) ?? null),
-  }),
-}));
 
-const { loadRepositoryStatuses, repositoryStatus, REPOSITORY_PROBLEM_ORDER } =
-  await import("./status");
-const { agentLastSeenKey } = await import("@/lib/agents/last-seen");
+const { repositoryStatus, REPOSITORY_PROBLEM_ORDER } = await import("./status");
 
 const NOW = new Date("2026-10-26T12:00:00.000Z");
 const ORG = "org-1";
@@ -33,6 +16,7 @@ function agent(id: string, overrides: Partial<StatusAgent> = {}): StatusAgent {
     organizationId: ORG,
     name: id,
     lastHeartbeatAt: new Date(NOW.getTime() - 10_000),
+    online: true,
     revoked: false,
     ...overrides,
   };
@@ -89,7 +73,9 @@ describe("repositoryStatus", () => {
         latestSync: new Map([
           [REPO, { repositoryId: REPO, jobId: "job-1", status: "failed" as const, agent: null }],
         ]),
-        agents: [agent("stale", { lastHeartbeatAt: new Date(NOW.getTime() - 3_600_000) })],
+        agents: [
+          agent("stale", { lastHeartbeatAt: new Date(NOW.getTime() - 3_600_000), online: false }),
+        ],
       }),
       NOW,
     );
@@ -105,7 +91,7 @@ describe("repositoryStatus", () => {
 
   it("only counts pinned agents when the repo has pins, and revoked ones are never online", () => {
     const pins = new Map([[REPO, ["pinned"]]]);
-    const offlinePin = agent("pinned", { lastHeartbeatAt: null });
+    const offlinePin = agent("pinned", { lastHeartbeatAt: null, online: false });
     expect(
       repositoryStatus(repository(), facts({ pins, agents: [agent("online"), offlinePin] }), NOW)
         .problems,
@@ -117,14 +103,36 @@ describe("repositoryStatus", () => {
       },
     ]);
     expect(
-      repositoryStatus(repository(), facts({ agents: [agent("gone", { revoked: true })] }), NOW)
-        .problems,
+      repositoryStatus(
+        repository(),
+        facts({ agents: [agent("gone", { revoked: true, online: true })] }),
+        NOW,
+      ).problems,
     ).toEqual([{ code: "no_agent_online", message: "No agent online" }]);
     // Another organization's online agent doesn't serve this repo.
     expect(
       repositoryStatus(
         repository(),
         facts({ agents: [agent("elsewhere", { organizationId: "org-2" })] }),
+        NOW,
+      ).problems.map((p) => p.code),
+    ).toEqual(["no_agent_online"]);
+  });
+
+  it("decides online from live_online, not the row's heartbeat (written at most daily)", () => {
+    const pins = new Map([[REPO, ["a1"]]]);
+    const stale = new Date(NOW.getTime() - 3_600_000);
+    expect(
+      repositoryStatus(
+        repository(),
+        facts({ pins, agents: [agent("a1", { lastHeartbeatAt: stale, online: true })] }),
+        NOW,
+      ).problems,
+    ).toEqual([]);
+    expect(
+      repositoryStatus(
+        repository(),
+        facts({ pins, agents: [agent("a1", { online: false })] }),
         NOW,
       ).problems.map((p) => p.code),
     ).toEqual(["no_agent_online"]);
@@ -142,28 +150,5 @@ describe("repositoryStatus", () => {
       },
     };
     expect(repositoryStatus(repository(gitlab), facts(), NOW).problems).toEqual([]);
-  });
-});
-
-describe("loadRepositoryStatuses", () => {
-  const db = {} as Parameters<typeof loadRepositoryStatuses>[0];
-  const stale = { lastHeartbeatAt: new Date(NOW.getTime() - 3600_000) };
-
-  it("counts an agent online from its Redis last-seen when its row's heartbeat is stale", async () => {
-    stub.facts = facts({ agents: [agent("a1", stale)], pins: new Map([[REPO, ["a1"]]]) });
-    stub.lastSeen = new Map([[agentLastSeenKey("a1"), String(NOW.getTime() - 5_000)]]);
-
-    const statuses = await loadRepositoryStatuses(db, [repository()], NOW);
-
-    expect(statuses.get(REPO)).toEqual({ running: 0, problems: [] });
-  });
-
-  it("still reports no agent online when neither Redis nor the row has a recent heartbeat", async () => {
-    stub.facts = facts({ agents: [agent("a1", stale)] });
-    stub.lastSeen = new Map([[agentLastSeenKey("a1"), String(NOW.getTime() - 120_000)]]);
-
-    const statuses = await loadRepositoryStatuses(db, [repository()], NOW);
-
-    expect(statuses.get(REPO)?.problems.map((p) => p.code)).toEqual(["no_agent_online"]);
   });
 });

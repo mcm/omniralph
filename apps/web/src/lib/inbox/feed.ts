@@ -19,7 +19,6 @@ import {
 import type { InboxAction, InboxCountsResponse, InboxItem, InboxTabParam } from "@/lib/api/inbox";
 import type { RunRow } from "@/lib/api/runs";
 import type { ScopedOrganization } from "@/lib/api/scope";
-import { readAgentLastSeen } from "@/lib/agents/last-seen";
 import { isRerunnable } from "@/lib/jobs/rerun-kind";
 import { changeRequestWebUrl } from "@/lib/repositories/web-url";
 import { describeAttempt, type AttemptLabelContext } from "@omniralph/shared";
@@ -306,7 +305,6 @@ export async function loadInboxFeed(
     organizationIds: scope.organizations.map((o) => o.id),
     userId: scope.userId,
     tab: TAB_OF_PARAM[tab],
-    agentLastSeen: readAgentLastSeen,
   });
   const runIds = [...new Set(items.flatMap((i) => (i.run ? [i.run.id] : [])))];
   const [entries, references] = await Promise.all([
@@ -334,7 +332,6 @@ export async function loadInboxCounts(
   const counts = await countInboxItems(db, {
     organizationIds: scope.organizations.map((o) => o.id),
     userId: scope.userId,
-    agentLastSeen: readAgentLastSeen,
   });
   return { needsYou: counts.needs_you, problems: counts.problems, running: counts.running };
 }

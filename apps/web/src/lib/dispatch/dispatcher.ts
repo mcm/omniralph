@@ -14,7 +14,6 @@ import {
 import { agentWakeChannel, orgWakeChannel } from "@omniralph/shared";
 import type { WakePublisher } from "@/lib/ably/publisher";
 import { bumpAgentHeartbeat } from "@/lib/agents/heartbeat-cache";
-import { readAgentLastSeen } from "@/lib/agents/last-seen";
 import { hotStateEnabled } from "@/lib/hot-state";
 import { syncJobsDue, syncJobsDueFromPostgres } from "./due";
 
@@ -121,10 +120,6 @@ export class PostgresDispatcher implements JobDispatcher {
       }
       return targetAgentId;
     }
-    return job.repositoryId
-      ? pinnedAgentFor(this.db, job.organizationId, job.repositoryId, {
-          lastHeartbeats: readAgentLastSeen,
-        })
-      : null;
+    return job.repositoryId ? pinnedAgentFor(this.db, job.organizationId, job.repositoryId) : null;
   }
 }

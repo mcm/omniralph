@@ -29,7 +29,6 @@ import {
   type QueryAgentStatus,
   type RunAgentRequirements,
 } from "@/lib/agents/claimable";
-import { withLastSeen } from "@/lib/agents/last-seen";
 import type { QuotedMessage } from "@/lib/ralph/chat-start";
 import { errorMessage } from "@/lib/ralph/notify";
 import { runSpecJobInput, runSpecMinAgentVersion } from "@/lib/runs/job";
@@ -193,7 +192,6 @@ export async function enqueueChatAsk(
      * the chat started). Without it, the default branch is read from the code host.
      */
     branch?: string | null;
-    now?: Date;
   },
 ): Promise<EnqueueChatAskOutcome> {
   const { db } = deps;
@@ -219,16 +217,10 @@ export async function enqueueChatAsk(
     hostTools: taskRequirements.hostTools,
   };
   const [overview, usableHostTools] = await Promise.all([
-    listAgentOverview(db, input.organizationId).then(withLastSeen),
+    listAgentOverview(db, input.organizationId),
     listAgentsUsableHostTools(db, input.organizationId),
   ]);
-  const agents = queryClaimableAgents(
-    overview,
-    usableHostTools,
-    repository.id,
-    requirements,
-    input.now,
-  );
+  const agents = queryClaimableAgents(overview, usableHostTools, repository.id, requirements);
   if (!agents.some((h) => h.capable)) {
     return { status: "no_capable_agent", agents, requirements };
   }

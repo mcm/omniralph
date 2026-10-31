@@ -6,8 +6,6 @@ import {
   type RepositoryStatusFacts,
   type StatusAgent,
 } from "@omniralph/db";
-import { isAgentOnline } from "@/lib/agents/display";
-import { withLastSeen } from "@/lib/agents/last-seen";
 import { connectionHealth, WEBHOOK_PROBLEM_CODES } from "@/lib/connections/health";
 import { agentHref } from "@/lib/runs/hrefs";
 
@@ -43,8 +41,8 @@ export const REPOSITORY_PROBLEM_ORDER: readonly RepositoryProblemCode[] = [
 /** The repo fields its status needs. */
 export type StatusRepository = Pick<ConnectedRepository, "id" | "organizationId" | "connection">;
 
-function isOnline(agent: StatusAgent, now: Date): boolean {
-  return !agent.revoked && isAgentOnline(agent.lastHeartbeatAt, now);
+function isOnline(agent: StatusAgent): boolean {
+  return !agent.revoked && agent.online;
 }
 
 /** The most recently heard-from of `agents`, else the first. */
@@ -99,7 +97,7 @@ export function repositoryStatus(
   const pinned = organizationAgents.filter((agent) => pinnedIds.has(agent.id));
   const candidates =
     pinnedIds.size > 0 ? pinned : organizationAgents.filter((agent) => !agent.revoked);
-  if (!candidates.some((agent) => isOnline(agent, now))) {
+  if (!candidates.some(isOnline)) {
     const action = openAgent(pinnedIds.size > 0 ? pinned[0] : lastSeen(candidates));
     problems.push({
       code: "no_agent_online",
@@ -121,8 +119,7 @@ export function repositoryStatus(
 
 /**
  * The status of each of `repositories`, by ID, from batched queries: the same number of
- * queries for one repository as for many. Agents' last heartbeats include their Redis
- * last-seen (as Fleet shows them), since the row's is written at most daily.
+ * queries for one repository as for many. Online is each agent's `live_online`.
  */
 export async function loadRepositoryStatuses(
   db: Database,
@@ -133,6 +130,5 @@ export async function loadRepositoryStatuses(
     organizationIds: [...new Set(repositories.map((r) => r.organizationId))],
     repositoryIds: repositories.map((r) => r.id),
   });
-  const live = { ...facts, agents: await withLastSeen(facts.agents) };
-  return new Map(repositories.map((r) => [r.id, repositoryStatus(r, live, now)]));
+  return new Map(repositories.map((r) => [r.id, repositoryStatus(r, facts, now)]));
 }

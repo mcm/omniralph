@@ -12,8 +12,9 @@ import { getRedis, hotStateEnabled } from "@/lib/hot-state";
  * of the report last written) or a daily window started since the row was written (the
  * fingerprint expires at the next window start, so the write lands in the window Neon is
  * awake for anyway). Neither key is derived from Postgres, so there's no epoch: a lost key
- * just means a Postgres write on the next heartbeat, and readers fall back to the
- * row's `last_heartbeat_at` (at most about a day behind).
+ * just means a Postgres write on the next heartbeat. Only the liveness sweep reads
+ * last-seen: it writes it to the row when it marks the agent offline, so readers use
+ * `live_online` and the row's `last_heartbeat_at` (exact for an offline agent).
  */
 
 export type HeartbeatReport = Omit<Parameters<typeof recordAgentHeartbeat>[2], "now">;
@@ -21,7 +22,7 @@ export type AgentRow = NonNullable<Awaited<ReturnType<typeof recordAgentHeartbea
 
 const LAST_SEEN_PREFIX = "agent-last-seen:";
 const REPORT_PREFIX = "agent-report:";
-/** How long a last-seen outlives the agent's last heartbeat (then the row's value is used). */
+/** How long a last-seen outlives the agent's last heartbeat (the sweep has written it by then). */
 export const LAST_SEEN_TTL_MS = 30 * 24 * 3600_000;
 
 export function agentLastSeenKey(agentId: string): string {
@@ -105,27 +106,4 @@ export async function readAgentLastSeen(agentIds: readonly string[]): Promise<Ma
     console.warn("hot-state: reading agent last-seen failed", error);
   }
   return lastSeen;
-}
-
-/**
- * The agents with `lastHeartbeatAt` from Redis where it's later than the row's (the
- * row is only written when the report changes or once a day, in the daily window).
- */
-export async function withLastSeen<T extends { id: string; lastHeartbeatAt: Date | null }>(
-  agents: readonly T[],
-): Promise<T[]> {
-  const lastSeen = await readAgentLastSeen(agents.map((h) => h.id));
-  return agents.map((agent) => {
-    const seen = lastSeen.get(agent.id);
-    return seen && (!agent.lastHeartbeatAt || seen > agent.lastHeartbeatAt)
-      ? { ...agent, lastHeartbeatAt: seen }
-      : agent;
-  });
-}
-
-/** `withLastSeen` for a single agent (or none). */
-export async function withAgentLastSeen<T extends { id: string; lastHeartbeatAt: Date | null }>(
-  agent: T | null,
-): Promise<T | null> {
-  return agent ? (await withLastSeen([agent]))[0]! : null;
 }

@@ -153,7 +153,12 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/repositories", () => {
     [{ id: onlineAgent }, { id: offlineAgent }] = (await db
       .insert(agents)
       .values([
-        { organizationId: org.acme, name: "atlas", lastHeartbeatAt: minutesAgo(0) },
+        {
+          organizationId: org.acme,
+          name: "atlas",
+          lastHeartbeatAt: minutesAgo(0),
+          liveOnline: true,
+        },
         { organizationId: org.acme, name: "boreas", lastHeartbeatAt: minutesAgo(30) },
       ])
       .returning({ id: agents.id })) as [{ id: string }, { id: string }];

@@ -73,7 +73,7 @@ describe("queryClaimableAgents", () => {
       name: "a",
       reportedVersion: "0.9.0",
       revokedAt: null,
-      lastHeartbeatAt: now,
+      liveOnline: true,
       reportedAcceptedTaskTypes: null,
       effective: { acceptedTaskTypes: ["query", "review"] },
       reportedInstallables: [],
@@ -82,7 +82,7 @@ describe("queryClaimableAgents", () => {
     }) as unknown as Overview;
   const minimum = { minAgentVersion: "0.9.0", installables: [], hostTools: [] };
   const claimable = (agents: Overview[], repositoryId = "r1") =>
-    queryClaimableAgents(agents, new Map(), repositoryId, minimum, now);
+    queryClaimableAgents(agents, new Map(), repositoryId, minimum);
 
   it("counts online agents accepting query tasks on the minimum version or later", () => {
     expect(claimable([agent(), agent({ name: "newer", reportedVersion: "0.10.0" })])).toEqual([
@@ -124,13 +124,7 @@ describe("queryClaimableAgents", () => {
       hostTools: ["opengrep", "semgrep"],
     };
     expect(
-      queryClaimableAgents(
-        [all, missingInstallable, missingHostTool],
-        usable,
-        "r1",
-        requirements,
-        now,
-      ),
+      queryClaimableAgents([all, missingInstallable, missingHostTool], usable, "r1", requirements),
     ).toEqual([
       { name: "all", version: "0.9.0", capable: true },
       { name: "no-hello", version: "0.9.0", capable: false },
@@ -138,19 +132,25 @@ describe("queryClaimableAgents", () => {
     ]);
     // An agent with no usable host tools at all.
     expect(
-      queryClaimableAgents([all], new Map(), "r1", requirements, now).map((h) => h.capable),
+      queryClaimableAgents([all], new Map(), "r1", requirements).map((h) => h.capable),
     ).toEqual([false]);
     // Without requirements, neither is needed.
-    expect(
-      queryClaimableAgents([missingInstallable], new Map(), "r1", minimum, now)[0]?.capable,
-    ).toBe(true);
+    expect(queryClaimableAgents([missingInstallable], new Map(), "r1", minimum)[0]?.capable).toBe(
+      true,
+    );
   });
 
   it("leaves out offline and revoked agents, and only counts pinned agents of a pinned repository", () => {
-    const old = new Date(now.getTime() - 60 * 60_000);
+    // Offline is `live_online` cleared, whatever the row's (at most daily) heartbeat.
     expect(
-      claimable([agent({ lastHeartbeatAt: old }), agent({ revokedAt: now, name: "revoked" })]),
+      claimable([
+        agent({ liveOnline: false, lastHeartbeatAt: now }),
+        agent({ revokedAt: now, name: "revoked" }),
+      ]),
     ).toEqual([]);
+    expect(
+      claimable([agent({ lastHeartbeatAt: new Date(now.getTime() - 60 * 60_000) })]),
+    ).toHaveLength(1);
     const pinned = agent({
       name: "pinned",
       reportedVersion: "0.8.0",
@@ -340,6 +340,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
     const capable = {
       reportedVersion: QUERY_TASKS_MIN_AGENT_VERSION,
       lastHeartbeatAt: new Date(),
+      liveOnline: true,
       revokedAt: null,
     };
     await setAgent(agentId, capable);
@@ -665,7 +666,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
 
     await setAgent(agentId, {
       reportedVersion: QUERY_TASKS_MIN_AGENT_VERSION,
-      lastHeartbeatAt: null,
+      liveOnline: false,
     });
     const offline = await ask(h, { repository: "acme/api", question: "What is this?" });
     expect(offline).toMatchObject({ error: "no_capable_agent", agents: [] });
@@ -684,6 +685,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
         name: "pinned-agent",
         reportedVersion: "0.5.0",
         lastHeartbeatAt: new Date(),
+        liveOnline: true,
       })
       .returning();
     await db.insert(agentRepoPins).values({ agentId: pinned!.id, repositoryId });

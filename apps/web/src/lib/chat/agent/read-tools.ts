@@ -29,7 +29,6 @@ import { playbookRunSpec, type TaskDefinition } from "@omniralph/tasks";
 import { z } from "zod";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import type { RunAgentRequirements } from "@/lib/agents/claimable";
-import { withLastSeen } from "@/lib/agents/last-seen";
 import { agentRow, jobRow } from "@/lib/agents/rows";
 import { RALPH_RUN_STATUSES, truncate } from "@/lib/ralph/display";
 import {
@@ -619,7 +618,7 @@ export const listAgentsTool = defineChatTool({
   async execute(_input, { db, organizationId, appUrl }: ChatToolContext) {
     const now = new Date();
     const [agents, desiredVersion] = await Promise.all([
-      listAgentOverview(db, organizationId).then(withLastSeen),
+      listAgentOverview(db, organizationId),
       getDesiredAgentVersion(db, organizationId),
     ]);
     const shown = agents.slice(0, CHAT_TOOL_RESULT_LIMIT);

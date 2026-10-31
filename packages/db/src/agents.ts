@@ -730,23 +730,40 @@ export async function listLiveOnlineAgents(
     .where(eq(agents.liveOnline, true));
 }
 
+/** An agent to announce offline, with its real last heartbeat when known. */
+export interface AgentLiveOffline {
+  id: string;
+  /** Its last heartbeat (the web app's Redis last-seen); null when only the row's is known. */
+  lastHeartbeatAt: Date | null;
+}
+
 /**
  * Announces agents offline (clears `live_online`), recording a live `agent` change for
  * each that was still online and refreshing their organizations' host tool waits
- * (`refreshHostToolWaits`). Returns their IDs.
+ * (`refreshHostToolWaits`). Each one's `last_heartbeat_at` becomes the later of the row's
+ * and the given last heartbeat, so an offline agent's row is exact. Returns their IDs.
  */
 export async function markAgentsLiveOffline(
   db: Database,
-  agentIds: readonly string[],
+  offline: readonly AgentLiveOffline[],
 ): Promise<string[]> {
-  if (agentIds.length === 0) return [];
+  if (offline.length === 0) return [];
+  const ids = offline.map((agent) => agent.id);
+  const seen = offline.map((agent) => agent.lastHeartbeatAt?.toISOString() ?? null);
   // The flags and the waits refresh commit together: a failed refresh leaves the agents
   // online, so the next sweep announces them offline (and refreshes) again.
   return db.transaction(async (tx) => {
     const rows = await tx
       .update(agents)
-      .set({ liveOnline: false })
-      .where(and(inArray(agents.id, [...agentIds]), eq(agents.liveOnline, true)))
+      .set({
+        liveOnline: false,
+        // greatest() ignores nulls: an unknown last-seen keeps the row's value.
+        lastHeartbeatAt: sql`greatest(${agents.lastHeartbeatAt}, (
+          select s.seen from unnest(${sql.param(ids)}::uuid[], ${sql.param(seen)}::timestamptz[])
+            as s(id, seen)
+          where s.id = ${agents.id}))`,
+      })
+      .where(and(inArray(agents.id, ids), eq(agents.liveOnline, true)))
       .returning({ id: agents.id, organizationId: agents.organizationId });
     for (const row of rows) recordAgentChange(tx, row);
     // Their host tools no longer count for the organizations' queued jobs.

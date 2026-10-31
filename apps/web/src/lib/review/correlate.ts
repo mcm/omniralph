@@ -21,7 +21,6 @@ import {
 } from "@omniralph/shared";
 import { z } from "zod";
 import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/playbooks";
-import { readAgentLastSeen } from "@/lib/agents/last-seen";
 import { reviewTaskNames } from "./post";
 import { finishReviewRun } from "./run";
 
@@ -124,9 +123,7 @@ export const startCorrelation: StartCorrelation = async (tx, run, inputs) => {
     })),
     reviewRunId: run.id,
     dedupeKey: correlationJobKey(run.id),
-    targetAgentId: await pinnedAgentFor(tx, run.organizationId, run.repositoryId, {
-      lastHeartbeats: readAgentLastSeen,
-    }),
+    targetAgentId: await pinnedAgentFor(tx, run.organizationId, run.repositoryId),
   });
   return { jobId: job.id };
 };

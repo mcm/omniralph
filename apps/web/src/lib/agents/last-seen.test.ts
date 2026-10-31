@@ -1,15 +1,5 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import {
-  closeDb,
-  connectRepository,
-  createDb,
-  agentRepoPins,
-  agents,
-  organizations,
-  pinnedAgentFor,
-  upsertScmConnection,
-  type Database,
-} from "@omniralph/db";
+import { closeDb, createDb, agents, organizations, type Database } from "@omniralph/db";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -57,7 +47,7 @@ process.env.LOCAL_AGENT_SIGNING_KEY = privateKey
   .toString();
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { agentLastSeenKey, agentReportKey, readAgentLastSeen, recordHeartbeat, withLastSeen } =
+const { agentLastSeenKey, agentReportKey, readAgentLastSeen, recordHeartbeat } =
   await import("./last-seen");
 const { closeRedis, getRedis } = await import("@/lib/hot-state");
 const { POST: heartbeat } = await import("@/app/api/agent/heartbeat/route");
@@ -231,21 +221,10 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent last-seen", () => 
       expect(seen!.getTime()).toBeGreaterThan(first.lastHeartbeatAt!.getTime());
     });
 
-    it("has readers prefer the Redis last-seen when it's later", async () => {
+    it("has the agents list show the row's last heartbeat and live_online, not Redis's", async () => {
       const stale = new Date(Date.now() - 3600_000);
       const agentId = await newAgent(stale);
-      const fresh = new Date();
-      await getRedis().set(agentLastSeenKey(agentId), String(fresh.getTime()));
-      const other = await newAgent(fresh);
-      await getRedis().set(agentLastSeenKey(other), String(stale.getTime()));
-
-      const [a, b] = await withLastSeen([
-        { id: agentId, lastHeartbeatAt: stale },
-        { id: other, lastHeartbeatAt: fresh },
-      ]);
-      expect(a!.lastHeartbeatAt).toEqual(fresh);
-      // The row's own value wins when it's later (written while Redis was down).
-      expect(b!.lastHeartbeatAt).toEqual(fresh);
+      await getRedis().set(agentLastSeenKey(agentId), String(Date.now()));
 
       const list = (await (
         await listAgents(new Request("http://localhost/api/ui/agents"), {
@@ -253,39 +232,10 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent last-seen", () => 
         })
       ).json()) as { agents: { id: string; online: boolean; lastHeartbeatAt: string }[] };
       const listed = list.agents.find((h) => h.id === agentId)!;
-      expect(listed.lastHeartbeatAt).toBe(fresh.toISOString());
+      // The sweep writes the real last heartbeat when it marks an agent offline.
+      expect(listed.lastHeartbeatAt).toBe(stale.toISOString());
       // Online is the server's `live_online` flag (the heartbeat route sets it), not a fresh time.
       expect(listed.online).toBe(false);
-    });
-
-    it("breaks pinnedAgentFor's tie on the Redis last-seen", async () => {
-      const connection = (await upsertScmConnection(db, {
-        organizationId: orgId,
-        provider: "gitlab",
-        name: "bot",
-        baseUrl: "https://gitlab.example.com",
-        externalId: "5",
-        credentials: { token: "glpat-bot", webhookSecret: "hook" },
-      }))!;
-      const repositoryId = (
-        await connectRepository(db, {
-          connectionId: connection.id,
-          provider: "gitlab",
-          externalId: "101",
-          fullPath: "acme/api",
-        })
-      ).id;
-      const older = await newAgent(new Date(Date.now() - 60_000));
-      const newer = await newAgent(new Date(Date.now() - 30_000));
-      await db.insert(agentRepoPins).values([
-        { agentId: older, repositoryId },
-        { agentId: newer, repositoryId },
-      ]);
-      expect(await pinnedAgentFor(db, orgId, repositoryId)).toBe(newer);
-      await getRedis().set(agentLastSeenKey(older), String(Date.now()));
-      expect(
-        await pinnedAgentFor(db, orgId, repositoryId, { lastHeartbeats: readAgentLastSeen }),
-      ).toBe(older);
     });
   });
 
