@@ -8,6 +8,8 @@ import {
   agentUpdateStatus,
   auditEventLabel,
   compactSince,
+  heartbeatAgo,
+  latestHeartbeat,
   pinBadges,
   lastSeenText,
   relativeAgo,
@@ -379,6 +381,40 @@ describe("relativeAgo", () => {
     expect(relativeAgo(ago(2 * MINUTE + 5_000), NOW)).toBe("2 minutes ago");
     expect(relativeAgo(ago(3 * HOUR), NOW)).toBe("3 hours ago");
     expect(relativeAgo(ago(DAY), NOW)).toBe("1 day ago");
+  });
+});
+
+describe("heartbeatAgo", () => {
+  it.each([
+    [0, "Less than a minute ago"],
+    [59_999, "Less than a minute ago"],
+    [MINUTE, "About 1 min ago"],
+    [1.4 * MINUTE, "About 1 min ago"],
+    [2.5 * MINUTE, "About 3 min ago"],
+    [59.4 * MINUTE, "About 59 min ago"],
+    [59.6 * MINUTE, "About 1 hr ago"],
+    [90 * MINUTE, "About 2 hr ago"],
+    [23.4 * HOUR, "About 23 hr ago"],
+    [23.6 * HOUR, "About 1 day ago"],
+    [1.4 * DAY, "About 1 day ago"],
+    [1.5 * DAY, "About 2 days ago"],
+    [30 * DAY, "About 30 days ago"],
+  ])("%d ms ago → %s", (elapsed, text) => {
+    expect(heartbeatAgo(ago(elapsed), NOW)).toBe(text);
+  });
+
+  it("says less than a minute for a heartbeat stamped after the browser's clock", () => {
+    expect(heartbeatAgo(new Date(NOW.getTime() + 5_000), NOW)).toBe("Less than a minute ago");
+  });
+});
+
+describe("latestHeartbeat", () => {
+  it("picks the later time, skipping missing ones", () => {
+    expect(latestHeartbeat(ago(HOUR), ago(MINUTE))).toEqual(new Date(ago(MINUTE)));
+    expect(latestHeartbeat(ago(MINUTE), ago(HOUR))).toEqual(new Date(ago(MINUTE)));
+    expect(latestHeartbeat(null, ago(HOUR))).toEqual(new Date(ago(HOUR)));
+    expect(latestHeartbeat(ago(HOUR), undefined)).toEqual(new Date(ago(HOUR)));
+    expect(latestHeartbeat(null, undefined)).toBeNull();
   });
 });
 

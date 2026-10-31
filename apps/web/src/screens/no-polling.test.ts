@@ -8,6 +8,14 @@ import { describe, expect, it } from "vitest";
 // (TOOL-632). No query of theirs, nor of the shared components the Repos epic (TOOL-645) built
 // for them and Settings, sets a `refetchInterval` of its own; `refetchInterval: false` (a query
 // that must never poll, like a story's diff from GitHub or GitLab) is the one value allowed.
+//
+// The one exception is the agent panel's last-heartbeat badge (TOOL-928): steady heartbeats
+// publish no change event, so it polls the agent's Redis last-seen every `LAST_SEEN_POLL_MS`.
+
+/** Polls allowed despite the rule above, as `file` → the `refetchInterval` value it may use. */
+const ALLOWED: Record<string, string> = {
+  "src/screens/fleet/queries.ts": "LAST_SEEN_POLL_MS",
+};
 
 const WEB = path.resolve(__dirname, "../..");
 const SCANNED = [
@@ -52,7 +60,11 @@ function pollingIntervals(file: string): string[] {
         : null;
     if (
       name === "refetchInterval" &&
-      !(ts.isPropertyAssignment(node) && node.initializer.kind === ts.SyntaxKind.FalseKeyword)
+      !(
+        ts.isPropertyAssignment(node) &&
+        (node.initializer.kind === ts.SyntaxKind.FalseKeyword ||
+          node.initializer.getText(source) === ALLOWED[file])
+      )
     ) {
       const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
       found.push(`${file}:${line + 1}`);

@@ -6,9 +6,11 @@ import { useQueryKeys } from "@/components/query-provider";
 import { api } from "@/lib/api/client";
 import {
   agentDetailSchema,
+  agentLastSeenSchema,
   agentListSchema,
   enrollmentStatusSchema,
   type AgentDetail,
+  type AgentLastSeen,
   type AgentList,
   type CreatedEnrollment,
   type EnrollmentStatus,
@@ -27,6 +29,7 @@ export function fleetKeys(keys: QueryKeys) {
     lists: keys.agents.lists,
     list: (scope: string): QueryKey => keys.agents.list({ organization: scope }),
     detail: (agentId: string): QueryKey => keys.agents.detail(agentId),
+    lastSeen: (agentId: string): QueryKey => keys.agents.part(agentId, "last-seen"),
     enrollment: (enrollmentId: string): QueryKey => [
       ...keys.agents.lists,
       "enrollment",
@@ -67,6 +70,29 @@ export function useAgentDetail(agentId: string) {
     queryKey: fleetKeys(keys).detail(agentId),
     queryFn: ({ signal }) =>
       api.get(`/api/ui/agents/${encodeURIComponent(agentId)}`, agentDetailSchema, {
+        organizationId: organization.id,
+        signal,
+      }),
+  });
+}
+
+/** How often the open agent panel polls the agent's last heartbeat (and its badge ticks). */
+export const LAST_SEEN_POLL_MS = 10_000;
+
+/**
+ * The agent's last heartbeat from Redis (`GET /api/ui/agents/{id}/last-seen`), polled every
+ * 10 s while the panel is mounted and the document is visible (no polling in the
+ * background): steady heartbeats publish no change event to refetch on.
+ */
+export function useAgentLastSeen(agentId: string) {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery<AgentLastSeen>({
+    queryKey: fleetKeys(keys).lastSeen(agentId),
+    refetchInterval: LAST_SEEN_POLL_MS,
+    refetchIntervalInBackground: false,
+    queryFn: ({ signal }) =>
+      api.get(`/api/ui/agents/${encodeURIComponent(agentId)}/last-seen`, agentLastSeenSchema, {
         organizationId: organization.id,
         signal,
       }),
