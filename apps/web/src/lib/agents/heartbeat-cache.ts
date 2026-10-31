@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash, randomInt } from "node:crypto";
 import type { HeartbeatResponse } from "@omniralph/shared";
+import { nextDailyWindow } from "@/lib/daily-window";
 import { EPOCH_KEY, getRedis, hotStateEnabled, writeHotState } from "@/lib/hot-state";
 import { LATEST_MAX_AGE_MS } from "./desired-version";
 import {
@@ -21,11 +22,13 @@ import { latestAgentVersion, NpmRegistryError } from "./npm";
  * (`bumpAgentHeartbeat`, `bumpOrganizationHeartbeat`), so the next heartbeat that
  * finds both counters, the epoch and its own report unchanged gets the cached response
  * without a Postgres query. The epoch check covers a bump that failed (`writeHotState`
- * then deletes the epoch); `CACHED_RESPONSE_TTL_MS` bounds anything else that slips
- * through, such as a write that forgot to bump. A cached response that reaches that bound
- * with its counters unchanged is checked for drift: the heartbeat builds the response
- * from Postgres anyway, and `checkHeartbeatDrift` logs the cached fields that differ (a
- * missed bump) before the fresh one is stored.
+ * then deletes the epoch); the daily window bounds anything else that slips through, such
+ * as a write that forgot to bump: a cached response is due at the first heartbeat after the
+ * next window start following its build (`cachedResponseDueAt`), so every idle agent's
+ * heartbeat reaches Postgres in the window Neon is awake for anyway. A cached response that
+ * reaches that bound with its counters unchanged is checked for drift: the heartbeat builds
+ * the response from Postgres anyway, and `checkHeartbeatDrift` logs the cached fields that
+ * differ (a missed bump) before the fresh one is stored.
  *
  * An organization that tracks npm's `latest` also needs it unchanged: it's read from
  * `agent-latest-version:{org}` (refreshed from npm, not Postgres, once it's older
@@ -36,13 +39,12 @@ const RESPONSE_PREFIX = "heartbeat-response:";
 const AGENT_CHANGES_PREFIX = "heartbeat-changes:agent:";
 const ORGANIZATION_CHANGES_PREFIX = "heartbeat-changes:org:";
 const LATEST_PREFIX = "agent-latest-version:";
-/** How long a cached response is used at most, whatever the counters say. */
-export const CACHED_RESPONSE_TTL_MS = 24 * 3600_000;
 /**
- * How long Redis keeps a cached response: past `CACHED_RESPONSE_TTL_MS`, so the heartbeat
- * that finds it due still has it to compare with the fresh one.
+ * How long Redis keeps a cached response: a day past the latest it can be due (the next
+ * window, at most a day after its build), so the heartbeat that finds it due still has it
+ * to compare with the fresh one.
  */
-export const CACHED_RESPONSE_KEEP_MS = 2 * CACHED_RESPONSE_TTL_MS;
+export const CACHED_RESPONSE_KEEP_MS = 48 * 3600_000;
 /** Counters outlive any response cached with them; one created afresh starts at a random value. */
 const CHANGES_TTL_MS = 30 * 24 * 3600_000;
 const LATEST_TTL_MS = 24 * 3600_000;
@@ -74,10 +76,18 @@ export interface CachedHeartbeat {
   /** The `latest` its `desiredVersion` came from; absent when it didn't. */
   latestVersion?: string | null;
   /**
-   * It reached `CACHED_RESPONSE_TTL_MS`: don't use it, build the response from Postgres
+   * It reached `cachedResponseDueAt`: don't use it, build the response from Postgres
    * and `checkHeartbeatDrift` against it.
    */
   due: boolean;
+}
+
+/**
+ * When a response built at `builtAt` (ms) stops being used, whatever the counters say: the
+ * start of the first daily window after it was built.
+ */
+export function cachedResponseDueAt(builtAt: number): number {
+  return nextDailyWindow(new Date(builtAt));
 }
 
 export function heartbeatResponseKey(agentId: string): string {
@@ -189,7 +199,7 @@ export interface CachedHeartbeatOptions {
 /**
  * The cached response for a heartbeat with no running jobs or acknowledgements, when
  * nothing it was built from changed; records the heartbeat's last-seen either way. Null,
- * or `due` (it reached `CACHED_RESPONSE_TTL_MS`), means the caller takes the Postgres
+ * or `due` (it reached `cachedResponseDueAt`), means the caller takes the Postgres
  * path. Makes no Postgres query.
  */
 export async function cachedHeartbeatResponse(
@@ -224,8 +234,7 @@ export async function cachedHeartbeatResponse(
       const latest = await currentLatestVersion(organizationId, now, options);
       if (latest === undefined || latest !== entry.latestVersion) return null;
     }
-    const due =
-      entry.builtAt === undefined || now.getTime() - entry.builtAt >= CACHED_RESPONSE_TTL_MS;
+    const due = entry.builtAt === undefined || now.getTime() >= cachedResponseDueAt(entry.builtAt);
     return {
       response: entry.response,
       ...(entry.latestVersion !== undefined && { latestVersion: entry.latestVersion }),
@@ -281,7 +290,7 @@ function canonicalJson(value: unknown): string {
 }
 
 /**
- * Compares a cached response that reached `CACHED_RESPONSE_TTL_MS` with its counters and
+ * Compares a cached response that reached `cachedResponseDueAt` with its counters and
  * epoch unchanged against the one just built from Postgres. A field that differs means a
  * write changed the response without bumping a counter: logs an error naming the agent,
  * the organization and the fields (not their values). `desiredVersion` and
