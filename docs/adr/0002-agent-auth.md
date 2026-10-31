@@ -205,7 +205,15 @@ rotation and a `token_refresh` audit row in Postgres per refresh) moved to Redis
 - **Fallback.** With Redis down, refresh rotates and audits in Postgres, with the
   same comparison. Postgres's generation is up to a day behind Redis's (the last
   flush), so during a fallback a stolen token from since that flush is accepted
-  once, as after Redis loses state.
+  once, as after Redis loses state. When Redis answered (another instance was
+  rebuilding, or the script failed), the rotation is then recorded in Redis
+  without lowering a newer generation, so a rebuild that read Postgres before the
+  commit doesn't leave the used token current. When the script may have run (its
+  reply lost) and the Postgres fallback fails too, the client gets an error and
+  retries with the token it has: the presented token is put back in Redis unless
+  another rotation happened since. If Redis fails that as well, the retry is reuse
+  and revokes the agent; it must re-enroll, as after a crash between rotation and
+  persisting the token (below).
 - **Why.** The access token is presented on every request, so it's the credential
   most likely to leak, and until someone notices, its lifetime is the only limit.
   Rotation with reuse detection notices a stolen refresh token without a person,
