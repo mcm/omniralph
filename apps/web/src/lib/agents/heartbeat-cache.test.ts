@@ -54,12 +54,17 @@ const { PostgresDispatcher } = await import("@/lib/dispatch/dispatcher");
 const { jobDueKey } = await import("@/lib/dispatch/due");
 const {
   CACHED_RESPONSE_KEEP_MS,
+  agentChangesKey,
+  bumpAgentHeartbeat,
+  bumpOrganizationHeartbeat,
   cachedResponseDueAt,
   checkHeartbeatDrift,
   heartbeatResponseKey,
   latestVersionKey,
+  organizationChangesKey,
 } = await import("./heartbeat-cache");
 const { currentDailyWindow } = await import("@/lib/daily-window");
+const { agentOrganizationKey } = await import("./organization");
 const { agentReportKey } = await import("./last-seen");
 const defaults = await import("./defaults");
 const { pinRepository } = await import("./pins");
@@ -480,6 +485,44 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     expect(after.calls).toBeGreaterThan(0);
     expect(after.response.desiredVersion).toBe("2.1.0");
     expect(after.response.versionPolicy).toBe("latest");
+  });
+
+  const DAY_MS = 24 * 3600_000;
+
+  /**
+   * Expects `key` to expire at a daily window start, between `minDays` and `maxDays` days from
+   * now: a key whose expiry sends the next request to Postgres sends it in the window.
+   */
+  async function expectExpiresAtWindow(key: string, minDays: number, maxDays: number) {
+    const pttl = await getRedis().pttl(key);
+    const expiresAt = Date.now() + pttl;
+    // Within the few seconds since the key was set of a window start.
+    const window = currentDailyWindow(new Date(expiresAt + 5_000));
+    expect(Math.abs(expiresAt - window)).toBeLessThan(5_000);
+    expect(pttl).toBeGreaterThan(minDays * DAY_MS - 5_000);
+    expect(pttl).toBeLessThanOrEqual(maxDays * DAY_MS);
+  }
+
+  it("expires the cached organization and the change counters at a daily window start", async () => {
+    const { agentId, orgId } = await newAgent();
+    await warm(agentId);
+    const builtAt = Date.now();
+    await expectExpiresAtWindow(agentOrganizationKey(agentId), 6, 7);
+    await expectExpiresAtWindow(agentChangesKey(agentId), 29, 30);
+    await expectExpiresAtWindow(organizationChangesKey(orgId), 29, 30);
+    // A response cached with the counters is due before they expire, so a counter recreated at
+    // a new value never sends a heartbeat to Postgres before its window.
+    expect(cachedResponseDueAt(builtAt)).toBeLessThan(
+      Date.now() + (await getRedis().pttl(agentChangesKey(agentId))),
+    );
+
+    // A bump keeps the expiry at a window start.
+    await getRedis().pexpire(agentChangesKey(agentId), 60_000);
+    await getRedis().pexpire(organizationChangesKey(orgId), 60_000);
+    await bumpAgentHeartbeat(agentId);
+    await bumpOrganizationHeartbeat(orgId);
+    await expectExpiresAtWindow(agentChangesKey(agentId), 29, 30);
+    await expectExpiresAtWindow(organizationChangesKey(orgId), 29, 30);
   });
 
   /** Sets the cached response's build time (ms). */

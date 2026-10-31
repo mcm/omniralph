@@ -31,9 +31,10 @@ export function nextDailyWindow(now: Date): number {
 }
 
 /**
- * How long from `now` until the next window starts (ms, always > 0): the TTL of a cached key
- * whose expiry sends the next request to Postgres, so that request lands in the window.
+ * How long from `now` until the next window starts, plus `wholeDays` days (ms, always > 0): the
+ * TTL of a cached key whose expiry sends the next request to Postgres, so that request lands in
+ * a window.
  */
-export function msUntilNextDailyWindow(now: Date): number {
-  return nextDailyWindow(now) - now.getTime();
+export function msUntilNextDailyWindow(now: Date, wholeDays = 0): number {
+  return nextDailyWindow(now) + wholeDays * DAY_MS - now.getTime();
 }

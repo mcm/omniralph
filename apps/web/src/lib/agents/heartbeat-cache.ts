@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash, randomInt } from "node:crypto";
 import type { HeartbeatResponse } from "@omniralph/shared";
-import { nextDailyWindow } from "@/lib/daily-window";
+import { msUntilNextDailyWindow, nextDailyWindow } from "@/lib/daily-window";
 import { EPOCH_KEY, getRedis, hotStateEnabled, writeHotState } from "@/lib/hot-state";
 import { LATEST_MAX_AGE_MS } from "./desired-version";
 import {
@@ -45,8 +45,18 @@ const LATEST_PREFIX = "agent-latest-version:";
  * to compare with the fresh one.
  */
 export const CACHED_RESPONSE_KEEP_MS = 48 * 3600_000;
-/** Counters outlive any response cached with them; one created afresh starts at a random value. */
-const CHANGES_TTL_MS = 30 * 24 * 3600_000;
+/**
+ * Counters outlive any response cached with them; one created afresh starts at a random value.
+ * They expire at a daily window start, about 30 days after they were set or last bumped: a
+ * response cached with a counter is due by then anyway (`cachedResponseDueAt`), so the counter's
+ * new value doesn't send a heartbeat to Postgres outside the window.
+ */
+const CHANGES_TTL_EXTRA_DAYS = 29;
+
+/** How long a change counter set or bumped at `now` lives. */
+export function changesTtlMs(now: Date): number {
+  return msUntilNextDailyWindow(now, CHANGES_TTL_EXTRA_DAYS);
+}
 const LATEST_TTL_MS = 24 * 3600_000;
 
 /** The response fields that don't depend on the request's Ably token or claimable pools. */
@@ -117,7 +127,8 @@ async function bump(keys: string[]): Promise<void> {
   if (keys.length === 0) return;
   await writeHotState(async (redis) => {
     const multi = redis.multi();
-    for (const key of keys) multi.incr(key).pexpire(key, CHANGES_TTL_MS);
+    const ttl = changesTtlMs(new Date());
+    for (const key of keys) multi.incr(key).pexpire(key, ttl);
     const results = await multi.exec();
     if (!results || results.some(([error]) => error)) throw new Error("MULTI failed");
   });
@@ -148,10 +159,11 @@ export async function readHeartbeatChanges(
   try {
     const agentKey = agentChangesKey(agentId);
     const organizationKey = organizationChangesKey(organizationId);
+    const ttl = changesTtlMs(new Date());
     const results = await getRedis()
       .multi()
-      .set(agentKey, String(randomInt(2 ** 47)), "PX", CHANGES_TTL_MS, "NX")
-      .set(organizationKey, String(randomInt(2 ** 47)), "PX", CHANGES_TTL_MS, "NX")
+      .set(agentKey, String(randomInt(2 ** 47)), "PX", ttl, "NX")
+      .set(organizationKey, String(randomInt(2 ** 47)), "PX", ttl, "NX")
       .mget(EPOCH_KEY, agentKey, organizationKey)
       .exec();
     if (!results || results.some(([error]) => error)) throw new Error("MULTI failed");
