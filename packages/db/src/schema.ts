@@ -1296,6 +1296,14 @@ export const agents = pgTable(
      */
     liveOnline: boolean("live_online").notNull().default(false),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    /**
+     * The agent's current signed refresh token (TOOL-856): its generation and the
+     * `hashToken()` of its random ID. Redis holds the live values while hot state is on;
+     * the daily `flush-agent-auth` cron writes them here. Null until the agent holds a
+     * signed refresh token (enrolled before TOOL-856 and not refreshed since).
+     */
+    refreshGeneration: integer("refresh_generation"),
+    refreshTokenIdHash: text("refresh_token_id_hash"),
     /** Soft delete (always after revoking): deleted agents are hidden everywhere. */
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     enrolledBy: text("enrolled_by").references(() => users.id, { onDelete: "set null" }),
@@ -1324,9 +1332,9 @@ export const agentEnrollments = pgTable("agent_enrollments", {
 });
 
 /**
- * Opaque refresh tokens an agent exchanges for one-day access JWTs. Every refresh marks the
- * presented token used and issues a new one in the same family; presenting a used token again
- * revokes the family and the agent (theft detection).
+ * Opaque refresh tokens from before TOOL-856. Presenting an unused one marks it used and issues
+ * a signed refresh token (`agents.refresh_generation`); presenting a used one again revokes the
+ * family and the agent (theft detection). New agents get signed refresh tokens only.
  */
 export const agentRefreshTokens = pgTable(
   "agent_refresh_tokens",

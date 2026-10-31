@@ -272,7 +272,7 @@ that isn't valid when the agent starts stops it with an error naming the key.
 [installables.md](installables.md) explains installables, host tools and how these keys lock a
 host down.
 
-The refresh token rotates about once a day and is rewritten atomically. **Never copy the file to
+The refresh token rotates about every 12 minutes and is rewritten atomically. **Never copy the file to
 another host or restore an old backup of it**: presenting an old refresh token looks like token
 theft and revokes the agent (see _Re-enrollment_). To run another agent, enroll it separately.
 

@@ -97,22 +97,25 @@ code-host or Vercel credentials. Their identity is:
   random, valid 1 hour, single use, stored as a SHA-256 hash).
   `POST /api/harness/enroll` consumes it, creates the harness and returns
   `{ harnessId, refreshToken }`.
-- **Refresh tokens.** Opaque 256-bit random values; only their SHA-256 hash is
-  stored (`harness_refresh_tokens`). The harness keeps its token in a 0600 file
-  (`~/.config/omniralph/harness.json`). `POST /api/harness/token` marks the
-  presented token used and returns a new one in the same **family** plus an
-  access token (rotation on every refresh).
-- **Reuse detection.** Presenting an already-used refresh token means two
-  parties hold the chain (theft or a cloned host): the whole family **and the
-  harness** are revoked (`harnesses.revoked_at`), a `refresh_reuse` audit row is
-  written, and the harness has to re-enroll. The rotation runs in a transaction
-  with the token row locked, so concurrent presentations resolve to one
-  rotation and one reuse.
+- **Refresh tokens.** RS256 JWTs signed like access tokens (since TOOL-856; see
+  _Write-free token refresh_ below): `typ: "refresh"`, `sub: harnessId`, a
+  generation `gen` and a random ID `jti`, valid 90 days. The harness keeps its
+  token in a 0600 file (`~/.config/omniralph/harness.json`).
+  `POST /api/harness/token` replaces the presented token with the next generation
+  plus an access token (rotation on every refresh). Opaque tokens from before
+  (`orr_`, hashed in `harness_refresh_tokens`) are redeemed once for a signed one.
+- **Reuse detection.** Presenting an already-used refresh token (an older
+  generation, or the current generation with another random ID) means two
+  parties hold the chain (theft or a cloned host): **the harness** is revoked
+  (`harnesses.revoked_at`), a `refresh_reuse` audit row is written, and the
+  harness has to re-enroll. The comparison is atomic (a Redis script, or a
+  transaction with the harness row locked), so concurrent presentations resolve
+  to one rotation and one reuse.
 - **Access and job tokens.** **RS256** JWTs signed by
   **Vercel KMS** (`signJWT`, issuer `KMS_AGENT_ISSUER_ID`, one issuer per Vercel
-  environment), so no signing key ever sits in an env var. Access tokens last a
-  day (`AGENT_ACCESS_TOKEN_TTL_SECONDS`, 86,400s; see _Access-token lifetime_
-  below), job tokens 900s (`JOB_TOKEN_TTL_SECONDS`). Both carry
+  environment), so no signing key ever sits in an env var. Access tokens last
+  900s (`AGENT_ACCESS_TOKEN_TTL_SECONDS`; see _Write-free token refresh_ below),
+  job tokens 900s (`JOB_TOKEN_TTL_SECONDS`). Both carry
   `aud: "omniralph-harness"`; tokens with the audience from before the
   rename are rejected. Access tokens: `typ: "harness"`, `sub: harnessId`. Job tokens
   (issued when a job is claimed and renewed by the heartbeat): `typ: "job"`,
@@ -152,7 +155,7 @@ code-host or Vercel credentials. Their identity is:
   refresh, refresh reuse, revoke, credential issuance, results and auth
   failures (sampled to one per harness per minute).
 
-### Access-token lifetime (TOOL-276)
+### Access-token lifetime (TOOL-276, superseded by TOOL-856)
 
 Access tokens were 900s, like job tokens, so each agent refreshed about every 12
 minutes (at 80% of `expiresIn`): about 840 refreshes a day for 6 agents, each one
@@ -176,15 +179,47 @@ the `token_refresh` audit row are unchanged and stay in Postgres.
   `expiresIn` from the signed token's own `exp - iat` (capped at a day), so the
   agent still refreshes in time.
 
+### Write-free token refresh (TOOL-856)
+
+Access tokens are back to 900s: the agent refreshes at 80% of `expiresIn`, about
+every 12 minutes, with no agent change. What made that expensive (a refresh-token
+rotation and a `token_refresh` audit row in Postgres per refresh) moved to Redis
+([ADR 0007](0007-redis-hot-state.md), _Write-free token refresh_):
+
+- **Signed refresh tokens.** The token carries the agent ID, a generation and a
+  random ID. Redis holds each agent's current generation and the hash of its
+  random ID (hot state, rebuilt from `agents.refresh_generation`). The same
+  generation and random ID rotates; an older generation, or the same generation
+  with another random ID, is reuse and revokes the agent, as before.
+- **A newer generation than Redis knows** is possible only after Redis lost state
+  (it was rebuilt from Postgres, which the daily flush updates). It's accepted once
+  and Redis catches up. The random-ID check means an attacker and the real agent
+  can't both keep refreshing afterwards: whichever presents the shared token second
+  is behind, and the agent is revoked.
+- **Audit.** `token_refresh` rows are buffered in Redis and written by the
+  `flush-agent-auth` cron in the daily window (03:15 UTC), about 120 per agent per
+  day; rows buffered since the last window are lost if Redis loses its state.
+- **Fallback.** With Redis down, refresh rotates and audits in Postgres, with the
+  same comparison.
+- **Why.** The access token is presented on every request, so it's the credential
+  most likely to leak, and until someone notices, its lifetime is the only limit.
+  Rotation with reuse detection notices a stolen refresh token without a person,
+  and only quickly when refreshes are frequent. Short lifetimes plus rotation is
+  the strong combination; its remaining weakness (reuse detection right after
+  Redis loses state, above) is much narrower than a 24 h access token.
+- **Signing.** Refresh tokens are RS256 like every other token (no HS\* keys), so
+  each refresh costs two KMS signatures. A signed token is about 700 characters;
+  `TokenRequest` accepts up to 4,096.
+
 ### Consequences
 
-- A leaked job token is usable for at most 15 minutes and a leaked access token
-  for at most a day; both are cut off immediately by revoking the harness. A
+- A leaked job token or access token is usable for at most 15 minutes; both are cut off immediately by revoking the harness. A
   leaked refresh token is detected the next time either holder refreshes.
 - A Claude session can never push, even for coding runs: only the harness's
   `lifecycle` token can, and the session never sees it.
 - Every authenticated harness request costs one indexed database lookup.
-- Each refresh costs one KMS signature; harnesses refresh about once a day.
+- Each refresh costs two KMS signatures (access and refresh token); harnesses
+  refresh about every 12 minutes.
 - A harness that crashes between the control panel rotating its token and
   persisting the new one will present the old token and be revoked; it must
   re-enroll. The harness writes the new token atomically before using it.

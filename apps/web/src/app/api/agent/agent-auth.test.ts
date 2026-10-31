@@ -1,10 +1,11 @@
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import {
   agentRefreshTokens,
   agents,
   createAgentEnrollment,
   closeDb,
   createDb,
+  hashToken,
   jobs,
   listAgentAudit,
   organizations,
@@ -33,7 +34,8 @@ const { POST: enroll } = await import("./enroll/route");
 const { POST: token } = await import("./token/route");
 const { requireAgent, requireJob } = await import("@/lib/agent-auth/verify");
 const { revokeAgent } = await import("@/lib/agent-auth/revoke");
-const { getTokenSigner, LocalTokenSigner } = await import("@/lib/agent-auth/signer");
+const { AGENT_REFRESH_TOKEN_TTL_SECONDS, getTokenSigner, LocalTokenSigner } =
+  await import("@/lib/agent-auth/signer");
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -159,7 +161,8 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
         agentId: string;
         refreshToken: string;
       };
-      expect(refreshToken).toMatch(/^orr_[\w-]{43}$/);
+      // A signed refresh token of the first generation.
+      expect(decodeJwt(refreshToken)).toMatchObject({ typ: "refresh", sub: agentId, gen: 1 });
 
       const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
       // The agent joins the enrollment's organization.
@@ -168,13 +171,9 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
         name: "Build box",
         reportedVersion: "0.1.0",
         revokedAt: null,
+        refreshGeneration: 1,
       });
-      const tokens = await db
-        .select()
-        .from(agentRefreshTokens)
-        .where(eq(agentRefreshTokens.agentId, agentId));
-      expect(tokens).toHaveLength(1);
-      expect(tokens[0]!.tokenHash).not.toContain(refreshToken);
+      expect(agent!.refreshTokenIdHash).not.toBe(decodeJwt(refreshToken).jti);
 
       const audit = await listAgentAudit(db, { agentId, event: "enroll" });
       expect(audit).toHaveLength(1);
@@ -202,8 +201,21 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
     });
   });
 
+  /** A legacy opaque refresh token (from before TOOL-856) for a new agent. */
+  async function legacyToken() {
+    const { agentId } = await enrollNew();
+    const refreshToken = `orr_${randomBytes(32).toString("base64url")}`;
+    await db.insert(agentRefreshTokens).values({
+      agentId,
+      familyId: randomUUID(),
+      tokenHash: hashToken(refreshToken),
+    });
+    return { agentId, refreshToken };
+  }
+
+  // Hot state is off here: refreshes rotate in Postgres (`refresh.test.ts` covers Redis).
   describe("POST /api/agent/token", () => {
-    it("rotates the refresh token and returns a one-day access token", async () => {
+    it("rotates the refresh token and returns a 15-minute access token", async () => {
       const { agentId, refreshToken } = await enrollNew();
       const ip = newIp();
       const res = await refresh(refreshToken, ip);
@@ -213,28 +225,23 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
         expiresIn: number;
         refreshToken: string;
       };
-      expect(body.expiresIn).toBe(86_400);
+      expect(body.expiresIn).toBe(900);
       const { exp, iat } = decodeJwt(body.accessToken);
-      expect(exp! - iat!).toBe(86_400);
-      expect(body.refreshToken).not.toBe(refreshToken);
+      expect(exp! - iat!).toBe(900);
+      expect(decodeJwt(body.refreshToken)).toMatchObject({ sub: agentId, gen: 2 });
 
       const principal = await requireAgent(authed(body.accessToken, ip));
       expect(principal).toEqual({ agentId });
 
-      // The new token works and belongs to the same family.
       const next = await refresh(body.refreshToken, ip);
       expect(next.status).toBe(200);
-      const rows = await db
-        .select()
-        .from(agentRefreshTokens)
-        .where(eq(agentRefreshTokens.agentId, agentId));
-      expect(rows).toHaveLength(3);
-      expect(new Set(rows.map((r) => r.familyId)).size).toBe(1);
-      expect(rows.filter((r) => r.usedAt === null)).toHaveLength(1);
-      expect(await listAgentAudit(db, { agentId, event: "token_refresh" })).toHaveLength(2);
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent!.refreshGeneration).toBe(3);
+      const audit = await listAgentAudit(db, { agentId, event: "token_refresh" });
+      expect(audit.map((a) => a.detail)).toEqual([{ generation: 1 }, { generation: 2 }]);
     });
 
-    it("revokes the family and the agent when a used refresh token is presented again", async () => {
+    it("revokes the agent when a used refresh token is presented again", async () => {
       const { agentId, refreshToken } = await enrollNew();
       const first = (await (await refresh(refreshToken)).json()) as {
         accessToken: string;
@@ -247,16 +254,40 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
 
       const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
       expect(agent!.revokedAt).not.toBeNull();
-      const rows = await db
-        .select()
-        .from(agentRefreshTokens)
-        .where(eq(agentRefreshTokens.agentId, agentId));
-      expect(rows.every((r) => r.revokedAt !== null)).toBe(true);
       expect(await listAgentAudit(db, { agentId, event: "refresh_reuse" })).toHaveLength(1);
 
       // The legitimate holder's newer token and access token are dead too: re-enroll.
       expect((await refresh(first.refreshToken)).status).toBe(401);
       expect(await requireAgent(authed(first.accessToken, newIp()))).toBeInstanceOf(Response);
+    });
+
+    it("treats another token of the current generation as reuse", async () => {
+      const { agentId } = await enrollNew();
+      // Signed by us, with the right generation but not the random ID on record.
+      const copy = await getTokenSigner().signRefreshToken({
+        agentId,
+        generation: 1,
+        tokenId: "x",
+      });
+      expect((await refresh(copy)).status).toBe(401);
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent!.revokedAt).not.toBeNull();
+    });
+
+    it("accepts a newer generation than recorded once", async () => {
+      // Postgres lags behind Redis until the daily flush: the agent's token is newer.
+      const { agentId } = await enrollNew();
+      const ahead = await getTokenSigner().signRefreshToken({
+        agentId,
+        generation: 7,
+        tokenId: "y",
+      });
+      const res = await refresh(ahead);
+      expect(res.status).toBe(200);
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent!.refreshGeneration).toBe(8);
+      // Whoever else holds that token is now behind.
+      expect((await refresh(ahead)).status).toBe(401);
     });
 
     it("treats concurrent presentations of one token as reuse", async () => {
@@ -269,8 +300,40 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
       expect(agent!.revokedAt).not.toBeNull();
     });
 
-    it("rejects unknown refresh tokens", async () => {
-      expect((await refresh("orr_unknown")).status).toBe(401);
+    it("rejects refresh tokens we didn't sign, access tokens and expired ones", async () => {
+      const { agentId, accessToken } = await accessTokenFor();
+      const forged = await new LocalTokenSigner({ env: {} }).signRefreshToken({
+        agentId,
+        generation: 99,
+        tokenId: "z",
+      });
+      const past = new LocalTokenSigner({
+        privateKey: SIGNING_KEY,
+        env: {},
+        now: () => Date.now() - (AGENT_REFRESH_TOKEN_TTL_SECONDS + 1) * 1000,
+      });
+      const expired = await past.signRefreshToken({ agentId, generation: 99, tokenId: "z" });
+      for (const presented of [forged, accessToken, expired, "orr_unknown"]) {
+        expect((await refresh(presented)).status).toBe(401);
+      }
+      // None of them revoked the agent.
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent!.revokedAt).toBeNull();
+    });
+
+    it("redeems a legacy refresh token once for a signed one", async () => {
+      const { agentId, refreshToken } = await legacyToken();
+      const res = await refresh(refreshToken);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { refreshToken: string };
+      expect(decodeJwt(body.refreshToken)).toMatchObject({ sub: agentId, gen: 1 });
+      expect((await refresh(body.refreshToken)).status).toBe(200);
+
+      // Presenting the legacy token again is reuse.
+      const reuse = await refresh(refreshToken);
+      expect(await reuse.json()).toEqual({ error: "refresh_token_reused" });
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent!.revokedAt).not.toBeNull();
     });
   });
 

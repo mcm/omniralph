@@ -7,7 +7,7 @@ import {
   createAgentEnrollment,
   enrollAgent,
   revokeAgent,
-  rotateRefreshToken,
+  rotateSignedRefreshToken,
 } from "./agent-auth.js";
 import { markAgentLiveOnline, markAgentsLiveOffline } from "./agents.js";
 import { captureChanges } from "./changes.js";
@@ -266,6 +266,7 @@ describe.skipIf(!databaseAvailable)("host tool waits", () => {
       enrollmentToken: token,
       name: "agent",
       version: "2.0.4",
+      issueRefreshToken: async () => ({ token: "signed", generation: 1, tokenIdHash: "first" }),
     });
     await db
       .update(agents)
@@ -274,8 +275,13 @@ describe.skipIf(!databaseAvailable)("host tool waits", () => {
     const job = await enqueue(org, ["gh"]);
     expect(job.waitingReason).toBeNull();
 
-    await rotateRefreshToken(db, enrolled!.refreshToken);
-    expect((await rotateRefreshToken(db, enrolled!.refreshToken)).status).toBe("reused");
+    const first = { generation: 1, tokenIdHash: "first" };
+    const next = { generation: 2, tokenIdHash: "second" };
+    const agentId = enrolled!.agentId;
+    await rotateSignedRefreshToken(db, { agentId, presented: first, next });
+    expect((await rotateSignedRefreshToken(db, { agentId, presented: first, next })).status).toBe(
+      "reused",
+    );
     expect(await reasonOf(job.id)).toEqual({ code: "host_tools_missing", hostTools: ["gh"] });
   });
 

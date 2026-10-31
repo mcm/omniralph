@@ -6,6 +6,7 @@
     { "path": "/api/cron/agent-liveness", "schedule": "* * * * *" },
     { "path": "/api/cron/chat-run-events", "schedule": "* * * * *" },
     { "path": "/api/cron/expire-jobs", "schedule": "0 * * * *" },
+    { "path": "/api/cron/flush-agent-auth", "schedule": "15 3 * * *" },
     { "path": "/api/cron/gitlab-maintenance", "schedule": "15 3 * * *" },
     { "path": "/api/cron/model-prices", "schedule": "15 3 * * *" },
     { "path": "/api/cron/prune-hidden-refs", "schedule": "15 3 * * *" },
