@@ -68,9 +68,21 @@ export async function issueRefreshToken(
   return { token, generation, tokenIdHash: hashToken(tokenId) };
 }
 
-/** Records an agent's new refresh token in Redis; call after its Postgres commit. */
+/**
+ * Records an agent's new refresh token in Redis; call after its Postgres commit. Raise-only
+ * (as the rebuild's merge): a newer generation already in Redis stays.
+ */
 export async function cacheRefreshToken(agentId: string, state: RefreshTokenState): Promise<void> {
-  await writeHotState((redis) => redis.hset(REFRESH_TOKENS_KEY, agentId, encodeState(state)));
+  await writeHotState((redis) =>
+    redis.eval(
+      MERGE_SCRIPT,
+      1,
+      REFRESH_TOKENS_KEY,
+      agentId,
+      String(state.generation),
+      state.tokenIdHash,
+    ),
+  );
 }
 
 // Compares the presented token with the agent's current one (as `compareRefreshToken`);
@@ -113,6 +125,14 @@ const MERGE_SCRIPT = `for i = 1, #ARGV, 3 do
 end
 return 1`;
 
+// Puts the presented token back (ARGV: agent ID, next, presented) if the agent's token is
+// still the one the rotate script recorded: that token was never handed out.
+const UNDO_ROTATE_SCRIPT = `if redis.call('HGET', KEYS[1], ARGV[1]) == ARGV[2] then
+  redis.call('HSET', KEYS[1], ARGV[1], ARGV[3])
+  return 1
+end
+return 0`;
+
 /** A buffered audit row, as stored in `agent-refresh:audit`. */
 interface BufferedAudit {
   agentId: string;
@@ -143,11 +163,16 @@ export async function rotateRefreshTokenState(
 ): Promise<RefreshRotation> {
   const { agentId, presented, next, ip } = input;
   const detail = { generation: presented.generation };
+  // Whether Redis answered, and whether the rotate script may have run.
+  let reachable = false;
+  let scriptSent = false;
   if (hotStateEnabled()) {
     let rotation: RefreshRotation | undefined;
     try {
       const redis = getRedis();
-      if (await ensureHotStateEpoch(redis, db)) {
+      const trusted = await ensureHotStateEpoch(redis, db);
+      reachable = true;
+      if (trusted) {
         const state = await readAgentAuthState(db, agentId);
         if (state !== "active") {
           return {
@@ -157,6 +182,7 @@ export async function rotateRefreshTokenState(
           };
         }
         const audit: BufferedAudit = { agentId, ip, detail, createdAt: now.toISOString() };
+        scriptSent = true;
         const status = (await redis.eval(
           ROTATE_SCRIPT,
           3,
@@ -184,8 +210,31 @@ export async function rotateRefreshTokenState(
       return rotation;
     }
   }
-  const rotation = await rotateSignedRefreshToken(db, { agentId, presented, next }, now);
+  let rotation: RefreshRotation;
+  try {
+    rotation = await rotateSignedRefreshToken(db, { agentId, presented, next }, now);
+  } catch (error) {
+    // The client gets an error and retries with the presented token: if the script
+    // recorded the next one (its reply lost), put the presented one back, or the retry
+    // would be reuse. Best effort: with Redis failing too, the retry revokes the agent.
+    if (scriptSent) {
+      await getRedis()
+        .eval(
+          UNDO_ROTATE_SCRIPT,
+          1,
+          REFRESH_TOKENS_KEY,
+          agentId,
+          encodeState(next),
+          encodeState(presented),
+        )
+        .catch(() => undefined);
+    }
+    throw error;
+  }
   if (rotation.status === "rotated" || rotation.status === "caught_up") {
+    // A rebuild running elsewhere may have read Postgres before this commit; without this,
+    // Redis would keep the presented token as current and accept a copy of it once.
+    if (reachable) await cacheRefreshToken(agentId, next);
     await writeAgentAudit(db, { agentId, event: "token_refresh", ip, detail });
   }
   return rotation;

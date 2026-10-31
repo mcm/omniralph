@@ -35,7 +35,7 @@ const { GET: flushRoute } = await import("@/app/api/cron/flush-agent-auth/route"
 const { requireAgent } = await import("./verify");
 const { getTokenSigner } = await import("./signer");
 const { REFRESH_AUDIT_KEY, REFRESH_CHANGED_KEY } = await import("./refresh");
-const { EPOCH_KEY, closeRedis, getRedis } = await import("@/lib/hot-state");
+const { EPOCH_KEY, REBUILD_LOCK_KEY, closeRedis, getRedis } = await import("@/lib/hot-state");
 
 /** A database that fails any use: proves a refresh didn't touch Postgres. */
 const noPostgres = new Proxy({} as Database, {
@@ -235,6 +235,58 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("write-free token refresh
     await getRedis().del(EPOCH_KEY);
     expect((await refresh(older)).status).toBe(401);
     expect((await agentRow(agentId)).revokedAt).not.toBeNull();
+  });
+
+  it("records a rotation that fell back to Postgres during a rebuild", async () => {
+    const { agentId, refreshToken } = await enrollNew();
+    // Another instance is rebuilding: this refresh rotates in Postgres.
+    await getRedis().del(EPOCH_KEY);
+    await getRedis().set(REBUILD_LOCK_KEY, "another instance", "PX", 30_000);
+    let tokens: Tokens;
+    try {
+      tokens = await refreshed(refreshToken);
+    } finally {
+      // The rebuild finishes, having read Postgres before the rotation committed.
+      await getRedis().set(EPOCH_KEY, new Date().toISOString());
+      await getRedis().del(REBUILD_LOCK_KEY);
+    }
+    expect((await agentRow(agentId)).refreshGeneration).toBe(2);
+
+    // Redis has the rotated token: a copy of the old one is reuse, not accepted once.
+    expect(await (await refresh(refreshToken)).json()).toEqual({ error: "refresh_token_reused" });
+    expect((await agentRow(agentId)).revokedAt).not.toBeNull();
+    expect((await refresh(tokens.refreshToken)).status).toBe(401);
+  });
+
+  it("lets the agent retry when the script's reply is lost and Postgres fails too", async () => {
+    const { agentId, refreshToken } = await enrollNew();
+    const redis = getRedis();
+    const evalScript = redis.eval.bind(redis);
+    // The rotate script (three keys) runs, but its reply never arrives.
+    const lostReply = vi.spyOn(redis, "eval").mockImplementation((async (
+      ...args: Parameters<typeof redis.eval>
+    ) => {
+      const reply = await evalScript(...args);
+      if (args[1] === 3) throw new Error("connection reset");
+      return reply;
+    }) as typeof redis.eval);
+    state.db = new Proxy(db, {
+      get(target, property) {
+        if (property === "transaction") return () => Promise.reject(new Error("Postgres down"));
+        return Reflect.get(target, property) as unknown;
+      },
+    });
+    try {
+      await expect(refresh(refreshToken)).rejects.toThrow("Postgres down");
+    } finally {
+      lostReply.mockRestore();
+      state.db = db;
+    }
+
+    // The client never got the next token and retries with its own: not reuse.
+    const tokens = await refreshed(refreshToken);
+    expect(decodeJwt(tokens.refreshToken)).toMatchObject({ gen: 2 });
+    expect((await agentRow(agentId)).revokedAt).toBeNull();
   });
 
   describe("after Redis loses its state", () => {
