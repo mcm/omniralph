@@ -190,9 +190,12 @@ rotation and a `token_refresh` audit row in Postgres per refresh) moved to Redis
   random ID. Redis holds each agent's current generation and the hash of its
   random ID (hot state, rebuilt from `agents.refresh_generation`). The same
   generation and random ID rotates; an older generation, or the same generation
-  with another random ID, is reuse and revokes the agent, as before.
+  with another random ID, is reuse and revokes the agent, as before; its running
+  jobs are requeued (or failed, or canceled) and its pins removed, as when it's
+  revoked from the Agents page.
 - **A newer generation than Redis knows** is possible only after Redis lost state
-  (it was rebuilt from Postgres, which the daily flush updates). It's accepted once
+  (it was rebuilt from Postgres, which the daily flush updates), or when a refresh
+  fell back to Postgres while another instance was rebuilding. It's accepted once
   and Redis catches up. The random-ID check means an attacker and the real agent
   can't both keep refreshing afterwards: whichever presents the shared token second
   is behind, and the agent is revoked.
@@ -200,7 +203,9 @@ rotation and a `token_refresh` audit row in Postgres per refresh) moved to Redis
   `flush-agent-auth` cron in the daily window (03:15 UTC), about 120 per agent per
   day; rows buffered since the last window are lost if Redis loses its state.
 - **Fallback.** With Redis down, refresh rotates and audits in Postgres, with the
-  same comparison.
+  same comparison. Postgres's generation is up to a day behind Redis's (the last
+  flush), so during a fallback a stolen token from since that flush is accepted
+  once, as after Redis loses state.
 - **Why.** The access token is presented on every request, so it's the credential
   most likely to leak, and until someone notices, its lifetime is the only limit.
   Rotation with reuse detection notices a stolen refresh token without a person,

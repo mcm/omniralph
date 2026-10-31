@@ -33,7 +33,8 @@ const { POST: enroll } = await import("@/app/api/agent/enroll/route");
 const { POST: token } = await import("@/app/api/agent/token/route");
 const { GET: flushRoute } = await import("@/app/api/cron/flush-agent-auth/route");
 const { requireAgent } = await import("./verify");
-const { REFRESH_AUDIT_KEY } = await import("./refresh");
+const { getTokenSigner } = await import("./signer");
+const { REFRESH_AUDIT_KEY, REFRESH_CHANGED_KEY } = await import("./refresh");
 const { EPOCH_KEY, closeRedis, getRedis } = await import("@/lib/hot-state");
 
 /** A database that fails any use: proves a refresh didn't touch Postgres. */
@@ -151,6 +152,16 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("write-free token refresh
     expect(await requireAgent(authed(tokens.accessToken))).toBeInstanceOf(Response);
   });
 
+  it("revokes the agent when another token of the current generation is presented", async () => {
+    const { agentId, refreshToken } = await enrollNew();
+    const tokens = await refreshed(refreshToken);
+    // Signed by us, with Redis's generation but not the random ID it holds.
+    const copy = await getTokenSigner().signRefreshToken({ agentId, generation: 2, tokenId: "x" });
+    expect(await (await refresh(copy)).json()).toEqual({ error: "refresh_token_reused" });
+    expect((await agentRow(agentId)).revokedAt).not.toBeNull();
+    expect((await refresh(tokens.refreshToken)).status).toBe(401);
+  });
+
   it("treats concurrent presentations of one token as reuse", async () => {
     const { agentId, refreshToken } = await enrollNew();
     const statuses = await Promise.all([refresh(refreshToken), refresh(refreshToken)]).then((r) =>
@@ -176,10 +187,38 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("write-free token refresh
     expect(audit[0]!.ip).toMatch(/^198\.51\.100\./);
     expect(await getRedis().llen(REFRESH_AUDIT_KEY)).toBe(0);
 
-    // Nothing new: nothing written.
-    expect(await (await flushRoute(cronRequest())).json()).toEqual({ generations: 0, audits: 0 });
+    expect(await getRedis().scard(REFRESH_CHANGED_KEY)).toBe(0);
+
+    // Nothing new: Postgres isn't touched.
+    state.db = noPostgres;
+    try {
+      expect(await (await flushRoute(cronRequest())).json()).toEqual({
+        generations: 0,
+        audits: 0,
+      });
+    } finally {
+      state.db = db;
+    }
     // The flushed token keeps working.
     await refreshed(second.refreshToken);
+  });
+
+  it("leaves the buffer to a flush already running", async () => {
+    await flushRoute(cronRequest());
+    const { agentId, refreshToken } = await enrollNew();
+    await refreshed(refreshToken);
+    await getRedis().set("agent-refresh:flush-lock", "another flush", "PX", 60_000);
+    try {
+      expect(await (await flushRoute(cronRequest())).json()).toEqual({
+        generations: 0,
+        audits: 0,
+      });
+      expect(await getRedis().llen(REFRESH_AUDIT_KEY)).toBe(1);
+    } finally {
+      await getRedis().del("agent-refresh:flush-lock");
+    }
+    expect(await (await flushRoute(cronRequest())).json()).toEqual({ generations: 1, audits: 1 });
+    expect((await agentRow(agentId)).refreshGeneration).toBe(2);
   });
 
   it("rejects the flush without the cron secret", async () => {

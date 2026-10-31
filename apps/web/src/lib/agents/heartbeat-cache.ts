@@ -218,8 +218,12 @@ export async function cachedHeartbeatResponse(
       .exec();
     if (!results || results.some(([error]) => error)) throw new Error("MULTI failed");
     const [epoch, cached, reported] = results[1]![1] as (string | null)[];
-    if (!epoch || !cached || reported !== heartbeatReportFingerprint(report)) return null;
+    if (!epoch || !cached) return null;
     const entry = JSON.parse(cached) as CacheEntry;
+    const due = entry.builtAt === undefined || now.getTime() >= cachedResponseDueAt(entry.builtAt);
+    // Serving it skips writing the agent row, so the row must have this report. A due one isn't
+    // served (the caller writes the row), and the report's key expires at the same window start.
+    if (!due && reported !== heartbeatReportFingerprint(report)) return null;
     if (entry.changes.epoch !== epoch) return null;
     if (entry.request !== heartbeatRequestKey(report)) return null;
     const organizationId = entry.response.organizationId;
@@ -234,7 +238,6 @@ export async function cachedHeartbeatResponse(
       const latest = await currentLatestVersion(organizationId, now, options);
       if (latest === undefined || latest !== entry.latestVersion) return null;
     }
-    const due = entry.builtAt === undefined || now.getTime() >= cachedResponseDueAt(entry.builtAt);
     return {
       response: entry.response,
       ...(entry.latestVersion !== undefined && { latestVersion: entry.latestVersion }),

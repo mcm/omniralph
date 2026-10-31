@@ -200,6 +200,18 @@ export async function scheduleJobOutcomeCheck(
   if (laneId) await scheduleLaneSafetyCheck(laneId);
 }
 
+/**
+ * Jobs a batch write settled (expired, failed or canceled when their agent was revoked,
+ * out of deliveries at a claim): schedules each ralph job's safety checks
+ * (`scheduleJobOutcomeCheck`) before any outcome hook runs, so being killed partway through
+ * the hooks leaves none of their runs without a check.
+ */
+export async function scheduleJobOutcomeChecks(
+  jobs: readonly (Pick<Job, "ralphRunId"> & Partial<Pick<Job, "dedupeKey">>)[],
+): Promise<void> {
+  for (const job of jobs) await scheduleJobOutcomeCheck(job);
+}
+
 export interface RalphReconcileCheck {
   /** Whether the cron runs every organization's runs, cleanup and CI. */
   fullPass: boolean;

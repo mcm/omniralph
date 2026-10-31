@@ -1,4 +1,4 @@
-import { expireQueuedJobs, getJob } from "@omniralph/db";
+import { expireQueuedJobs, getJob, type Job } from "@omniralph/db";
 import { JOB_RETENTION_SECONDS } from "@omniralph/shared";
 import { cronUnauthorized, isCronRequest } from "@/lib/cron";
 import { getDb } from "@/lib/db";
@@ -8,6 +8,7 @@ import {
   syncJobsDueFromPostgres,
 } from "@/lib/dispatch/due";
 import { organizationPlaybooks } from "@/lib/playbooks";
+import { scheduleJobOutcomeChecks } from "@/lib/ralph/due";
 import { jobHooks } from "@/lib/sinks";
 import { liveRoute } from "@/lib/live/request";
 
@@ -27,15 +28,25 @@ async function get(req: Request): Promise<Response> {
   const expired = await expireQueuedJobs(db, createdBefore, now);
   await syncJobsDueFromPostgres(db, expired);
   await reconcileExpiredQueuedJobs(db, createdBefore);
+  const jobs: Job[] = [];
   for (const jobId of expired) {
     try {
       const job = await getJob(db, jobId);
-      const handler = job && (await jobHooks(job, organizationPlaybooks(db, job.organizationId)));
-      if (job && handler?.onFailed) {
+      if (job) jobs.push(job);
+    } catch (error) {
+      console.error("failed to record expired job", jobId, error);
+    }
+  }
+  // Their ralph runs are advanced even if the outcome hooks below never run.
+  await scheduleJobOutcomeChecks(jobs);
+  for (const job of jobs) {
+    try {
+      const handler = await jobHooks(job, organizationPlaybooks(db, job.organizationId));
+      if (handler?.onFailed) {
         await handler.onFailed(db, job, "No agent picked up the job within 24 hours");
       }
     } catch (error) {
-      console.error("failed to record expired job", jobId, error);
+      console.error("failed to record expired job", job.id, error);
     }
   }
   return Response.json({ expired: expired.length });

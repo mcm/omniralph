@@ -47,7 +47,7 @@ process.env.LOCAL_AGENT_SIGNING_KEY = privateKey
   .toString();
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { closeRedis, getRedis } = await import("@/lib/hot-state");
+const { EPOCH_KEY, closeRedis, getRedis } = await import("@/lib/hot-state");
 const { POST: heartbeat } = await import("@/app/api/agent/heartbeat/route");
 const { getTokenSigner } = await import("@/lib/agent-auth/signer");
 const { PostgresDispatcher } = await import("@/lib/dispatch/dispatcher");
@@ -60,6 +60,7 @@ const {
   latestVersionKey,
 } = await import("./heartbeat-cache");
 const { currentDailyWindow } = await import("@/lib/daily-window");
+const { agentReportKey } = await import("./last-seen");
 const defaults = await import("./defaults");
 const { pinRepository } = await import("./pins");
 const { saveAgentsCard } = await import("@/lib/repositories/cards");
@@ -517,6 +518,16 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
       expect((await send(agentId)).calls).toBe(0);
     });
 
+    it("builds the response from Postgres again once the epoch changed", async () => {
+      const { agentId } = await newAgent();
+      await warm(agentId);
+      expect((await send(agentId)).calls).toBe(0);
+      // A rebuild elsewhere: the counters the response was cached with may be gone.
+      await getRedis().set(EPOCH_KEY, randomUUID());
+      expect((await send(agentId)).calls).toBeGreaterThan(0);
+      expect((await send(agentId)).calls).toBe(0);
+    });
+
     it("logs the fields of a response served stale by a missed bump", async () => {
       const errors = vi.spyOn(console, "error").mockImplementation(() => {});
       const { agentId, orgId } = await newAgent();
@@ -529,7 +540,9 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
       expect(stale.response.pinnedRepositories).toEqual([]);
 
       // ...until a daily window passes: the agent gets the fresh one, and the drift is logged.
+      // The report's fingerprint expires at that window too.
       await setBuiltAt(agentId, currentDailyWindow(new Date()) - 60_000);
+      await getRedis().del(agentReportKey(agentId));
       const fresh = await send(agentId);
       expect(fresh.calls).toBeGreaterThan(0);
       expect(fresh.response.pinnedRepositories).toHaveLength(1);

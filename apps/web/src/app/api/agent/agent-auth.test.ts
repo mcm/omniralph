@@ -243,6 +243,7 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
 
     it("revokes the agent when a used refresh token is presented again", async () => {
       const { agentId, refreshToken } = await enrollNew();
+      const jobId = await runningJob(agentId);
       const first = (await (await refresh(refreshToken)).json()) as {
         accessToken: string;
         refreshToken: string;
@@ -255,6 +256,9 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
       const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
       expect(agent!.revokedAt).not.toBeNull();
       expect(await listAgentAudit(db, { agentId, event: "refresh_reuse" })).toHaveLength(1);
+      // Its running job goes back to the queue for another agent.
+      const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
+      expect(job).toMatchObject({ status: "queued", agentId: null });
 
       // The legitimate holder's newer token and access token are dead too: re-enroll.
       expect((await refresh(first.refreshToken)).status).toBe(401);

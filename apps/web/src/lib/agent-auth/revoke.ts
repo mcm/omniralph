@@ -14,6 +14,7 @@ import { getDb } from "@/lib/db";
 import { cacheAgentRevoked } from "./auth-state";
 import { getDispatcher, type JobDispatcher } from "@/lib/dispatch";
 import { organizationPlaybooks } from "@/lib/playbooks";
+import { scheduleJobOutcomeChecks } from "@/lib/ralph/due";
 import { jobHooks, type JobHooks } from "@/lib/sinks";
 
 const REVOKED = "Agent revoked";
@@ -50,6 +51,8 @@ export async function revokeAgent(
   await cacheAgentRevoked(agentId);
   // Requeued jobs are due again at once; failed and canceled ones leave the due set.
   await syncJobsDue([...revoked.requeuedJobs, ...revoked.failedJobs, ...revoked.canceledJobs]);
+  // Their ralph runs are advanced even if the outcome hooks below never run.
+  await scheduleJobOutcomeChecks([...revoked.canceledJobs, ...revoked.failedJobs]);
   await writeAgentAudit(db, {
     agentId,
     event: "revoke",
