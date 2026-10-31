@@ -10,6 +10,7 @@ import type {
   ClaudeLoginReport,
   HostToolReport,
   RoutingQuery,
+  TokenRefreshReport,
 } from "@omniralph/shared";
 import { sql } from "drizzle-orm";
 import {
@@ -1279,6 +1280,11 @@ export const agents = pgTable(
      * heartbeat that carried one reported it; null until then. No account details.
      */
     reportedClaude: jsonb("reported_claude").$type<ClaudeLoginReport>(),
+    /**
+     * The agent's failing token-refresh streak, as its last heartbeat reported it; null while
+     * its refreshes succeed (a heartbeat without one clears it).
+     */
+    reportedTokenRefresh: jsonb("reported_token_refresh").$type<TokenRefreshReport>(),
     /** `supported` (under pm2) or `unsupported`, from the heartbeat; null for older agents. */
     selfUpdate: text("self_update").$type<"supported" | "unsupported">(),
     /** The agent's self-update progress, as last reported. */

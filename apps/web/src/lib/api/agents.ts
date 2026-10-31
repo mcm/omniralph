@@ -6,6 +6,7 @@ import {
   HOST_TOOL_PROBLEMS,
   HOST_TOOL_SOURCES,
   SELF_UPDATE_SUPPORT,
+  TokenRefreshReport,
 } from "@omniralph/shared";
 import { z } from "zod";
 import { AUDIT_EVENTS } from "@/lib/agents/display";
@@ -234,6 +235,12 @@ export const agentSecuritySchema = z.object({
    * `/api/agent/token`): when, and its `refresh_*` reason (`refresh_expired`, ...); null when none.
    */
   lastRefreshRejection: z.object({ at: isoDate, reason: z.string() }).nullable(),
+  /**
+   * The agent's failing token-refresh streak as its last heartbeat reported it (when it
+   * started, failed attempts, the last error, its tokens' expiries); null while refreshes
+   * succeed or the agent never reported one.
+   */
+  tokenRefresh: TokenRefreshReport.nullable(),
 });
 
 /** An install on the agent that is queued or running, or failed in the last 24 hours (Packages). */

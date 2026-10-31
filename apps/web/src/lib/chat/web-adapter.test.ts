@@ -447,9 +447,12 @@ describe.skipIf(!databaseAvailable)("the web chat adapter", () => {
       const sent: Array<[string, unknown]> = [];
       const chunks = feed<string>();
       const markdown = async () => (await rows(thread.id))[0]?.markdown;
-      // Not vi.waitFor: it advances fake timers on every check.
+      // Not vi.waitFor: it advances fake timers on every check. Bounded by real time
+      // (performance isn't faked), not a turn count: on a loaded machine the database
+      // round trips can outlast any fixed number of setImmediate turns.
       const until = async (check: () => boolean | Promise<boolean>) => {
-        for (let i = 0; i < 1000 && !(await check()); i += 1) {
+        const deadline = performance.now() + 10_000;
+        while (performance.now() < deadline && !(await check())) {
           await new Promise((resolve) => setImmediate(resolve));
         }
         expect(await check()).toBe(true);

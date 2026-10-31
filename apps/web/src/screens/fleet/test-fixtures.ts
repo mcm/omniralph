@@ -104,6 +104,7 @@ export function agentDetail(agent: FleetAgentRow = agentRow()): AgentDetail {
       reuseAlerts30d: 0,
       lastReuseAt: null,
       lastRefreshRejection: null,
+      tokenRefresh: null,
     },
     globalDesiredVersion: "2.0.3 (latest on npm)",
     local: {

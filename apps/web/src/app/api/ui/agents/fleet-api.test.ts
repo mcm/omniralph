@@ -252,6 +252,13 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
     await setDesiredAgentVersion(db, alpha.id, "2.0.3", null);
     await setDesiredAgentVersion(db, beta.id, TRACK_LATEST_AGENT_VERSION, null);
 
+    const tokenRefresh = {
+      failingSince: ago(2 * MINUTE).toISOString(),
+      consecutiveFailures: 3,
+      lastError: "network",
+      accessTokenExpiresAt: ago(-MINUTE).toISOString(),
+      refreshTokenExpiresAt: null,
+    };
     const online = {
       liveOnline: true,
       lastHeartbeatAt: ago(10_000),
@@ -270,6 +277,7 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
       reportedModels: [{ value: "claude-opus-5-5", displayName: "Opus 5.5" }],
       reportedInstallables: [{ name: "gh", version: "2.0.0" }],
       reportedHost: { hostname: "build-01", coder: null },
+      reportedTokenRefresh: tokenRefresh,
     });
     await agent("c-offline", alpha.id, {
       liveOnline: false,
@@ -656,6 +664,13 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
       reuseAlerts30d: 1,
       lastReuseAt: ago(DAY).toISOString(),
       lastRefreshRejection: { at: ago(40 * DAY).toISOString(), reason: "refresh_expired" },
+      tokenRefresh: {
+        failingSince: ago(2 * MINUTE).toISOString(),
+        consecutiveFailures: 3,
+        lastError: "network",
+        accessTokenExpiresAt: ago(-MINUTE).toISOString(),
+        refreshTokenExpiresAt: null,
+      },
     });
     // Newest first (the two 40-day-old events tie).
     expect(idle.body.audit.map((a) => a.event).slice(0, 3)).toEqual([
@@ -671,7 +686,12 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
       runningNow: [],
       recentWork: [],
       installs: [],
-      security: { reuseAlerts30d: 0, lastReuseAt: null, lastRefreshRejection: null },
+      security: {
+        reuseAlerts30d: 0,
+        lastReuseAt: null,
+        lastRefreshRejection: null,
+        tokenRefresh: null,
+      },
     });
   });
 
