@@ -855,6 +855,7 @@ export {
   loadInboxReferences,
   pruneInboxItemStates,
   setInboxItemState,
+  type AgentLastSeen,
   type InboxItemStateKey,
   type InboxReferences,
   type InboxCandidate,
