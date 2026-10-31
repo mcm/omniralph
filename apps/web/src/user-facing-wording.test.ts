@@ -80,8 +80,8 @@ const RALPH_ALLOWED: Allowed[] = [
     reason: "prefixes of idempotency and lock keys stored in the database",
   },
   {
-    text: /^(ralph:active|ralph:reconciled|ralph:backoff|ralph-active)$/g,
-    files: ["apps/web/src/lib/ralph/active.ts"],
+    text: /^(ralph:due|ralph:reconciled|ralph-due)$/g,
+    files: ["apps/web/src/lib/ralph/due.ts"],
     reason: "the reconcile cron's Redis keys and hot-state rebuilder name",
   },
   {

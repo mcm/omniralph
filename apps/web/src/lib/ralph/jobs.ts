@@ -16,6 +16,7 @@ import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { checkRunCi } from "./ci";
 import { applyCleanupJob, startPendingCleanups } from "./cleanup";
+import { scheduleRun } from "./due";
 import { applyHiddenRefsJob } from "./hidden-refs";
 import { respondToReview } from "./pull-request-requests";
 import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
@@ -79,10 +80,16 @@ export async function defaultDeps(db: Database, organizationId: string): Promise
  */
 export async function catchUpRun(deps: RalphDeps, runId: string): Promise<void> {
   const run = await getRun(deps.db, runId);
-  if (!run) return;
-  if (!FINISHED_RUN_STATUSES.has(run.status)) await advanceRun(run.id, deps);
+  if (!run) {
+    await scheduleRun(runId, null);
+    return;
+  }
+  const finished = FINISHED_RUN_STATUSES.has(run.status);
+  if (!finished) await advanceRun(run.id, deps);
   await checkRunCi(deps, run.id);
   await startPendingCleanups(deps, run.id);
+  // A finished run's job (a cleanup) left the outcome's safety check: nothing to advance.
+  if (finished) await scheduleRun(run.id, null);
 }
 
 /**

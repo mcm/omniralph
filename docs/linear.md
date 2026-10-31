@@ -833,7 +833,7 @@ Agents under pm2 update themselves to the version chosen on **Fleet › Version 
   enabled, `LINEAR_WEBHOOK_SECRET` (a mismatch gives 401 in the function logs) and that the
   workspace is the connected one.
 - **Runs don't resume after a blocker is done.** **Issues** webhook events are disabled. The
-  `/api/cron/ralph-reconcile` cron (every 10 minutes) still catches up waiting runs.
+  `/api/cron/ralph-reconcile` cron still re-checks each waiting run about once an hour.
 - **Failed CI on an Om PR/MR isn't picked up until the cron runs.** The GitHub App lacks
   **Actions: Read** or the `workflow_run` event, or the GitLab project webhook lacks **Pipeline
   events** (see [github-app.md](github-app.md), [gitlab.md](gitlab.md)).

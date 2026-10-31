@@ -1114,62 +1114,23 @@ function laneNeedsCleanup() {
   );
 }
 
-/**
- * Whether the reconcile cron may have anything to do, in any organization: an
- * unfinished run, an open ralph PR/MR or a lane whose cleanup isn't through.
- */
-export async function hasRalphWork(db: Executor): Promise<boolean> {
-  const unfinished = await db
+/** Every unfinished run's ID, in any organization (rebuilding the reconcile cron's due set). */
+export async function listUnfinishedRunIds(db: Executor): Promise<string[]> {
+  const rows = await db
     .select({ id: ralphRuns.id })
     .from(ralphRuns)
-    .where(inArray(ralphRuns.status, ["pending", "running", "waiting"]))
-    .limit(1);
-  if (unfinished.length > 0) return true;
-  const lanes = await db
-    .select({ id: ralphLanes.id })
-    .from(ralphLanes)
-    .where(
-      or(and(isNotNull(ralphLanes.prNumber), eq(ralphLanes.prClosed, false)), laneNeedsCleanup()),
-    )
-    .limit(1);
-  return lanes.length > 0;
+    .where(inArray(ralphRuns.status, ["pending", "running", "waiting"]));
+  return rows.map((row) => row.id);
 }
 
-/**
- * A hash of everything the reconcile cron's pass may change in the ralph work
- * `hasRalphWork` looks at: each unfinished run's status, blockers, job count and
- * outstanding PR/MR and request jobs; its stories' status, attempts, job and lane; the
- * lanes of unfinished runs, with an open PR/MR or a cleanup not through (PR/MR state,
- * cleanup, publish); and the queued or running ralph jobs. Two passes that leave it
- * unchanged changed nothing: the cron then backs off (`lib/ralph/active`). Built only
- * from these columns, not `updated_at`, which a write that changes nothing still moves.
- */
-export async function ralphWorkFingerprint(db: Executor): Promise<string> {
-  const unfinished = sql`ralph_runs.status in ('pending', 'running', 'waiting')`;
-  const result = await db.execute<{ fingerprint: string }>(sql`
-    select md5(concat_ws('|',
-      (select string_agg(concat_ws(',', ralph_runs.id, ralph_runs.status, ralph_runs.waiting_on,
-          ralph_runs.iterations, ralph_runs.pr_job_id, ralph_runs.request_job_id), ';'
-          order by ralph_runs.id)
-        from ralph_runs where ${unfinished}),
-      (select string_agg(concat_ws(',', ralph_stories.id, ralph_stories.status,
-          ralph_stories.attempts, ralph_stories.last_job_id, ralph_stories.lane_id), ';'
-          order by ralph_stories.id)
-        from ralph_stories join ralph_runs on ralph_runs.id = ralph_stories.run_id
-        where ${unfinished}),
-      (select string_agg(concat_ws(',', ralph_lanes.id, ralph_lanes.pr_number,
-          ralph_lanes.pr_closed, ralph_lanes.pr_merged, ralph_lanes.cleanup, ralph_lanes.publish),
-          ';' order by ralph_lanes.id)
-        from ralph_lanes
-        where (ralph_lanes.pr_number is not null and ralph_lanes.pr_closed = false)
-          or ${laneNeedsCleanup()}
-          or ralph_lanes.run_id in (select ralph_runs.id from ralph_runs where ${unfinished})),
-      (select string_agg(concat_ws(',', jobs.id, jobs.status, jobs.cancel_requested), ';'
-          order by jobs.id)
-        from jobs
-        where jobs.ralph_run_id is not null and jobs.status in ('queued', 'running'))
-    )) as fingerprint`);
-  return result.rows[0]!.fingerprint;
+/** The runs with these IDs (any organization); missing ones are left out. */
+export async function listRunsByIds(db: Executor, ids: readonly string[]): Promise<RalphRun[]> {
+  if (ids.length === 0) return [];
+  return db
+    .select()
+    .from(ralphRuns)
+    .where(inArray(ralphRuns.id, [...ids]))
+    .orderBy(asc(ralphRuns.createdAt), asc(ralphRuns.id));
 }
 
 /**

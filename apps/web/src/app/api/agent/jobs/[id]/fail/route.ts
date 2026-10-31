@@ -6,6 +6,7 @@ import { jobIdParam, notCurrentAgent, notFound, type JobRouteContext } from "@/l
 import { getDb } from "@/lib/db";
 import { syncJobsDue } from "@/lib/dispatch/due";
 import { organizationPlaybooks } from "@/lib/playbooks";
+import { scheduleJobOutcomeCheck } from "@/lib/ralph/due";
 import { jobHooks } from "@/lib/sinks";
 import { liveRoute } from "@/lib/live/request";
 
@@ -30,7 +31,10 @@ async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
   if (!body.success) return badRequest();
 
   const db = getDb();
-  if (!(await getJobForAgent(db, jobId, principal.agentId))) return notFound();
+  const existing = await getJobForAgent(db, jobId, principal.agentId);
+  if (!existing) return notFound();
+  // Before the commit: a ralph run is advanced even if the outcome hook never runs.
+  await scheduleJobOutcomeCheck(existing);
   const retryAfterSeconds = body.data.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS;
   const outcome = await failJob(db, {
     jobId,

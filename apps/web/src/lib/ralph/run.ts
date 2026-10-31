@@ -122,7 +122,7 @@ import {
   withPullRequestLinks,
   type PublishedLane,
 } from "./publish";
-import { markRalphActive } from "./active";
+import { scheduleAdvancedRun, scheduleRunSafetyCheck } from "./due";
 import {
   applyRequestJob,
   consumeStoryRequests,
@@ -265,15 +265,15 @@ export type AdvanceResult =
  * relations and states), synced and the plan posted, and the run either
  * enqueues the next ready story as a `ralph.story` job, enqueues the
  * `ralph.describe-pr` job (every story done) or waits (on blockers, manual stories or a person). Nothing is enqueued
- * while one of the run's jobs is queued or running. Afterwards the reconcile
- * cron is told there's ralph work (`markRalphActive`).
+ * while one of the run's jobs is queued or running. The reconcile cron's
+ * schedule (`lib/ralph/due`) gets a safety check first, which the result
+ * replaces; a throw leaves it, so the cron retries the run.
  */
 export async function advanceRun(runId: string, deps: RalphDeps): Promise<AdvanceResult> {
-  try {
-    return await advance(runId, deps);
-  } finally {
-    await markRalphActive();
-  }
+  await scheduleRunSafetyCheck(runId);
+  const result = await advance(runId, deps);
+  await scheduleAdvancedRun(runId, result);
+  return result;
 }
 
 async function advance(runId: string, deps: RalphDeps): Promise<AdvanceResult> {

@@ -28,7 +28,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { PostgresDispatcher, type JobDispatcher } from "@/lib/dispatch/dispatcher";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import type { ChatChannel } from "./conversation";
-import { RECONCILE_STALE_MS } from "./reconcile";
+import { RECONCILE_STALE_MS } from "./due";
 
 vi.mock("server-only", () => ({}));
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");

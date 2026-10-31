@@ -3,6 +3,7 @@ import { getJob, type Database } from "@omniralph/db";
 import type { ActionResult } from "@/lib/action-result";
 import { getDispatcher } from "@/lib/dispatch";
 import { organizationPlaybooks } from "@/lib/playbooks";
+import { scheduleJobOutcomeCheck } from "@/lib/ralph/due";
 import { jobHooks } from "@/lib/sinks";
 
 /** The warning a running job's cancel answers with: it stops with its agent's next heartbeat. */
@@ -23,6 +24,8 @@ export async function cancelJob(
   if (existing?.organizationId !== organizationId) {
     return { ok: false, error: "That job doesn't exist." };
   }
+  // Before the commit: a ralph run is advanced even if the outcome hook never runs.
+  await scheduleJobOutcomeCheck(existing);
   const result = await getDispatcher().cancel(jobId);
   if (result === "not_found") return { ok: false, error: "That job doesn't exist." };
   if (result === "not_cancelable") return { ok: false, error: "That job has already finished." };

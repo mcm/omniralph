@@ -5,10 +5,8 @@
  * applied).
  */
 import { listRunsAffectedByIssue, listRunsToReconcile, type RalphRunOrigin } from "@omniralph/db";
+import { RECONCILE_STALE_MS } from "./due";
 import { advanceRun, type AdvanceResult, type RalphDeps } from "./run";
-
-/** How long a pending or running run without a job may sit before the cron advances it. */
-export const RECONCILE_STALE_MS = 10 * 60 * 1000;
 
 /**
  * Advances every unfinished run of the organization an issue's state change may move: waiting runs
