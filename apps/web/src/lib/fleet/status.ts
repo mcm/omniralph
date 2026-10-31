@@ -253,6 +253,35 @@ export function relativeAgo(from: Date | string, now: Date): string {
 }
 
 /**
+ * How long ago an agent's last heartbeat was, for its panel badge: "Less than a minute ago",
+ * else "About N min ago", "About N hr ago" or "About N days ago" ("About 1 day ago"). N is
+ * rounded and the unit picked after rounding, so 59.6 minutes is "About 1 hr ago".
+ */
+export function heartbeatAgo(from: Date | string, now: Date): string {
+  const elapsed = Math.max(0, now.getTime() - new Date(from).getTime());
+  if (elapsed < MINUTE_MS) return "Less than a minute ago";
+  const minutes = Math.round(elapsed / MINUTE_MS);
+  if (minutes < 60) return `About ${minutes} min ago`;
+  const hours = Math.round(elapsed / HOUR_MS);
+  if (hours < 24) return `About ${hours} hr ago`;
+  const days = Math.round(elapsed / DAY_MS);
+  return `About ${days} ${days === 1 ? "day" : "days"} ago`;
+}
+
+/** The later of two heartbeat times (either may be missing); null when both are. */
+export function latestHeartbeat(
+  ...times: readonly (Date | string | null | undefined)[]
+): Date | null {
+  let latest: Date | null = null;
+  for (const time of times) {
+    if (time === null || time === undefined) continue;
+    const date = new Date(time);
+    if (latest === null || date.getTime() > latest.getTime()) latest = date;
+  }
+  return latest;
+}
+
+/**
  * "Online" for an online agent (`live_online`: its row's heartbeat can be up to a day old),
  * else "Last seen 2 minutes ago" (an offline agent's row heartbeat is exact), or "Never
  * connected" before its first heartbeat.

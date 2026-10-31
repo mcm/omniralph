@@ -303,6 +303,13 @@ export const agentDetailSchema = z.object({
 });
 export type AgentDetail = z.infer<typeof agentDetailSchema>;
 
+/**
+ * `GET /api/ui/agents/{id}/last-seen`: the agent's last heartbeat as Redis holds it; null
+ * when Redis has none (hot state off, no key, a Redis error), so the panel uses the detail's.
+ */
+export const agentLastSeenSchema = z.object({ lastHeartbeatAt: isoDate.nullable() });
+export type AgentLastSeen = z.infer<typeof agentLastSeenSchema>;
+
 /** An `install` job targeted at the agent. */
 export const installJobRowSchema = z.object({
   id: z.string(),

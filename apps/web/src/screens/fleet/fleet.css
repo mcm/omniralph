@@ -99,6 +99,10 @@
   outline-offset: 2px;
 }
 
+.or-fleet-agent__heartbeat {
+  display: inline-flex;
+}
+
 .or-fleet-agent__section {
   display: flex;
   flex-direction: column;
