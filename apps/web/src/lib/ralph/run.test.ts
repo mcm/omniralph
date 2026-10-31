@@ -659,6 +659,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         "createChangeRequest",
         "findOpenChangeRequest",
         "markChangeRequestReady",
+        // The describe job's outcome checks the open PR's CI.
+        "getChangeRequestState",
+        "getCiStatus",
       ]);
       expect(linear.urls).toEqual([
         {

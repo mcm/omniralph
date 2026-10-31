@@ -46,7 +46,7 @@ import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { handleWebhook } from "@/lib/webhooks/ingest";
 import { reconcileCi, respondToCi } from "./ci";
-import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
+import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { ralphJobPayload } from "./coding";
 import { bindCodingPlaybook } from "./testing";
 import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
@@ -245,6 +245,9 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
     });
     expect((await getRun(db, run.id))?.status).toBe("completed");
     expect(scm.changeRequests).toHaveLength(1);
+    // The describe job's outcome checked the new PR's CI (none yet).
+    expect(scm.calls).toContain("getCiStatus");
+    scm.calls.length = 0;
     scm.changeRequests[0]!.headSha = "head1";
     return { run: (await getRun(db, run.id))!, sessionId };
   }
@@ -429,6 +432,91 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
     const calls = ciCalls();
     expect(await reconcileCi(deps())).toEqual({ checked: 0, failed: 0 });
     expect(ciCalls()).toBe(calls);
+  });
+
+  it("checks the CI it skipped while a job ran once that job's outcome is applied", async () => {
+    const { run, sessionId } = await ciEpic();
+    setCi(failed("head1"));
+    await reconcileCi(deps());
+    const fix = await start(run.id);
+
+    // The fix is pushed and fails again while its job is still running: skipped for now.
+    scm.changeRequests[0]!.headSha = "head2";
+    setCi(failed("head2", [{ id: "2", name: "CI / build", url: null, noLog: false }]));
+    expect(await respondToCi(deps(), await found(run))).toEqual({
+      status: "ignored",
+      reason: "busy",
+    });
+
+    // The job's outcome catches it up, without the cron.
+    await finish(fix, requestResult());
+    const texts = await requestTexts(run.id);
+    expect(texts).toHaveLength(2);
+    expect(texts[1]).toContain("failed on `head2`");
+    expect(linear.bodies(sessionId, "thought")).toContain(
+      "CI failed on the pull request (`head2`: `CI / build`). Working on a fix.",
+    );
+    expect(await getMainLane(db, run)).toMatchObject({
+      ciFixRounds: 2,
+      handledCiShas: ["head1", "head2"],
+    });
+
+    // Green on the next push: the next outcome checks and does nothing.
+    scm.changeRequests[0]!.headSha = "head3";
+    setCi({ state: "passed", headSha: "head3", failedJobs: [] });
+    await finish(await start(run.id), requestResult());
+    expect(await requestJobs(run.id)).toHaveLength(2);
+    expect((await getRun(db, run.id))?.status).toBe("completed");
+  });
+
+  it("checks the CI it skipped while a cleanup job ran once that job finishes", async () => {
+    const { run } = await ciEpic();
+    const [cleanup] = await db
+      .insert(jobs)
+      .values({
+        organizationId: orgId,
+        type: "worktree.cleanup",
+        taskType: "coding",
+        payload: {},
+        ralphRunId: run.id,
+        repositoryId: repoId,
+      })
+      .returning();
+    setCi(failed("head1"));
+    expect(await respondToCi(deps(), await found(run))).toEqual({
+      status: "ignored",
+      reason: "busy",
+    });
+
+    await db.update(jobs).set({ status: "completed" }).where(eq(jobs.id, cleanup!.id));
+    await onRalphCleanupJobFinished(db, (await getJob(db, cleanup!.id))!, deps());
+    expect(await requestTexts(run.id)).toHaveLength(1);
+    expect((await getMainLane(db, run))?.handledCiShas).toEqual(["head1"]);
+  });
+
+  it("doesn't check CI after a job's outcome while another of the run's jobs is active", async () => {
+    const { run } = await ciEpic();
+    setCi(failed("head1"));
+    const insertJob = async () =>
+      (
+        await db
+          .insert(jobs)
+          .values({
+            organizationId: orgId,
+            type: "worktree.cleanup",
+            taskType: "coding",
+            payload: {},
+            ralphRunId: run.id,
+            repositoryId: repoId,
+          })
+          .returning()
+      )[0]!;
+    const done = await insertJob();
+    await insertJob();
+    await db.update(jobs).set({ status: "completed" }).where(eq(jobs.id, done.id));
+    await onRalphCleanupJobFinished(db, (await getJob(db, done.id))!, deps());
+    expect(scm.calls).not.toContain("getCiStatus");
+    expect(await requestJobs(run.id)).toHaveLength(0);
   });
 
   it("hands each PR's failed CI to a request in that PR's own worktree", async () => {

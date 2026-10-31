@@ -4,7 +4,6 @@ import {
   getReviewRun,
   getLaneByRepository,
   getRun,
-  listLanes,
   lockRun,
   updateLane,
   updateRun,
@@ -15,7 +14,8 @@ import { skipJobAndClearDue } from "@/lib/dispatch/due";
 import { getDispatcher } from "@/lib/dispatch";
 import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/client";
 import { scmAdapterFor } from "@/lib/scm/adapters";
-import { onCleanupJobFinished, startPendingCleanups } from "./cleanup";
+import { checkRunCi } from "./ci";
+import { applyCleanupJob, startPendingCleanups } from "./cleanup";
 import { applyHiddenRefsJob } from "./hidden-refs";
 import { respondToReview } from "./pull-request-requests";
 import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
@@ -72,22 +72,31 @@ export async function defaultDeps(db: Database, organizationId: string): Promise
 }
 
 /**
- * The job completed, failed for good or was canceled: apply its outcome and
- * move the run on. Errors (e.g. Linear being down) are logged, not thrown: the
- * job's own state is already recorded and the reconcile cron retries the run.
+ * One of the run's jobs finished: an unfinished run moves on (`advanceRun` applies the job's
+ * outcome), then what waited for the run's jobs catches up: the CI of its open PRs/MRs
+ * (`checkRunCi`) and the lanes' pending cleanups (`startPendingCleanups`). Each does nothing
+ * while another of the run's jobs is active (that job's outcome catches up instead).
+ */
+export async function catchUpRun(deps: RalphDeps, runId: string): Promise<void> {
+  const run = await getRun(deps.db, runId);
+  if (!run) return;
+  if (!FINISHED_RUN_STATUSES.has(run.status)) await advanceRun(run.id, deps);
+  await checkRunCi(deps, run.id);
+  await startPendingCleanups(deps, run.id);
+}
+
+/**
+ * The job completed, failed for good or was canceled: apply its outcome, move
+ * the run on and catch up its CI and pending cleanups (`catchUpRun`). Errors
+ * (e.g. Linear being down) are logged, not thrown: the job's own state is
+ * already recorded and the reconcile cron retries the run.
  */
 export async function onRalphJobFinished(db: Database, job: Job, deps?: RalphDeps): Promise<void> {
   if (!job.ralphRunId) return;
   try {
     const run = await getRun(db, job.ralphRunId);
     if (!run) return;
-    const finished = FINISHED_RUN_STATUSES.has(run.status);
-    // A merged lane's cleanup that waited for the run's jobs starts now.
-    const pending = (await listLanes(db, run.id)).some((l) => l.cleanup?.status === "pending");
-    if (finished && !pending) return;
-    const ralph = deps ?? (await defaultDeps(db, run.organizationId));
-    if (!finished) await advanceRun(run.id, ralph);
-    if (pending) await startPendingCleanups(ralph, run.id);
+    await catchUpRun(deps ?? (await defaultDeps(db, run.organizationId)), run.id);
   } catch (error) {
     console.error(`Advancing ralph run ${job.ralphRunId} after job ${job.id} failed`, error);
   }
@@ -95,8 +104,9 @@ export async function onRalphJobFinished(db: Database, job: Job, deps?: RalphDep
 
 /**
  * A cleanup job (`worktree.cleanup`, or a legacy `ralph.cleanup`) completed,
- * failed for good or was canceled: its outcome is applied
- * (`onCleanupJobFinished`). Errors are logged.
+ * failed for good or was canceled: its outcome is applied (`applyCleanupJob`),
+ * then the run catches up as after any of its jobs (`catchUpRun`). Errors are
+ * logged; the reconcile cron catches up.
  */
 export async function onRalphCleanupJobFinished(
   db: Database,
@@ -116,7 +126,8 @@ export async function onRalphCleanupJobFinished(
       if (!run) return;
       ralph = await defaultDeps(db, run.organizationId);
     }
-    await onCleanupJobFinished(ralph, job);
+    await applyCleanupJob(ralph, job.id);
+    await catchUpRun(ralph, job.ralphRunId);
   } catch (error) {
     console.error(`Applying the outcome of cleanup job ${job.id} failed`, error);
   }
