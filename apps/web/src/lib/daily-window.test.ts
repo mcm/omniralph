@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { currentDailyWindow, dailyWindowStart, nextDailyWindow } from "./daily-window";
+import {
+  currentDailyWindow,
+  dailyWindowStart,
+  msUntilNextDailyWindow,
+  nextDailyWindow,
+} from "./daily-window";
 
 const at = (iso: string) => new Date(iso);
 const ms = (iso: string) => Date.parse(iso);
@@ -28,5 +33,13 @@ describe("daily window", () => {
     expect(currentDailyWindow(at("2026-11-01T00:00:00Z"))).toBe(ms("2026-10-31T03:15:00Z"));
     expect(nextDailyWindow(at("2026-11-01T00:00:00Z"))).toBe(ms("2026-11-01T03:15:00Z"));
     expect(currentDailyWindow(at("2027-01-01T01:00:00Z"))).toBe(ms("2026-12-31T03:15:00Z"));
+  });
+
+  it("measures the time left until the next window start", () => {
+    expect(msUntilNextDailyWindow(at("2026-10-31T03:14:59.999Z"))).toBe(1);
+    expect(msUntilNextDailyWindow(at("2026-10-31T03:15:00Z"))).toBe(24 * 3600_000);
+    expect(msUntilNextDailyWindow(at("2026-10-31T18:00:00Z"))).toBe(
+      ms("2026-11-01T03:15:00Z") - ms("2026-10-31T18:00:00Z"),
+    );
   });
 });

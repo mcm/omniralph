@@ -1,5 +1,6 @@
 import "server-only";
 import { getAgentAuthState, type Database } from "@omniralph/db";
+import { msUntilNextDailyWindow } from "@/lib/daily-window";
 import { readHotState, registerHotStateRebuilder, writeHotState } from "@/lib/hot-state";
 import "@/lib/hot-state/rebuilders";
 
@@ -12,11 +13,15 @@ import "@/lib/hot-state/rebuilders";
 export type AgentAuthState = Awaited<ReturnType<typeof getAgentAuthState>>;
 
 const KEY_PREFIX = "agent-auth:";
+
 /**
- * How long a state read from Postgres stays cached: a day, so an idle agent's requests
- * reach Postgres at most once a day. Revocation overwrites it (`cacheAgentRevoked`).
+ * How long a cached state lives (ms): until the next daily window, so an idle agent's
+ * requests reach Postgres once a day, while Neon is awake for the window anyway (a 24h TTL
+ * drifted with when the state was cached). Revocation overwrites it (`cacheAgentRevoked`).
  */
-export const AGENT_AUTH_TTL_SECONDS = 24 * 3600;
+function cachedStateTtlMs(): number {
+  return msUntilNextDailyWindow(new Date());
+}
 
 export function agentAuthKey(agentId: string): string {
   return `${KEY_PREFIX}${agentId}`;
@@ -27,8 +32,8 @@ function isCachedState(value: string | null): value is "active" | "revoked" {
 }
 
 /**
- * The agent's auth state: from Redis, or on a miss from Postgres (then cached for a
- * day). `unknown` isn't cached: our tokens are only issued to existing agents.
+ * The agent's auth state: from Redis, or on a miss from Postgres (then cached until the
+ * next daily window). `unknown` isn't cached: our tokens are only issued to existing agents.
  */
 export async function readAgentAuthState(db: Database, agentId: string): Promise<AgentAuthState> {
   return readHotState(
@@ -39,7 +44,7 @@ export async function readAgentAuthState(db: Database, agentId: string): Promise
       if (isCachedState(cached)) return cached;
       const state = await getAgentAuthState(db, agentId);
       // NX: a revocation committed after our read may already have written `revoked`.
-      if (state !== "unknown") await redis.set(key, state, "EX", AGENT_AUTH_TTL_SECONDS, "NX");
+      if (state !== "unknown") await redis.set(key, state, "PX", cachedStateTtlMs(), "NX");
       return state;
     },
     () => getAgentAuthState(db, agentId),
@@ -49,7 +54,7 @@ export async function readAgentAuthState(db: Database, agentId: string): Promise
 /** Records a revocation in Redis; call after the Postgres commit. */
 export async function cacheAgentRevoked(agentId: string): Promise<void> {
   await writeHotState((redis) =>
-    redis.set(agentAuthKey(agentId), "revoked", "EX", AGENT_AUTH_TTL_SECONDS),
+    redis.set(agentAuthKey(agentId), "revoked", "PX", cachedStateTtlMs()),
   );
 }
 

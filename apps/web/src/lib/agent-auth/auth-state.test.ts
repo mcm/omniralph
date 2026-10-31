@@ -20,7 +20,7 @@ process.env.LOCAL_AGENT_SIGNING_KEY = privateKey
   .export({ type: "pkcs8", format: "pem" })
   .toString();
 
-const { AGENT_AUTH_TTL_SECONDS, agentAuthKey, readAgentAuthState } = await import("./auth-state");
+const { agentAuthKey, cacheAgentRevoked, readAgentAuthState } = await import("./auth-state");
 const { requireAgent } = await import("./verify");
 const { revokeAgent } = await import("./revoke");
 const { getTokenSigner } = await import("./signer");
@@ -84,14 +84,46 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent auth state", () =>
       vi.unstubAllEnvs();
     });
 
-    it("reads a miss from Postgres and caches it for an hour", async () => {
-      const agentId = await newAgent();
-      expect(await readAgentAuthState(db, agentId)).toBe("active");
-      const redis = getRedis();
-      expect(await redis.get(agentAuthKey(agentId))).toBe("active");
-      const ttl = await redis.ttl(agentAuthKey(agentId));
-      expect(ttl).toBeGreaterThan(AGENT_AUTH_TTL_SECONDS - 10);
-      expect(ttl).toBeLessThanOrEqual(AGENT_AUTH_TTL_SECONDS);
+    describe("at a fixed time", () => {
+      beforeEach(() => {
+        // Only Date: Redis and Postgres keep real timers.
+        vi.useFakeTimers({ toFake: ["Date"] });
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it("reads a miss from Postgres and caches it until the next daily window", async () => {
+        vi.setSystemTime(new Date("2026-10-31T12:00:00Z"));
+        const agentId = await newAgent();
+        expect(await readAgentAuthState(db, agentId)).toBe("active");
+        const redis = getRedis();
+        expect(await redis.get(agentAuthKey(agentId))).toBe("active");
+        // 03:15 UTC tomorrow, not a day after it was cached.
+        const pttl = await redis.pttl(agentAuthKey(agentId));
+        expect(pttl).toBeGreaterThan(15.25 * 3600_000 - 60_000);
+        expect(pttl).toBeLessThanOrEqual(15.25 * 3600_000);
+      });
+
+      it("expires a state cached just before the window at the window's start", async () => {
+        vi.setSystemTime(new Date("2026-10-31T03:14:00Z"));
+        const agentId = await newAgent();
+        expect(await readAgentAuthState(db, agentId)).toBe("active");
+        const pttl = await getRedis().pttl(agentAuthKey(agentId));
+        expect(pttl).toBeGreaterThan(0);
+        expect(pttl).toBeLessThanOrEqual(60_000);
+      });
+
+      it("overwrites a cached state with the revocation, which also lasts until the window", async () => {
+        vi.setSystemTime(new Date("2026-10-31T12:00:00Z"));
+        const agentId = await newAgent();
+        expect(await readAgentAuthState(db, agentId)).toBe("active");
+        await cacheAgentRevoked(agentId);
+        expect(await readAgentAuthState(noPostgres, agentId)).toBe("revoked");
+        const pttl = await getRedis().pttl(agentAuthKey(agentId));
+        expect(pttl).toBeGreaterThan(15.25 * 3600_000 - 60_000);
+        expect(pttl).toBeLessThanOrEqual(15.25 * 3600_000);
+      });
     });
 
     it("serves a cache hit without querying Postgres", async () => {

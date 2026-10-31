@@ -2,16 +2,18 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { getAgent, recordAgentHeartbeat, type Database } from "@omniralph/db";
 import type { Redis } from "ioredis";
+import { msUntilNextDailyWindow } from "@/lib/daily-window";
 import { getRedis, hotStateEnabled } from "@/lib/hot-state";
 
 /**
  * An agent's last heartbeat, kept in Redis so an unchanged heartbeat doesn't write to
  * Postgres. Every heartbeat sets `agent-last-seen:{id}`; the agent row is written
  * only when what the agent reports changed (`agent-report:{id}` holds a fingerprint
- * of the report last written) or its `last_heartbeat_at` is a day old (the fingerprint
- * expires then). Neither key is derived from Postgres, so there's no epoch: a lost key
+ * of the report last written) or a daily window started since the row was written (the
+ * fingerprint expires at the next window start, so the write lands in the window Neon is
+ * awake for anyway). Neither key is derived from Postgres, so there's no epoch: a lost key
  * just means a Postgres write on the next heartbeat, and readers fall back to the
- * row's `last_heartbeat_at` (at most a day behind).
+ * row's `last_heartbeat_at` (at most about a day behind).
  */
 
 export type HeartbeatReport = Omit<Parameters<typeof recordAgentHeartbeat>[2], "now">;
@@ -19,8 +21,6 @@ export type AgentRow = NonNullable<Awaited<ReturnType<typeof recordAgentHeartbea
 
 const LAST_SEEN_PREFIX = "agent-last-seen:";
 const REPORT_PREFIX = "agent-report:";
-/** Longest the agent row's `last_heartbeat_at` goes without a write while the agent is up. */
-export const POSTGRES_HEARTBEAT_MAX_AGE_MS = 24 * 3600_000;
 /** How long a last-seen outlives the agent's last heartbeat (then the row's value is used). */
 export const LAST_SEEN_TTL_MS = 30 * 24 * 3600_000;
 
@@ -53,7 +53,7 @@ export function heartbeatReportFingerprint(report: HeartbeatReport): string {
 /**
  * Records a heartbeat and returns the agent row (null for an unknown agent). With
  * hot state on, last-seen goes to Redis and the row is only written when the report
- * changed or its `last_heartbeat_at` is a day old; otherwise (and on a Redis error) it
+ * changed or a daily window started since it was written; otherwise (and on a Redis error) it
  * writes the row every time, as without Redis.
  */
 export async function recordHeartbeat(
@@ -85,7 +85,7 @@ export async function recordHeartbeat(
   const row = await recordAgentHeartbeat(db, agentId, { ...report, now });
   if (row) {
     await redis
-      .set(reportKey, fingerprint, "PX", POSTGRES_HEARTBEAT_MAX_AGE_MS)
+      .set(reportKey, fingerprint, "PX", msUntilNextDailyWindow(now))
       .catch((error: unknown) => console.warn("hot-state: storing heartbeat report failed", error));
   }
   return row;
@@ -109,7 +109,7 @@ export async function readAgentLastSeen(agentIds: readonly string[]): Promise<Ma
 
 /**
  * The agents with `lastHeartbeatAt` from Redis where it's later than the row's (the
- * row is only written when the report changes or once a day).
+ * row is only written when the report changes or once a day, in the daily window).
  */
 export async function withLastSeen<T extends { id: string; lastHeartbeatAt: Date | null }>(
   agents: readonly T[],

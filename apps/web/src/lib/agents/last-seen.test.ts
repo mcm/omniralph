@@ -57,14 +57,8 @@ process.env.LOCAL_AGENT_SIGNING_KEY = privateKey
   .toString();
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const {
-  POSTGRES_HEARTBEAT_MAX_AGE_MS,
-  agentLastSeenKey,
-  agentReportKey,
-  readAgentLastSeen,
-  recordHeartbeat,
-  withLastSeen,
-} = await import("./last-seen");
+const { agentLastSeenKey, agentReportKey, readAgentLastSeen, recordHeartbeat, withLastSeen } =
+  await import("./last-seen");
 const { closeRedis, getRedis } = await import("@/lib/hot-state");
 const { POST: heartbeat } = await import("@/app/api/agent/heartbeat/route");
 const { GET: listAgents } = await import("@/app/api/ui/agents/route");
@@ -123,9 +117,10 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent last-seen", () => 
       const agentId = await newAgent();
       await recordHeartbeat(db, agentId, REPORT, at(0));
       expect((await row(agentId)).lastHeartbeatAt).toEqual(at(0));
+      // The stored report expires at the next daily window (03:15 UTC), 15h15m after 12:00.
       const pttl = await getRedis().pttl(agentReportKey(agentId));
-      expect(pttl).toBeGreaterThan(POSTGRES_HEARTBEAT_MAX_AGE_MS - 60_000);
-      expect(pttl).toBeLessThanOrEqual(POSTGRES_HEARTBEAT_MAX_AGE_MS);
+      expect(pttl).toBeGreaterThan(15.25 * 3600_000 - 60_000);
+      expect(pttl).toBeLessThanOrEqual(15.25 * 3600_000);
 
       const before = await row(agentId);
       const returned = await recordHeartbeat(db, agentId, REPORT, at(20));
@@ -184,6 +179,15 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent last-seen", () => 
       // And the new report is the one an unchanged heartbeat is compared with.
       await recordHeartbeat(db, agentId, { ...REPORT, ...change }, at(40));
       expect((await row(agentId)).lastHeartbeatAt).toEqual(at(20));
+    });
+
+    it("expires the stored report at the next daily window, not a day after the write", async () => {
+      const agentId = await newAgent();
+      // A minute before the window: the next row write is due in the window, not tomorrow.
+      await recordHeartbeat(db, agentId, REPORT, new Date(Date.UTC(2026, 9, 16, 3, 14)));
+      const pttl = await getRedis().pttl(agentReportKey(agentId));
+      expect(pttl).toBeGreaterThan(0);
+      expect(pttl).toBeLessThanOrEqual(60_000);
     });
 
     it("writes the row again once the stored report expired (a day without a write)", async () => {
