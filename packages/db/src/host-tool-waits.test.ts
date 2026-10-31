@@ -119,7 +119,9 @@ describe.skipIf(!databaseAvailable)("host tool waits", () => {
     const job = await enqueue(org, ["gh"]);
     expect(job.waitingReason).toBeNull();
 
-    const offline = await captureChanges(() => markAgentsLiveOffline(db, [id]));
+    const offline = await captureChanges(() =>
+      markAgentsLiveOffline(db, [{ id, lastHeartbeatAt: null }]),
+    );
     expect(await reasonOf(job.id)).toEqual({ code: "host_tools_missing", hostTools: ["gh"] });
     expect(runChanges(offline.changes)).toEqual([job.id]);
 
@@ -143,14 +145,14 @@ describe.skipIf(!databaseAvailable)("host tool waits", () => {
     `),
     );
     try {
-      await expect(markAgentsLiveOffline(db, [id])).rejects.toThrow();
+      await expect(markAgentsLiveOffline(db, [{ id, lastHeartbeatAt: null }])).rejects.toThrow();
     } finally {
       await db.execute(sql.raw("drop trigger fail_waits on jobs; drop function fail_waits();"));
     }
     expect((await db.select().from(agents).where(eq(agents.id, id)))[0]!.liveOnline).toBe(true);
     expect(await reasonOf(job.id)).toBeNull();
 
-    expect(await markAgentsLiveOffline(db, [id])).toEqual([id]);
+    expect(await markAgentsLiveOffline(db, [{ id, lastHeartbeatAt: null }])).toEqual([id]);
     expect(await reasonOf(job.id)).toEqual({ code: "host_tools_missing", hostTools: ["gh"] });
   });
 
@@ -217,7 +219,7 @@ describe.skipIf(!databaseAvailable)("host tool waits", () => {
     const job = await enqueue(org, ["gh"]);
     expect(job.waitingReason).not.toBeNull();
     // Reported on the next heartbeat, but still offline: the reason stays meanwhile.
-    await markAgentsLiveOffline(db, [id]);
+    await markAgentsLiveOffline(db, [{ id, lastHeartbeatAt: null }]);
     await recordAgentHeartbeat(db, id, { version: "2.0.4", hostTools: [gh] });
     expect(await reasonOf(job.id)).not.toBeNull();
     const { claim } = await claimJob(db, {
@@ -290,7 +292,7 @@ describe.skipIf(!databaseAvailable)("host tool waits", () => {
     const id = await agent(org, [gh]);
     const job = await enqueue(org, ["gh"]);
     expect((await claim(id, org)).claim?.job.id).toBe(job.id);
-    await markAgentsLiveOffline(db, [id]);
+    await markAgentsLiveOffline(db, [{ id, lastHeartbeatAt: null }]);
 
     const retried = await failJob(db, {
       jobId: job.id,

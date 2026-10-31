@@ -252,14 +252,19 @@ export function relativeAgo(from: Date | string, now: Date): string {
   return count(Math.floor(elapsed / DAY_MS), "day");
 }
 
-/** "Last seen 2 minutes ago", or "Never connected" before an agent's first heartbeat. */
+/**
+ * "Online" for an online agent (`live_online`: its row's heartbeat can be up to a day old),
+ * else "Last seen 2 minutes ago" (an offline agent's row heartbeat is exact), or "Never
+ * connected" before its first heartbeat.
+ */
 export function lastSeenText(
-  lastHeartbeatAt: Date | string | null,
+  agent: { online: boolean; lastHeartbeatAt: Date | string | null },
   now: Date = new Date(),
 ): string {
-  return lastHeartbeatAt === null
+  if (agent.online) return "Online";
+  return agent.lastHeartbeatAt === null
     ? "Never connected"
-    : `Last seen ${relativeAgo(lastHeartbeatAt, now)}`;
+    : `Last seen ${relativeAgo(agent.lastHeartbeatAt, now)}`;
 }
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;

@@ -772,6 +772,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/ask", () => {
         name: "acme-agent",
         reportedVersion: QUERY_TASKS_MIN_AGENT_VERSION,
         lastHeartbeatAt: new Date(),
+        liveOnline: true,
       });
       // Om asks an agent about the chat's repo, then says so.
       const steps: StreamPart[][] = [

@@ -77,7 +77,6 @@ import {
 } from "./coding";
 import type { ScmAdapter } from "@omniralph/scm";
 import { organizationPlaybooks } from "@/lib/playbooks";
-import { readAgentLastSeen } from "@/lib/agents/last-seen";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { notifyRunThread } from "./chat-notify";
@@ -475,9 +474,7 @@ export async function laneAgentId(
 ): Promise<string | undefined> {
   return (
     (await usableAgentId(db, run.organizationId, lane.agentId)) ??
-    (await pinnedAgentFor(db, run.organizationId, lane.repositoryId, {
-      lastHeartbeats: readAgentLastSeen,
-    })) ??
+    (await pinnedAgentFor(db, run.organizationId, lane.repositoryId)) ??
     undefined
   );
 }

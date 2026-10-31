@@ -644,55 +644,6 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
     expect(times).toEqual([...times].sort((a, b) => b - a));
   });
 
-  it("dates an offline agent's item by its last-seen when later than its row's heartbeat", async () => {
-    const seen = ago(3);
-    const asked: string[][] = [];
-    const items = await listInboxItems(db, {
-      organizationIds: [acme],
-      userId: alice,
-      tab: "problems",
-      now,
-      agentLastSeen: async (agentIds) => {
-        asked.push([...agentIds]);
-        return new Map([
-          [ids.offline!, seen],
-          // Older than the online agent's row: it isn't offline anyway.
-          [ids.online!, ago(20)],
-        ]);
-      },
-    });
-    const offline = items.filter((i) => i.facts.kind === "agent_offline");
-    expect(offline).toEqual([
-      expect.objectContaining({
-        key: `agent_offline:${ids.offline}:${seen.toISOString()}`,
-        since: seen,
-        facts: expect.objectContaining({ lastHeartbeatAt: seen.toISOString() }),
-      }),
-    ]);
-    // Only the offline agents' last-seen is read.
-    expect(asked).toEqual([[ids.offline]]);
-    // A last-seen older than the row's heartbeat (a stale key): the row's.
-    const [stale] = (
-      await listInboxItems(db, {
-        organizationIds: [acme],
-        userId: alice,
-        tab: "problems",
-        now,
-        agentLastSeen: async () => new Map([[ids.offline!, ago(60)]]),
-      })
-    ).filter((i) => i.facts.kind === "agent_offline");
-    expect(stale!.since).toEqual(ago(10));
-    // The same item `findInboxItem` derives, so Done and Snooze apply to it.
-    expect(
-      await findInboxItem(db, {
-        organizationIds: [acme],
-        key: offline[0]!.key,
-        now,
-        agentLastSeen: async () => new Map([[ids.offline!, seen]]),
-      }),
-    ).toEqual(offline[0]);
-  });
-
   it("lists one run's open questions with the Inbox's keys and what their answers need", async () => {
     const items = await list();
     const inboxKey = (runId: string) =>

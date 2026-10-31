@@ -136,6 +136,32 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent liveness", () => {
         }
       });
 
+      it("writes the real last heartbeat to the row when it announces an agent offline", async () => {
+        const now = new Date();
+        const rowAt = new Date(now.getTime() - 24 * 3600_000);
+        const seenAt = new Date(now.getTime() - AGENT_ONLINE_WINDOW_MS - 5_000);
+        const id = await newAgent(rowAt);
+        await noteAgentOnline(db, id);
+        if (hotState) await getRedis().set(agentLastSeenKey(id), String(seenAt.getTime()));
+        expect(await sweepAgentLiveness(db, now)).toEqual([id]);
+        const [row] = await db.select().from(agents).where(eq(agents.id, id));
+        // Without Redis the row is already exact and is kept.
+        expect(row!.lastHeartbeatAt).toEqual(hotState ? seenAt : rowAt);
+      });
+
+      it("keeps the row's last heartbeat when Redis's last-seen is older", async () => {
+        const now = new Date();
+        const rowAt = new Date(now.getTime() - AGENT_ONLINE_WINDOW_MS - 5_000);
+        const id = await newAgent(rowAt);
+        await noteAgentOnline(db, id);
+        if (hotState) {
+          await getRedis().set(agentLastSeenKey(id), String(rowAt.getTime() - 3600_000));
+        }
+        expect(await sweepAgentLiveness(db, now)).toEqual([id]);
+        const [row] = await db.select().from(agents).where(eq(agents.id, id));
+        expect(row!.lastHeartbeatAt).toEqual(rowAt);
+      });
+
       it("never announces a revoked agent online", async () => {
         const id = await newAgent();
         await db.update(agents).set({ revokedAt: new Date() }).where(eq(agents.id, id));

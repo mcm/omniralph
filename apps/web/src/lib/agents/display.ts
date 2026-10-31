@@ -3,14 +3,8 @@ import { RunSpecJobPayload } from "@omniralph/shared";
 import { z } from "zod";
 import { changeRequestWebUrl, repositoryWebUrl } from "@/lib/repositories/web-url";
 
-/** An agent counts as online while its last heartbeat is younger than this. */
+/** The liveness sweep announces an agent offline once its last heartbeat is this old. */
 export const AGENT_ONLINE_WINDOW_MS = 60_000;
-
-export function isAgentOnline(lastHeartbeatAt: Date | null, now: Date = new Date()): boolean {
-  return (
-    lastHeartbeatAt !== null && now.getTime() - lastHeartbeatAt.getTime() < AGENT_ONLINE_WINDOW_MS
-  );
-}
 
 /** POSIX shell single-quoting, only where needed. */
 function shellQuote(value: string): string {

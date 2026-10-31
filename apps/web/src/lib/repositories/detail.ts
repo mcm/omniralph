@@ -28,7 +28,6 @@ import type { SettingsHistoryEntry } from "@/lib/api/settings-history";
 import { WORK_ITEM_TRACKERS } from "@/lib/api/work-item-matches";
 import { hasRole } from "@/lib/auth/roles";
 import { organizationAgentVersion } from "@/lib/agents/desired-version";
-import { withLastSeen } from "@/lib/agents/last-seen";
 import { agentRow } from "@/lib/agents/rows";
 import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
 import type { SettingsSection } from "@/lib/live/events";
@@ -124,7 +123,7 @@ export async function loadAgentsCard(
   now: Date = new Date(),
 ): Promise<AgentsCard> {
   const [agents, organizationVersion, pinnedIds] = await Promise.all([
-    listAgentOverview(db, repository.organizationId).then(withLastSeen),
+    listAgentOverview(db, repository.organizationId),
     organizationAgentVersion(db, repository.organizationId, { timeoutMs: NPM_TIMEOUT_MS }),
     listRepositoryPinnedAgentIds(db, repository.id),
   ]);

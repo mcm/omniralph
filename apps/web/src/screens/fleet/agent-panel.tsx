@@ -244,7 +244,7 @@ export function AgentPanelContent({
       <StatusIndicator
         tone={status.tone}
         label={status.label}
-        tooltip={lastSeenText(agent.lastHeartbeatAt, new Date(now))}
+        tooltip={lastSeenText(agent, new Date(now))}
       />
       <h2 id={`agent-${agent.id}`} className="or-fleet-agent__name or-mono">
         {agent.name}

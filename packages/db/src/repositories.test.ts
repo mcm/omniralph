@@ -24,6 +24,7 @@ import {
   WorkItemMatchRequiredError,
 } from "./repositories.js";
 import { deleteWorkItemMatch, saveWorkItemMatch } from "./work-item-matches.js";
+import { pinnedAgentFor } from "./jobs.js";
 import {
   agentRepoPins,
   agents,
@@ -294,6 +295,56 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
       fullPath: "acme/web-renamed",
     });
     await db.delete(scmConnections).where(eq(scmConnections.id, connection.id));
+  });
+
+  it("sends a pinned repo's jobs to an online agent first, then the least busy", async () => {
+    const connection = (await upsertScmConnection(
+      db,
+      {
+        organizationId: orgId,
+        provider: "github",
+        name: "pins",
+        baseUrl: "https://api.github.com",
+        externalId: "3003",
+        credentials: {},
+      },
+      key,
+    ))!;
+    const repo = await connectRepository(db, {
+      connectionId: connection.id,
+      provider: "github",
+      externalId: "777",
+      fullPath: "acme/pinned",
+    });
+    expect(await pinnedAgentFor(db, orgId, repo.id)).toBeNull();
+    const agent = async (name: string, values: Partial<typeof agents.$inferInsert>) => {
+      const [row] = await db
+        .insert(agents)
+        .values({ organizationId: orgId, name, ...values })
+        .returning();
+      await db.insert(agentRepoPins).values({ agentId: row!.id, repositoryId: repo.id });
+      return row!.id;
+    };
+    // Offline with the most recent row heartbeat (its row is exact).
+    await agent("offline", { lastHeartbeatAt: new Date(), liveOnline: false });
+    // Online with a row heartbeat up to a day old (it's only written once a day).
+    const busy = await agent("busy", {
+      lastHeartbeatAt: new Date(Date.now() - 3600_000),
+      liveOnline: true,
+    });
+    expect(await pinnedAgentFor(db, orgId, repo.id)).toBe(busy);
+    await db.insert(jobs).values({
+      organizationId: orgId,
+      type: "review.run",
+      taskType: "review",
+      agentId: busy,
+      status: "running",
+    });
+    const idle = await agent("idle", {
+      lastHeartbeatAt: new Date(Date.now() - 7200_000),
+      liveOnline: true,
+    });
+    expect(await pinnedAgentFor(db, orgId, repo.id)).toBe(idle);
   });
 
   it("turns everything off and deletes the match on disconnect; reconnecting starts with Coding off", async () => {

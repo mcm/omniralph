@@ -383,10 +383,15 @@ describe("relativeAgo", () => {
 });
 
 describe("lastSeenText", () => {
-  it("says when the agent last heartbeated, or that it never has", () => {
-    expect(lastSeenText(ago(2 * MINUTE + 5_000), NOW)).toBe("Last seen 2 minutes ago");
-    expect(lastSeenText(ago(10_000), NOW)).toBe("Last seen just now");
-    expect(lastSeenText(null, NOW)).toBe("Never connected");
+  it("says when an offline agent last heartbeated, or that it never has", () => {
+    const offline = (lastHeartbeatAt: Date | string | null) => ({ online: false, lastHeartbeatAt });
+    expect(lastSeenText(offline(ago(2 * MINUTE + 5_000)), NOW)).toBe("Last seen 2 minutes ago");
+    expect(lastSeenText(offline(ago(10_000)), NOW)).toBe("Last seen just now");
+    expect(lastSeenText(offline(null), NOW)).toBe("Never connected");
+  });
+
+  it("says Online for an online agent, whatever its row's (at most daily) heartbeat", () => {
+    expect(lastSeenText({ online: true, lastHeartbeatAt: ago(5 * HOUR) }, NOW)).toBe("Online");
   });
 });
 

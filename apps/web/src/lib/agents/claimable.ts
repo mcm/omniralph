@@ -1,6 +1,5 @@
 import type { AgentOverview } from "@omniralph/db";
 import { agentVersionAtLeast } from "@omniralph/shared";
-import { isAgentOnline } from "./display";
 
 /** An agent that would get a query run, and whether it can claim one now. */
 export interface QueryAgentStatus {
@@ -30,20 +29,19 @@ export interface RunAgentRequirements {
  * by the organization's default: `effective`), reports
  * the run's minimum version or later, reports every required installable and
  * reports every required host tool with a path (`usableHostTools`, by agent
- * ID: `listAgentsUsableHostTools`). Revoked and offline agents
- * are left out.
+ * ID: `listAgentsUsableHostTools`). Revoked and offline (not `live_online`)
+ * agents are left out.
  */
 export function queryClaimableAgents(
   agents: readonly AgentOverview[],
   usableHostTools: ReadonlyMap<string, readonly string[]>,
   repositoryId: string,
   requirements: RunAgentRequirements,
-  now: Date = new Date(),
 ): QueryAgentStatus[] {
   const live = agents.filter((h) => !h.revokedAt);
   const pinned = live.filter((h) => h.pinnedRepositories.some((r) => r.id === repositoryId));
   return (pinned.length > 0 ? pinned : live)
-    .filter((h) => isAgentOnline(h.lastHeartbeatAt, now))
+    .filter((h) => h.liveOnline)
     .map((h) => ({
       name: h.name,
       version: h.reportedVersion,
