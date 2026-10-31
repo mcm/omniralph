@@ -7,18 +7,18 @@ import {
   EmptyState,
   OrgBadge,
   RepoBadge,
-  scrollToSection,
-  SectionIndex,
+  TabPanel,
+  Tabs,
   TextLink,
   Toolbar,
-  useActiveSection,
   type MenuItem,
 } from "@omniralph/ui";
-import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { useCurrentUser } from "@/components/current-user";
 import { ApiError } from "@/lib/api/client";
 import type { RepositoryDetail, RepositoryProblemItem } from "@/lib/api/repositories";
+import { repoHref } from "@/lib/repositories/hrefs";
 import { runListHref } from "@/lib/runs/hrefs";
 import { AdvancedSection } from "./advanced-section";
 import { AgentsCard } from "./agents-card";
@@ -38,7 +38,7 @@ export const REPO_NOT_FOUND = "This repo doesn't exist or isn't in your organiza
 /** The failed load of a repo. */
 export const REPO_DETAIL_FAILED = "Couldn't load this repo.";
 
-/** The detail's sections, in page order: the section index's entries and `?section=` values. */
+/** The detail's sections, in tab order: the tabs and their `?tab=` values. */
 export const REPO_SECTIONS = [
   { id: "reviews", label: "Reviews" },
   { id: "coding", label: "Coding" },
@@ -48,6 +48,9 @@ export const REPO_SECTIONS = [
   { id: "advanced", label: "Advanced" },
 ] as const;
 export type RepoSectionId = (typeof REPO_SECTIONS)[number]["id"];
+
+/** The tab a repo opens on; it is left out of the URL. */
+const DEFAULT_SECTION: RepoSectionId = "reviews";
 
 /** The sections that are one settings card (the card's title names the section). */
 const CARD_SECTIONS: Partial<Record<RepoSectionId, true>> = {
@@ -60,15 +63,26 @@ const CARD_SECTIONS: Partial<Record<RepoSectionId, true>> = {
 
 const SECTION_IDS: readonly RepoSectionId[] = REPO_SECTIONS.map((section) => section.id);
 
-function isSectionId(value: string | null): value is RepoSectionId {
-  return value !== null && (SECTION_IDS as readonly string[]).includes(value);
+function isSectionId(value: string | null | undefined): value is RepoSectionId {
+  return value != null && (SECTION_IDS as readonly string[]).includes(value);
 }
 
-/** Writes `?section=<id>` into the URL in place (no navigation, no history entry). */
-function writeSectionParam(id: RepoSectionId) {
-  const url = new URL(window.location.href);
-  url.searchParams.set("section", id);
-  window.history.replaceState(window.history.state, "", url);
+/**
+ * The tab a repo's URL names: `?tab=`, else the older `?section=` (links already sent, e.g.
+ * by the chat agent); Reviews when neither names a section.
+ */
+export function parseRepoSection(params: Pick<URLSearchParams, "get">): RepoSectionId {
+  for (const candidate of [params.get("tab"), params.get("section")]) {
+    if (isSectionId(candidate)) return candidate;
+  }
+  return DEFAULT_SECTION;
+}
+
+/** A repo's URL on a tab: `/repos/{id}?tab=` (no `?tab=` for Reviews). */
+export function repoSectionHref(repositoryId: string, section: RepoSectionId): string {
+  return section === DEFAULT_SECTION
+    ? repoHref(repositoryId)
+    : `${repoHref(repositoryId)}?tab=${section}`;
 }
 
 const providerName = (provider: RepositoryDetail["repository"]["provider"]) =>
@@ -122,32 +136,66 @@ function RepoProblems({ repository }: { repository: RepositoryDetail }) {
   );
 }
 
-/** Finds the scrolling detail pane around `element`, for the section index's "in view". */
-function useScrollRoot(): [RefObject<Element | null>, (element: HTMLElement | null) => void] {
-  const root = useRef<Element | null>(null);
-  const attach = (element: HTMLElement | null) => {
-    root.current = element?.closest(".or-split__detail") ?? null;
+/**
+ * The selected tab: the URL's (`parseRepoSection`), shown at once on a click while the URL
+ * catches up. A `#section` anchor followed on the page (the unsaved changes bar's links)
+ * opens its tab too, and the anchor leaves the URL so the same link works again.
+ */
+function useRepoSection(
+  repositoryId: string,
+  searchParams: Pick<URLSearchParams, "get">,
+  replace: (href: string) => void,
+): [RepoSectionId, (section: RepoSectionId) => void] {
+  const fromUrl = parseRepoSection(searchParams);
+  const [selected, setSelected] = useState(fromUrl);
+  // The URL changed (back/forward, a link): it wins over the clicked tab.
+  const [seenUrl, setSeenUrl] = useState(fromUrl);
+  if (seenUrl !== fromUrl) {
+    setSeenUrl(fromUrl);
+    setSelected(fromUrl);
+  }
+
+  const select = (section: RepoSectionId) => {
+    setSelected(section);
+    replace(repoSectionHref(repositoryId, section));
   };
-  return [root, attach];
+  const selectRef = useLatest(select);
+
+  useEffect(() => {
+    const followHash = () => {
+      const id = window.location.hash.replace(/^#/, "");
+      if (!isSectionId(id)) return;
+      selectRef.current(id);
+      // After the tab shows, bring its section into view.
+      requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ block: "start" }));
+    };
+    // A link that arrived with `#coding` (read after hydration: the server has no hash).
+    followHash();
+    window.addEventListener("hashchange", followHash);
+    return () => window.removeEventListener("hashchange", followHash);
+  }, [selectRef]);
+
+  return [selected, select];
+}
+
+function useLatest<T>(value: T) {
+  const ref = useRef(value);
+  useEffect(() => {
+    ref.current = value;
+  });
+  return ref;
 }
 
 function RepoDetailContent({ detail }: { detail: RepositoryDetail }) {
   const user = useCurrentUser();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const [scrollRoot, attachScrollRoot] = useScrollRoot();
-  const active = useActiveSection(SECTION_IDS, scrollRoot);
   const { repository } = detail;
   const showOrganization = user.scope === "all";
-
-  // A deep link (`/repos/{id}?section=coding`) opens on its section, once.
-  const requested = searchParams.get("section");
-  const scrolled = useRef(false);
-  useEffect(() => {
-    if (scrolled.current) return;
-    scrolled.current = true;
-    if (isSectionId(requested)) scrollToSection(requested);
-  }, [requested]);
+  const [tab, selectTab] = useRepoSection(repository.id, searchParams, (href) =>
+    router.replace(href, { scroll: false }),
+  );
 
   const menu: MenuItem[] = [
     { label: "View runs for this repo", href: runListHref({ repository: [repository.id] }) },
@@ -164,7 +212,7 @@ function RepoDetailContent({ detail }: { detail: RepositoryDetail }) {
   const branch = repository.defaultBranch ? <BranchBadge name={repository.defaultBranch} /> : null;
 
   return (
-    <article ref={attachScrollRoot} className="or-repo-detail" aria-label={repository.fullPath}>
+    <article className="or-repo-detail" aria-label={repository.fullPath}>
       <header className="or-repo-detail__head">
         <div className="or-repo-detail__badges">
           {organization ? <span className="or-repo-detail__context">{organization}</span> : null}
@@ -182,42 +230,45 @@ function RepoDetailContent({ detail }: { detail: RepositoryDetail }) {
         </DetailsSection>
       ) : null}
       <RepoProblems repository={detail} />
-      <SectionIndex
-        className="or-repo-detail__index"
+      <Tabs<RepoSectionId>
         aria-label="Sections"
-        sections={REPO_SECTIONS}
-        active={active}
-        onNavigate={writeSectionParam}
-      />
-      {REPO_SECTIONS.map((section) => (
-        <section
-          key={section.id}
-          id={section.id}
-          className="or-repo-section"
-          // A card section is the card's own region (named by its title): not a second one.
-          aria-labelledby={
-            section.id in CARD_SECTIONS ? undefined : `or-repo-section-${section.id}`
-          }
-        >
-          {section.id === "reviews" ? (
-            <ReviewsCard detail={detail} titleId={`or-repo-section-${section.id}`} />
-          ) : section.id === "coding" ? (
-            <CodingCard detail={detail} titleId={`or-repo-section-${section.id}`} />
-          ) : section.id === "ask" ? (
-            <AskCard detail={detail} titleId={`or-repo-section-${section.id}`} />
-          ) : section.id === "agents" ? (
-            <AgentsCard detail={detail} titleId={`or-repo-section-${section.id}`} />
-          ) : section.id === "rules" ? (
-            <RulesSection detail={detail} titleId={`or-repo-section-${section.id}`} />
-          ) : (
-            <AdvancedSection
-              detail={detail}
-              titleId={`or-repo-section-${section.id}`}
-              onRemove={() => setConfirmRemove(true)}
-            />
-          )}
-        </section>
-      ))}
+        className="or-repo-detail__tabs"
+        tabs={REPO_SECTIONS.map(({ id, label }) => ({ value: id, label }))}
+        value={tab}
+        onValueChange={selectTab}
+      >
+        {REPO_SECTIONS.map((section) => (
+          // Kept mounted: an edit in progress on one tab survives a look at another.
+          <TabPanel key={section.id} value={section.id} keepMounted>
+            <section
+              id={section.id}
+              className="or-repo-section"
+              // A card section is the card's own region (named by its title): not a second one.
+              aria-labelledby={
+                section.id in CARD_SECTIONS ? undefined : `or-repo-section-${section.id}`
+              }
+            >
+              {section.id === "reviews" ? (
+                <ReviewsCard detail={detail} titleId={`or-repo-section-${section.id}`} />
+              ) : section.id === "coding" ? (
+                <CodingCard detail={detail} titleId={`or-repo-section-${section.id}`} />
+              ) : section.id === "ask" ? (
+                <AskCard detail={detail} titleId={`or-repo-section-${section.id}`} />
+              ) : section.id === "agents" ? (
+                <AgentsCard detail={detail} titleId={`or-repo-section-${section.id}`} />
+              ) : section.id === "rules" ? (
+                <RulesSection detail={detail} titleId={`or-repo-section-${section.id}`} />
+              ) : (
+                <AdvancedSection
+                  detail={detail}
+                  titleId={`or-repo-section-${section.id}`}
+                  onRemove={() => setConfirmRemove(true)}
+                />
+              )}
+            </section>
+          </TabPanel>
+        ))}
+      </Tabs>
       {detail.canEdit ? (
         <RemoveRepoDialog
           repository={repository}
@@ -245,7 +296,7 @@ function RepoDetailSkeleton() {
  * A repo on the Repos screen (Design board Repos): its header badges (organization under
  * All organizations, the repo, its default branch once known; on phone the organization and
  * branch move into "Details") and ⋯ menu (Design rule 5), the notice of its problems (only
- * when it has some, Design rule 9), the section index (`?section=`) and its sections. A live
+ * when it has some, Design rule 9), and its sections as tabs (`?tab=`), one at a time. A live
  * query: the repo's change events refetch it.
  */
 export function RepoDetailView({ repositoryId }: { repositoryId: string }) {

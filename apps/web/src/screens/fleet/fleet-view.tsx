@@ -45,37 +45,36 @@ export function sortFleet(agents: readonly FleetAgentRow[]): FleetAgentRow[] {
   );
 }
 
-/** "6 of 7 online · 1 offline" (the offline part coral, absent at zero). */
+/** "6 of 7 online [1 offline]" (the offline badge coral, absent at zero). */
 function HealthValue({ summary }: { summary: FleetSummary }) {
   return (
-    <>
-      {summary.online} of {summary.total} online
+    <span className="or-fleet__health">
+      <span>
+        {summary.online} of {summary.total} online
+      </span>
       {summary.offline > 0 ? (
-        <>
-          {" · "}
-          <span className="or-fleet__fail">{summary.offline} offline</span>
-        </>
+        <MetaBadge className="or-fleet__fail" text={`${summary.offline} offline`} />
       ) : null}
-    </>
+    </span>
   );
 }
 
 /**
- * "All agents on 2.0.3", "2 agents behind" or "1 update failed" (coral), with "· 1 pinned on
- * the agent" for agents on a version pinned there.
+ * "All agents on 2.0.3", "2 agents behind" or "1 update failed" (coral), with a "1 pinned on
+ * the agent" badge for agents on a version pinned there.
  */
 function VersionDetail({ summary }: { summary: FleetSummary }) {
   const detail = versionSummary(summary.versionPolicy, summary.versions);
   if (detail.kind === "update_failed")
     return <span className="or-fleet__fail">{detail.label}</span>;
   if (detail.kind === "pinned") return <>{detail.label}</>;
-  const pinned = detail.pinned ? ` · ${detail.pinned}` : null;
+  const pinned = detail.pinned ? <MetaBadge text={detail.pinned} /> : null;
   if (detail.kind === "behind") {
     return (
-      <>
+      <span className="or-fleet__on">
         {detail.label}
         {pinned}
-      </>
+      </span>
     );
   }
   return (
@@ -236,7 +235,7 @@ export function FleetView({ agentId = null, renderDetail = defaultDetail }: Flee
 
   const list = (
     <div className="or-fleet__list">
-      <div className="or-fleet__head">
+      <div className="or-fleet__head or-split__sticky">
         <h1 className="or-fleet__title">Fleet</h1>
         {admin ? enroll : null}
       </div>

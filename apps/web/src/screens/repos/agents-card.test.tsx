@@ -43,7 +43,7 @@ vi.mock("@/lib/theme-actions", () => ({ saveShowAdvancedPreference: vi.fn() }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/repos",
   useRouter: () => nav.router,
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams("tab=agents"),
 }));
 
 function TestLink({ href, onClick, ...props }: LinkProps) {
@@ -232,7 +232,9 @@ describe("the Agents card", () => {
     const list = within(card).getByRole("list", { name: "Pinned agents" });
     const items = within(list).getAllByRole("listitem");
     expect(items).toHaveLength(4);
-    expect(within(items[0]!).getByRole("img", { name: "Running 2" })).toBeTruthy();
+    // One status per row: the state in words, not a second dot before the agent.
+    expect(items[0]!.querySelectorAll(".or-status")).toHaveLength(1);
+    expect(within(items[0]!).queryByRole("img", { name: "Running 2" })).toBeNull();
     expect(items[0]!.querySelector(".or-status--run")?.textContent).toBe("Running 2");
     expect(
       within(items[0]!)
@@ -242,7 +244,10 @@ describe("the Agents card", () => {
     expect(items[1]!.querySelector(".or-status--good")?.textContent).toBe("Idle");
     expect(items[2]!.querySelector(".or-status--fail")?.textContent).toBe("Offline");
     expect(items[3]!.querySelector(".or-status--neutral")?.textContent).toBe("Updating");
-    expect(within(items[1]!).getByRole("button", { name: "Unpin build-2" })).toBeTruthy();
+    // Unpin reads as a word in its row, and names its agent for assistive tech.
+    expect(within(items[1]!).getByRole("button", { name: "Unpin build-2" }).textContent).toBe(
+      "Unpin",
+    );
     expect(saveBar(card)).toBeNull();
   });
 

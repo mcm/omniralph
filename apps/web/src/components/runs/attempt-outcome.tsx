@@ -9,7 +9,7 @@ type AttemptStatus = RunAttempt["status"];
 
 /** Each attempt status as its dot names it, and the dot's tone (Design rule 15). */
 export const ATTEMPT_STATUS: Record<AttemptStatus, { label: string; tone: StatusTone }> = {
-  queued: { label: "Queued", tone: "run" },
+  queued: { label: "Queued", tone: "neutral" },
   running: { label: "Running", tone: "run" },
   completed: { label: "Finished", tone: "good" },
   failed: { label: "Failed", tone: "fail" },

@@ -32,6 +32,8 @@ const COLOR_TOKENS: Record<string, [string, string]> = {
   "acc-hover": ["#C7B0FF", "#5229C2"],
   halo: ["rgba(178,148,255,.2)", "rgba(98,54,214,.14)"],
   glow: ["0 0 22px rgba(178,148,255,.32)", "0 4px 14px rgba(98,54,214,.25)"],
+  good: ["#5EE6D0", "#087064"],
+  warn: ["#F2B84B", "#8A5300"],
   run: ["#5EE6D0", "#087064"],
   "run-glow": ["rgba(94,230,208,.16)", "rgba(8,112,100,.14)"],
   fail: ["#FF6B5E", "#C42B2B"],

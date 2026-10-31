@@ -41,11 +41,13 @@
   padding: 40px 20px;
 }
 
-.or-fleet__fail {
+.or-fleet__fail,
+.or-fleet__fail.or-ref {
   color: var(--or-fail);
 }
 
 .or-fleet__on,
+.or-fleet__health,
 .or-fleet__pins {
   display: inline-flex;
   flex-wrap: wrap;

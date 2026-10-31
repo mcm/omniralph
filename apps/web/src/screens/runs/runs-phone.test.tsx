@@ -216,18 +216,18 @@ describe("the run detail on phone", () => {
     }
   });
 
-  it("keeps the toolbar's icon buttons and ⋯ menu, with Details and Session collapsed", async () => {
+  it("keeps the toolbar's icon buttons and ⋯ menu, with Session collapsed", async () => {
     renderWith(<RunsView runId={RUN_ID} />, FILTERS);
     await loadedDetail();
     const toolbar = screen.getByRole("toolbar", { name: "Run actions" });
-    expect(within(toolbar).getByRole("link", { name: "Open merge request" })).toBeTruthy();
+    expect(within(toolbar).getByRole("link", { name: /^Open merge request/ })).toBeTruthy();
     expect(within(toolbar).getByRole("button", { name: "Retry run" })).toBeTruthy();
     expect(within(toolbar).getByRole("button", { name: "More actions" })).toBeTruthy();
     await waitFor(() => expect(screen.getByText("Session")).toBeTruthy());
     const sections = [...document.querySelectorAll<HTMLDetailsElement>("details.or-more-info")];
     expect(
       sections.map((section) => section.querySelector("summary")!.textContent!.trim()),
-    ).toEqual(["Details", "Session"]);
+    ).toEqual(["Session"]);
     expect(sections.every((section) => !section.open)).toBe(true);
   });
 });

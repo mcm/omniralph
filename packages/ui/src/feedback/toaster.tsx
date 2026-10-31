@@ -12,11 +12,11 @@ import {
   type ToastVariant,
 } from "./toast-store.js";
 
-/** The status dot's tone per variant: mint for success, coral for danger, else neutral. */
+/** The status dot's tone per variant: mint for success, amber for warning, coral for danger. */
 const TONES: Readonly<Record<ToastVariant, StatusTone>> = {
   success: "good",
   info: "neutral",
-  warning: "neutral",
+  warning: "warn",
   danger: "fail",
 };
 

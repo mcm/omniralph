@@ -1,6 +1,12 @@
 import { render, screen, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { Transcript, transcriptOffset, type TranscriptEvent } from "./transcript.js";
+import {
+  Transcript,
+  transcriptOffset,
+  transcriptPreview,
+  type TranscriptEvent,
+} from "./transcript.js";
 
 const START = "2026-10-26T10:00:00.000Z";
 const after = (seconds: number) => new Date(Date.parse(START) + seconds * 1000).toISOString();
@@ -93,5 +99,69 @@ describe("Transcript", () => {
     render(<Transcript events={[]} startedAt={START} error={null} />);
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("list")).toBeNull();
+  });
+
+  it("folds a long parameter to its first lines until View more, and back with View less", async () => {
+    const heredoc = [
+      "python3 - <<'EOF'",
+      ...Array.from({ length: 20 }, (_, i) => `line ${i}`),
+      "EOF",
+    ];
+    render(
+      <Transcript
+        events={[{ type: "action", body: "Bash", parameter: heredoc.join("\n"), at: after(1) }]}
+        startedAt={START}
+      />,
+    );
+    const code = screen.getByRole("listitem").querySelector("code")!;
+    expect(code.textContent).toBe(heredoc.slice(0, 4).join("\n"));
+    const toggle = screen.getByRole("button", { name: "View more" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.getAttribute("aria-controls")).toBe(code.id);
+
+    await userEvent.click(toggle);
+    expect(code.textContent).toBe(heredoc.join("\n"));
+    expect(toggle.textContent).toBe("View less");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    await userEvent.click(toggle);
+    expect(code.textContent).toBe(heredoc.slice(0, 4).join("\n"));
+  });
+
+  it("folds a long thought the same way, and each row on its own", async () => {
+    const long = Array.from({ length: 8 }, (_, i) => `Step ${i}`).join("\n");
+    render(
+      <Transcript
+        events={[
+          { id: "t1", type: "thought", body: long, parameter: null, at: after(1) },
+          { id: "t2", type: "thought", body: long, parameter: null, at: after(2) },
+        ]}
+        startedAt={START}
+      />,
+    );
+    const [first, second] = screen.getAllByRole("listitem");
+    await userEvent.click(within(first!).getByRole("button", { name: "View more" }));
+    expect(first!.querySelector("p")!.textContent).toBe(long);
+    expect(second!.querySelector("p")!.textContent).toBe("Step 0\nStep 1\nStep 2\nStep 3");
+  });
+
+  it("shows short texts whole, with no View more", () => {
+    render(<Transcript events={events} startedAt={START} />);
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+});
+
+describe("transcriptPreview", () => {
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `l${i}`).join("\n");
+
+  it("is null up to one line past the preview: folding a single line saves nothing", () => {
+    expect(transcriptPreview("one line")).toBeNull();
+    expect(transcriptPreview(lines(4))).toBeNull();
+    expect(transcriptPreview(lines(5))).toBeNull();
+  });
+
+  it("is the first 4 lines past that", () => {
+    expect(transcriptPreview(lines(6))).toBe("l0\nl1\nl2\nl3");
+    expect(transcriptPreview(lines(40))).toBe("l0\nl1\nl2\nl3");
   });
 });

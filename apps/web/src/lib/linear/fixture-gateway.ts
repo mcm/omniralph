@@ -111,5 +111,74 @@ export function fixtureLinearGateway(): FakeLinearGateway {
     projectName: undefined,
     labels: ["infra"],
   });
+  // The waiting epic's work items (the seed's FIX-120 run, `fixture-linear-issue-{identifier}`):
+  // its PRD, and its manual story's checklist. In progress, so they stay off the Backlog.
+  const epicItem = (identifier: string, title: string, description: string, labels: string[]) =>
+    issue(identifier, title, "In Progress", {
+      id: `fixture-linear-issue-${identifier}`,
+      projectName: "Agent",
+      labels,
+      description,
+    });
+  epicItem(
+    "FIX-100",
+    "Rebuild the onboarding flow",
+    [
+      "# PRD: Rebuild the onboarding flow",
+      "",
+      "## Introduction",
+      "",
+      "New organizations drop off between signing up and their first run. Rebuild onboarding as short steps that end with a connected code host and a first repo.",
+      "",
+      "## Quality Gates",
+      "",
+      "- `pnpm turbo run typecheck lint test`",
+      "",
+      "## User Stories",
+      "",
+      "### US-001: Add the organization step",
+      "",
+      "### US-002: Invite teammates from onboarding",
+      "",
+      "### US-003: Connect a code host from onboarding",
+      "",
+      "## Open Questions",
+      "",
+      "- Should invites be skippable?",
+    ].join("\n"),
+    ["frontend"],
+  );
+  epicItem(
+    "FIX-120",
+    "Rotate the webhook signing secrets",
+    [
+      "# PRD: Rotate the webhook signing secrets",
+      "",
+      "## Introduction",
+      "",
+      "The GitHub webhook secret has been the same since launch. Rotate it without dropping deliveries.",
+      "",
+      "## User Stories",
+      "",
+      "### US-001: Accept both secrets during rotation",
+      "",
+      "### US-002: Set the new secret in the GitHub App settings",
+      "",
+      "### US-003: Remove the old secret",
+    ].join("\n"),
+    ["backend"],
+  );
+  epicItem(
+    "FIX-122",
+    "Set the new secret in the GitHub App settings",
+    [
+      "The agent now accepts both secrets. Switch GitHub over to the new one:",
+      "",
+      "- [x] Generate a new secret in 1Password",
+      "- [ ] Paste it into the GitHub App's webhook settings",
+      "- [ ] Redeliver one webhook and check it's accepted",
+    ].join("\n"),
+    ["manual"],
+  );
   return linear;
 }

@@ -337,8 +337,8 @@ export interface LinearGateway {
   /** Adds labels by ID, keeping the issue's other labels. */
   addIssueLabels(issueId: string, labelIds: string[]): Promise<void>;
   removeIssueLabel(issueId: string, labelId: string): Promise<void>;
-  /** Delegates the issue to an (agent) user, e.g. the app user from `getViewer`. */
-  delegateIssue(issueId: string, delegateId: string): Promise<void>;
+  /** Delegates the issue to an (agent) user, e.g. the app user from `getViewer`; null removes its delegate. */
+  delegateIssue(issueId: string, delegateId: string | null): Promise<void>;
   addComment(issueId: string, body: string): Promise<void>;
   /**
    * Links a URL (e.g. a PR/MR) to the issue as an attachment
@@ -1405,7 +1405,7 @@ export class SdkLinearGateway implements LinearGateway {
     await this.issueUpdate(issueId, { removedLabelIds: [labelId] });
   }
 
-  async delegateIssue(issueId: string, delegateId: string): Promise<void> {
+  async delegateIssue(issueId: string, delegateId: string | null): Promise<void> {
     await this.issueUpdate(issueId, { delegateId });
   }
 

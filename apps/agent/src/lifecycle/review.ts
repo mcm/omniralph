@@ -31,6 +31,9 @@ import { runSetupCommands, runTeardownCommands } from "./commands.js";
 import { NO_EXECUTABLES, resolveRunExecutables, type RunExecutables } from "./executables.js";
 import { queryToolPolicy } from "./tool-policy.js";
 import { withInstallableSkills } from "../installable-skills.js";
+import type { FetchFn } from "../api.js";
+import { sessionTee, type SessionTee } from "../session/session.js";
+import { ActivityRelay } from "../tools/activities.js";
 
 export interface ReviewTaskOptions {
   /**
@@ -47,6 +50,20 @@ export interface ReviewTaskOptions {
   query?: QueryFn;
   /** Retry delay for rate limits whose reset time is unknown. */
   defaultRetryAfterSeconds?: number;
+  /** For relaying the session's activities; defaults to the global `fetch`. */
+  fetch?: FetchFn;
+}
+
+/**
+ * `relay` first, then `inner` (the attempt's live tail, when set): a review session's events
+ * become the job's activities (its transcript in the control panel) and its live tail.
+ */
+function chainTee(relay: SessionTee, inner: SessionTee | undefined): SessionTee {
+  if (!inner) return relay;
+  return {
+    runner: (runner) => inner.runner(relay.runner(runner)),
+    query: (query) => inner.query(relay.query(query)),
+  };
 }
 
 /**
@@ -156,6 +173,23 @@ export async function runReviewTask(
     headSha,
   });
 
+  // The session's events are posted as the job's activities (its transcript on Runs), as a
+  // query or coding session's are, and still reach the attempt's live tail.
+  const relay = new ActivityRelay({
+    server: ctx.server,
+    jobId: spec.jobId,
+    jobToken: ctx.sessionToken,
+    logger: log,
+    ...(options.fetch && { fetch: options.fetch }),
+  });
+  const sessionCtx: JobContext = {
+    ...ctx,
+    sessions: chainTee(
+      sessionTee((event) => relay.event(event)),
+      ctx.sessions,
+    ),
+  };
+
   const executables = await resolveRunExecutables(spec, ctx);
   await ctx.repos.sync(repository, { ...git, shas: [baseSha, headSha] });
   if (previousReview?.headSha) {
@@ -215,8 +249,8 @@ export async function runReviewTask(
     const [task] = context.plan.tasks;
     if (task && task.files.length > 0) {
       const provider = options.provider
-        ? options.provider(spec, ctx, log, executables)
-        : reviewTaskProvider(spec, ctx, log, executables, options.query);
+        ? options.provider(spec, sessionCtx, log, executables)
+        : reviewTaskProvider(spec, sessionCtx, log, executables, options.query);
       const budget = Math.min(task.budget, spec.tokenBudget ?? Infinity);
       const systemPrompt = reviewSystemPrompt(spec);
       const result = await provider.review({
@@ -296,22 +330,26 @@ export async function runReviewTask(
     };
   };
 
-  return ctx.repos.withWorktree(
-    repository,
-    headSha,
-    { ...git, jobId: spec.jobId },
-    async (worktree) => {
-      try {
-        return await reviewed(worktree.path);
-      } finally {
-        await runTeardownCommands(spec.task.teardownCommands, {
-          cwd: worktree.path,
-          env: withoutJobEnv(ctx.env()),
-          logger: log,
-          executables: executables.commands,
-          executableEnv: executables.commandEnv,
-        });
-      }
-    },
-  );
+  try {
+    return await ctx.repos.withWorktree(
+      repository,
+      headSha,
+      { ...git, jobId: spec.jobId },
+      async (worktree) => {
+        try {
+          return await reviewed(worktree.path);
+        } finally {
+          await runTeardownCommands(spec.task.teardownCommands, {
+            cwd: worktree.path,
+            env: withoutJobEnv(ctx.env()),
+            logger: log,
+            executables: executables.commands,
+            executableEnv: executables.commandEnv,
+          });
+        }
+      },
+    );
+  } finally {
+    await relay.flush();
+  }
 }

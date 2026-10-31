@@ -1,5 +1,6 @@
 import {
   STEP_STATE_LABELS,
+  STEP_STATE_TONES,
   type ProgressStep,
   type StatusTone,
   type StepState,
@@ -101,16 +102,6 @@ export function progressTitle(kind: RunDetail["kind"], mode: "link" | "select"):
   return mode === "link" && kind === "epic" ? "Epic progress" : PROGRESS_TITLES[kind];
 }
 
-const STEP_TONES: Record<StepState, StatusTone> = {
-  done: "neutral",
-  waiting: "need",
-  running: "run",
-  failed: "fail",
-  blocked: "neutral",
-  pending: "neutral",
-  canceled: "neutral",
-};
-
 /**
  * A step's status line on its own view (the phone step page): its name and state, e.g.
  * "Build the API · Running", toned like its progress card dot.
@@ -118,7 +109,7 @@ const STEP_TONES: Record<StepState, StatusTone> = {
 export function stepStatusLine(step: RunStep): { tone: StatusTone; text: string; state: string } {
   const state = stepState(step.status);
   return {
-    tone: STEP_TONES[state],
+    tone: STEP_STATE_TONES[state],
     text: `${stepLabel(step)} · ${STEP_STATE_LABELS[state]}`,
     state: STEP_STATE_LABELS[state],
   };

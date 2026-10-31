@@ -1403,6 +1403,7 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
     {
       ...query,
       id: firstJob,
+      triageRunId: T.completed,
       payload: triagePayload(T.completed, "FIX-310", "CSV export of findings", { branch: "main" }),
       status: "completed",
       repositoryId: R.controlPanel,
@@ -1415,6 +1416,7 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
     {
       ...query,
       id: replyJob,
+      triageRunId: T.completed,
       payload: triagePayload(T.completed, "FIX-310", "CSV export of findings", {
         branch: "main",
         reply: "Make it an epic: the docs need their own story.",
@@ -1430,6 +1432,7 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
     {
       ...query,
       id: failedJob,
+      triageRunId: T.failed,
       payload: triagePayload(T.failed, "FIX-322", "Faster agent startup"),
       status: "completed",
       agentId: H.online,
@@ -1441,6 +1444,7 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
     {
       ...query,
       id: runningJob,
+      triageRunId: T.running,
       payload: triagePayload(T.running, "FIX-331", "GitLab merge request templates", {
         branch: "main",
       }),

@@ -33,13 +33,15 @@ describe("askDuration and omRunMeta", () => {
     expect(askDuration(ms)).toBe(text);
   });
 
-  it('reads " · read-only · read N files · 41s", "read 1 file", and nothing without a run', () => {
+  it('reads "read-only", "read N files", "41s", "read 1 file", and nothing without a run', () => {
     const run = { id: "r", status: "completed" as const, durationMs: 41_000, filesRead: 3 };
-    expect(omRunMeta(run)).toBe(" · read-only · read 3 files · 41s");
-    expect(omRunMeta({ ...run, filesRead: 1, durationMs: 192_000 })).toBe(
-      " · read-only · read 1 file · 3m 12s",
-    );
-    expect(omRunMeta({ ...run, durationMs: null })).toBe(" · read-only · read 3 files");
+    expect(omRunMeta(run)).toEqual(["read-only", "read 3 files", "41s"]);
+    expect(omRunMeta({ ...run, filesRead: 1, durationMs: 192_000 })).toEqual([
+      "read-only",
+      "read 1 file",
+      "3m 12s",
+    ]);
+    expect(omRunMeta({ ...run, durationMs: null })).toEqual(["read-only", "read 3 files"]);
     expect(omRunMeta(null)).toBeNull();
   });
 });
@@ -88,9 +90,13 @@ describe("OmMessage", () => {
         })}
       />,
     );
-    expect(container.querySelector(".or-ask-om__who")!.textContent).toBe(
-      "Om · read-only · read 1 file · 41s",
-    );
+    const who = container.querySelector(".or-ask-om__who")!;
+    expect(who.querySelector(".or-ask-om__name")!.textContent).toBe("Om");
+    expect([...who.querySelectorAll(".or-ref")].map((badge) => badge.textContent)).toEqual([
+      "read-only",
+      "read 1 file",
+      "41s",
+    ]);
   });
 
   it("renders no raw HTML and drops unsafe links", () => {
@@ -115,7 +121,9 @@ describe("OmMessage", () => {
         })}
       />,
     );
-    const link = screen.getByRole("link", { name: "src/login.tsx · lines 4–9" });
+    const link = screen.getByRole("link", {
+      name: "src/login.tsx · lines 4–9 (opens in a new tab)",
+    });
     expect(link.getAttribute("href")).toBe(url);
     expect(link.className).toContain("or-ref--file");
     expect(link.textContent).toContain("login.tsx");
@@ -149,9 +157,11 @@ describe("OmMessage", () => {
     expect(screen.getByRole("link", { name: "Linear TOOL-12" }).getAttribute("href")).toBe(
       runHref("run-12"),
     );
-    expect(screen.getByRole("link", { name: "Linear TOOL-13" }).getAttribute("href")).toBe(
-      "https://linear.app/t/13",
-    );
+    expect(
+      screen
+        .getByRole("link", { name: "Linear TOOL-13 (opens in a new tab)" })
+        .getAttribute("href"),
+    ).toBe("https://linear.app/t/13");
   });
 
   it("puts files first, then work items, in one badge row", () => {

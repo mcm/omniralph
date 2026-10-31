@@ -15,6 +15,7 @@ import {
   type InboxTab,
   type RunListEntry,
   type RunRepository,
+  workItemUrlId,
 } from "@omniralph/db";
 import type { InboxAction, InboxCountsResponse, InboxItem, InboxTabParam } from "@/lib/api/inbox";
 import type { RunRow } from "@/lib/api/runs";
@@ -112,6 +113,7 @@ function itemFields(
   InboxItem,
   | "title"
   | "workItem"
+  | "epic"
   | "repository"
   | "pullRequest"
   | "agent"
@@ -128,6 +130,7 @@ function itemFields(
   const base = {
     title: row?.title ?? "Run",
     workItem: row?.workItem ?? null,
+    epic: null,
     repository: row?.repository ?? null,
     pullRequest: row?.pullRequest ?? null,
     agent: row?.agent ?? null,
@@ -150,9 +153,11 @@ function itemFields(
         title: story.title,
         workItem: {
           tracker: "linear",
+          id: workItemUrlId("linear", story.linearIssueId),
           identifier: story.identifier,
           url: storyIssueUrl(entry?.workItem?.url ?? null, story.identifier),
         },
+        epic: row?.workItem ?? null,
         reason: runReason({
           kind: "manual_story",
           identifier: story.identifier,

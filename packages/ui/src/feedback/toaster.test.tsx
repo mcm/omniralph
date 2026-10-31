@@ -51,11 +51,12 @@ describe("Toaster", () => {
     expect(dots()).toEqual([
       "or-dot or-dot--good",
       "or-dot or-dot--neutral",
-      "or-dot or-dot--neutral",
+      "or-dot or-dot--warn",
     ]);
     show("Failed", { variant: "danger" });
     expect(dots().at(-1)).toBe("or-dot or-dot--fail");
-    expect(document.querySelector(".or-dot--need")).toBeNull();
+    // Lavender (needs you, running) is never a toast's.
+    expect(document.querySelector(".or-dot--need, .or-dot--run")).toBeNull();
   });
 
   it("dismisses a toast with its Dismiss button", async () => {

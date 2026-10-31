@@ -298,6 +298,52 @@ describe("StepPanel in the run detail", () => {
     expect(within(panel()).queryByText(/more events/)).toBeNull();
   });
 
+  it("folds the whole transcript back to its first 8 events with Show fewer, keeping focus on the toggle", async () => {
+    renderRun();
+    await waitFor(() => expect(transcriptRows()).toHaveLength(8));
+    await userEvent.click(within(panel()).getByRole("button", { name: "Show all" }));
+    await waitFor(() => expect(transcriptRows()).toHaveLength(450));
+
+    const fewer = within(panel()).getByRole("button", { name: "Show fewer" });
+    await userEvent.click(fewer);
+    expect(transcriptRows()).toHaveLength(8);
+    expect(text(within(panel()).getByText(/more events/).parentElement!)).toBe(
+      "442 more events · Show all",
+    );
+    expect(document.activeElement).toBe(within(panel()).getByRole("button", { name: "Show all" }));
+
+    // The rest is already loaded: Show all shows it again without fetching.
+    await userEvent.click(within(panel()).getByRole("button", { name: "Show all" }));
+    expect(transcriptRows()).toHaveLength(450);
+    expect(requestsTo(transcriptPath("a3"))).toHaveLength(3);
+  });
+
+  it("offers Show fewer while the rest is loading, and stops loading once folded", async () => {
+    const held = deferred();
+    const events = transcriptEvents(450);
+    const paged = pagedTranscript(events);
+    transcripts.a3 = (request) =>
+      request.query.get("cursor") === "c200" ? held.promise : paged(request);
+    renderRun();
+    await waitFor(() => expect(transcriptRows()).toHaveLength(8));
+    await userEvent.click(within(panel()).getByRole("button", { name: "Show all" }));
+
+    await waitFor(() => expect(transcriptRows()).toHaveLength(200));
+    expect(text(within(panel()).getByText(/Loading/).parentElement!)).toBe(
+      "Loading 250 more events… · Show fewer",
+    );
+    await userEvent.click(within(panel()).getByRole("button", { name: "Show fewer" }));
+    expect(transcriptRows()).toHaveLength(8);
+
+    held.resolve(paged(requestsTo(transcriptPath("a3"))[1]!));
+    await act(() => new Promise((done) => setTimeout(done, 50)));
+    expect(transcriptRows()).toHaveLength(8);
+    expect(requestsTo(transcriptPath("a3")).map((r) => r.query.get("cursor"))).toEqual([
+      null,
+      "c200",
+    ]);
+  });
+
   it("shows the attempt the URL names, with its failed outcome above and its error last", async () => {
     renderRun({ search: "step=2&attempt=a2" });
     await waitFor(() => expect(transcriptRows()).toHaveLength(3));

@@ -77,7 +77,10 @@ export const runRowSchema = z.object({
   pullRequest: pullRequestRefSchema.nullable(),
   agent: agentRefSchema.nullable(),
   /** Steps done of all; null for single-step runs. */
-  progress: z.object({ done: z.number(), total: z.number() }).nullable(),
+  /** An epic's `current`: its running story's position in execution order, null when none runs. */
+  progress: z
+    .object({ done: z.number(), total: z.number(), current: z.number().nullable().optional() })
+    .nullable(),
   tokens: z.object({ in: z.number(), out: z.number() }),
   createdAt: isoDate,
   startedAt: isoDate.nullable(),
@@ -606,3 +609,43 @@ export type ReviewPassFindings = z.infer<typeof reviewPassFindingsSchema>;
 /** `GET /api/ui/runs/{id}/findings`: a review run's findings, per pass in step order. */
 export const runFindingsSchema = z.object({ passes: z.array(reviewPassFindingsSchema) });
 export type RunFindings = z.infer<typeof runFindingsSchema>;
+
+// ── Triage summary (`GET /api/ui/runs/{id}/triage`) ─────────────────────────────────────────
+
+/**
+ * Where a triage run left its work item: still triaging (queued or running), Ready to start
+ * (nothing left to answer), Needs answers (open questions left, so Needs refining), failed,
+ * or stopped (the issue went in progress, or someone stopped it).
+ */
+export const TRIAGE_SUMMARY_OUTCOMES = [
+  "triaging",
+  "ready",
+  "needs_answers",
+  "failed",
+  "stopped",
+] as const;
+export type TriageSummaryOutcome = (typeof TRIAGE_SUMMARY_OUTCOMES)[number];
+
+/** What a triage did to the issue: wrote a PRD, reformatted a planned epic, or left it. */
+export const TRIAGE_CHANGES = ["prd", "reformat", "unchanged"] as const;
+
+/**
+ * `GET /api/ui/runs/{id}/triage`: a triage run's outcome from its last result, and the issue
+ * as it read before the run's first triage job (the job's input).
+ */
+export const runTriageSummarySchema = z.object({
+  outcome: z.enum(TRIAGE_SUMMARY_OUTCOMES),
+  /** What the last triage decided, in Om's words; null before a result. */
+  summary: z.string().nullable(),
+  /** Why the last triage job failed; null otherwise. */
+  error: z.string().nullable(),
+  change: z.enum(TRIAGE_CHANGES).nullable(),
+  size: z.enum(["XS", "S", "M", "L", "XL"]).nullable(),
+  /** Story sub-issues the last triage planned (a new epic's). */
+  storyCount: z.number(),
+  /** What the last triage couldn't decide: the PRD's `## Open Questions`. */
+  openQuestions: z.array(z.string()),
+  /** The issue before triage; null when its first job's input is gone. */
+  originalIssue: z.object({ title: z.string(), description: z.string() }).nullable(),
+});
+export type RunTriageSummary = z.infer<typeof runTriageSummarySchema>;

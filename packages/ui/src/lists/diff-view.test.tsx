@@ -100,7 +100,9 @@ describe("DiffView", () => {
     for (const section of [cut!, omitted!]) {
       expect(section.textContent).toContain(DIFF_TOO_LARGE);
       expect(
-        within(section).getByRole("link", { name: "Open on GitHub" }).getAttribute("href"),
+        within(section)
+          .getByRole("link", { name: "Open on GitHub (opens in a new tab)" })
+          .getAttribute("href"),
       ).toBe(URL);
     }
     // The lines that are there still show.
@@ -113,7 +115,9 @@ describe("DiffView", () => {
     expect(screen.getAllByText(DIFF_TOO_LARGE, { exact: false })).toHaveLength(1);
     const notice = container.querySelector(".or-diff > .or-diff__notice")!;
     expect(notice.textContent).toContain(DIFF_TOO_LARGE);
-    const link = within(notice as HTMLElement).getByRole("link", { name: "Open the commit" });
+    const link = within(notice as HTMLElement).getByRole("link", {
+      name: "Open the commit (opens in a new tab)",
+    });
     expect(link.getAttribute("href")).toBe(URL);
   });
 

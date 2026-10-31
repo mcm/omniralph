@@ -51,8 +51,8 @@ const relative = (file: string) => path.relative(path.resolve(WEB_SRC, "../../..
 const entries = Object.entries(SHORTCUTS) as [ShortcutId, ShortcutDefinition][];
 
 describe("SHORTCUTS", () => {
-  it("has 23 actions, each with one key that no other action answers", () => {
-    expect(entries).toHaveLength(23);
+  it("has 25 actions, each with one key that no other action answers", () => {
+    expect(entries).toHaveLength(25);
     expect(entries.filter(([, definition]) => !isOneKey(definition.key))).toEqual([]);
     expect(conflicts(SHORTCUTS)).toEqual([]);
   });

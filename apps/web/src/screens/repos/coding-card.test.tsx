@@ -45,7 +45,7 @@ vi.mock("@/lib/theme-actions", () => ({ saveShowAdvancedPreference: vi.fn() }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/repos",
   useRouter: () => nav.router,
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams("tab=coding"),
 }));
 
 function TestLink({ href, onClick, ...props }: LinkProps) {

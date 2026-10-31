@@ -36,7 +36,7 @@ export type EnqueueReplyResult =
  */
 export function replyContext(input: {
   finding: FindingRow;
-  review: Pick<Review, "id" | "prNumber" | "baseSha" | "headSha">;
+  review: Pick<Review, "id" | "reviewRunId" | "prNumber" | "baseSha" | "headSha">;
   repository: string;
   question: string;
   askedBy: string;
@@ -47,7 +47,7 @@ export function replyContext(input: {
   const context = {
     repository: input.repository,
     pr: { number: review.prNumber },
-    review: { id: review.id },
+    review: { id: review.id, reviewRunId: review.reviewRunId },
     finding: {
       id: finding.id,
       path: finding.path,

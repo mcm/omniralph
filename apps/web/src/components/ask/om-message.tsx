@@ -1,6 +1,6 @@
 "use client";
 
-import { FileBadge, Glyph, IssueBadge, Markdown } from "@omniralph/ui";
+import { FileBadge, Glyph, IssueBadge, Markdown, MetaBadge } from "@omniralph/ui";
 import type { AskMessageView } from "@/lib/api/ask";
 import { runHref } from "@/lib/runs/hrefs";
 import { omRunMeta } from "./format";
@@ -13,7 +13,7 @@ export interface OmMessageProps {
 }
 
 /**
- * An Om message: the "Om" line (with " · read-only · read N files · 41s" for an answer
+ * An Om message: the "Om" line (with read-only, read N files and 41s badges for an answer
  * from an ask run), the answer as Markdown, then a badge row with each cited file and each
  * work item it mentions (linked to the item's run when it has one). While it streams, the
  * text grows as it arrives and `status` says what Om is doing.
@@ -28,7 +28,9 @@ export function OmMessage({ message, status }: OmMessageProps) {
       <p className="or-ask-om__who">
         <Glyph size={16} className="or-ask-om__glyph" />
         <span className="or-ask-om__name">Om</span>
-        {meta ? <span className="or-ask-om__meta">{meta}</span> : null}
+        {meta?.map((part) => (
+          <MetaBadge key={part} className="or-ask-om__meta" text={part} />
+        ))}
       </p>
       {text ? <Markdown className="or-ask-om__body">{message.markdown}</Markdown> : null}
       {streaming && status ? (

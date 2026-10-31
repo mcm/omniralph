@@ -34,7 +34,9 @@ import { useCallback, useState, type ReactNode } from "react";
 import { useCurrentUser } from "@/components/current-user";
 import { BlockedByLine } from "@/components/work-items/blocked";
 import { CHANGE_REPO, ChangeRepoSheet } from "@/components/work-items/change-repo-sheet";
+import { ManualTaskChecklist } from "@/components/work-items/manual-task-checklist";
 import { PrdView } from "@/components/work-items/prd-view";
+import { WORK_ITEM_STATE_TONES } from "@/components/work-items/state-tones";
 import {
   START_BLOCKED_DESCRIPTION,
   START_EPIC,
@@ -53,6 +55,7 @@ import { useWorkItemDetail } from "@/components/work-items/use-work-item-detail"
 import { ApiError } from "@/lib/api/client";
 import type { WorkItemDetail, WorkItemRoute } from "@/lib/api/work-items";
 import { backlogItemHref, parseBacklogFilters, parseWorkItemTab, type WorkItemTab } from "./url";
+import { WorkItemDetailSkeleton } from "./backlog-skeletons";
 import "./work-item-detail.css";
 import { useAskContextRepository } from "@/components/ask/ask-context";
 
@@ -150,7 +153,11 @@ function WorkItemStories({ item }: { item: WorkItemDetail }) {
             />
           ) : null}
           <span className="or-backlog-detail__story-title">{story.title}</span>
-          {story.state ? <StatusText tone="neutral">{story.state.name}</StatusText> : null}
+          {story.state ? (
+            <StatusText tone={WORK_ITEM_STATE_TONES[story.state.category]}>
+              {story.state.name}
+            </StatusText>
+          ) : null}
           {story.manual ? <MetaBadge text="manual" /> : null}
         </li>
       ))}
@@ -279,6 +286,9 @@ function WorkItemDetailContent({
         route={item.route}
         onChooseRepo={item.actions.changeRepo ? () => setChangingRepo(true) : undefined}
       />
+      {item.manual ? (
+        <ManualTaskChecklist workItemId={item.id} markDone showDescription={false} />
+      ) : null}
       <Tabs<WorkItemTab>
         aria-label="Work item"
         className="or-backlog-detail__tabs"
@@ -370,7 +380,7 @@ export function WorkItemDetailView({
     );
   }
   const item = detail.data;
-  if (!item) return <div className="or-backlog-detail" aria-busy="true" />;
+  if (!item) return <WorkItemDetailSkeleton />;
 
   return <WorkItemDetailContent item={item} onLeave={onLeave} renderShareLink={renderShareLink} />;
 }

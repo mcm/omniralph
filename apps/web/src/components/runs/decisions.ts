@@ -1,45 +1,207 @@
 import type { InboxAction, InboxItem } from "@/lib/api/inbox";
+import { agentHref, runHref } from "@/lib/runs/hrefs";
+import { workItemHref } from "@/components/work-items/work-item-links";
 
-/** One decision on an Inbox item: a labeled button (Design rule 6). */
-export interface InboxDecision {
-  action: InboxAction;
-  label: string;
-  /** `primary` (lavender) only for the first: the action that clears the item. */
-  variant: "primary" | "outline";
-}
-
-type Kind = InboxItem["kind"];
-
-const SNOOZE: [InboxAction, string] = ["snooze", "Snooze"];
-const DONE: [InboxAction, string] = ["done", "Done"];
-
-/** Each kind's buttons, in order: the clearing action first. */
-const DECISIONS: Record<Kind, readonly [InboxAction, string][]> = {
-  manual_story: [["done", "Done, resume epic"], ["skip", "Skip story"], SNOOZE],
-  blocked_epic: [["start_anyway", "Start anyway"], DONE, SNOOZE],
-  question: [["answer", "Send answer"], DONE, SNOOZE],
-  stopped_epic: [["resume", "Resume"], DONE, SNOOZE],
-  prd_ready: [DONE, SNOOZE],
-  pr_waiting: [DONE, SNOOZE],
-  agent_offline: [DONE, SNOOZE],
-  agent_update_failed: [DONE, SNOOZE],
-  failed_run: [["retry", "Retry"], DONE, SNOOZE],
-  failed_system: [["retry", "Retry"], DONE, SNOOZE],
-  run: [],
-};
+/** A step that leads somewhere rather than deciding: a link, or the PRD sheet. */
+export type InboxStep = "open_pr" | "view_prd" | "open_work_item" | "open_run" | "open_agent";
 
 /**
- * The item's decision buttons, in order: its kind's buttons whose action the item's
- * `actions` include. The first is the clearing action and the only `primary` one.
+ * `primary` (lavender) for the one thing to do next, `outline` for the other ways forward,
+ * `ghost` for Dismiss and Snooze (they only take the item out of the Inbox).
  */
-export function inboxDecisions(item: Pick<InboxItem, "kind" | "actions">): InboxDecision[] {
-  return DECISIONS[item.kind]
-    .filter(([action]) => item.actions.includes(action))
-    .map(([action, label], index) => ({
-      action,
-      label,
-      variant: index === 0 ? "primary" : "outline",
-    }));
+export type InboxCtaVariant = "primary" | "outline" | "ghost";
+
+/** One decision on an Inbox item: a labeled button that posts its action (Design rule 6). */
+export interface InboxDecision {
+  type: "decision";
+  action: InboxAction;
+  label: string;
+  variant: InboxCtaVariant;
+}
+
+/** A link from the item: its PR/MR (a new tab), work item, run or agent. */
+export interface InboxLink {
+  type: "link";
+  step: Exclude<InboxStep, "view_prd">;
+  label: string;
+  href: string;
+  /** Opens in a new tab (the code host). */
+  external: boolean;
+  variant: InboxCtaVariant;
+}
+
+/** View PRD: the PRD in a sheet over the Inbox (`ViewPrdSheet`), no navigation. */
+export interface InboxPrd {
+  type: "prd";
+  step: "view_prd";
+  label: string;
+  runId: string;
+  workItem: { id: string; identifier: string };
+  variant: InboxCtaVariant;
+}
+
+/** What an Inbox item offers, in order: the next thing to do first. */
+export type InboxCta = InboxDecision | InboxLink | InboxPrd;
+
+type Kind = InboxItem["kind"];
+type Slot = InboxAction | InboxStep;
+
+/**
+ * Each kind's calls to action, in order. The first is what's next: the item's lead step
+ * when it has one (a PR/MR to review, a PRD to read, an agent to fix), else its clearing
+ * decision. Dismiss and Snooze come last.
+ */
+const SLOTS: Record<Kind, readonly Slot[]> = {
+  manual_story: ["done", "skip", "view_prd", "snooze"],
+  blocked_epic: ["start_anyway", "view_prd", "done", "snooze"],
+  question: ["answer", "view_prd", "done", "snooze"],
+  stopped_epic: ["resume", "open_run", "view_prd", "done", "snooze"],
+  prd_ready: ["view_prd", "open_work_item", "done", "snooze"],
+  pr_waiting: ["open_pr", "view_prd", "done", "snooze"],
+  failed_run: ["retry", "open_run", "view_prd", "done", "snooze"],
+  failed_system: ["retry", "done", "snooze"],
+  agent_offline: ["open_agent", "done", "snooze"],
+  agent_update_failed: ["open_agent", "done", "snooze"],
+  run: ["view_prd", "open_run"],
+};
+
+/** The step that is what's next for the kind (primary); others lead with a decision. */
+const LEAD_STEP: Partial<Record<Kind, InboxStep>> = {
+  prd_ready: "view_prd",
+  pr_waiting: "open_pr",
+  agent_offline: "open_agent",
+  agent_update_failed: "open_agent",
+};
+
+/** Kinds with nothing to decide: every call to action is secondary (Running). */
+const NO_PRIMARY: ReadonlySet<Kind> = new Set(["run"]);
+
+function decisionLabel(kind: Kind, action: InboxAction): string {
+  switch (action) {
+    case "done":
+      return kind === "manual_story" ? "Done, resume epic" : "Dismiss";
+    case "skip":
+      return "Skip story";
+    case "snooze":
+      return "Snooze";
+    case "answer":
+      return "Send answer";
+    case "start_anyway":
+      return "Start anyway";
+    case "resume":
+      return "Resume";
+    case "retry":
+      return "Retry";
+  }
+}
+
+/** The work item whose PRD View PRD opens: a manual story's epic, else the item's own. */
+export function prdWorkItem(
+  item: Pick<InboxItem, "kind" | "workItem" | "epic">,
+): { id: string; identifier: string } | null {
+  const workItem = item.kind === "manual_story" ? item.epic : item.workItem;
+  return workItem ? { id: workItem.id, identifier: workItem.identifier } : null;
+}
+
+type Unstyled<T> = T extends InboxCta ? Omit<T, "variant"> : never;
+
+/** The slot as a call to action, or null when the item can't offer it. */
+function ctaOf(item: InboxItem, slot: Slot): Unstyled<InboxCta> | null {
+  switch (slot) {
+    case "open_pr": {
+      const url = item.pullRequest?.url;
+      if (!url) return null;
+      const gitlab = (item.pullRequest?.provider ?? item.repository?.provider) === "gitlab";
+      return {
+        type: "link",
+        step: slot,
+        label: gitlab ? "Open MR" : "Open PR",
+        href: url,
+        external: true,
+      };
+    }
+    case "view_prd": {
+      const workItem = prdWorkItem(item);
+      if (!workItem || !item.run) return null;
+      return {
+        type: "prd",
+        step: slot,
+        label: item.kind === "prd_ready" ? "Review PRD" : "View PRD",
+        runId: item.run.id,
+        workItem,
+      };
+    }
+    case "open_work_item":
+      return item.workItem
+        ? {
+            type: "link",
+            step: slot,
+            label: "Open work item",
+            href: workItemHref(item.workItem.id),
+            external: false,
+          }
+        : null;
+    case "open_run":
+      return item.run
+        ? {
+            type: "link",
+            step: slot,
+            label: "Open run",
+            href: runHref(item.run.id),
+            external: false,
+          }
+        : null;
+    case "open_agent":
+      return item.agent
+        ? {
+            type: "link",
+            step: slot,
+            label: "Open agent",
+            href: agentHref(item.agent.id),
+            external: false,
+          }
+        : null;
+    default:
+      return item.actions.includes(slot)
+        ? { type: "decision", action: slot, label: decisionLabel(item.kind, slot) }
+        : null;
+  }
+}
+
+const isDemoted = (cta: Unstyled<InboxCta>) =>
+  cta.type === "decision" && (cta.action === "done" || cta.action === "snooze");
+
+/**
+ * The item's calls to action, in order (`SLOTS`), only those it can offer. The primary,
+ * always first, is the kind's lead step when the item has it (its PR/MR's URL, its agent…),
+ * else its first decision; Running has none. Dismiss and Snooze are `ghost` unless one of
+ * them is the primary.
+ */
+export function inboxCtas(item: InboxItem): InboxCta[] {
+  const ctas = SLOTS[item.kind].flatMap((slot) => {
+    const cta = ctaOf(item, slot);
+    return cta ? [cta] : [];
+  });
+  const lead = LEAD_STEP[item.kind];
+  const leadIndex = ctas.findIndex((cta) => cta.type !== "decision" && cta.step === lead);
+  const chosen =
+    leadIndex >= 0 || NO_PRIMARY.has(item.kind)
+      ? leadIndex
+      : ctas.findIndex((cta) => cta.type === "decision");
+  const styled = ctas.map(
+    (cta, index) =>
+      ({
+        ...cta,
+        variant: index === chosen ? "primary" : isDemoted(cta) ? "ghost" : "outline",
+      }) as InboxCta,
+  );
+  // What's next always comes first.
+  return chosen > 0 ? [styled[chosen]!, ...styled.filter((_, i) => i !== chosen)] : styled;
+}
+
+/** The item's decisions alone (what posts an action), in `inboxCtas` order. */
+export function inboxDecisions(item: InboxItem): InboxDecision[] {
+  return inboxCtas(item).filter((cta): cta is InboxDecision => cta.type === "decision");
 }
 
 export const SNOOZE_CHOICES = ["hour", "tomorrow", "next-week"] as const;

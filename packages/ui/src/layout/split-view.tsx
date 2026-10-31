@@ -16,6 +16,12 @@ import { useLinkComponent } from "../provider/ui-provider.js";
 import { OPEN_ON_MOVE_ATTRIBUTE } from "../shortcuts/row-links.js";
 import { useShortcut } from "../shortcuts/shortcut-provider.js";
 
+/**
+ * The class for a pane's header (title, filters): while both panes show and scroll on their
+ * own, it stays at the top of its pane. On a phone it scrolls with the page.
+ */
+export const SPLIT_STICKY_CLASS = "or-split__sticky";
+
 /** The container width (px) from which both panes show side by side. */
 export const SPLIT_WIDE_MIN_WIDTH = 880;
 
@@ -71,7 +77,8 @@ function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
  * A list beside its selected item's detail. The panes sit in a size container: at a
  * container width of 880 px or more both show; below it only the pane named by `view`
  * does, the detail with its back link. One rule covers phone width and the narrower
- * content area beside a side panel.
+ * content area beside a side panel. With both showing, each pane fills the viewport's
+ * height and scrolls on its own (a header with `SPLIT_STICKY_CLASS` stays put).
  *
  * Keyboard: while both panes show, Next item and Previous item open the row they move to
  * (replacing the history entry), so the detail follows the selection. While the detail

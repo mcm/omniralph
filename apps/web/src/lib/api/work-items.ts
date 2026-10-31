@@ -143,6 +143,12 @@ export const workItemDetailSchema = workItemRowSchema.extend({
   /** Its latest run, if one exists. */
   run: z.object({ id: z.string(), status: z.enum(RUN_STATUSES) }).nullable(),
   actions: workItemActionsSchema,
+  /**
+   * Work for a person, not a run: it has one of the tracker's manual labels, or routes to a
+   * repo with Coding off (absent: not manual). Its detail shows its task list
+   * (`ManualTaskChecklist`).
+   */
+  manual: z.boolean().optional(),
 });
 export type WorkItemDetail = z.infer<typeof workItemDetailSchema>;
 
@@ -161,6 +167,24 @@ export const workItemPrdBodySchema = z.object({
   baseUpdatedAt: z.string().min(1),
 });
 export const workItemPrdResultSchema = z.object({ updatedAt: z.string() });
+
+/**
+ * `PUT /api/ui/work-items/{id}/tasks`: checks or unchecks one task of the description's task
+ * list (`- [ ]`), the `index`-th as the client read it, with its `text` to find it again if
+ * the description changed since.
+ */
+export const workItemTaskBodySchema = z.object({
+  index: z.number().int().min(0),
+  text: z.string().min(1).max(10_000),
+  checked: z.boolean(),
+});
+export type WorkItemTaskBody = z.infer<typeof workItemTaskBodySchema>;
+/** The description as saved, and the tracker's new `updatedAt`. */
+export const workItemTaskResultSchema = z.object({
+  description: z.string(),
+  updatedAt: z.string(),
+});
+export type WorkItemTaskResult = z.infer<typeof workItemTaskResultSchema>;
 
 /** `PUT /api/ui/work-items/{id}/repository`: a repo with Coding on, or null for the rules. */
 export const workItemRepositoryBodySchema = z.object({

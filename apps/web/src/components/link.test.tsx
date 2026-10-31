@@ -25,4 +25,13 @@ describe("Link", () => {
     // The marker isn't read out: the link's name stays its label.
     expect(screen.getByRole("link", { name: "Runs" })).toBe(link);
   });
+
+  it("opens a page on another site in a new tab, without the pending marker", () => {
+    status.pending = true;
+    render(<Link href="https://linear.app/acme/issue/SOC-1">SOC-1</Link>);
+    const link = screen.getByRole("link", { name: "SOC-1 (opens in a new tab)" });
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(link.querySelector(".link-status")).toBeNull();
+  });
 });

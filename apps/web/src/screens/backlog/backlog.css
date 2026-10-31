@@ -66,6 +66,9 @@
 }
 
 .or-backlog__group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
   padding: 16px 20px 6px;
   color: var(--or-ter);
@@ -83,4 +86,87 @@
 
 .or-backlog--stale {
   opacity: 0.6;
+}
+
+/*
+ * Loading: placeholder rows shaped like the list's rows (mark, title line, badge line), and
+ * the work item's bar, title, tabs and first lines. The fills match the other skeletons.
+ */
+.or-backlog-skeleton__heading {
+  width: 96px;
+  height: 10px;
+  margin: 20px 20px 10px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-backlog-skeleton__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--or-line);
+}
+
+.or-backlog-skeleton__mark {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-backlog-skeleton__lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 3px;
+}
+
+.or-backlog-skeleton__line {
+  height: 12px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-backlog-skeleton__line--short {
+  width: 60%;
+}
+
+.or-backlog-skeleton__line--meta {
+  width: 36%;
+  height: 18px;
+}
+
+.or-backlog-skeleton__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.or-backlog-skeleton__badges {
+  display: flex;
+  gap: 6px;
+}
+
+.or-backlog-skeleton__badge {
+  width: 88px;
+  height: 22px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-backlog-skeleton__title {
+  width: 64%;
+  height: 22px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-backlog-skeleton__tabs {
+  height: 40px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--or-line);
 }

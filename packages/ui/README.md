@@ -211,8 +211,11 @@ truncated with an ellipsis and keeps the full text in `title`.
 
 ## Status
 
-`StatusTone` is `need` (accent with the halo), `run` (mint with the run glow), `good`
-(mint), `fail` (coral) or `neutral` (`--or-done` dot, `--or-sec` text) (Design rule 15).
+`StatusTone` is `need` (accent with the halo: needs you), `run` (accent: running now),
+`good` (`--or-good` mint: finished, succeeded, merged, healthy), `warn` (`--or-warn` amber:
+stopped), `fail` (coral) or `neutral` (`--or-done` dot, `--or-sec` text: not started,
+queued, idle, canceled) (Design rule 15). Finished is never neutral, and color is never the
+only signal: a dot is always named and a status always labeled.
 
 - `StatusDot` (`tone`, required `label`): the dot alone, `role="img"` named by `label`.
 - `StatusText` (`tone`, children): a decorative dot followed by the label, in the tone's
@@ -229,8 +232,8 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
 
 - `toast(message, { variant?, duration? })`: shows a toast from anywhere (hooks, plain
   callbacks, code that runs before a `Toaster` mounts: the toast waits in a module-level
-  store). `variant` is `success` (default, mint dot), `info` or `warning` (neutral dot) or
-  `danger` (coral dot). Returns an id for `dismissToast(id)`; `clearToasts()` empties the
+  store). `variant` is `success` (default, mint dot), `info` (neutral dot), `warning` (amber
+  dot) or `danger` (coral dot). Returns an id for `dismissToast(id)`; `clearToasts()` empties the
   queue (e.g. between tests).
 - `Toaster` (`label`, default "Notifications"): mount once per page tree. A named region,
   bottom-right on desktop and above the tab bar at 768 px and narrower. Success, info and
@@ -253,9 +256,11 @@ Component CSS uses only `--or-` tokens: a test fails on any color literal outsid
   `actions` (right of the title, e.g. an "Open run" link), `summarySuffix` (appended to the
   count line, e.g. a total duration) and `steps` (`{ id, label, state, meta?, href? }`,
   `state` `done` | `waiting` | `running` | `failed` | `blocked` | `pending` | `canceled`).
-  One bar segment per step (done `--or-sec`, waiting `--or-acc`, running `--or-run`, failed
+  One bar segment per step (done `--or-good`, waiting and running `--or-acc`, failed
   `--or-fail`, others `--or-border`), a one-line count, and the steps as a numbered `<ol>`
-  (a canceled step shows a dash icon instead of a dot). The bar is a `progressbar`
+  in the order given (callers pass execution order). Each step's dot takes its state's tone
+  (`STEP_STATE_TONES`); a done step shows a mint check and a canceled step a dash icon
+  instead of a dot. The bar is a `progressbar`
   (`aria-valuenow` done steps, `aria-valuemax` total, `aria-valuetext` the count line).
   With `onSelectStep(id)` the steps are buttons (step `href`s are ignored) and the
   `selectedStepId` one is bold with `aria-current="step"`; `stepPanel` (a node, e.g. the

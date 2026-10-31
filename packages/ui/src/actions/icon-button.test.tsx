@@ -73,11 +73,9 @@ describe("IconButton", () => {
   });
 
   it("renders a link named by its label when href is given", () => {
-    render(
-      <IconButton label="Open pull request" icon={IconRefresh} href="https://example.com/pr/1" />,
-    );
+    render(<IconButton label="Open pull request" icon={IconRefresh} href="/runs/1/pull" />);
     const link = screen.getByRole("link", { name: "Open pull request" });
-    expect(link.getAttribute("href")).toBe("https://example.com/pr/1");
+    expect(link.getAttribute("href")).toBe("/runs/1/pull");
   });
 
   it("requires a label (typecheck)", () => {

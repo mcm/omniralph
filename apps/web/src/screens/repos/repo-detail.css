@@ -1,6 +1,6 @@
 /*
  * A repo's detail on the Repos screen (Design board Repos): header badges and ⋯ menu, the
- * problems notice, the section index and the sections. On phone the organization and branch
+ * problems notice, and the sections as tabs. On phone the organization and branch
  * badges leave the header for a collapsed "Details" (Design rule 16). Only `--or-` tokens.
  */
 .or-repo-detail {
@@ -33,12 +33,8 @@
   display: none;
 }
 
-.or-repo-detail__index {
-  position: sticky;
-  top: 0;
-  z-index: 1;
+.or-repo-detail__tabs {
   margin-top: 4px;
-  background: var(--or-page);
 }
 
 .or-repo-detail__empty {
@@ -84,8 +80,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-top: 12px;
-  scroll-margin-top: 48px;
+  padding-top: 16px;
 }
 
 .or-repo-section__title {
@@ -294,25 +289,42 @@
   }
 }
 
-/* Agents card: one row per pinned agent (state dot, badge, state text, unpin). */
+/*
+ * Agents card: a bordered list, one row per pinned agent (badge, its one status, then Unpin
+ * at the row's end). The row highlights on hover so Unpin reads as that agent's.
+ */
 .or-repo-agents {
   display: flex;
   flex-direction: column;
   margin: 0;
   padding: 0;
   list-style: none;
+  border: 1px solid var(--or-border);
+  border-radius: var(--or-radius);
+  overflow: hidden;
 }
 
 .or-repo-agents__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  border-top: 1px solid var(--or-border);
+  gap: 8px 12px;
+  min-height: 44px;
+  padding: 6px 8px 6px 12px;
+  border-top: 1px solid var(--or-line);
 }
 
 .or-repo-agents__row:first-child {
   border-top: 0;
+}
+
+.or-repo-agents__row:hover,
+.or-repo-agents__row:focus-within {
+  background: var(--or-hover);
+}
+
+.or-repo-agents__state {
+  font-size: 13px;
 }
 
 .or-repo-agents__unpin {

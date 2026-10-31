@@ -365,7 +365,11 @@ export interface RunListEntry extends RunIndexEntry {
   pullRequest: { number: number; url: string | null } | null;
   agent: { id: string; name: string } | null;
   /** Steps done of all (an epic's stories, a multi-pass review's passes); null for single-step runs. */
-  progress: { done: number; total: number } | null;
+  /**
+   * Steps done of all; an epic's `current` is its running story's position in execution order
+   * (1-based, as its detail numbers it), null when none is running.
+   */
+  progress: { done: number; total: number; current?: number | null } | null;
   tokens: { in: number; out: number };
   /** When its first attempt started. */
   startedAt: Date | null;
@@ -444,6 +448,7 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
       pr_url: string | null;
       stories_total: string;
       stories_done: string;
+      story_current: string | null;
       first_request: string | null;
     }>(sql`
       select r.id, r.mode, r.linear_issue_id, r.linear_identifier, r.linear_title, r.linear_url,
@@ -452,7 +457,14 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
           order by m.created_at, m.id limit 1) as first_request,
         (select count(*) from ralph_stories s where s.run_id = r.id)::text as stories_total,
         (select count(*) from ralph_stories s
-          where s.run_id = r.id and s.status in ('completed', 'canceled'))::text as stories_done
+          where s.run_id = r.id and s.status in ('completed', 'canceled'))::text as stories_done,
+        -- The running story's position in execution order (getRalphRunDetailFacts' order).
+        (select o.n from (
+          select s.status, row_number() over (order by
+            (select min(j.created_at) from jobs j where j.ralph_story_id = s.id) asc nulls last,
+            s.position, s.created_at, s.id) as n
+          from ralph_stories s where s.run_id = r.id) o
+          where o.status = 'running' order by o.n limit 1)::text as story_current
       from ralph_runs r
       left join ralph_lanes l on l.run_id = r.id and l.repository_id = r.repository_id
       where r.id in (${list(ids)})`),
@@ -476,7 +488,11 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
       // A request does what it was asked in one step; an epic builds its stories.
       progress:
         row.mode === "epic"
-          ? { done: Number(row.stories_done), total: Number(row.stories_total) }
+          ? {
+              done: Number(row.stories_done),
+              total: Number(row.stories_total),
+              current: row.story_current === null ? null : Number(row.story_current),
+            }
           : null,
       tokens: { in: stat?.tokensIn ?? 0, out: stat?.tokensOut ?? 0 },
       startedAt: stat?.startedAt ?? null,

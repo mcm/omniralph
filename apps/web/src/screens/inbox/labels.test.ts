@@ -69,89 +69,101 @@ describe("inboxItemLabel", () => {
     kind,
     status: "waiting" as const,
   });
-  const cases: [string, Partial<InboxItem>, string, string, string][] = [
+  const WAITING = "Waiting on you for 15 days";
+  const FAILED = "Failed 15 days ago";
+  // Why it's here (the row line), what it is and its state (the dot's name), tone, status line.
+  const cases: [string, Partial<InboxItem>, string | null, string, string, string][] = [
     [
       "manual_story",
       { kind: "manual_story" },
-      "Manual story · Epic",
+      "Manual story",
+      "Epic, waiting on you",
       "need",
-      "Waiting on you for 15 days",
+      WAITING,
     ],
-    [
-      "blocked_epic",
-      { kind: "blocked_epic" },
-      "Blocked · Epic",
-      "need",
-      "Waiting on you for 15 days",
-    ],
+    ["blocked_epic", { kind: "blocked_epic" }, "Blocked", "Epic, waiting on you", "need", WAITING],
     [
       "question",
       { kind: "question", run: run("request") },
-      "Question · Request",
+      "Question",
+      "Request, waiting on you",
       "need",
-      "Waiting on you for 15 days",
+      WAITING,
     ],
     [
       "stopped_epic",
       { kind: "stopped_epic", run: run("epic") },
-      "Stopped · Epic",
-      "need",
-      "Waiting on you for 15 days",
+      "Stopped",
+      "Epic, stopped",
+      "warn",
+      WAITING,
     ],
     [
       "prd_ready",
       { kind: "prd_ready", run: run("triage") },
-      "PRD ready · Triage",
+      "PRD ready",
+      "Triage, waiting on you",
       "need",
-      "Waiting on you for 15 days",
+      WAITING,
     ],
     [
       "pr_waiting (GitLab)",
-      { kind: "pr_waiting", pullRequest: { provider: "gitlab", number: 1, url: null } },
+      {
+        kind: "pr_waiting",
+        run: run("epic"),
+        pullRequest: { provider: "gitlab", number: 1, url: null },
+      },
       "MR ready for your review",
+      "Epic, waiting on you",
       "need",
-      "Waiting on you for 15 days",
+      WAITING,
     ],
     [
       "pr_waiting (GitHub)",
       {
         kind: "pr_waiting",
-        repository: { id: "r", provider: "github", fullPath: "acme/web" },
+        run: run("epic"),
         pullRequest: { provider: "github", number: 1, url: null },
       },
       "PR ready for your review",
+      "Epic, waiting on you",
       "need",
-      "Waiting on you for 15 days",
+      WAITING,
     ],
     [
       "pr_waiting (GitHub, from the repo)",
       {
         kind: "pr_waiting",
+        run: run("epic"),
         repository: { id: "r", provider: "github", fullPath: "acme/web" },
         pullRequest: null,
       },
       "PR ready for your review",
+      "Epic, waiting on you",
       "need",
-      "Waiting on you for 15 days",
+      WAITING,
     ],
     [
       "failed_run",
       { kind: "failed_run", run: run("review") },
-      "Review · failed",
+      "Failed",
+      "Review, failed",
       "fail",
-      "Failed 15 days ago",
+      FAILED,
     ],
     [
       "failed_system",
       { kind: "failed_system", run: null },
-      "Background work · failed",
+      "Failed",
+      "Background work, failed",
       "fail",
-      "Failed 15 days ago",
+      FAILED,
     ],
     [
       "agent_offline",
       { kind: "agent_offline", run: null },
       "Agent offline",
+      "Agent, offline",
       "fail",
       "Offline for 15 days",
     ],
@@ -159,6 +171,7 @@ describe("inboxItemLabel", () => {
       "agent_update_failed",
       { kind: "agent_update_failed", run: null },
       "Agent update failed",
+      "Agent, update failed",
       "fail",
       "Update failed 15 days ago",
     ],
@@ -166,15 +179,18 @@ describe("inboxItemLabel", () => {
       "agent_update_failed (with its version)",
       { kind: "agent_update_failed", run: null, version: "1.4.0" },
       "Agent update failed",
+      "Agent, update failed",
       "fail",
       "Update to 1.4.0 failed 15 days ago",
     ],
-    ["run", { kind: "run", run: run("ask") }, "Ask · running", "run", "Running for 15 days"],
+    // Running: the dot says it, so no row line.
+    ["run", { kind: "run", run: run("ask") }, null, "Ask, running", "run", "Running for 15 days"],
   ];
 
-  it.each(cases)("%s", (_name, overrides, rowLabel, tone, statusLine) => {
+  it.each(cases)("%s", (_name, overrides, rowLabel, statusLabel, tone, statusLine) => {
     expect(inboxItemLabel(inboxItem({ since, ...overrides }), NOW)).toEqual({
       rowLabel,
+      statusLabel,
       tone,
       statusLine,
     });
@@ -199,7 +215,7 @@ describe("inboxItemLabel", () => {
     );
   });
 
-  it("names each run kind", () => {
+  it("names each run kind in the dot", () => {
     for (const [kind, label] of [
       ["epic", "Epic"],
       ["request", "Request"],
@@ -207,9 +223,9 @@ describe("inboxItemLabel", () => {
       ["triage", "Triage"],
       ["ask", "Ask"],
     ] as const) {
-      expect(inboxItemLabel(inboxItem({ kind: "failed_run", run: run(kind) }), NOW).rowLabel).toBe(
-        `${label} · failed`,
-      );
+      expect(
+        inboxItemLabel(inboxItem({ kind: "failed_run", run: run(kind) }), NOW).statusLabel,
+      ).toBe(`${label}, failed`);
     }
   });
 });

@@ -26,6 +26,8 @@ export type ShortcutId =
   | "snooze"
   | "startAnyway"
   | "resume"
+  | "viewPrd"
+  | "openPullRequest"
   | "retry"
   | "stop"
   | "newWorkItem"
@@ -53,11 +55,13 @@ export const SHORTCUTS = {
   listPrevious: { key: "k", label: "Previous item", group: "lists", repeat: true },
   listOpen: { key: "o", label: "Open the focused item", group: "lists" },
   back: { key: "u", label: "Back to the list", group: "lists" },
-  done: { key: "e", label: "Done", group: "inbox" },
+  done: { key: "e", label: "Done or dismiss", group: "inbox" },
   skip: { key: "s", label: "Skip story", group: "inbox" },
   snooze: { key: "z", label: "Snooze", group: "inbox" },
   startAnyway: { key: "t", label: "Start anyway", group: "inbox" },
   resume: { key: "c", label: "Resume", group: "inbox" },
+  viewPrd: { key: "v", label: "View PRD", group: "inbox" },
+  openPullRequest: { key: "p", label: "Open the PR or MR", group: "inbox" },
   retry: { key: "r", label: "Retry", group: "runs" },
   stop: { key: "x", label: "Stop run", group: "runs" },
   newWorkItem: { key: "n", label: "New work item", group: "workItems" },

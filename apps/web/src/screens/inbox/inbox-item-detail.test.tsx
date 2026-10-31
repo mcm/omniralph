@@ -28,7 +28,14 @@ import type { InboxItem } from "@/lib/api/inbox";
 import type { RunDetail } from "@/lib/api/runs";
 import { RUN_LOAD_FAILED } from "./inbox-item-cards";
 import { InboxView } from "./inbox-view";
-import { agentOfflineItem, COUNTS, inboxItem, mrReadyItem, NOW } from "./test-fixtures";
+import {
+  agentOfflineItem,
+  COUNTS,
+  inboxItem,
+  mrReadyItem,
+  NOW,
+  storyDetail,
+} from "./test-fixtures";
 
 const nav = vi.hoisted(() => ({
   search: new URLSearchParams(),
@@ -67,6 +74,17 @@ function serve() {
     "GET /api/ui/inbox": (request) =>
       jsonResponse({ items: feeds[request.query.get("tab") ?? "needs-you"] ?? [] }),
     "GET /api/ui/inbox/counts": COUNTS,
+    "GET /api/ui/work-items/linear-story-42": () => jsonResponse(storyDetail()),
+    "GET /api/ui/work-items/linear-epic-40": () =>
+      jsonResponse(
+        storyDetail({
+          id: "linear-epic-40",
+          identifier: "TOOL-40",
+          title: "Certificate rotation",
+          description: "## Introduction\n\nRotate every certificate.\n",
+          manual: false,
+        }),
+      ),
   };
   for (const id of [...Object.keys(runs), RUN_ID, "run-1", "run-2", "run-3"]) {
     routes[`GET /api/ui/runs/${id}`] = (request) =>
@@ -227,6 +245,38 @@ describe("an item with a run", () => {
     await user.click(within(alert).getByRole("button", { name: "Retry" }));
     expect(await card("Epic progress")).toBeTruthy();
     expect(within(detail()).queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("a manual story", () => {
+  it("shows the story's tasks as checkboxes above its decisions", async () => {
+    feeds["needs-you"] = [inboxItem()];
+    serve();
+    renderInbox("");
+    const tasks = await waitFor(() => {
+      const region = within(detail()).getByRole("region", { name: "Your tasks" });
+      expect(within(region).getAllByRole("checkbox")).toHaveLength(2);
+      return region;
+    });
+    const [exported, install] = within(tasks).getAllByRole<HTMLInputElement>("checkbox");
+    expect(exported!.checked).toBe(true);
+    expect(install!.checked).toBe(false);
+    expect(within(tasks).getByText("1 of 2 done")).toBeTruthy();
+    // The Inbox's own "Done, resume epic" finishes it: no second Mark done here.
+    expect(within(tasks).queryByRole("button", { name: "Mark done" })).toBeNull();
+  });
+
+  it("View PRD opens its epic's PRD in a sheet over the Inbox, without navigating", async () => {
+    const user = userEvent.setup({ advanceTimers: () => {} });
+    feeds["needs-you"] = [inboxItem()];
+    runs["run-1"] = epicRunDetail({ id: "run-1", status: "waiting" });
+    serve();
+    renderInbox("");
+    const decisions = await within(detail()).findByRole("group", { name: "Decisions" });
+    await user.click(within(decisions).getByRole("button", { name: "View PRD" }));
+    const sheet = await screen.findByRole("dialog", { name: "PRD of TOOL-40" });
+    expect(await within(sheet).findByRole("heading", { name: "Introduction" })).toBeTruthy();
+    expect(nav.router.push).not.toHaveBeenCalled();
   });
 });
 

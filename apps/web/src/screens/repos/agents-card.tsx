@@ -2,12 +2,12 @@
 
 import {
   AgentBadge,
+  Button,
   Card,
   IconButton,
   Menu,
   MetaBadge,
   SaveBar,
-  StatusDot,
   StatusIndicator,
   type StatusTone,
   useStagedCard,
@@ -82,6 +82,31 @@ export function agentsChanges(
 
 function toDraft(card: AgentsCardData): AgentsDraft {
   return { pinnedAgentIds: card.pinned.map((agent) => agent.id) };
+}
+
+/** A row's Unpin: labeled in words, and named with its agent for assistive tech. */
+function UnpinButton({
+  name,
+  disabled,
+  onUnpin,
+}: {
+  name: string;
+  disabled: boolean;
+  onUnpin: () => void;
+}) {
+  return (
+    <Button
+      className="or-repo-agents__unpin"
+      variant="ghost"
+      size="sm"
+      icon={IconPinnedOff}
+      aria-label={`Unpin ${name}`}
+      disabled={disabled}
+      onClick={onUnpin}
+    >
+      Unpin
+    </Button>
+  );
 }
 
 /**
@@ -193,17 +218,17 @@ export function AgentsCard({ detail, titleId }: { detail: RepositoryDetail; titl
             const state = agentStateText(agent);
             return (
               <li key={agent.id} className="or-repo-agents__row">
-                <StatusIndicator variant="dot" tone={state.tone} label={state.text} />
                 <AgentBadge name={agent.name} href={agentHref(agent.id)} />
-                <StatusIndicator tone={state.tone} label={state.text} />
+                <StatusIndicator
+                  className="or-repo-agents__state"
+                  tone={state.tone}
+                  label={state.text}
+                />
                 {canEdit ? (
-                  <IconButton
-                    className="or-repo-agents__unpin"
-                    label={`Unpin ${agent.name}`}
-                    icon={IconPinnedOff}
-                    size="sm"
+                  <UnpinButton
+                    name={agent.name}
                     disabled={disabled}
-                    onClick={() => unpin(agent.id)}
+                    onUnpin={() => unpin(agent.id)}
                   />
                 ) : null}
               </li>
@@ -215,17 +240,9 @@ export function AgentsCard({ detail, titleId }: { detail: RepositoryDetail; titl
               className="or-repo-agents__row or-repo-agents__row--pending"
               data-pending="true"
             >
-              <StatusDot tone="neutral" label="Pending" />
               <AgentBadge name={agent.name} href={agentHref(agent.id)} />
               <MetaBadge text="Pending" />
-              <IconButton
-                className="or-repo-agents__unpin"
-                label={`Unpin ${agent.name}`}
-                icon={IconPinnedOff}
-                size="sm"
-                disabled={disabled}
-                onClick={() => unpin(agent.id)}
-              />
+              <UnpinButton name={agent.name} disabled={disabled} onUnpin={() => unpin(agent.id)} />
             </li>
           ))}
         </ul>

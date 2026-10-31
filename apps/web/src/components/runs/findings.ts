@@ -33,9 +33,9 @@ export function lineRange(finding: Pick<ReviewFindingView, "startLine" | "endLin
     : `L${finding.startLine}–${finding.endLine}`;
 }
 
-/** "bug · 80% confidence". */
-export function findingFacts(finding: Pick<ReviewFindingView, "category" | "confidence">): string {
-  return `${finding.category} · ${Math.round(finding.confidence * 100)}% confidence`;
+/** "80% confidence". */
+export function confidenceText(finding: Pick<ReviewFindingView, "confidence">): string {
+  return `${Math.round(finding.confidence * 100)}% confidence`;
 }
 
 /** The pass's open findings: the Findings tab's count. */

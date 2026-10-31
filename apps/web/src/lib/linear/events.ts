@@ -1,5 +1,11 @@
 import "server-only";
-import { getRunBySession, type Database } from "@omniralph/db";
+import {
+  ACTIVE_TRIAGE_RUN_STATUSES,
+  getRunBySession,
+  getTriageRunBySession,
+  type Database,
+  type TriageRun,
+} from "@omniralph/db";
 import { parseInstruction } from "@omniralph/ralph";
 import { getDispatcher } from "@/lib/dispatch";
 import { cleanupAfterIssueCompleted } from "@/lib/ralph/cleanup";
@@ -9,7 +15,9 @@ import type { RalphDeps } from "@/lib/ralph/run";
 import { ACKNOWLEDGEMENT, isMention, startRun, type SessionCreatedEvent } from "@/lib/ralph/start";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { isOwnTriageSession, startLabelTriage } from "@/lib/triage/label";
-import { handleTriageReply } from "@/lib/triage/reply";
+import { handleTriageReply, type SessionPromptedEvent } from "@/lib/triage/reply";
+import { postActivity } from "@/lib/ralph/notify";
+import { linearConversation } from "@/lib/ralph/conversation";
 import { startTriage } from "@/lib/triage/start";
 import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
 import type { WorkItem } from "@/lib/work-items/tracker";
@@ -64,13 +72,23 @@ export async function acknowledgeLinearEvent(
   }
 }
 
+const isActiveTriage = (run: TriageRun) =>
+  (ACTIVE_TRIAGE_RUN_STATUSES as readonly string[]).includes(run.status);
+
+/** What a delegation into a finished triage session says when the item still needs refining. */
+export function stillNeedsRefiningMessage(identifier: string): string {
+  return `${identifier} still has open questions, so Om didn't start building it. Answer them here to triage it again, then delegate it to Om again.`;
+}
+
 /**
  * A new agent session: `/triage` always starts triage; a mention runs what it asks for
  * (`startRun`); a session that already has its run (a redelivery) goes to that run; a
  * delegation reads the work item's readiness first and triages an item that needs
  * refining (in the delegation's own session) instead of building it. When the work item
  * can't be read, the delegation starts a run as before. Triage's own sessions are left
- * alone.
+ * alone while triage runs; a finished triage session Linear opens again is a delegation
+ * into it (Linear reusing Om's existing session on the issue), which builds a ready item
+ * there and says what is still open otherwise.
  */
 async function startSession(event: SessionCreatedEvent, ralph: RalphDeps): Promise<void> {
   const { db, organizationId } = ralph;
@@ -78,7 +96,10 @@ async function startSession(event: SessionCreatedEvent, ralph: RalphDeps): Promi
     await startTriage(event, ralph);
     return;
   }
-  if (await isOwnTriageSession(db, organizationId, event)) return;
+  const triage = await getTriageRunBySession(db, event.sessionId);
+  if (triage ? isActiveTriage(triage) : await isOwnTriageSession(db, organizationId, event)) {
+    return;
+  }
   if (isMention(event) || (await getRunBySession(db, event.sessionId))) {
     await startRun(event, ralph);
     return;
@@ -95,9 +116,50 @@ async function startSession(event: SessionCreatedEvent, ralph: RalphDeps): Promi
     await startRun(event, ralph);
     return;
   }
-  if (item.readiness === "needs_refining") {
+  if (item.readiness !== "needs_refining") {
+    await startRun(event, ralph);
+  } else if (triage) {
+    await postActivity(linearConversation(ralph.linear, event.sessionId), {
+      type: "response",
+      body: stillNeedsRefiningMessage(item.identifier),
+    });
+  } else {
     await startTriage(event, ralph, { delegation: { identifier: item.identifier } });
-  } else await startRun(event, ralph);
+  }
+}
+
+/**
+ * A delegation Linear sent as an empty prompt into a finished triage session (should it
+ * reuse Om's existing session on the issue rather than open one): the session as a delegation's
+ * `created` event, when the session has no run yet and the issue is delegated to Om now;
+ * otherwise null (a reply, for triage or ralph).
+ */
+async function delegationIntoTriageSession(
+  event: SessionPromptedEvent,
+  ralph: RalphDeps,
+): Promise<SessionCreatedEvent | null> {
+  if (event.signal || event.body.trim()) return null;
+  const triage = await getTriageRunBySession(ralph.db, event.sessionId);
+  if (!triage || isActiveTriage(triage)) return null;
+  if (await getRunBySession(ralph.db, event.sessionId)) return null;
+  let issue: Awaited<ReturnType<LinearGateway["getIssue"]>>;
+  let viewer: Awaited<ReturnType<LinearGateway["getViewer"]>>;
+  try {
+    [issue, viewer] = await Promise.all([
+      ralph.linear.getIssue(triage.linearIssueId),
+      ralph.linear.getViewer(),
+    ]);
+  } catch (error) {
+    console.error(`Checking whether ${triage.linearIssueId} was delegated to Om failed`, error);
+    return null;
+  }
+  if (!issue.delegateId || issue.delegateId !== viewer.id) return null;
+  return {
+    kind: "session_created",
+    sessionId: event.sessionId,
+    issueId: issue.id,
+    issueIdentifier: issue.identifier,
+  };
 }
 
 /**
@@ -127,8 +189,10 @@ export async function handleLinearEvent(
   };
   if (event.kind === "session_created") await startSession(event, ralph);
   else if (event.kind === "session_prompted") {
+    const delegation = await delegationIntoTriageSession(event, ralph);
+    if (delegation) await startSession(delegation, ralph);
     // Triage sessions' replies go to triage; every other session is ralph's.
-    if (!(await handleTriageReply(event, ralph))) await handleReply(event, ralph);
+    else if (!(await handleTriageReply(event, ralph))) await handleReply(event, ralph);
   } else if (event.kind === "triage_label_added") await startLabelTriage(event, ralph);
   else {
     // Done: the issue's merged PRs/MRs are cleaned up (logged, never failing the delivery).

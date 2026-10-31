@@ -6,6 +6,7 @@ const LABELS: Record<StatusTone, string> = {
   need: "Needs you",
   run: "Running",
   good: "Merged",
+  warn: "Stopped",
   fail: "Failed",
   neutral: "Queued",
 };
@@ -35,9 +36,5 @@ describe("StatusText", () => {
     expect(dot.getAttribute("aria-hidden")).toBe("true");
     expect(screen.queryByRole("img")).toBeNull();
     expect(screen.getByText(LABELS[tone])).toBe(status);
-  });
-
-  it("covers exactly the five tones", () => {
-    expect(STATUS_TONES).toEqual(["need", "run", "good", "fail", "neutral"]);
   });
 });

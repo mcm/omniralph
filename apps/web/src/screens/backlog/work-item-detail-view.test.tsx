@@ -419,14 +419,16 @@ describe("the toolbar", () => {
     expect(start.className).toContain("or-icon-btn--solid");
     const menu = await openMenu();
     expect(menuEntries(menu)).toEqual([
-      "Open SOC-412 in Linear",
+      "Open SOC-412 in Linear (opens in a new tab)",
       "Change repo…",
       "Move to Needs refining",
       "—",
       "Remove from backlog…",
     ]);
     expect(
-      within(menu).getByRole("menuitem", { name: "Open SOC-412 in Linear" }).getAttribute("href"),
+      within(menu)
+        .getByRole("menuitem", { name: "Open SOC-412 in Linear (opens in a new tab)" })
+        .getAttribute("href"),
     ).toBe("https://linear.app/acme/issue/SOC-412");
   });
 
@@ -441,7 +443,7 @@ describe("the toolbar", () => {
     ]);
     const menu = await openMenu();
     expect(menuEntries(menu)).toEqual([
-      "Open SOC-420 in Linear",
+      "Open SOC-420 in Linear (opens in a new tab)",
       "Change repo…",
       "—",
       "Remove from backlog…",
@@ -647,8 +649,8 @@ describe("the tabs", () => {
     const panel = screen.getByRole("tabpanel", { name: "Stories, 2" });
     const stories = within(panel).getAllByRole("listitem");
     expect(stories.map(words)).toEqual([
-      "SOC-430 Export endpoint Todo",
-      "SOC-431 Configure the bucket Backlog manual",
+      "SOC-430 (opens in a new tab) Export endpoint Todo",
+      "SOC-431 (opens in a new tab) Configure the bucket Backlog manual",
     ]);
     expect(within(stories[0]!).getByRole("link").getAttribute("href")).toBe(
       "https://linear.app/acme/issue/SOC-430",

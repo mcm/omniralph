@@ -1,6 +1,7 @@
 "use client";
 
-import { Button, InfoPopover } from "@omniralph/ui";
+import { Button, HistoryPopover, MetaBadge } from "@omniralph/ui";
+import { IconUser } from "@tabler/icons-react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import * as React from "react";
 import { api } from "@/lib/api/client";
@@ -50,7 +51,7 @@ export interface ChangeHistoryPopoverProps {
 }
 
 /**
- * A settings card's ⓘ (Design rule 11): who changed the card last, when, and how many runs
+ * A settings card's history button (Design rule 11): who changed the card last, when, and how many runs
  * started since, then on demand every recorded change, newest first, each with its fields'
  * before and after values, a page at a time (`GET /api/ui/settings-history`). A live query
  * while open: the section's `settings` events and its subject's `repository` events refetch
@@ -58,9 +59,9 @@ export interface ChangeHistoryPopoverProps {
  */
 export function ChangeHistoryPopover(props: ChangeHistoryPopoverProps) {
   return (
-    <InfoPopover label="Change history">
+    <HistoryPopover label="Change history">
       <ChangeHistory {...props} />
-    </InfoPopover>
+    </HistoryPopover>
   );
 }
 
@@ -105,9 +106,8 @@ function ChangeHistory({ section, subject, organization, latest }: ChangeHistory
           {entries.map((entry) => (
             <li key={entry.id} className="or-change-history__entry">
               <p className="or-change-history__meta">
-                <time dateTime={entry.changedAt}>{formatDateTime(entry.changedAt)}</time>
-                {" · "}
-                <span>{entry.actor.name}</span>
+                <time dateTime={entry.changedAt}>{formatDateTime(entry.changedAt)}</time>{" "}
+                <MetaBadge icon={IconUser} text={entry.actor.name} />
               </p>
               <ul className="or-change-history__changes">
                 {entry.changes.map((change) => (

@@ -47,12 +47,13 @@ vi.mock("./remove-repo-dialog", async (importOriginal) => {
 vi.mock("@/lib/theme-actions", () => ({ saveShowAdvancedPreference: vi.fn() }));
 
 const nav = vi.hoisted(() => ({
+  search: new URLSearchParams("tab=ask"),
   router: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
 }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/repos",
   useRouter: () => nav.router,
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => nav.search,
 }));
 
 function TestLink({ href, onClick, ...props }: LinkProps) {
@@ -112,6 +113,7 @@ let holdReads: boolean;
 const pending = () => new Promise<Response>(() => {});
 
 beforeEach(() => {
+  nav.search = new URLSearchParams("tab=ask");
   nav.router.push.mockReset();
   nav.router.refresh.mockReset();
   ui.toast.mockReset();
@@ -222,7 +224,9 @@ describe("the Ask card", () => {
     renderRepos();
     const card = await askCard();
     expect(card.closest("section#ask")).toBeTruthy();
-    expect(card.closest("section#ask")!.previousElementSibling?.id).toBe("coding");
+    const tabs = within(screen.getByRole("tablist", { name: "Sections" })).getAllByRole("tab");
+    const askTab = tabs.findIndex((tab) => tab.textContent === "Ask");
+    expect(tabs[askTab - 1]!.textContent).toBe("Coding");
     const heading = within(card).getByRole("heading", { level: 2, name: "Ask" });
     expect(heading.nextElementSibling).toBe(
       within(card).getByRole("button", { name: "Change history" }),
@@ -315,9 +319,13 @@ describe("the Ask card", () => {
 });
 
 describe("the Advanced section", () => {
+  beforeEach(() => {
+    nav.search = new URLSearchParams("tab=advanced");
+  });
+
   it("shows only the Danger zone while advanced settings are hidden", async () => {
     renderRepos({ showAdvanced: false });
-    await askCard();
+    await screen.findByRole("region", { name: "Advanced" });
     expect(playbooks()).toBeNull();
     const section = advanced();
     const cards = within(section).getAllByRole("region");
@@ -326,7 +334,7 @@ describe("the Advanced section", () => {
 
   it("shows the Playbooks card with built-ins first, staging a binding change with its effect", async () => {
     renderRepos({ showAdvanced: true });
-    await askCard();
+    await screen.findByRole("region", { name: "Advanced" });
     const card = playbooks()!;
     expect(card.closest("section#advanced")).toBeTruthy();
     const heading = within(card).getByRole("heading", { name: "Playbooks" });
@@ -383,7 +391,7 @@ describe("the Advanced section", () => {
 
   it("stages and saves the Combine review findings and Requests bindings; Discard restores them", async () => {
     renderRepos({ showAdvanced: true });
-    await askCard();
+    await screen.findByRole("region", { name: "Advanced" });
     const card = playbooks()!;
     const user = userEvent.setup();
     const combine = within(card).getByRole<HTMLSelectElement>("combobox", {
@@ -434,7 +442,7 @@ describe("the Advanced section", () => {
       },
     });
     renderRepos({ showAdvanced: true });
-    await askCard();
+    await screen.findByRole("region", { name: "Advanced" });
     const card = playbooks()!;
     const user = userEvent.setup();
     await user.selectOptions(within(card).getByRole("combobox", { name: "Review" }), "pb-security");
@@ -450,7 +458,7 @@ describe("the Advanced section", () => {
   it("shows the Playbooks card when the preference is turned on elsewhere, without a reload", async () => {
     const live = fakeAbly();
     const { rerender } = renderRepos({ showAdvanced: false, live });
-    await askCard();
+    await screen.findByRole("region", { name: "Advanced" });
     await waitFor(() => expect(live.current().subscribed()).toContain("user:user-1:changes"));
     expect(playbooks()).toBeNull();
     // The shell re-renders from the server on the user's own record change: now on.
@@ -472,7 +480,7 @@ describe("the Advanced section", () => {
     rows = [portalRow({ organization: { ...portalRow().organization, role: "member" } })];
     details[REPO_PORTAL] = repoDetail(rows[0]!, { playbooks: playbooksCard() });
     renderRepos({ user: member, showAdvanced: true });
-    await askCard();
+    await screen.findByRole("region", { name: "Advanced" });
     const card = playbooks()!;
     for (const select of within(card).getAllByRole("combobox")) {
       expect(select.hasAttribute("disabled")).toBe(true);
@@ -484,9 +492,13 @@ describe("the Advanced section", () => {
 });
 
 describe("the Danger zone", () => {
+  beforeEach(() => {
+    nav.search = new URLSearchParams("tab=advanced");
+  });
+
   it("describes removal, and its button opens the same dialog as the menu's Remove repo…", async () => {
     renderRepos();
-    await askCard();
+    await screen.findByRole("region", { name: "Advanced" });
     const zone = dangerZone()!;
     expect(within(zone).getByText(REMOVE_REPO_DESCRIPTION)).toBeTruthy();
     const user = userEvent.setup();
