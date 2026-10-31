@@ -465,10 +465,39 @@ describe("the agent panel's sections", () => {
     ]);
   });
 
-  it("says when the token was last refreshed", async () => {
+  it("shows no Security section while the agent's tokens are healthy", async () => {
     await openAgent(AGENT_ALPHA, "coder-1");
-    const line = within(section("Security")!).getByText("No reuse alerts");
-    expect(line.getAttribute("data-tone")).toBe("neutral");
+    expect(section("Recent work")).toBeTruthy();
+    expect(section("Security")).toBeNull();
+    expect(
+      within(panel()).queryByText(/Token refreshed|reuse alerts|Token not refreshed/),
+    ).toBeNull();
+  });
+
+  it("shows a failing refresh streak in the fail tone, with its last error muted", async () => {
+    details[AGENT_ALPHA] = {
+      ...busyDetail(),
+      security: {
+        reuseAlerts30d: 0,
+        lastReuseAt: null,
+        lastRefreshRejection: null,
+        tokenRefresh: {
+          failingSince: ago(2 * MINUTE),
+          consecutiveFailures: 3,
+          lastError: "network",
+          accessTokenExpiresAt: new Date(Date.now() + 70_000).toISOString(),
+          refreshTokenExpiresAt: null,
+        },
+      },
+    };
+    await openAgent(AGENT_ALPHA, "coder-1");
+    const security = section("Security")!;
+    const line = within(security).getByText(
+      "Token refresh failing for 2 min (3 attempts): goes offline in about 1 min unless a refresh succeeds",
+    );
+    expect(line.getAttribute("data-tone")).toBe("fail");
+    const detail = within(security).getByText("Last error: network");
+    expect(detail.getAttribute("data-tone")).toBeNull();
   });
 
   it("reports token reuse in the fail tone", async () => {
@@ -501,7 +530,7 @@ describe("the agent panel's sections", () => {
     expect(within(section("Recent work")!).getByText("No recent work")).toBeTruthy();
     expect(within(section("Models reported")!).getByText("None reported")).toBeTruthy();
     expect(within(section("Packages")!).getByText("None installed")).toBeTruthy();
-    expect(within(section("Security")!).getByText("Never connected")).toBeTruthy();
+    expect(section("Security")).toBeNull();
   });
 
   it("says Claude isn't signed in, in the fail tone, only when the agent reports it signed out", async () => {

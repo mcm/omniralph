@@ -166,7 +166,8 @@
   line-height: 1.4;
 }
 
-.or-fleet-agent__none {
+.or-fleet-agent__none,
+.or-fleet-agent__line--muted {
   color: var(--or-sec);
 }
 

@@ -21,8 +21,8 @@ import {
   heartbeatAgo,
   lastSeenText,
   latestHeartbeat,
-  securityLine,
   shortDate,
+  tokenHealth,
 } from "@/lib/fleet/status";
 import { runHref } from "@/lib/runs/hrefs";
 import { useClock } from "../clock";
@@ -223,23 +223,28 @@ function Packages({ detail }: { detail: AgentDetail }) {
   );
 }
 
-function Security({ detail }: { detail: AgentDetail }) {
-  const line = securityLine({
-    ...detail.security,
-    connected: detail.agent.lastHeartbeatAt !== null,
-  });
+/**
+ * The agent's token health (`tokenHealth`): nothing while it can authenticate, else a
+ * Security section with the problem (fail tone) and, while refreshes fail, its last error.
+ */
+function Security({ detail, now }: { detail: AgentDetail; now: number }) {
+  const { agent, security } = detail;
+  const health = tokenHealth(
+    {
+      revoked: agent.revoked,
+      online: agent.online,
+      lastHeartbeatAt: agent.lastHeartbeatAt,
+      ...security,
+    },
+    new Date(now),
+  );
+  if (!health) return null;
   return (
     <Section title="Security">
-      <p
-        className={
-          line.tone === "fail"
-            ? "or-fleet-agent__line or-fleet-agent__line--fail"
-            : "or-fleet-agent__line"
-        }
-        data-tone={line.tone}
-      >
-        {line.label}
-      </p>
+      <FailLine>{health.label}</FailLine>
+      {health.detail ? (
+        <p className="or-fleet-agent__line or-fleet-agent__line--muted">{health.detail}</p>
+      ) : null}
     </Section>
   );
 }
@@ -287,7 +292,7 @@ export function AgentPanelContent({
       <RecentWork attempts={detail.recentWork} />
       <Models models={detail.models} claude={detail.claude} />
       <Packages detail={detail} />
-      <Security detail={detail} />
+      <Security detail={detail} now={now} />
     </article>
   );
 }
