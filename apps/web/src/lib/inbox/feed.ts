@@ -338,5 +338,10 @@ export async function loadInboxCounts(
     organizationIds: scope.organizations.map((o) => o.id),
     userId: scope.userId,
   });
-  return { needsYou: counts.needs_you, problems: counts.problems, running: counts.running };
+  return {
+    needsYou: counts.needs_you,
+    problems: counts.problems,
+    running: counts.running,
+    questions: counts.questions,
+  };
 }

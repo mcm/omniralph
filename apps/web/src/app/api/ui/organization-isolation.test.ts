@@ -797,12 +797,14 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           needsYou: number;
           problems: number;
           running: number;
+          questions: number;
         };
       const [countA, countB] = [await countsOf(a.orgId), await countsOf(b.orgId)];
       expect(counts.body).toEqual({
         needsYou: countA.needsYou + countB.needsYou,
         problems: countA.problems + countB.problems,
         running: countA.running + countB.running,
+        questions: countA.questions + countB.questions,
       });
       expect(countA.needsYou).toBeGreaterThan(0);
       expect(countA.problems).toBeGreaterThan(0);

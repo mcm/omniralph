@@ -1077,6 +1077,7 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
         image: null,
         theme: null,
         showAdvanced: false,
+        sound: { enabled: true, volume: 0.7 },
         organization: { id: orgId, name: "Acme" },
         role: "admin",
       };

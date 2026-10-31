@@ -30,6 +30,7 @@ const admin: OrgUser = {
   image: null,
   theme: null,
   showAdvanced: false,
+  sound: { enabled: true, volume: 0.7 },
 };
 
 function request(

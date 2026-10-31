@@ -395,10 +395,16 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
         needsYou: (await feed("needs-you", user)).length,
         problems: (await feed("problems", user)).length,
         running: (await feed("running", user)).length,
+        questions: (await feed("needs-you", user)).filter((i) => i.kind === "question").length,
       });
     }
     state.user = alice;
-    expect((await call(counts.GET)).body).toEqual({ needsYou: 2, problems: 2, running: 2 });
+    expect((await call(counts.GET)).body).toEqual({
+      needsYou: 2,
+      problems: 2,
+      running: 2,
+      questions: 0,
+    });
   });
 
   it("carries each kind of open question with the run detail's question, and offers Answer", async () => {

@@ -1,14 +1,20 @@
 "use client";
 
-import { Card, Switch, ThemeControl } from "@omniralph/ui";
+import { Card, SegmentedControl, Switch, ThemeControl } from "@omniralph/ui";
 import { useId } from "react";
 import { useCurrentUser } from "@/components/current-user";
 import { useShowAdvanced } from "@/components/show-advanced";
+import { useSound } from "@/components/sound";
+import { SOUND_VOLUMES, volumeStep } from "@/lib/sound/preference";
 import { userDisplayName, userInitials } from "@/lib/user-display";
 
 /** What the "Show advanced settings" switch does. */
 export const SHOW_ADVANCED_DESCRIPTION =
   "Shows Routing rules, Playbooks and Chat channel overrides in Settings.";
+
+/** What the Sounds switch does. */
+export const SOUNDS_DESCRIPTION =
+  "Plays a short sound when something new needs you, a run you're watching finishes, and Ask sends or answers. Everything it signals also shows on screen.";
 
 /** The user's avatar, name and email, as their sign-in provider gave them (read-only). */
 function ProfileCard() {
@@ -83,12 +89,66 @@ function DisplayCard() {
   );
 }
 
-/** You › Profile & theme: who the user is and how the panel looks to them. Every member's own. */
+/**
+ * Sounds: on or off (on by default), and how loud while on. Changes apply at once (muting
+ * stops what's playing) and save to the user's own record (`SoundProvider`).
+ */
+function SoundsCard() {
+  const { preference, setPreference: saveSound } = useSound();
+  const id = useId();
+  const switchId = `${id}-sounds`;
+  return (
+    <Card title="Sounds" titleId="sounds">
+      <div className="or-field">
+        <div className="or-field__head">
+          <label id={`${switchId}-label`} htmlFor={switchId} className="or-field__label">
+            Play sounds
+          </label>
+          <p id={`${switchId}-description`} className="or-field__description">
+            {SOUNDS_DESCRIPTION}
+          </p>
+        </div>
+        <div className="or-field__control">
+          <Switch
+            id={switchId}
+            aria-labelledby={`${switchId}-label`}
+            aria-describedby={`${switchId}-description`}
+            checked={preference.enabled}
+            onCheckedChange={(enabled) => saveSound({ ...preference, enabled })}
+          />
+        </div>
+      </div>
+      {preference.enabled ? (
+        <div className="or-field">
+          <div className="or-field__head">
+            <span id={`${id}-volume`} className="or-field__label">
+              Volume
+            </span>
+          </div>
+          <div className="or-field__control">
+            <SegmentedControl
+              aria-labelledby={`${id}-volume`}
+              options={SOUND_VOLUMES}
+              value={volumeStep(preference.volume)}
+              onValueChange={(step) => {
+                const volume = SOUND_VOLUMES.find((option) => option.value === step)!.volume;
+                saveSound({ ...preference, volume });
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+/** You › Profile & theme: who the user is and how the panel looks and sounds to them. Every member's own. */
 export function ProfileSettings() {
   return (
     <>
       <ProfileCard />
       <DisplayCard />
+      <SoundsCard />
     </>
   );
 }

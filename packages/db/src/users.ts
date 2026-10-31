@@ -52,6 +52,18 @@ export async function setUserShowAdvanced(db: Database, id: string, value: boole
   await db.update(users).set({ showAdvanced: value }).where(eq(users.id, id));
 }
 
+/** Remembers whether the user's control panel plays sounds, and how loud (0 to 1). */
+export async function setUserSound(
+  db: Database,
+  id: string,
+  sound: { enabled: boolean; volume: number },
+): Promise<void> {
+  await db
+    .update(users)
+    .set({ soundEnabled: sound.enabled, soundVolume: sound.volume })
+    .where(eq(users.id, id));
+}
+
 /** Deletes a user; their accounts, sessions and memberships cascade. */
 export async function deleteUser(db: Database, id: string): Promise<void> {
   await db.delete(users).where(eq(users.id, id));

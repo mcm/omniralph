@@ -848,6 +848,13 @@
       "when": 1793476034661,
       "tag": "0120_agent_reported_token_refresh",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1793490653264,
+      "tag": "0121_user_sound_preference",
+      "breakpoints": true
     }
   ]
 }
