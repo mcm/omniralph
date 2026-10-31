@@ -1133,6 +1133,36 @@ export async function listRunsByIds(db: Executor, ids: readonly string[]): Promi
     .orderBy(asc(ralphRuns.createdAt), asc(ralphRuns.id));
 }
 
+/** The lanes with these IDs (any organization), each with its run; missing ones are left out. */
+export async function listLanesByIds(
+  db: Executor,
+  ids: readonly string[],
+): Promise<Array<{ lane: RalphLane; run: RalphRun }>> {
+  if (ids.length === 0) return [];
+  return db
+    .select({ lane: ralphLanes, run: ralphRuns })
+    .from(ralphLanes)
+    .innerJoin(ralphRuns, eq(ralphRuns.id, ralphLanes.runId))
+    .where(inArray(ralphLanes.id, [...ids]))
+    .orderBy(asc(ralphLanes.createdAt), asc(ralphLanes.id));
+}
+
+/**
+ * Every lane (any organization) whose cleanup waits, failed or has open
+ * questions, with its cleanup (rebuilding the reconcile cron's due set).
+ */
+export async function listLaneCleanups(
+  db: Executor,
+): Promise<Array<Pick<RalphLane, "id" | "cleanup">>> {
+  return db
+    .select({ id: ralphLanes.id, cleanup: ralphLanes.cleanup })
+    .from(ralphLanes)
+    .where(
+      sql`(${ralphLanes.cleanup}->>'status' in ('pending', 'failed')
+        or jsonb_array_length(coalesce(${ralphLanes.cleanup}->'questions', '[]'::jsonb)) > 0)`,
+    );
+}
+
 /**
  * Merged ralph PRs/MRs of the organization's runs whose cleanup isn't
  * through, each with the lane of its newest run: never cleaned up, waiting,

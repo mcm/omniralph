@@ -16,7 +16,7 @@ import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { checkRunCi } from "./ci";
 import { applyCleanupJob, startPendingCleanups } from "./cleanup";
-import { scheduleRun } from "./due";
+import { cleanupJobLaneId, rescheduleLane, scheduleRun } from "./due";
 import { applyHiddenRefsJob } from "./hidden-refs";
 import { respondToReview } from "./pull-request-requests";
 import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
@@ -111,9 +111,10 @@ export async function onRalphJobFinished(db: Database, job: Job, deps?: RalphDep
 
 /**
  * A cleanup job (`worktree.cleanup`, or a legacy `ralph.cleanup`) completed,
- * failed for good or was canceled: its outcome is applied (`applyCleanupJob`),
- * then the run catches up as after any of its jobs (`catchUpRun`). Errors are
- * logged; the reconcile cron catches up.
+ * failed for good or was canceled: its outcome is applied (`applyCleanupJob`)
+ * and its lane rescheduled from it (replacing the safety check its completion
+ * scheduled), then the run catches up as after any of its jobs (`catchUpRun`).
+ * Errors are logged; the reconcile cron catches up (the lane's safety check).
  */
 export async function onRalphCleanupJobFinished(
   db: Database,
@@ -134,6 +135,8 @@ export async function onRalphCleanupJobFinished(
       ralph = await defaultDeps(db, run.organizationId);
     }
     await applyCleanupJob(ralph, job.id);
+    const laneId = cleanupJobLaneId(job);
+    if (laneId) await rescheduleLane(db, laneId);
     await catchUpRun(ralph, job.ralphRunId);
   } catch (error) {
     console.error(`Applying the outcome of cleanup job ${job.id} failed`, error);

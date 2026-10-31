@@ -1,11 +1,12 @@
 /**
  * The ralph reconcile cron's work (see the `ralph-reconcile` route): the runs
- * due by its schedule (`lib/ralph/due`), and the full pass over every
+ * and lanes due by its schedule (`lib/ralph/due`), and the full pass over every
  * organization: runs, then cleanup, then CI.
  */
 import {
   listChatRunOrganizationIds,
   listIntegratedOrganizationIds,
+  listLanesByIds,
   listRunsByIds,
   type RalphRun,
   type RalphRunOrigin,
@@ -15,11 +16,12 @@ import {
   getLinearGateway,
   getLinearGatewayOrDisconnected,
   LinearNotConnectedError,
+  lazyLinearGateway,
 } from "@/lib/linear/client";
 import type { LinearGateway } from "@/lib/linear/gateway";
 import { reconcileCi } from "./ci";
-import { reconcileCleanup } from "./cleanup";
-import { scheduleRun } from "./due";
+import { reconcileCleanup, reconcileLane, startPendingCleanups } from "./cleanup";
+import { scheduleLane, scheduleRun } from "./due";
 import { reconcileRuns } from "./reconcile";
 import { advanceRun, type RalphDeps } from "./run";
 
@@ -35,9 +37,10 @@ export interface ReconcileTotals {
  * Advances the due runs (`runIds`), organization by organization: with the
  * organization's Linear gateway, or a disconnected one for the chat runs of an
  * organization without Linear. Each advance reschedules its run (a failed one
- * keeps its safety check). A run that's gone, and a Linear run of an
- * organization that disconnected Linear (the full pass skips those too), leave
- * the schedule. Failures are logged and counted.
+ * keeps its safety check), then the lanes' pending cleanups start if the run's
+ * jobs are through (an outcome hook that never ran). A run that's gone, and a
+ * Linear run of an organization that disconnected Linear (the full pass skips
+ * those too), leave the schedule. Failures are logged and counted.
  */
 export async function reconcileDueRuns(
   deps: Omit<RalphDeps, "organizationId" | "linear">,
@@ -70,12 +73,55 @@ export async function reconcileDueRuns(
     }
     for (const run of gateway.runs) {
       try {
-        await advanceRun(run.id, { ...deps, organizationId, linear: gateway.linear });
+        const ralph = { ...deps, organizationId, linear: gateway.linear };
+        await advanceRun(run.id, ralph);
+        await startPendingCleanups(ralph, run.id);
         totals.reconciled += 1;
       } catch (error) {
         totals.failed += 1;
         console.error(`Reconciling ralph run ${run.id} failed`, error);
       }
+    }
+  }
+  return totals;
+}
+
+/**
+ * Checks the due lanes' cleanup (`reconcileLane`: retries a failed one, deletes a kept
+ * branch at its deadline, applies a cleanup job's outcome that was missed) and reschedules
+ * each, with its organization's Linear gateway (loaded on its first use; a disconnected one
+ * without Linear). A lane that's gone leaves the schedule; one that failed keeps its entry,
+ * so the next invocation tries again. Failures are logged and counted.
+ */
+export async function reconcileDueLanes(
+  deps: Omit<RalphDeps, "organizationId" | "linear">,
+  laneIds: readonly string[],
+  now = new Date(),
+): Promise<{ checked: number; started: number; expired: number; failed: number }> {
+  const totals = { checked: 0, started: 0, expired: 0, failed: 0 };
+  if (laneIds.length === 0) return totals;
+  const lanes = await listLanesByIds(deps.db, laneIds);
+  const found = new Set(lanes.map(({ lane }) => lane.id));
+  for (const laneId of laneIds) if (!found.has(laneId)) await scheduleLane(laneId, null);
+
+  const gateways = new Map<string, LinearGateway>();
+  for (const { lane, run } of lanes) {
+    const { organizationId } = run;
+    let linear = gateways.get(organizationId);
+    if (!linear) {
+      linear = lazyLinearGateway(() =>
+        getLinearGatewayOrDisconnected({ db: deps.db, organizationId }),
+      );
+      gateways.set(organizationId, linear);
+    }
+    try {
+      const done = await reconcileLane({ ...deps, organizationId, linear }, lane, now);
+      totals.checked += 1;
+      if (done === "started") totals.started += 1;
+      if (done === "expired") totals.expired += 1;
+    } catch (error) {
+      totals.failed += 1;
+      console.error(`Checking the cleanup of ralph lane ${lane.id} failed`, error);
     }
   }
   return totals;

@@ -657,6 +657,8 @@ export {
   listRunsToReconcile,
   listUnfinishedRunIds,
   listRunsByIds,
+  listLanesByIds,
+  listLaneCleanups,
   listChatRunOrganizationIds,
   listRuns,
   getRunDetail,
