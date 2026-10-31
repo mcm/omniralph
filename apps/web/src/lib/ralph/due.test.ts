@@ -503,16 +503,45 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile schedule
     expect(await score(lane.runId)).toBeNull();
   });
 
-  it("does the full pass once a day, then the runs still due", async () => {
+  it("does the full pass once per daily window, then the runs still due", async () => {
     await idle();
+    expect(Number(await getRedis().get(RECONCILED_KEY))).toBe(Date.UTC(2026, 9, 28, 3, 15));
+    // Between windows: no full pass, only the due entries.
+    vi.setSystemTime(Date.UTC(2026, 9, 29, 3, 10));
     const run = await newRun("completed");
-    await scheduleRun(run.id, NOW);
-    await getRedis().del(RECONCILED_KEY);
+    await scheduleRun(run.id, Date.now());
+    expect(await cron()).toEqual({
+      due: { reconciled: 1, failed: 0 },
+      dueLanes: expect.anything(),
+    });
+    expect(state.fullPasses).toBe(0);
+    // The first invocation at or after the window's start does it, once.
+    vi.setSystemTime(Date.UTC(2026, 9, 29, 3, 20));
+    const late = await newRun("completed");
+    await scheduleRun(late.id, Date.now());
     expect(await cron()).toMatchObject({ organizations: 0, due: { reconciled: 1, failed: 0 } });
     expect(state.fullPasses).toBe(1);
-    expect(state.advanced).toEqual([run.id]);
-    expect(await getRedis().ttl(RECONCILED_KEY)).toBeGreaterThan(24 * 3600 - 60);
+    expect(state.advanced).toEqual([run.id, late.id]);
+    expect(Number(await getRedis().get(RECONCILED_KEY))).toBe(Date.UTC(2026, 9, 29, 3, 15));
+    vi.setSystemTime(Date.UTC(2026, 9, 29, 3, 30));
     expect(await cron()).toEqual({ skipped: true });
+    vi.setSystemTime(Date.UTC(2026, 9, 30, 3, 14));
+    expect(await cron()).toEqual({ skipped: true });
+    expect(state.fullPasses).toBe(1);
+  });
+
+  it("makes up a window's full pass at the next invocation when the first one didn't run", async () => {
+    await idle();
+    // No invocation at 03:20 or for the rest of the day: the next one, a day later, does it.
+    vi.setSystemTime(Date.UTC(2026, 9, 30, 2, 0));
+    expect(await cron()).toMatchObject({ organizations: 0 });
+    expect(state.fullPasses).toBe(1);
+    expect(Number(await getRedis().get(RECONCILED_KEY))).toBe(Date.UTC(2026, 9, 29, 3, 15));
+    expect(await cron()).toEqual({ skipped: true });
+    // The next window is still at its start.
+    vi.setSystemTime(Date.UTC(2026, 9, 30, 3, 15));
+    await cron();
+    expect(state.fullPasses).toBe(2);
   });
 
   it("rebuilds the schedule: unfinished runs and waiting or failed cleanups now, kept branches at their deadline", async () => {
