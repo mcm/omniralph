@@ -56,7 +56,7 @@ export class SetupCommandError extends Error {
 /**
  * A setup or teardown command's environment: `env` without any `OMNIRALPH_*`
  * variable (either job token) or `GIT_CONFIG_*` override (how git commands
- * get the job's credential helper).
+ * get the job's credential helper, or the agent process inherits one).
  */
 export function commandEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(
@@ -64,6 +64,7 @@ export function commandEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
       ([name]) =>
         !name.startsWith("OMNIRALPH_") &&
         name !== "GIT_CONFIG_COUNT" &&
+        name !== "GIT_CONFIG_PARAMETERS" &&
         !name.startsWith("GIT_CONFIG_KEY_") &&
         !name.startsWith("GIT_CONFIG_VALUE_"),
     ),
