@@ -5,74 +5,156 @@ import {
   INBOX_SNOOZE_MIN_MS,
   type InboxItem,
 } from "@/lib/api/inbox";
-import { inboxDecisions, SNOOZE_CHOICES, snoozeUntil } from "./decisions";
+import {
+  agentOfflineItem,
+  inboxItem,
+  mrReadyItem,
+  runningItem,
+} from "@/screens/inbox/test-fixtures";
+import { inboxCtas, SNOOZE_CHOICES, snoozeUntil } from "./decisions";
 
 const ALL = [...INBOX_ACTIONS];
-const buttons = (kind: InboxItem["kind"], actions: InboxItem["actions"] = ALL) =>
-  inboxDecisions({ kind, actions }).map(({ label, action, variant }) => [label, action, variant]);
 
-describe("inboxDecisions", () => {
-  it("a manual story: Done, resume epic · Skip story · Snooze", () => {
-    expect(buttons("manual_story")).toEqual([
-      ["Done, resume epic", "done", "primary"],
-      ["Skip story", "skip", "outline"],
-      ["Snooze", "snooze", "outline"],
-    ]);
-  });
-
-  it("a blocked epic: Start anyway · Done · Snooze", () => {
-    expect(buttons("blocked_epic")).toEqual([
-      ["Start anyway", "start_anyway", "primary"],
-      ["Done", "done", "outline"],
-      ["Snooze", "snooze", "outline"],
-    ]);
-  });
-
-  it("a question: Send answer · Done · Snooze", () => {
-    expect(buttons("question")).toEqual([
-      ["Send answer", "answer", "primary"],
-      ["Done", "done", "outline"],
-      ["Snooze", "snooze", "outline"],
-    ]);
-  });
-
-  it("a stopped epic: Resume · Done · Snooze", () => {
-    expect(buttons("stopped_epic")).toEqual([
-      ["Resume", "resume", "primary"],
-      ["Done", "done", "outline"],
-      ["Snooze", "snooze", "outline"],
-    ]);
-  });
-
-  it.each(["prd_ready", "pr_waiting", "agent_offline", "agent_update_failed"] as const)(
-    "%s: Done · Snooze",
-    (kind) => {
-      expect(buttons(kind)).toEqual([
-        ["Done", "done", "primary"],
-        ["Snooze", "snooze", "outline"],
-      ]);
-    },
+/** Each call to action as `[label, variant]`, plus where a link goes. */
+const ctas = (item: InboxItem) =>
+  inboxCtas(item).map((cta) =>
+    cta.type === "link" ? [cta.label, cta.variant, cta.href] : [cta.label, cta.variant],
   );
 
-  it.each(["failed_run", "failed_system"] as const)("%s: Retry · Done · Snooze", (kind) => {
-    expect(buttons(kind)).toEqual([
-      ["Retry", "retry", "primary"],
-      ["Done", "done", "outline"],
-      ["Snooze", "snooze", "outline"],
+/** An item of `kind` about run-1 and its work item, offering every action. */
+const itemOf = (kind: InboxItem["kind"], overrides: Partial<InboxItem> = {}) =>
+  mrReadyItem({ kind, pullRequest: null, actions: ALL, ...overrides });
+
+describe("inboxCtas", () => {
+  it("a PR waiting on review leads with Open PR/MR, then View PRD; Dismiss and Snooze are quiet", () => {
+    expect(ctas(mrReadyItem())).toEqual([
+      ["Open MR", "primary", "https://gitlab.com/acme/portal/-/merge_requests/12"],
+      ["View PRD", "outline"],
+      ["Dismiss", "ghost"],
+      ["Snooze", "ghost"],
+    ]);
+    const github = mrReadyItem({
+      pullRequest: { provider: "github", number: 3, url: "https://github.com/acme/portal/pull/3" },
+    });
+    expect(ctas(github)[0]).toEqual([
+      "Open PR",
+      "primary",
+      "https://github.com/acme/portal/pull/3",
     ]);
   });
 
-  it("a running run: none", () => {
-    expect(buttons("run")).toEqual([]);
+  it("a PR waiting on review whose URL is unknown falls back to Dismiss as the primary", () => {
+    expect(ctas(mrReadyItem({ pullRequest: null }))).toEqual([
+      ["Dismiss", "primary"],
+      ["View PRD", "outline"],
+      ["Snooze", "ghost"],
+    ]);
   });
 
-  it("shows a button only when the item's actions include its action", () => {
-    expect(buttons("manual_story", ["skip", "snooze"])).toEqual([
-      ["Skip story", "skip", "primary"],
-      ["Snooze", "snooze", "outline"],
+  it("an open PR link opens in a new tab; the app's own links don't", () => {
+    const links = inboxCtas(itemOf("failed_run")).concat(inboxCtas(mrReadyItem()));
+    expect(links.flatMap((cta) => (cta.type === "link" ? [[cta.step, cta.external]] : []))).toEqual(
+      [
+        ["open_run", false],
+        ["open_pr", true],
+      ],
+    );
+  });
+
+  it("a manual story: Done, resume epic first, and View PRD opens its epic's PRD", () => {
+    const item = inboxItem();
+    expect(ctas(item)).toEqual([
+      ["Done, resume epic", "primary"],
+      ["Skip story", "outline"],
+      ["View PRD", "outline"],
+      ["Snooze", "ghost"],
     ]);
-    expect(buttons("failed_run", ["done"])).toEqual([["Done", "done", "primary"]]);
-    expect(buttons("stopped_epic", [])).toEqual([]);
+    const prd = inboxCtas(item).find((cta) => cta.type === "prd");
+    expect(prd).toMatchObject({
+      runId: "run-1",
+      workItem: { id: "linear-epic-40", identifier: "TOOL-40" },
+    });
+  });
+
+  it("a ready PRD leads with Review PRD, then its work item's page", () => {
+    expect(ctas(itemOf("prd_ready"))).toEqual([
+      ["Review PRD", "primary"],
+      ["Open work item", "outline", "/backlog/linear-story-42"],
+      ["Dismiss", "ghost"],
+      ["Snooze", "ghost"],
+    ]);
+  });
+
+  it("a failed run: Retry, Open run and View PRD, then Dismiss and Snooze", () => {
+    expect(ctas(itemOf("failed_run"))).toEqual([
+      ["Retry", "primary"],
+      ["Open run", "outline", "/runs/run-2"],
+      ["View PRD", "outline"],
+      ["Dismiss", "ghost"],
+      ["Snooze", "ghost"],
+    ]);
+  });
+
+  it("a stopped epic: Resume, Open run and View PRD", () => {
+    expect(ctas(itemOf("stopped_epic")).map(([label]) => label)).toEqual([
+      "Resume",
+      "Open run",
+      "View PRD",
+      "Dismiss",
+      "Snooze",
+    ]);
+  });
+
+  it("a blocked epic and a question lead with their own decision", () => {
+    expect(ctas(itemOf("blocked_epic"))[0]).toEqual(["Start anyway", "primary"]);
+    expect(ctas(itemOf("question"))[0]).toEqual(["Send answer", "primary"]);
+  });
+
+  it("an agent leads with Open agent", () => {
+    expect(ctas(agentOfflineItem())).toEqual([
+      ["Open agent", "primary", "/fleet/agent-1"],
+      ["Dismiss", "ghost"],
+      ["Snooze", "ghost"],
+    ]);
+  });
+
+  it("failed system work that can't be retried: Dismiss is the primary", () => {
+    const item = agentOfflineItem({
+      kind: "failed_system",
+      agent: null,
+      actions: ["done", "snooze"],
+    });
+    expect(ctas(item)).toEqual([
+      ["Dismiss", "primary"],
+      ["Snooze", "ghost"],
+    ]);
+  });
+
+  it("a running run offers View PRD and Open run, neither primary", () => {
+    expect(ctas(runningItem("run-9", "Billing", 5))).toEqual([
+      ["View PRD", "outline"],
+      ["Open run", "outline", "/runs/run-9"],
+    ]);
+  });
+
+  it("offers View PRD only with a run and a work item", () => {
+    const steps = (item: InboxItem) => inboxCtas(item).map((cta) => cta.label);
+    expect(steps(itemOf("failed_run", { workItem: null }))).not.toContain("View PRD");
+    expect(steps(inboxItem({ epic: null }))).not.toContain("View PRD");
+    expect(steps(itemOf("failed_system", { run: null }))).not.toContain("View PRD");
+  });
+
+  it("shows a decision only when the item's actions include it", () => {
+    expect(ctas(inboxItem({ actions: ["skip", "snooze"] }))).toEqual([
+      ["Skip story", "primary"],
+      ["View PRD", "outline"],
+      ["Snooze", "ghost"],
+    ]);
+    expect(ctas(itemOf("failed_run", { actions: ["done"] }))).toEqual([
+      ["Dismiss", "primary"],
+      ["Open run", "outline", "/runs/run-2"],
+      ["View PRD", "outline"],
+    ]);
   });
 });
 

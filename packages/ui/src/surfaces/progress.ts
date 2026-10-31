@@ -1,3 +1,5 @@
+import type { StatusTone } from "../status/status.js";
+
 /** Where a step stands. Only `waiting` means needs you (Design rule 15). */
 export type StepState =
   | "done"
@@ -27,6 +29,21 @@ export const STEP_STATE_LABELS: Record<StepState, string> = {
   blocked: "Blocked",
   pending: "Pending",
   canceled: "Canceled",
+};
+
+/**
+ * Each state's tone (Design rule 15), the same on a progress card's dot and anywhere else a
+ * step's state shows: done mint, running lavender, waiting lavender with its halo, failed
+ * coral, the rest neutral. A done step's mark is a check in its tone.
+ */
+export const STEP_STATE_TONES: Readonly<Record<StepState, StatusTone>> = {
+  done: "good",
+  waiting: "need",
+  running: "run",
+  failed: "fail",
+  blocked: "neutral",
+  pending: "neutral",
+  canceled: "neutral",
 };
 
 /** The parts after "N of M done", in their fixed order. */

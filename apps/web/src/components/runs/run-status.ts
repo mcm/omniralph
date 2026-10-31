@@ -14,13 +14,17 @@ export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
   skipped: "Skipped",
 };
 
-/** Each run status's tone (Design rule 15): running and queued mint, failed coral, waiting and stopped lavender. */
+/**
+ * Each run status's tone (Design rule 15): running lavender (live now), waiting lavender
+ * with its halo (needs you), finished mint, stopped amber, failed coral, queued and skipped
+ * neutral (not started).
+ */
 export const RUN_STATUS_TONES: Record<RunStatus, StatusTone> = {
-  queued: "run",
+  queued: "neutral",
   running: "run",
   waiting: "need",
-  completed: "neutral",
+  completed: "good",
   failed: "fail",
-  stopped: "need",
+  stopped: "warn",
   skipped: "neutral",
 };

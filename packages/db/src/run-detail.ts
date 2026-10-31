@@ -187,6 +187,10 @@ export interface RalphRunDetailFacts {
   error: string | null;
   waitingOn: RalphWaitingOn | null;
   linearIssueUrl: string | null;
+  /**
+   * In execution order: the stories that have run by their first attempt, then the rest in
+   * their stored (sub-issue) order.
+   */
   stories: RunStoryEntry[];
   lanes: RunLaneEntry[];
 }
@@ -221,7 +225,9 @@ export async function getRalphRunDetailFacts(
           from jobs j where j.ralph_story_id = s.id
             and j.started_at is not null and j.finished_at is not null)::bigint::text as duration_ms
       from ralph_stories s where s.run_id = ${runId}::uuid
-      order by s.position, s.created_at, s.id`),
+      order by
+        (select min(j.created_at) from jobs j where j.ralph_story_id = s.id) asc nulls last,
+        s.position, s.created_at, s.id`),
     db.execute<{
       id: string;
       repository_id: string;

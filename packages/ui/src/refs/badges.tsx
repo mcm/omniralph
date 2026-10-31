@@ -5,7 +5,7 @@ import {
   IconFile,
   IconGitBranch,
   IconGitMerge,
-  IconServer,
+  IconSpy,
   type TablerIcon,
 } from "@tabler/icons-react";
 import type { ReactNode } from "react";
@@ -143,12 +143,7 @@ export interface AgentBadgeProps extends BadgeLinkProps {
 /** An agent: server icon + name. */
 export function AgentBadge({ name, ...rest }: AgentBadgeProps) {
   return (
-    <RefBadge
-      {...rest}
-      kind="agent"
-      icon={<KindIcon icon={IconServer} label="Agent" />}
-      text={name}
-    />
+    <RefBadge {...rest} kind="agent" icon={<KindIcon icon={IconSpy} label="Agent" />} text={name} />
   );
 }
 

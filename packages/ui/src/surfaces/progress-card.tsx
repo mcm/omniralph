@@ -1,26 +1,17 @@
 "use client";
 
-import { IconChevronRight, IconMinus } from "@tabler/icons-react";
+import { IconCheck, IconChevronRight, IconMinus } from "@tabler/icons-react";
 import { useId, type ReactNode } from "react";
 import { useLinkComponent } from "../provider/index.js";
-import { StatusDot, type StatusTone } from "../status/index.js";
+import { StatusDot } from "../status/index.js";
 import { Card, type HeadingLevel } from "./card.js";
 import {
   STEP_STATE_LABELS,
+  STEP_STATE_TONES,
   progressSummary,
   type ProgressStep,
   type StepState,
 } from "./progress.js";
-
-const STEP_TONES: Record<StepState, StatusTone> = {
-  done: "neutral",
-  waiting: "need",
-  running: "run",
-  failed: "fail",
-  blocked: "neutral",
-  pending: "neutral",
-  canceled: "neutral",
-};
 
 export interface ProgressCardProps {
   title: string;
@@ -49,6 +40,13 @@ export interface ProgressCardProps {
 
 function StepIcon({ state }: { state: StepState }) {
   const label = STEP_STATE_LABELS[state];
+  if (state === "done") {
+    return (
+      <span className="or-step__icon or-step__icon--done" role="img" aria-label={label}>
+        <IconCheck size={12} stroke={2.5} aria-hidden="true" />
+      </span>
+    );
+  }
   if (state === "canceled") {
     return (
       <span className="or-step__icon" role="img" aria-label={label}>
@@ -56,7 +54,7 @@ function StepIcon({ state }: { state: StepState }) {
       </span>
     );
   }
-  return <StatusDot tone={STEP_TONES[state]} label={label} />;
+  return <StatusDot tone={STEP_STATE_TONES[state]} label={label} />;
 }
 
 /**

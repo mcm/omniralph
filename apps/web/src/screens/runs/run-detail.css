@@ -1,6 +1,7 @@
 /*
  * A run's detail on the Runs screen (Design board Runs): header badges and toolbar, status
- * line, title, reason, then the progress card, Details and Activity. Only `--or-` tokens.
+ * line, title, reason, then the triage card, the progress card, Session and Activity. Only
+ * `--or-` tokens.
  */
 .or-run-detail {
   display: flex;
@@ -56,4 +57,12 @@
   .or-run-detail {
     padding: 16px 16px 24px;
   }
+}
+
+/* The status line's state word, then its story and PR/MR state as badges. */
+.or-run-detail__status .or-statusline__text {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }

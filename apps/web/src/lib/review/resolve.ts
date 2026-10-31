@@ -50,7 +50,7 @@ export async function resolveFixedFindings(
     (prior) => fixed.has(prior.id) && !raised.some((f) => sameIssue(prior, f)),
   );
 
-  const link = reviewUrl(first.id);
+  const link = reviewUrl(first);
   await closeFindingThreads(db, first.id, {
     kind: "fixed",
     message: `A re-review of ${inlineCode(first.headSha.slice(0, 12))} re-checked this issue and found it fixed, so this thread is resolved.`,

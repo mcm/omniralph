@@ -129,6 +129,8 @@ describe("stepStatusLine", () => {
       tone: "need",
       text: "Story 4 · Waiting on you",
     });
-    expect(stepStatusLine(storyStep("1", "completed")).tone).toBe("neutral");
+    // Finished is never neutral.
+    expect(stepStatusLine(storyStep("1", "completed")).tone).toBe("good");
+    expect(stepStatusLine(storyStep("5", "pending")).tone).toBe("neutral");
   });
 });

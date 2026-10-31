@@ -61,11 +61,13 @@ describe("HelpView", () => {
         ["Back to the list", "u"],
       ],
       Inbox: [
-        ["Done", "e"],
+        ["Done or dismiss", "e"],
         ["Skip story", "s"],
         ["Snooze", "z"],
         ["Start anyway", "t"],
         ["Resume", "c"],
+        ["View PRD", "v"],
+        ["Open the PR or MR", "p"],
       ],
       Runs: [
         ["Retry", "r"],

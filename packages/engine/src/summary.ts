@@ -42,7 +42,7 @@ export interface SummaryOptions {
 
 /**
  * The PR/MR summary comment: profile, findings by severity, tokens used vs.
- * budget, skipped files with reasons, a link to the review page and a footer
+ * budget, skipped files with reasons, a link to the review's run page and a footer
  * on how to re-run the review.
  */
 export function renderSummary(
@@ -97,7 +97,7 @@ export function renderSummary(
   lines.push(
     `[View the full review](${reviewUrl})`,
     "",
-    `Re-run: comment ${code(`@${handle} review`)} (new issues only) or ${code(`@${handle} review fresh`)} (from scratch), or use **Re-run** on the [review page](${reviewUrl}).`,
+    `Re-run: comment ${code(`@${handle} review`)} (new issues only) or ${code(`@${handle} review fresh`)} (from scratch), or use **Retry run** on the [run page](${reviewUrl}).`,
   );
   return `${lines.join("\n")}\n`;
 }

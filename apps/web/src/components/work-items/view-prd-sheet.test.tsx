@@ -124,14 +124,9 @@ const loaded = () =>
   waitFor(() => within(pane()).getByRole("heading", { level: 2, name: "Backlog screen" }));
 const toolbar = () => within(pane()).getByRole("toolbar", { name: "Run actions" });
 
-async function openMenu() {
-  await userEvent.click(within(toolbar()).getByRole("button", { name: "More actions" }));
-  return screen.getByRole("menu");
-}
-
 async function openPrd() {
   await loaded();
-  await userEvent.click(within(await openMenu()).getByRole("menuitem", { name: VIEW_PRD }));
+  await userEvent.click(within(toolbar()).getByRole("button", { name: VIEW_PRD }));
   const sheet = await screen.findByRole("dialog", { name: "PRD of SOC-412" });
   await within(sheet).findByRole("heading", { name: "Introduction" });
   return sheet;
@@ -168,15 +163,33 @@ describe("prdModeForRun", () => {
   });
 });
 
-describe("View PRD in the run ⋯ menu", () => {
-  it("is the menu's first item for a run with a work item", async () => {
+describe("View PRD in the run toolbar", () => {
+  it("is a toolbar action of a running run with a work item, its only call to action", async () => {
     renderRuns();
     await loaded();
-    const items = within(await openMenu()).getAllByRole("menuitem");
-    expect(items.map((entry) => entry.textContent)).toEqual([
+    const buttons = within(toolbar())
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label") ?? button.textContent);
+    expect(buttons).toEqual([VIEW_PRD, "More actions"]);
+  });
+
+  it("follows the PR/MR and Retry run on a failed run", async () => {
+    detail = run("failed", {
+      pullRequest: { provider: "github", number: 7, url: "https://github.com/acme/api/pull/7" },
+      details: {
+        ...run("failed").details,
+        actions: { stop: false, retry: { run: true, storyIds: [], attemptIds: [] } },
+      },
+    });
+    renderRuns();
+    await loaded();
+    const actions = [...toolbar().querySelectorAll("a, button")].map(
+      (action) => action.getAttribute("aria-label") ?? action.textContent,
+    );
+    expect(actions.slice(0, 3)).toEqual([
+      expect.stringMatching(/^Open pull request/),
+      "Retry run",
       VIEW_PRD,
-      "Open in Linear",
-      "Stop run",
     ]);
   });
 
@@ -184,8 +197,7 @@ describe("View PRD in the run ⋯ menu", () => {
     detail = run("running", { workItem: null });
     renderRuns();
     await loaded();
-    const menu = await openMenu();
-    expect(within(menu).queryByRole("menuitem", { name: VIEW_PRD })).toBeNull();
+    expect(within(toolbar()).queryByRole("button", { name: VIEW_PRD })).toBeNull();
   });
 
   it("opens the PRD read-only in a sheet while the run is running, and closes it", async () => {

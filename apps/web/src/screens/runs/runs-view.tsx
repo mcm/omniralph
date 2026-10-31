@@ -14,7 +14,6 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, type ReactNode } from "react";
 import { useCurrentUser } from "@/components/current-user";
-import { viewPrdMenuItems } from "@/components/work-items/view-prd-sheet";
 import { RUN_STATUS_LABELS } from "@/components/runs/run-status";
 import { RUN_KINDS, RUN_STATUSES, type RunRow } from "@/lib/api/runs";
 import { useClock } from "../clock";
@@ -28,6 +27,7 @@ import {
   type RunFilters,
 } from "./filters";
 import { runRowLabel } from "./labels";
+import { AvatarIcon, RUN_KIND_ICONS } from "@/components/row-avatars";
 import { useRunFilterOptions, useRunList } from "./queries";
 import { RunDetailView } from "./run-detail-view";
 import { RunRowBadges } from "./run-badges";
@@ -49,13 +49,11 @@ const STATUS_OPTIONS: FilterOption<RunStatus>[] = RUN_STATUSES.map((value) => ({
 export interface RunsViewProps {
   /** The open run (`/runs/{id}`), whose row is selected; none on `/runs`. */
   runId?: string | null;
-  /** The detail of the run beside the rail; `RunDetailView` with View PRD by default. */
+  /** The detail of the run beside the rail; `RunDetailView` by default. */
   renderDetail?: (runId: string) => ReactNode;
 }
 
-const defaultDetail = (runId: string) => (
-  <RunDetailView key={runId} runId={runId} menuItems={viewPrdMenuItems} />
-);
+const defaultDetail = (runId: string) => <RunDetailView key={runId} runId={runId} />;
 
 /**
  * The Runs screen (Design board Runs): a rail with the title, the Kind, Status and Repo
@@ -96,29 +94,31 @@ export function RunsView({ runId = null, renderDetail = defaultDetail }: RunsVie
 
   const rail = (
     <div className="or-runs__rail">
-      <h1 className="or-runs__title">Runs</h1>
-      <div className="or-runs__filters" role="group" aria-label="Filters">
-        <FilterMenu
-          label="Kind"
-          options={KIND_OPTIONS}
-          selected={filters.kind}
-          onChange={(kind) => setFilter("kind", kind)}
-          multiple
-        />
-        <FilterMenu
-          label="Status"
-          options={STATUS_OPTIONS}
-          selected={filters.status}
-          onChange={(status) => setFilter("status", status)}
-          multiple
-        />
-        <FilterMenu
-          label="Repo"
-          options={repoOptions}
-          selected={filters.repository}
-          onChange={(repository) => setFilter("repository", repository)}
-          multiple
-        />
+      <div className="or-split__sticky">
+        <h1 className="or-runs__title">Runs</h1>
+        <div className="or-runs__filters" role="group" aria-label="Filters">
+          <FilterMenu
+            label="Kind"
+            options={KIND_OPTIONS}
+            selected={filters.kind}
+            onChange={(kind) => setFilter("kind", kind)}
+            multiple
+          />
+          <FilterMenu
+            label="Status"
+            options={STATUS_OPTIONS}
+            selected={filters.status}
+            onChange={(status) => setFilter("status", status)}
+            multiple
+          />
+          <FilterMenu
+            label="Repo"
+            options={repoOptions}
+            selected={filters.repository}
+            onChange={(repository) => setFilter("repository", repository)}
+            multiple
+          />
+        </div>
       </div>
       <div className="or-runs__list">
         {list.isError && !runs ? (
@@ -156,14 +156,14 @@ export function RunsView({ runId = null, renderDetail = defaultDetail }: RunsVie
               className={list.isPlaceholderData ? "or-runs--stale" : undefined}
             >
               {runs.map((run) => {
-                const { label, tone } = runRowLabel(run);
+                const { statusLabel, tone } = runRowLabel(run);
                 return (
                   <ListRow
                     key={run.id}
                     href={runInListHref(run.id, filters)}
                     title={run.title}
-                    kindLabel={label}
-                    tone={tone}
+                    avatar={<AvatarIcon icon={RUN_KIND_ICONS[run.kind]} />}
+                    status={{ tone, label: statusLabel }}
                     time={<time dateTime={run.createdAt}>{compactAge(run.createdAt, now)}</time>}
                     meta={<RunRowBadges run={run} showOrganization={showOrganization} />}
                     selected={run.id === shownRunId}

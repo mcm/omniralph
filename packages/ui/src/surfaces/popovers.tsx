@@ -1,7 +1,7 @@
 "use client";
 
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { IconId, IconInfoCircle } from "@tabler/icons-react";
+import { IconHistory, IconId, IconInfoCircle } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 import type { ButtonIcon } from "../actions/button.js";
 import { IconButton } from "../actions/icon-button.js";
@@ -50,6 +50,23 @@ export interface InfoPopoverProps {
 export function InfoPopover({ label = "About this card", side, children }: InfoPopoverProps) {
   return (
     <PopoverButton label={label} icon={IconInfoCircle} side={side} className="or-pop--info">
+      {children}
+    </PopoverButton>
+  );
+}
+
+export interface HistoryPopoverProps {
+  /** The history button's accessible name and tooltip. Defaults to "Change history". */
+  label?: string;
+  side?: "top" | "right" | "bottom" | "left";
+  /** The history shown in the popover (e.g. who changed a card, and when). */
+  children: ReactNode;
+}
+
+/** A history (clock) button that opens a popover of what changed: an `InfoPopover` for history. */
+export function HistoryPopover({ label = "Change history", side, children }: HistoryPopoverProps) {
+  return (
+    <PopoverButton label={label} icon={IconHistory} side={side} className="or-pop--info">
       {children}
     </PopoverButton>
   );

@@ -1,8 +1,9 @@
 "use client";
 
-import { BrandMark, ListRow, RowList, TextLink } from "@omniralph/ui";
+import { ListRow, RowList, TextLink } from "@omniralph/ui";
 import { useId, type ReactNode } from "react";
 import { useCurrentUser } from "@/components/current-user";
+import { TrackerMark } from "@/components/row-avatars";
 import {
   StartEpicIconButton,
   TriageNowIconButton,
@@ -39,7 +40,7 @@ function UpNextGroup({
           <ListRow
             key={row.id}
             href={backlogItemHref(row.id, NO_BACKLOG_FILTERS)}
-            mark={<BrandMark brand={row.tracker} />}
+            avatar={<TrackerMark tracker={row.tracker} />}
             title={row.title}
             meta={<BacklogRowBadges row={row} showOrganization={showOrganization} />}
             actions={action(row)}

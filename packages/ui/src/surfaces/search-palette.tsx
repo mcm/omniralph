@@ -3,9 +3,13 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { IconSearch, IconX } from "@tabler/icons-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { RowAvatar, type RowStatus } from "../lists/row-avatar.js";
 import { StatusDot, type StatusTone } from "../status/status.js";
 
-/** One result: a `ListRow`'s look (a status dot and kind line, or a mark), as a listbox option. */
+/**
+ * One result: a `ListRow`'s look (an avatar with its state's dot, a status dot and kind line,
+ * or a mark), as a listbox option.
+ */
 export type SearchPaletteItem = {
   /** Unique within the palette. */
   id: string;
@@ -14,8 +18,34 @@ export type SearchPaletteItem = {
   /** Reference badges under the title. */
   meta?: ReactNode;
 } & (
-  | { kindLabel: string; tone: StatusTone; mark?: never }
-  | { mark: ReactNode; kindLabel?: never; tone?: never }
+  | {
+      /** The line above the title; it names the dot unless `statusLabel` does. */
+      kindLabel: string;
+      /** Names the dot when the kind line leaves the state to its color. */
+      statusLabel?: string;
+      tone: StatusTone;
+      mark?: never;
+      avatar?: never;
+      status?: never;
+    }
+  | {
+      mark: ReactNode;
+      kindLabel?: never;
+      statusLabel?: never;
+      tone?: never;
+      avatar?: never;
+      status?: never;
+    }
+  | {
+      /** The `RowAvatar`'s icon or mark, as the result's list row has it. */
+      avatar: ReactNode;
+      /** The result's state, a dot on the avatar. */
+      status?: RowStatus;
+      kindLabel?: never;
+      statusLabel?: never;
+      tone?: never;
+      mark?: never;
+    }
 );
 
 export interface SearchPaletteGroup<T extends SearchPaletteItem = SearchPaletteItem> {
@@ -197,11 +227,15 @@ export function SearchPalette<T extends SearchPaletteItem>({
                         }}
                         onClick={() => onSelect(item)}
                       >
-                        {item.kindLabel !== undefined ? (
+                        {item.avatar !== undefined ? (
+                          <RowAvatar className="or-row__avatar" status={item.status}>
+                            {item.avatar}
+                          </RowAvatar>
+                        ) : item.kindLabel !== undefined ? (
                           <StatusDot
                             className="or-row__dot"
                             tone={item.tone}
-                            label={item.kindLabel}
+                            label={item.statusLabel ?? item.kindLabel}
                           />
                         ) : (
                           <span className="or-row__mark">{item.mark}</span>

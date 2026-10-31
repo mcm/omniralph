@@ -220,7 +220,12 @@ describe("SearchProvider", () => {
         .map((group) => group.getAttribute("aria-labelledby") && group.firstChild?.textContent),
     ).toEqual(["Runs", "Work items", "Repos", "Agents", "Settings"]);
     const runRow = within(listbox).getByRole("option", { name: /Fix the login form/ });
-    expect(within(runRow).getByText("Epic · running")).toBeTruthy();
+    // Its list row's look: the kind's avatar with the state's dot, no kind line.
+    expect(runRow.querySelector(".or-row-avatar svg")!.getAttribute("class")).toContain(
+      "tabler-icon-stack-2",
+    );
+    expect(runRow.querySelector(".or-row__kind")).toBeNull();
+    expect(within(runRow).getByRole("img", { name: "Epic, running" })).toBeTruthy();
     expect(within(runRow).getByText("SOC-1719")).toBeTruthy();
     expect(within(runRow).getByText("acme/web")).toBeTruthy();
     expect(within(runRow).getByText("!42")).toBeTruthy();
@@ -228,12 +233,13 @@ describe("SearchProvider", () => {
     expect(within(listbox).queryByText("Beta")).toBeNull();
     const workItemRow = within(listbox).getByRole("option", { name: /Add a logout button/ });
     expect(within(workItemRow).getByText("SOC-1720")).toBeTruthy();
-    expect(within(listbox).getByRole("option", { name: /builder-1/ }).textContent).toContain(
-      "Agent · Online",
-    );
-    expect(within(listbox).getByRole("option", { name: /Members/ }).textContent).toContain(
-      "Settings · Organization",
-    );
+    const agentRow = within(listbox).getByRole("option", { name: /builder-1/ });
+    expect(within(agentRow).getByRole("img", { name: "Agent, Online" })).toBeTruthy();
+    const settingsRow = within(listbox).getByRole("option", { name: /Members/ });
+    expect([...settingsRow.querySelectorAll(".or-ref")].map((badge) => badge.textContent)).toEqual([
+      "Settings",
+      "Organization",
+    ]);
     // No keyboard hints (Design rule 7).
     expect(dialog.textContent).not.toMatch(/⌘|Ctrl/);
   });
@@ -290,8 +296,10 @@ describe("SearchProvider", () => {
     const { user, dialog, input } = await openPalette();
     await user.type(input, "api");
     // The recent items list acme/api too: wait for the search's answer before clicking it.
+    // A repo reads as its list row: the name as the title, its namespace a badge.
     const repos = await within(dialog).findByRole("group", { name: "Repos" });
-    await user.click(within(repos).getByRole("option", { name: /acme\/api/ }));
+    const repoTitle = within(repos).getByText("api", { selector: ".or-row__title" });
+    await user.click(repoTitle.closest<HTMLElement>("[role='option']")!);
     expect(nav.router.push).toHaveBeenCalledWith(`/repos/${REPO_ID}`);
   });
 

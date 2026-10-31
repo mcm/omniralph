@@ -11,6 +11,7 @@
  *    the answers are folded into the PRD and the questions they answer dropped.
  */
 import {
+  getRunBySession,
   getTriageRun,
   getTriageRunBySession,
   replyToTriageRun,
@@ -54,7 +55,7 @@ export function previousOutcome(run: Pick<TriageRun, "lastResult">): TriageOutco
 
 /**
  * Handles `AgentSessionEvent.prompted` in a triage session; null when the
- * session has no triage run (it is ralph's).
+ * session has no triage run, or has a ralph run too (it is ralph's).
  */
 export async function handleTriageReply(
   event: SessionPromptedEvent,
@@ -62,6 +63,8 @@ export async function handleTriageReply(
 ): Promise<TriageReplyOutcome | null> {
   const run = await getTriageRunBySession(deps.db, event.sessionId);
   if (!run) return null;
+  // A delegation into the finished triage session started a coding run there: it is ralph's now.
+  if (await getRunBySession(deps.db, event.sessionId)) return null;
   if (isStopRequest(event)) return stopTriage(deps, run, event.authorName);
 
   const text = parseInstruction(event.body).text || event.body.trim();

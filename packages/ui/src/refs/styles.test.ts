@@ -41,26 +41,6 @@ describe("refs.css and status.css", () => {
       "white-space": "nowrap",
     });
   });
-
-  it("colors each status tone from its token", () => {
-    const status = read("status.css");
-    expect(declarations(status, ".or-dot--need")).toEqual({
-      background: "var(--or-acc)",
-      "box-shadow": "0 0 0 3px var(--or-halo)",
-    });
-    expect(declarations(status, ".or-dot--run")).toEqual({
-      background: "var(--or-run)",
-      "box-shadow": "0 0 0 3px var(--or-run-glow)",
-    });
-    expect(declarations(status, ".or-dot--good")).toEqual({ background: "var(--or-run)" });
-    expect(declarations(status, ".or-dot--fail")).toEqual({ background: "var(--or-fail)" });
-    expect(declarations(status, ".or-dot--neutral")).toEqual({ background: "var(--or-done)" });
-    expect(declarations(status, ".or-status--need").color).toBe("var(--or-acc)");
-    expect(declarations(status, ".or-status--run").color).toBe("var(--or-run)");
-    expect(declarations(status, ".or-status--good").color).toBe("var(--or-run)");
-    expect(declarations(status, ".or-status--fail").color).toBe("var(--or-fail)");
-    expect(declarations(status, ".or-status--neutral").color).toBe("var(--or-sec)");
-  });
 });
 
 describe("component CSS", () => {

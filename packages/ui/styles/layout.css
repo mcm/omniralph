@@ -61,8 +61,31 @@
 }
 
 @container or-split (min-width: 880px) {
+  /*
+   * Both panes fill the viewport and scroll on their own, so scrolling a long detail keeps
+   * the list (and its title and filters) in place, and the other way round. Two panes only
+   * fit beside the sidebar or rail, never under the phone's top bar, so the full viewport
+   * height is right. One pane (a phone) keeps scrolling with the page.
+   */
   .or-split__panes {
+    position: sticky;
+    top: 0;
     grid-template-columns: var(--or-split-size) minmax(0, 1fr);
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .or-split__list,
+  .or-split__detail {
+    overscroll-behavior: contain;
+  }
+
+  /* A pane's title and filters (`or-split__sticky`) stay at its top while its rows scroll. */
+  .or-split__sticky {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--or-page);
   }
 
   .or-split[data-fixed="detail"] .or-split__panes {

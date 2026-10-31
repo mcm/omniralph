@@ -86,7 +86,7 @@ export async function postStickyComment(
       ? sanitizeCapped(review.summary, sanitize, MAX_SUMMARY_CHARS)
       : "_No summary was written for this change._",
     "",
-    `_Updated for ${inlineCode(review.headSha.slice(0, 12))} · [View the run](${reviewUrl(review.id)})_`,
+    `_Updated for ${inlineCode(review.headSha.slice(0, 12))} · [View the run](${reviewUrl(review)})_`,
     "",
   ].join("\n");
   await writeStickyComment(

@@ -1,0 +1,58 @@
+/* ManualTaskChecklist: a manual work item's task list as checkboxes. Only `--or-` tokens. */
+.or-tasks__progress {
+  color: var(--or-sec);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.or-tasks__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-tasks__item {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.or-tasks__item .or-checkbox {
+  align-items: flex-start;
+}
+
+.or-tasks__item .or-checkbox:has(:checked) .or-checkbox__label {
+  color: var(--or-sec);
+  text-decoration: line-through;
+}
+
+.or-tasks__empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 68ch;
+}
+
+.or-tasks__hint {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-tasks__error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  color: var(--or-text);
+  font-size: 13px;
+}
+
+.or-tasks__skeleton {
+  height: 48px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-line);
+}

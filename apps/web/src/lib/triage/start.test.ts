@@ -4,6 +4,7 @@ import {
   closeDb,
   connectRepository,
   createDb,
+  createTriageRun,
   getJob,
   getTriageRunBySession,
   jobs,
@@ -14,6 +15,7 @@ import {
   triageRuns,
   upsertScmConnection,
   replaceRoutingRules,
+  setTriageRunStatus,
   type Database,
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
@@ -32,6 +34,7 @@ import { handleLinearEvent } from "@/lib/linear/events";
 import { AGENT_SESSION_MARKER } from "@/lib/ralph/start";
 import { WorkItemNotFoundError } from "@/lib/work-items/tracker";
 import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { releaseTriageDelegation } from "./label";
 import type { TriageDeps } from "./start";
 import { startTriage, type SessionCreatedEvent } from "./start";
 
@@ -555,6 +558,114 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       } finally {
         logged.mockRestore();
       }
+    });
+
+    describe("into a finished triage session that Linear reuses", () => {
+      /** A triage run of `issueId` in its own session, `completed` unless `status` says otherwise. */
+      const triaged = async (issueId: string, status: "completed" | "running" = "completed") => {
+        sessionSeq += 1;
+        const sessionId = `triaged-session-${sessionSeq}`;
+        const { run } = await createTriageRun(db, {
+          organizationId: orgId,
+          linearIssueId: issueId,
+          linearAgentSessionId: sessionId,
+          trigger: "label",
+        });
+        await setTriageRunStatus(db, run.id, status);
+        return { run, sessionId };
+      };
+      const reopened = (issueId: string, sessionId: string): SessionCreatedEvent => ({
+        kind: "session_created",
+        sessionId,
+        issueId,
+      });
+      const prompted = (sessionId: string, body = "") =>
+        handleLinearEvent(
+          { kind: "session_prompted", sessionId, body },
+          { db, organizationId: orgId, workspaceId: "ws-1" },
+          {
+            linear,
+            dispatcher: new PostgresDispatcher({ db }),
+            adapterFor: () => fakeAdapter,
+          },
+        );
+
+      it("starts a run of a ready item in that session when Linear opens it again", async () => {
+        const issue = ready("ENG-50", "unstarted", "Todo");
+        const { run, sessionId } = await triaged(issue.id);
+
+        await handle(reopened(issue.id, sessionId));
+
+        expect(await db.select().from(ralphRuns)).toEqual([
+          expect.objectContaining({ linearIssueId: issue.id, linearAgentSessionId: sessionId }),
+        ]);
+        expect(await getTriageRunBySession(db, sessionId)).toMatchObject({
+          id: run.id,
+          status: "completed",
+        });
+      });
+
+      it("leaves the session alone while its triage runs", async () => {
+        const issue = ready("ENG-51", "unstarted", "Todo");
+        const { sessionId } = await triaged(issue.id, "running");
+
+        await handle(reopened(issue.id, sessionId));
+
+        expect(await db.select().from(ralphRuns)).toEqual([]);
+        expect(linear.activities.filter((a) => a.sessionId === sessionId)).toEqual([]);
+      });
+
+      it("says what is still open, and starts nothing, for an item that still needs refining", async () => {
+        const issue = ready("ENG-52", "backlog", "Backlog");
+        const { sessionId } = await triaged(issue.id);
+
+        await handle(reopened(issue.id, sessionId));
+
+        expect(await db.select().from(ralphRuns)).toEqual([]);
+        expect(await db.select().from(jobs)).toEqual([]);
+        expect(linear.bodies(sessionId, "response")).toEqual([
+          "ENG-52 still has open questions, so Om didn't start building it. Answer them here to triage it again, then delegate it to Om again.",
+        ]);
+      });
+
+      it("starts a run for an empty prompt once the issue is delegated to Om, then routes replies to it", async () => {
+        const issue = ready("ENG-53", "unstarted", "Todo");
+        const { run, sessionId } = await triaged(issue.id);
+        await linear.delegateIssue(issue.id, linear.viewer.id);
+
+        await prompted(sessionId);
+
+        const [coding] = await db.select().from(ralphRuns);
+        expect(coding).toMatchObject({ linearIssueId: issue.id, linearAgentSessionId: sessionId });
+
+        // A reply in the session now goes to the coding run, not to triage.
+        await prompted(sessionId, "Use the v2 API.");
+        expect(await getTriageRunBySession(db, sessionId)).toMatchObject({
+          id: run.id,
+          status: "completed",
+        });
+        expect(await db.select().from(ralphRuns)).toHaveLength(1);
+      });
+
+      it("ignores an empty prompt when the issue isn't delegated to Om", async () => {
+        const issue = ready("ENG-54", "unstarted", "Todo");
+        const { sessionId } = await triaged(issue.id);
+        await linear.delegateIssue(issue.id, "other-agent");
+
+        await prompted(sessionId);
+
+        expect(await db.select().from(ralphRuns)).toEqual([]);
+      });
+
+      it("keeps Om as the delegate when releasing it while a coding run of the issue is active", async () => {
+        const issue = ready("ENG-55", "unstarted", "Todo");
+        await linear.delegateIssue(issue.id, linear.viewer.id);
+        await handle(delegation(issue.id));
+        expect(await db.select().from(ralphRuns)).toHaveLength(1);
+
+        expect(await releaseTriageDelegation(deps(), issue.id)).toBe(false);
+        expect(linear.delegateOf(issue.id)).toBe(linear.viewer.id);
+      });
     });
 
     it("starts a run when the work item isn't found", async () => {

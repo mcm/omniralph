@@ -496,7 +496,9 @@ describe("the picker", () => {
     expect([api.checked, api.disabled]).toEqual([false, false]);
     expect(within(api.closest("li")!).getByText("Private")).toBeTruthy();
     expect(
-      within(sheet()).getByRole("link", { name: "Manage access on GitHub" }).getAttribute("href"),
+      within(sheet())
+        .getByRole("link", { name: "Manage access on GitHub (opens in a new tab)" })
+        .getAttribute("href"),
     ).toBe("https://github.com/settings/installations/42");
     expect(within(sheet()).queryByText(/Showing the first/)).toBeNull();
     const add = within(sheet()).getByRole("button", { name: "Add 0 repos" }) as HTMLButtonElement;
@@ -529,7 +531,7 @@ describe("the picker", () => {
     renderRepos();
     await openPicker("GitLab bot @ gitlab.example.com");
     expect(within(sheet()).getByText("Showing the first 3 repos.")).toBeTruthy();
-    expect(within(sheet()).queryByRole("link", { name: "Manage access on GitHub" })).toBeNull();
+    expect(within(sheet()).queryByRole("link", { name: /^Manage access on GitHub/ })).toBeNull();
     expect(
       requests("GET", `/api/ui/scm-connections/${GITLAB_ID}/repositories`)[0]!.query.get(
         "provider",
@@ -574,7 +576,7 @@ describe("the picker", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add repos" })).toBeNull());
     // The new row, from the response, in rail order; no list refetch.
     await waitFor(() => expect(railRows()).toHaveLength(3));
-    expect(railRows().map((row) => row.querySelector(".or-ref__text")!.textContent)).toEqual([
+    expect(railRows().map((row) => row.querySelector(".or-repo-row__title")!.textContent)).toEqual([
       "api",
       "web",
       "customer-portal",

@@ -5,6 +5,7 @@ import { Checkbox } from "../controls/checkbox.js";
 import { useLinkComponent } from "../provider/ui-provider.js";
 import { rowLinkProps, rowListProps } from "../shortcuts/row-links.js";
 import { StatusDot, type StatusTone } from "../status/status.js";
+import { RowAvatar, type RowStatus } from "./row-avatar.js";
 
 export interface ListRowSelect {
   checked: boolean;
@@ -13,10 +14,17 @@ export interface ListRowSelect {
   label: string;
 }
 
-/** A row led by a status dot and its kind and state above the title. */
+/** A row led by a status dot and its kind above the title. */
 interface ListRowStatus {
-  /** The kind and state, e.g. "Request · failed"; it also names the status dot. */
+  avatar?: never;
+  status?: never;
+  /** The line above the title, e.g. "Request"; it names the status dot unless `statusLabel` does. */
   kindLabel: string;
+  /**
+   * Names the status dot when the kind line leaves the state to the dot's color, e.g.
+   * "Request, failed". Defaults to `kindLabel`.
+   */
+  statusLabel?: string;
   tone: StatusTone;
   mark?: never;
 }
@@ -26,10 +34,30 @@ interface ListRowMark {
   /** Replaces the status dot; it names itself (a `BrandMark` is `role="img"`). */
   mark: ReactNode;
   kindLabel?: never;
+  statusLabel?: never;
   tone?: never;
+  avatar?: never;
+  status?: never;
 }
 
-export type ListRowProps = (ListRowStatus | ListRowMark) & {
+/**
+ * A list pane's row (one with a detail pane alongside), led by a `RowAvatar`: what the row is,
+ * with its state as a dot on the corner. An optional line above the title says why it's
+ * listed (the Inbox's "Question").
+ */
+interface ListRowAvatar {
+  /** The avatar's icon or mark. */
+  avatar: ReactNode;
+  /** The row's state, a dot on the avatar. */
+  status?: RowStatus;
+  /** A line above the title, e.g. why the row is listed. */
+  kindLabel?: string;
+  statusLabel?: never;
+  tone?: never;
+  mark?: never;
+}
+
+export type ListRowProps = (ListRowStatus | ListRowMark | ListRowAvatar) & {
   /** Where the row leads; the whole row is clickable. */
   href: string;
   /**
@@ -62,8 +90,11 @@ export function ListRow({
   onClick,
   title,
   kindLabel,
+  statusLabel,
   tone,
   mark,
+  avatar,
+  status,
   time,
   meta,
   selected = false,
@@ -93,14 +124,19 @@ export function ListRow({
         className="or-row__link"
         aria-labelledby={titleId}
       />
-      {kindLabel !== undefined ? (
-        <StatusDot className="or-row__dot" tone={tone} label={kindLabel} />
+      {avatar !== undefined ? (
+        <RowAvatar className="or-row__avatar" status={status}>
+          {avatar}
+        </RowAvatar>
+      ) : tone !== undefined ? (
+        <StatusDot className="or-row__dot" tone={tone} label={statusLabel ?? kindLabel} />
       ) : (
         <span className="or-row__mark">{mark}</span>
       )}
       <div className="or-row__main">
         {kindLabel !== undefined ? (
-          <span className="or-row__kind" aria-hidden="true">
+          // Beside a dot it repeats the dot's name; beside an avatar it's the only place it shows.
+          <span className="or-row__kind" aria-hidden={avatar === undefined ? "true" : undefined}>
             {kindLabel}
           </span>
         ) : null}

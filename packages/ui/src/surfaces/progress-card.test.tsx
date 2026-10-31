@@ -77,6 +77,30 @@ describe("ProgressCard", () => {
     expect(screen.queryByRole("list")).toBeNull();
   });
 
+  it("marks a done step with a check in the good tone, other states with their dot", () => {
+    render(
+      <ProgressCard
+        title="Stories"
+        steps={[
+          { id: "a", label: "One", state: "done" },
+          { id: "b", label: "Two", state: "running" },
+          { id: "c", label: "Three", state: "pending" },
+        ]}
+      />,
+    );
+    const [done, running, pending] = screen.getAllByRole("listitem");
+    const check = within(done!).getByRole("img", { name: "Done" });
+    expect(check.className).toBe("or-step__icon or-step__icon--done");
+    expect(check.querySelector("svg")).not.toBeNull();
+    expect(done!.querySelector(".or-dot")).toBeNull();
+    expect(within(running!).getByRole("img", { name: "Running" }).className).toBe(
+      "or-dot or-dot--run",
+    );
+    expect(within(pending!).getByRole("img", { name: "Pending" }).className).toBe(
+      "or-dot or-dot--neutral",
+    );
+  });
+
   it("draws a canceled step with a dash icon and a border-colored segment", () => {
     const { container } = render(
       <ProgressCard

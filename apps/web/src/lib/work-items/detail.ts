@@ -2,6 +2,7 @@ import "server-only";
 import {
   getActiveTriageRun,
   getRunByIssue,
+  getTrackerLabels,
   latestTriageSizes,
   listIssueTriageRuns,
   listWorkItemEvents,
@@ -11,6 +12,7 @@ import {
   type Database,
   type Repository,
 } from "@omniralph/db";
+import { isManualIssue } from "@omniralph/ralph";
 import type { WorkItemActions, WorkItemDetail, WorkItemRoute } from "@/lib/api/work-items";
 import { matchesWorkItem, specificity } from "@/lib/routing/match";
 import { createRouter, type RouteOutcome } from "@/lib/routing/resolve";
@@ -143,7 +145,7 @@ export async function loadWorkItemDetail(
 ): Promise<WorkItemDetail> {
   const { organization, tracker, item, key } = resolved;
   const organizationId = organization.id;
-  const [route, stories, comments, events, triageRuns, activeTriage, run, sizes] =
+  const [route, stories, comments, events, triageRuns, activeTriage, run, sizes, labels] =
     await Promise.all([
       workItemRoute({ db, organizationId, tracker, item }),
       tracker.stories(item.id),
@@ -153,6 +155,7 @@ export async function loadWorkItemDetail(
       getActiveTriageRun(db, organizationId, item.id),
       latestWorkItemRun(db, organizationId, item.id),
       latestTriageSizes(db, organizationId, [item.id]),
+      getTrackerLabels(db, organizationId),
     ]);
 
   // A blocker the Backlog lists links into it; reading the Backlog costs nothing more when cached.
@@ -208,5 +211,6 @@ export async function loadWorkItemDetail(
     triageRunning,
     run,
     actions: workItemActions({ group, run, triageRunning }),
+    manual: route.outcome === "manual" || isManualIssue(item, labels.manualLabels),
   };
 }

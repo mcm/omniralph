@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { screen, waitFor, within } from "@testing-library/react";
+import { NEW_TAB_HINT } from "@omniralph/ui";
 import { describe, expect, it } from "vitest";
 import type { TailEvent } from "../../../../src/attempts/tail.js";
 import {
@@ -85,10 +86,10 @@ describe("the Attempt page", () => {
     expect(badges.textContent).toBe("GitHub acme/customer-portalLinear SOC-1719Linear SOC-1720");
 
     const toolbar = await screen.findByRole("toolbar", { name: "Attempt actions" });
-    const open = within(toolbar).getByRole("link", { name: OPEN_RUN });
+    const open = within(toolbar).getByRole("link", { name: `${OPEN_RUN} ${NEW_TAB_HINT}` });
     expect(open.getAttribute("href")).toBe(`https://omniralph.example.com/runs/${RUN_ID}`);
     expect(open.getAttribute("target")).toBe("_blank");
-    expect(open.getAttribute("rel")).toBe("noreferrer");
+    expect(open.getAttribute("rel")?.split(" ")).toContain("noreferrer");
 
     const rows = within(transcript()).getAllByRole("listitem");
     expect(rows.map((row) => row.textContent)).toEqual([
@@ -108,7 +109,7 @@ describe("the Attempt page", () => {
     await openAttempt(attemptPage(attempt({ runId: null })));
     await screen.findByRole("status", { name: "Running for 12m" });
     expect(screen.queryByRole("toolbar", { name: "Attempt actions" })).toBeNull();
-    expect(screen.queryByRole("link", { name: OPEN_RUN })).toBeNull();
+    expect(screen.queryByRole("link", { name: new RegExp(`^${OPEN_RUN}`) })).toBeNull();
     expect(screen.getByText(TRANSCRIPT_PENDING)).toBeTruthy();
     expect(screen.getByText(NO_LOG_LINES)).toBeTruthy();
   });

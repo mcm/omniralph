@@ -27,7 +27,10 @@ export type ToolbarAction = {
   | {
       href: string;
       onSelect?: () => void;
-      /** E.g. `_blank` for a page on another site (with `rel="noreferrer"`). */
+      /**
+       * Rarely needed: a page on another site already opens in a new tab (`UiProvider`'s
+       * links); `_self` keeps it in this one.
+       */
       target?: string;
       rel?: string;
     }

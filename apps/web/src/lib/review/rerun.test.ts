@@ -254,6 +254,16 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
   });
 
   /** A completed webhook review of the PR with open findings posted as threads `thread-<i>`. */
+  /** A review's link in a posted comment: its review run's page, on its step's Findings tab. */
+  async function reviewLink(reviewId: string): Promise<string> {
+    const [row] = await db
+      .select({ runId: reviews.reviewRunId })
+      .from(reviews)
+      .where(eq(reviews.id, reviewId));
+    expect(row?.runId).toBeTruthy();
+    return `https://omniralph.example.com/runs/${row!.runId}?step=${reviewId}&tab=findings`;
+  }
+
   async function reviewedPr(open: Partial<typeof findings.$inferInsert>[] = [{}]) {
     const number = ++prCounter;
     const review = await createReview(db, {
@@ -410,7 +420,7 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
       expect(state.scm.calls.replyToComment[0]).toMatchObject({ number, commentId: thread });
       expect(state.scm.calls.replyToComment[0]!.body).toContain("superseded");
       expect(state.scm.calls.replyToComment[0]!.body).toContain(
-        `https://omniralph.example.com/reviews/${reviewId}#finding-${rows[0]!.id}`,
+        `${await reviewLink(reviewId)}#finding-${rows[0]!.id}`,
       );
       expect(state.scm.calls.resolveThread).toEqual([{ number, commentId: thread }]);
     });
@@ -461,7 +471,7 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
       const { reviewId } = await completeFresh(number, []);
       const summary = state.scm.calls.postReview.at(-1)!.summary;
       expect(summary.trimEnd().split("\n").at(-1)).toBe(
-        `Re-run: comment \`@omniralph review\` (new issues only) or \`@omniralph review fresh\` (from scratch), or use **Re-run** on the [review page](https://omniralph.example.com/reviews/${reviewId}).`,
+        `Re-run: comment \`@omniralph review\` (new issues only) or \`@omniralph review fresh\` (from scratch), or use **Retry run** on the [run page](${await reviewLink(reviewId)}).`,
       );
     });
     it("names a GitLab connection's bot username in the re-run footer", async () => {
@@ -528,9 +538,7 @@ describe.skipIf(!databaseAvailable)("re-running reviews", { timeout: 30_000 }, (
       expect(state.scm.calls.replyToComment).toHaveLength(1);
       expect(state.scm.calls.replyToComment[0]).toMatchObject({ number, commentId: thread });
       expect(state.scm.calls.replyToComment[0]!.body).toContain("found it fixed");
-      expect(state.scm.calls.replyToComment[0]!.body).toContain(
-        `https://omniralph.example.com/reviews/${reviewId}`,
-      );
+      expect(state.scm.calls.replyToComment[0]!.body).toContain(await reviewLink(reviewId));
       expect(state.scm.calls.resolveThread).toEqual([{ number, commentId: thread }]);
     });
 

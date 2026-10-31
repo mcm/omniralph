@@ -20,6 +20,7 @@ import {
 import type { Backlog } from "@/lib/api/backlog";
 import { backlogKeys } from "@/lib/api/keys";
 import { SHORTCUTS } from "@/lib/shortcuts";
+import { LOADING_BACKLOG } from "./backlog-skeletons";
 import { BacklogView } from "./backlog-view";
 import { useBacklogCounts } from "./queries";
 import { backlogOf, BETA_ID, blockedRow, REPO_WEB, refineRow, workItemRow } from "./test-fixtures";
@@ -66,10 +67,18 @@ const allOrganizations: SessionUser = {
 /** What `GET /api/ui/backlog` answers. */
 let backlog: Backlog;
 let seen: SeenRequest[];
+/** Answers the list once called (the list stays loading until then); null answers at once. */
+let releaseBacklog: (() => void) | null;
+let holdBacklog: boolean;
 
 function serve() {
   seen = mockFetch({
-    "GET /api/ui/backlog": () => jsonResponse(backlog),
+    "GET /api/ui/backlog": () =>
+      holdBacklog
+        ? new Promise<Response>((resolve) => {
+            releaseBacklog = () => resolve(jsonResponse(backlog));
+          })
+        : jsonResponse(backlog),
     "GET /api/ui/backlog/counts": () =>
       jsonResponse({
         readyToStart: backlog.groups.readyToStart.length,
@@ -165,6 +174,8 @@ const choices = (menu: HTMLElement) =>
 const split = (container: HTMLElement) => container.querySelector(".or-split")!;
 
 beforeEach(() => {
+  holdBacklog = false;
+  releaseBacklog = null;
   nav.router.push.mockReset();
   backlog = backlogOf([workItemRow(), blockedRow(), refineRow()]);
   serve();
@@ -186,7 +197,7 @@ describe("the Backlog list", () => {
     ).toEqual(["Source: All", "Repo: All"]);
     expect(
       screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent),
-    ).toEqual(["Ready to start · 2", "Needs refining · 1"]);
+    ).toEqual(["Ready to start 2", "Needs refining 1"]);
     const ready = screen.getByRole("list", { name: "Ready to start" });
     expect(within(ready).getAllByRole("listitem")).toHaveLength(2);
     expect(titles()).toEqual([
@@ -199,22 +210,36 @@ describe("the Backlog list", () => {
     );
   });
 
+  it("shows placeholder rows while the list loads, then the rows in their place", async () => {
+    holdBacklog = true;
+    renderBacklog();
+    const loading = await screen.findByRole("status");
+    expect(loading.textContent).toBe(LOADING_BACKLOG);
+    expect(rows()).toHaveLength(0);
+    // The title and filters show at once; only the list waits.
+    expect(screen.getByRole("heading", { level: 1, name: "Backlog" })).toBeTruthy();
+    await waitFor(() => expect(releaseBacklog).not.toBeNull());
+    act(() => releaseBacklog!());
+    await waitFor(() => expect(rows()).toHaveLength(3));
+    expect(screen.queryByTestId("backlog-skeleton")).toBeNull();
+  });
+
   it("doesn't render a group with no items", async () => {
     backlog = backlogOf([refineRow()]);
     renderBacklog();
     await waitFor(() => expect(rows()).toHaveLength(1));
     expect(screen.queryByRole("list", { name: "Ready to start" })).toBeNull();
     expect(screen.queryByText(/Ready to start/)).toBeNull();
-    expect(screen.getByRole("heading", { level: 2, name: "Needs refining · 1" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Needs refining 1" })).toBeTruthy();
   });
 
   it("gives each row the tracker mark, the title and the identifier, repo, size and Blocked badges in order", async () => {
     renderBacklog();
     await waitFor(() => expect(rows()).toHaveLength(3));
     const [ready, blocked, refine] = rows() as [HTMLElement, HTMLElement, HTMLElement];
-    const mark = ready.querySelector(".or-row__mark")!;
-    expect(within(mark as HTMLElement).getByRole("img", { name: "Linear" })).toBeTruthy();
-    expect(ready.querySelector(".or-row__dot")).toBeNull();
+    const avatar = ready.querySelector(".or-row-avatar")!;
+    expect(within(avatar as HTMLElement).getByRole("img", { name: "Linear" })).toBeTruthy();
+    expect(ready.querySelector(".or-dot")).toBeNull();
     expect(within(ready).getByRole("link", { name: "Export invoices as CSV" })).toBeTruthy();
     expect(badges(ready)).toEqual(["SOC-412", "acme/portal", "Size M"]);
     // No size when unknown; Blocked last, only when blocked.
@@ -413,7 +438,7 @@ describe("what didn't load", () => {
     expect(notice.textContent).toContain("Couldn't load work items from Linear for NETbuilder.");
     // Above the groups.
     expect(
-      notice.compareDocumentPosition(screen.getByRole("heading", { name: "Ready to start · 1" })) &
+      notice.compareDocumentPosition(screen.getByRole("heading", { name: "Ready to start 1" })) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     const before = requests("/api/ui/backlog").length;
@@ -515,7 +540,7 @@ describe("live updates", () => {
           "Triaged just now",
         ]),
       );
-      expect(screen.getByRole("heading", { name: "Ready to start · 3" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Ready to start 3" })).toBeTruthy();
       expect(screen.queryByRole("heading", { name: /Needs refining/ })).toBeNull();
     },
   );

@@ -24,14 +24,19 @@
   --or-sec: #a79fba;
   --or-ter: #8a82a0;
 
-  /* Accent: needs you */
+  /* Accent: needs you (with a halo) or running now */
   --or-acc: #b294ff;
   --or-acc-ink: #0a0810;
   --or-acc-hover: #c7b0ff;
   --or-halo: rgba(178, 148, 255, 0.2);
   --or-glow: 0 0 22px rgba(178, 148, 255, 0.32);
 
-  /* Status */
+  /*
+   * Status: good (mint) is finished or healthy, warn (amber) stopped, fail (coral) failed,
+   * done the neutral dot. --or-run is mint under its original name, for diff additions.
+   */
+  --or-good: #5ee6d0;
+  --or-warn: #f2b84b;
   --or-run: #5ee6d0;
   --or-run-glow: rgba(94, 230, 208, 0.16);
   --or-fail: #ff6b5e;
@@ -68,6 +73,8 @@
   --or-halo: rgba(98, 54, 214, 0.14);
   --or-glow: 0 4px 14px rgba(98, 54, 214, 0.25);
 
+  --or-good: #087064;
+  --or-warn: #8a5300;
   --or-run: #087064;
   --or-run-glow: rgba(8, 112, 100, 0.14);
   --or-fail: #c42b2b;

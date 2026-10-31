@@ -5,7 +5,8 @@ import type { Logger } from "../logger.js";
 import type { SessionEvent } from "../session/session.js";
 
 const MAX_BODY = 10_000;
-const MAX_PARAMETER = 500;
+/** The server accepts parameters up to 10,000 characters (`RalphActivity` in @omniralph/shared). */
+const MAX_PARAMETER = 10_000;
 
 /** Tool calls that aren't worth showing (the plan in Linear already tracks progress). */
 const SKIPPED_TOOLS = new Set(["TodoWrite"]);

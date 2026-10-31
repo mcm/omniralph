@@ -11,7 +11,7 @@ import {
   RUN_KINDS,
   RUN_STATUSES,
   runQuestionSchema,
-  workItemRefSchema,
+  runWorkItemRefSchema,
 } from "./runs";
 import { isoDate } from "./schemas";
 
@@ -84,7 +84,10 @@ export const inboxItemSchema = z.object({
   run: z
     .object({ id: z.string(), kind: z.enum(RUN_KINDS), status: z.enum(RUN_STATUSES) })
     .nullable(),
-  workItem: workItemRefSchema.nullable(),
+  /** The work item it is about (a manual story's: the story), with its URL ID. */
+  workItem: runWorkItemRefSchema.nullable(),
+  /** `manual_story`: the epic the story belongs to, whose PRD View PRD opens; else null. */
+  epic: runWorkItemRefSchema.nullable().default(null),
   repository: repositoryRefSchema.nullable(),
   pullRequest: pullRequestRefSchema.nullable(),
   agent: agentRefSchema.nullable(),

@@ -18,7 +18,8 @@ import type { Sink, SinkResult } from "./index";
 /** What the sink needs from the trigger context `enqueueReply` stores. */
 export const FindingThreadContext = z.object({
   pr: z.object({ number: z.int().min(1) }),
-  review: z.object({ id: z.uuid() }),
+  /** The review and its review run (absent in contexts stored before it was; null for a legacy review). */
+  review: z.object({ id: z.uuid(), reviewRunId: z.uuid().nullish() }),
   finding: z.object({ id: z.uuid() }),
   /** Code-host login of whoever asked. */
   askedBy: z.string().min(1).max(255),
@@ -63,7 +64,8 @@ async function postInThread(
 
 /** Our own text (not model output): the asker and a link to the finding in the control panel. */
 function footer(context: FindingThreadContext): string {
-  const link = `${reviewUrl(context.review.id)}#finding-${context.finding.id}`;
+  const { id, reviewRunId = null } = context.review;
+  const link = reviewUrl({ id, reviewRunId }, context.finding.id);
   return `_Omniralph · answering @${context.askedBy} · [View the finding](${link})_`;
 }
 

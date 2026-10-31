@@ -9,6 +9,7 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
+import { withExternalLinks } from "./external-link.js";
 
 /** Props every link component receives: an anchor's attributes with a required `href`. */
 export type LinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
@@ -39,12 +40,15 @@ interface UiContextValue {
 }
 
 const UiContext = createContext<UiContextValue>({
-  linkComponent: PlainLink,
+  linkComponent: withExternalLinks(PlainLink),
   navigate: locationNavigate,
 });
 
 export interface UiProviderProps {
-  /** Renders every link the components draw. Defaults to a plain `<a>`. */
+  /**
+   * Renders every link the components draw. Defaults to a plain `<a>`. Either way, links
+   * out of the panel open in a new tab (`withExternalLinks`).
+   */
   linkComponent?: LinkComponent;
   /**
    * Navigates without a link (e.g. a list moving its selection), with the router's
@@ -60,7 +64,10 @@ export function UiProvider({
   navigate = locationNavigate,
   children,
 }: UiProviderProps) {
-  const value = useMemo(() => ({ linkComponent, navigate }), [linkComponent, navigate]);
+  const value = useMemo(
+    () => ({ linkComponent: withExternalLinks(linkComponent), navigate }),
+    [linkComponent, navigate],
+  );
   return <UiContext.Provider value={value}>{children}</UiContext.Provider>;
 }
 

@@ -25,7 +25,7 @@ function RouterLink({ onClick, ...props }: LinkProps) {
   );
 }
 
-function Row(props: Partial<Omit<ListRowProps, "mark">>) {
+function Row(props: Partial<Omit<ListRowProps, "mark" | "avatar" | "status">>) {
   const [checked, setChecked] = useState(false);
   return (
     <UiProvider linkComponent={RouterLink}>
@@ -155,6 +155,51 @@ describe("ListRow", () => {
   it("keeps the time slot when there is no time", () => {
     render(<Row time={undefined} />);
     expect(screen.getByRole("listitem").querySelector(".or-row__time")).toBeTruthy();
+  });
+
+  it("names the dot with its state when the kind line leaves the state to the color", () => {
+    render(<Row kindLabel="Request" statusLabel="Request, failed" />);
+    const row = screen.getByRole("listitem");
+    expect(within(row).getByRole("img", { name: "Request, failed" })).toBeTruthy();
+    expect(row.querySelector(".or-row__kind")?.textContent).toBe("Request");
+  });
+
+  it("leads a list pane's row with an avatar, its state a dot on the corner", () => {
+    render(
+      <UiProvider linkComponent={RouterLink}>
+        <RowList aria-label="Needs you">
+          <ListRow
+            href="/inbox/q1"
+            title="Document the agent install"
+            avatar={<IconArchive aria-hidden="true" />}
+            status={{ tone: "need", label: "Epic, waiting on you" }}
+            kindLabel="Question"
+          />
+        </RowList>
+      </UiProvider>,
+    );
+    const row = screen.getByRole("listitem");
+    const avatar = row.querySelector(".or-row-avatar")!;
+    // The dot sits in the avatar and names the state; there's no separate row dot.
+    expect(
+      within(avatar as HTMLElement).getByRole("img", { name: "Epic, waiting on you" }),
+    ).toBeTruthy();
+    expect(row.querySelector(".or-row__dot")).toBeNull();
+    // Beside an avatar, the line above the title is the only place it shows: assistive tech reads it.
+    expect(within(row).getByText("Question").getAttribute("aria-hidden")).toBeNull();
+  });
+
+  it("draws no dot on an avatar without a state", () => {
+    render(
+      <UiProvider linkComponent={RouterLink}>
+        <RowList aria-label="Repos">
+          <ListRow href="/repos/r1" title="web" avatar={<BrandMark brand="github" />} />
+        </RowList>
+      </UiProvider>,
+    );
+    const row = screen.getByRole("listitem");
+    expect(within(row).getByRole("img", { name: "GitHub" })).toBeTruthy();
+    expect(row.querySelector(".or-dot")).toBeNull();
   });
 
   it("leads with a mark instead of the dot and kind line when given one", () => {

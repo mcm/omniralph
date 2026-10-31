@@ -191,7 +191,7 @@ describe("reference badges", () => {
       badgeOf(render(element).container).querySelector("svg")!.getAttribute("class");
     expect(iconOf(<BranchBadge name="main" />)).toContain("tabler-icon-git-branch");
     expect(iconOf(<ChangeBadge host="gitlab" number={1} />)).toContain("tabler-icon-git-merge");
-    expect(iconOf(<AgentBadge name="box" />)).toContain("tabler-icon-server");
+    expect(iconOf(<AgentBadge name="box" />)).toContain("tabler-icon-spy");
   });
 
   it("renders MetaBadge without an icon, or with a decorative one", () => {
@@ -287,7 +287,9 @@ describe("FileBadge", () => {
         <FileBadge path="src/app/page.tsx" startLine={12} endLine={20} href={href} />
       </UiProvider>,
     );
-    const link = screen.getByRole("link", { name: "src/app/page.tsx · lines 12–20" });
+    const link = screen.getByRole("link", {
+      name: "src/app/page.tsx · lines 12–20 (opens in a new tab)",
+    });
     expect(link.getAttribute("href")).toBe(href);
     expect(link.getAttribute("data-router")).toBe("yes");
     expect(link.className).toContain("or-ref--link");

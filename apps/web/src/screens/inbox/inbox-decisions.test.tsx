@@ -155,52 +155,71 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** One item of each kind that has decisions, offering every action its kind documents. */
-const KINDS: { item: InboxItem; buttons: string[]; posts: Record<string, string> }[] = [
+/**
+ * One item of each kind that has decisions, offering every action its kind documents:
+ * `controls` are its calls to action in order (buttons and links), the first the primary.
+ */
+const KINDS: { item: InboxItem; controls: string[]; posts: Record<string, string> }[] = [
   {
     item: inboxItem({ actions: ["done", "skip", "snooze"] }),
-    buttons: ["Done, resume epic", "Skip story", "Snooze"],
+    controls: ["Done, resume epic", "Skip story", "View PRD", "Snooze"],
     posts: { "Done, resume epic": "done", "Skip story": "skip" },
   },
   {
     item: inboxItem({
       key: "blocked_epic:r1",
       kind: "blocked_epic",
+      epic: null,
       actions: ["start_anyway", "done", "snooze"],
     }),
-    buttons: ["Start anyway", "Done", "Snooze"],
-    posts: { "Start anyway": "start_anyway", Done: "done" },
+    controls: ["Start anyway", "View PRD", "Dismiss", "Snooze"],
+    posts: { "Start anyway": "start_anyway", Dismiss: "done" },
   },
   {
     item: inboxItem({
       key: "stopped_epic:r1",
       kind: "stopped_epic",
+      epic: null,
       actions: ["resume", "done", "snooze"],
     }),
-    buttons: ["Resume", "Done", "Snooze"],
-    posts: { Resume: "resume", Done: "done" },
+    controls: ["Resume", "Open run", "View PRD", "Dismiss", "Snooze"],
+    posts: { Resume: "resume", Dismiss: "done" },
   },
   {
-    item: inboxItem({ key: "prd_ready:i1", kind: "prd_ready", actions: ["done", "snooze"] }),
-    buttons: ["Done", "Snooze"],
-    posts: { Done: "done" },
+    item: inboxItem({
+      key: "prd_ready:i1",
+      kind: "prd_ready",
+      epic: null,
+      actions: ["done", "snooze"],
+    }),
+    controls: ["Review PRD", "Open work item", "Dismiss", "Snooze"],
+    posts: { Dismiss: "done" },
   },
-  { item: mrReadyItem(), buttons: ["Done", "Snooze"], posts: { Done: "done" } },
-  { item: agentOfflineItem(), buttons: ["Done", "Snooze"], posts: { Done: "done" } },
+  {
+    item: mrReadyItem(),
+    controls: ["Open MR", "View PRD", "Dismiss", "Snooze"],
+    posts: { Dismiss: "done" },
+  },
+  {
+    item: agentOfflineItem(),
+    controls: ["Open agent", "Dismiss", "Snooze"],
+    posts: { Dismiss: "done" },
+  },
   {
     item: agentOfflineItem({ key: "agent_update_failed:a1", kind: "agent_update_failed" }),
-    buttons: ["Done", "Snooze"],
-    posts: { Done: "done" },
+    controls: ["Open agent", "Dismiss", "Snooze"],
+    posts: { Dismiss: "done" },
   },
   {
     item: inboxItem({
       key: "failed_run:r1",
       tab: "problems",
       kind: "failed_run",
+      epic: null,
       actions: ["retry", "done", "snooze"],
     }),
-    buttons: ["Retry", "Done", "Snooze"],
-    posts: { Retry: "retry", Done: "done" },
+    controls: ["Retry", "Open run", "View PRD", "Dismiss", "Snooze"],
+    posts: { Retry: "retry", Dismiss: "done" },
   },
   {
     item: inboxItem({
@@ -208,39 +227,50 @@ const KINDS: { item: InboxItem; buttons: string[]; posts: Record<string, string>
       tab: "problems",
       kind: "failed_system",
       run: null,
+      epic: null,
       actions: ["retry", "done", "snooze"],
     }),
-    buttons: ["Retry", "Done", "Snooze"],
-    posts: { Retry: "retry", Done: "done" },
+    controls: ["Retry", "Dismiss", "Snooze"],
+    posts: { Retry: "retry", Dismiss: "done" },
   },
 ];
 
-/** Each decision's key (`SHORTCUTS`). */
-const DECISION_KEYS: Record<string, string> = {
-  Done: "e",
+/** Each control's key (`SHORTCUTS`); null: none (a link inside the app). */
+const CONTROL_KEYS: Record<string, string | null> = {
+  Dismiss: "e",
   "Done, resume epic": "e",
   "Skip story": "s",
   "Start anyway": "t",
   Resume: "c",
   Retry: "r",
   Snooze: "z",
+  "View PRD": "v",
+  "Review PRD": "v",
+  "Open MR": "p",
+  "Open run": null,
+  "Open agent": null,
+  "Open work item": null,
 };
+
+/** The group's buttons and links, in order. */
+const controlsOf = (group: HTMLElement) => [...group.querySelectorAll<HTMLElement>(".or-btn")];
+/** A control's visible label, without a new-tab link's screen reader hint. */
+const labelOf = (control: HTMLElement) =>
+  control.textContent?.replace(/\s*\(opens in a new tab\)$/, "");
 
 describe("decision keys in the Inbox detail", () => {
   it.each(KINDS.map((entry) => [entry.item.kind, entry] as const))(
     "%s: each shown decision's key posts what its button posts, and the button names the key",
-    async (_kind, { item, buttons, posts: expected }) => {
+    async (_kind, { item, controls, posts: expected }) => {
       for (const [label, action] of Object.entries(expected)) {
         feeds = { "needs-you": [], problems: [], running: [], [item.tab]: [item] };
         serve();
         renderInbox(`tab=${item.tab}&item=${encodeURIComponent(item.key)}`);
         const group = await waitFor(decisions);
         expect(
-          within(group)
-            .getAllByRole("button")
-            .map((button) => button.getAttribute("aria-keyshortcuts")),
-        ).toEqual(buttons.map((name) => DECISION_KEYS[name]!.toUpperCase()));
-        await user().keyboard(DECISION_KEYS[label]!);
+          controlsOf(group).map((control) => control.getAttribute("aria-keyshortcuts")),
+        ).toEqual(controls.map((name) => CONTROL_KEYS[name]?.toUpperCase() ?? null));
+        await user().keyboard(CONTROL_KEYS[label]!);
         await waitFor(() => expect(posts()).toHaveLength(1));
         expect(posts()[0]!.path).toBe(itemPath(item.key));
         expect(posts()[0]!.body).toEqual({ action });
@@ -305,20 +335,27 @@ describe("decision keys in the Inbox detail", () => {
 
 describe("decisions in the Inbox detail", () => {
   it.each(KINDS.map((entry) => [entry.item.kind, entry] as const))(
-    "%s: its buttons under the reason, exactly one primary, posting its action",
-    async (_kind, { item, buttons, posts: expected }) => {
+    "%s: its controls under the reason, what's next first and the only primary, posting its action",
+    async (_kind, { item, controls, posts: expected }) => {
       feeds = { "needs-you": [], problems: [], running: [], [item.tab]: [item] };
       serve();
       renderInbox(`tab=${item.tab}`);
       const group = await waitFor(decisions);
-      // Under the reason.
-      expect(group.previousElementSibling?.className).toBe("or-inbox-detail__reason");
-      const all = within(group).getAllByRole("button");
-      expect(all.map((button) => button.textContent)).toEqual(buttons);
+      // Under the reason (a manual story's task list sits between them).
+      const above = group.previousElementSibling;
+      expect(item.kind === "manual_story" ? above?.previousElementSibling : above).toHaveProperty(
+        "className",
+        "or-inbox-detail__reason",
+      );
+      const all = controlsOf(group);
+      expect(all.map(labelOf)).toEqual(controls);
       expect(group.querySelectorAll(".or-btn--primary")).toHaveLength(1);
       expect(all[0]!.classList.contains("or-btn--primary")).toBe(true);
-      for (const button of all.slice(1))
-        expect(button.classList.contains("or-btn--outline")).toBe(true);
+      // Dismiss and Snooze only take the item away: quiet unless they're all there is.
+      for (const control of all.slice(1)) {
+        const quiet = ["Dismiss", "Snooze"].some((name) => control.textContent?.startsWith(name));
+        expect(control.classList.contains(quiet ? "or-btn--ghost" : "or-btn--outline")).toBe(true);
+      }
       expect(document.querySelector("kbd")).toBeNull();
 
       const [label, action] = Object.entries(expected)[0]!;
@@ -342,7 +379,7 @@ describe("decisions in the Inbox detail", () => {
     expect(posts()[0]).toMatchObject({ path: itemPath(item.key), body: { action } });
   });
 
-  it("shows no decisions on a running run", async () => {
+  it("shows no decision on a running run: View PRD and Open run, neither primary", async () => {
     feeds.running = [
       inboxItem({ key: "run:r9", tab: "running", kind: "run", actions: [], title: "Running epic" }),
     ];
@@ -351,7 +388,12 @@ describe("decisions in the Inbox detail", () => {
     await waitFor(() =>
       expect(within(detail()).getByRole("heading", { name: "Running epic" })).toBeTruthy(),
     );
-    expect(within(detail()).queryByRole("group", { name: "Decisions" })).toBeNull();
+    const group = decisions();
+    expect(controlsOf(group).map((control) => control.textContent)).toEqual([
+      "View PRD",
+      "Open run",
+    ]);
+    expect(group.querySelector(".or-btn--primary")).toBeNull();
   });
 
   it("Snooze opens 1 hour, Tomorrow and Next week, and posts {action: snooze, until}", async () => {
@@ -553,7 +595,7 @@ describe("the answer slot", () => {
       within(group)
         .getAllByRole("button")
         .map((b) => b.textContent),
-    ).toEqual(["Send answer", "Done", "Snooze"]);
+    ).toEqual(["Send answer", "View PRD", "Dismiss", "Snooze"]);
     expect(group.querySelectorAll(".or-btn--primary")).toHaveLength(1);
   });
 });

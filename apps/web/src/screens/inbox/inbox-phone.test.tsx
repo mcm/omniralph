@@ -227,13 +227,13 @@ describe("inline decisions on the selected row", () => {
       within(inline())
         .getAllByRole("button")
         .map((button) => button.textContent),
-    ).toEqual(["Done", "Snooze"]);
+    ).toEqual(["Dismiss", "Snooze"]);
   });
 
   it("post the same decision as the detail's", async () => {
     renderInbox("tab=problems");
     await waitFor(() => expect(rows()).toHaveLength(1));
-    await user().click(within(inline()).getByRole("button", { name: "Done" }));
+    await user().click(within(inline()).getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(posts()).toHaveLength(1));
     expect(posts()[0]).toMatchObject({
       path: itemPath("agent_offline:agent-1"),
@@ -257,7 +257,7 @@ describe("inline decisions on the selected row", () => {
     expect(selectedRow().querySelector(".or-row__title")?.textContent).toBe(
       "Add the billing export",
     );
-    expect(within(inline()).getByRole("button", { name: "Done" })).toBeTruthy();
+    expect(within(inline()).getByRole("button", { name: "Dismiss" })).toBeTruthy();
 
     counts = { ...counts, needsYou: 2 };
     feeds["needs-you"] = feeds["needs-you"]!.slice(1);

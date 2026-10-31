@@ -244,7 +244,9 @@ describe("the step panel's Findings tab", () => {
     expect(within(first!).getByRole("heading", { name: "Finding f1" })).toBeTruthy();
     expect(first!.textContent).toContain("Critical");
     expect(first!.textContent).toContain("L12–14");
-    expect(first!.textContent).toContain("bug · 82% confidence");
+    expect(
+      [...first!.querySelectorAll(".or-finding__meta .or-ref")].map((b) => b.textContent),
+    ).toEqual(["L12–14", "bug", "82% confidence"]);
     expect(first!.textContent).toContain("The total is never reset.");
     expect(first!.querySelector("pre")?.textContent).toBe("total = 0;");
     expect(first!.id).toBe("finding-f1");
@@ -254,7 +256,9 @@ describe("the step panel's Findings tab", () => {
     expect(second!.hasAttribute("data-inactive")).toBe(true);
     expect(second!.textContent).toContain("L40");
     expect(second!.textContent).toContain("Dismissed");
-    expect(second!.textContent).toContain("Dismissed by @alex · False positive");
+    const dismissal = second!.querySelector(".or-finding__event")!;
+    expect(dismissal.textContent).toContain("Dismissed by @alex");
+    expect(dismissal.querySelector(".or-ref")?.textContent).toBe("False positive");
     expect(second!.textContent).toContain("Reset upstream.");
     expect(within(panel()).queryByTestId("findings-skeleton")).toBeNull();
     // Read-only: no feedback buttons.

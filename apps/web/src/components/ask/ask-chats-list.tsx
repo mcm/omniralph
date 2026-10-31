@@ -1,6 +1,6 @@
 "use client";
 
-import { IconBooks, IconMessage, IconPlus, IconX } from "@tabler/icons-react";
+import { IconBooks, IconPlus, IconX } from "@tabler/icons-react";
 import {
   Button,
   EmptyState,
@@ -13,6 +13,7 @@ import {
 } from "@omniralph/ui";
 import * as React from "react";
 import { useCurrentUser } from "@/components/current-user";
+import { AvatarIcon, CHAT_ICON } from "@/components/row-avatars";
 import type { AskChat } from "@/lib/api/ask";
 import { useClock } from "@/screens/clock";
 import { compactAge } from "@/screens/inbox/labels";
@@ -176,7 +177,7 @@ export function AskChatsList({
                         }
                       : undefined
                   }
-                  mark={<IconMessage size={16} stroke={1.75} aria-hidden="true" />}
+                  avatar={<AvatarIcon icon={CHAT_ICON} />}
                   title={chat.title}
                   time={<time dateTime={chat.updatedAt}>{compactAge(chat.updatedAt, now)}</time>}
                   meta={<ChatBadges chat={chat} showOrganization={showOrganization} />}

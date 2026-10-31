@@ -10,6 +10,7 @@ import {
   Select,
   Sheet,
   TextInput,
+  TextLink,
 } from "@omniralph/ui";
 import {
   IconChevronLeft,
@@ -258,15 +259,10 @@ function RepoPicker({
             <p className="or-add-repos__muted">Showing the first {repoCount(repos.length)}.</p>
           ) : null}
           {listing.data.manageUrl ? (
-            <a
-              className="or-link or-add-repos__external"
-              href={listing.data.manageUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <TextLink className="or-add-repos__external" href={listing.data.manageUrl}>
               Manage access on GitHub
               <IconExternalLink size={14} stroke={1.75} aria-hidden="true" />
-            </a>
+            </TextLink>
           ) : null}
         </>
       )}

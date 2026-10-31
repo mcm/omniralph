@@ -607,7 +607,9 @@ describe.skipIf(!databaseAvailable)("review capability end to end", () => {
     expect(posted.commit_id).toBe(head1);
     expect(posted.body).toContain("**Depth:** Standard");
     expect(posted.body).toContain("**Tokens:** 1,500 /");
-    expect(posted.body).toContain(`https://omniralph.example.com/reviews/${reviewId}`);
+    expect(posted.body).toContain(
+      `https://omniralph.example.com/runs/${enqueued.reviewRunId}?step=${reviewId}&tab=findings`,
+    );
     expect(posted.comments).toHaveLength(1);
     const comment = posted.comments[0]!;
     expect(comment).toMatchObject({ path: "src/app.ts", line: 2, side: "RIGHT" });

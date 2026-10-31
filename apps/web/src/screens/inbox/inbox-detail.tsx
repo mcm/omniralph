@@ -2,9 +2,15 @@
 
 import { EmptyState, StatusLine, toast, Toolbar, useSplitDetailShown } from "@omniralph/ui";
 import { DecisionButtons } from "@/components/runs/decision-buttons";
-import { ITEM_HANDLED } from "@/components/runs/decisions";
+import { ITEM_HANDLED, prdWorkItem } from "@/components/runs/decisions";
 import { QuestionForm } from "@/components/runs/question-form";
+import {
+  RunDetailOverlayProvider,
+  useRunDetailOverlay,
+} from "@/components/runs/run-detail-overlay";
 import { RunReason } from "@/components/runs/run-reason";
+import { ManualTaskChecklist } from "@/components/work-items/manual-task-checklist";
+import { ViewPrdSheet } from "@/components/work-items/view-prd-sheet";
 import type { InboxItem } from "@/lib/api/inbox";
 import { InboxHeaderBadges } from "./inbox-badges";
 import { InboxItemCards } from "./inbox-item-cards";
@@ -23,40 +29,58 @@ async function copyLink(item: InboxItem) {
   }
 }
 
-/**
- * The selected item's detail: its header badges and ⋯ menu, its status line, the title as
- * the pane's heading, why it's here, and the decisions on it (a question's form, with its
- * answers, for a run's open question), then the cards that show why it's here (the run's
- * progress, a PR/MR's AI review, what went wrong) and the run's activity. The decisions'
- * keyboard shortcuts are bound here, not on the phone's inline row.
- */
-export function InboxDetail({
-  item,
-  now,
-  showOrganization,
-}: {
+interface InboxDetailProps {
   item: InboxItem;
   now: number;
   showOrganization: boolean;
-}) {
+}
+
+/**
+ * The selected item's detail: its header badges and ⋯ menu, its status line, the title as
+ * the pane's heading, why it's here, a manual story's task list (`ManualTaskChecklist`),
+ * and its calls to action (a question's form, with its answers, for a run's open question),
+ * then the cards that show why it's here (the run's progress, a PR/MR's AI review, what
+ * went wrong) and the run's activity. The decisions' keyboard shortcuts are bound here, not
+ * on the phone's inline row. The ⋯ menu's View PRD opens the PRD in a sheet over it.
+ */
+export function InboxDetail(props: InboxDetailProps) {
+  return (
+    <RunDetailOverlayProvider key={props.item.key}>
+      <Detail {...props} />
+    </RunDetailOverlayProvider>
+  );
+}
+
+function Detail({ item, now, showOrganization }: InboxDetailProps) {
   const label = inboxItemLabel(item, now);
   // The decisions' keys work while this pane shows (not behind the phone's list).
   const bindShortcuts = useSplitDetailShown();
+  const overlay = useRunDetailOverlay();
+  const prd = prdWorkItem(item);
+  const run = item.run;
+  const viewPrd =
+    prd && run ? () => overlay.open(<ViewPrdSheet runId={run.id} workItem={prd} />) : undefined;
   return (
     <article className="or-inbox-detail" aria-labelledby="or-inbox-detail-title">
       <header className="or-inbox-detail__head">
         <div className="or-inbox-detail__badges">
           <InboxHeaderBadges item={item} showOrganization={showOrganization} />
         </div>
-        <Toolbar label="Item actions" menu={inboxMenuItems(item, () => void copyLink(item))} />
+        <Toolbar
+          label="Item actions"
+          menu={inboxMenuItems(item, () => void copyLink(item), viewPrd)}
+        />
       </header>
-      <StatusLine tone={label.tone} dotLabel={label.rowLabel}>
+      <StatusLine tone={label.tone} dotLabel={label.statusLabel}>
         {label.statusLine}
       </StatusLine>
       <h2 id="or-inbox-detail-title" className="or-inbox-detail__title">
         {item.title}
       </h2>
       <RunReason className="or-inbox-detail__reason" reason={item.reason} link={item.reasonLink} />
+      {item.kind === "manual_story" && item.workItem ? (
+        <ManualTaskChecklist key={item.workItem.id} workItemId={item.workItem.id} />
+      ) : null}
       {item.question && item.run && item.actions.includes("answer") ? (
         <QuestionForm
           key={item.key}

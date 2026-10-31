@@ -169,7 +169,7 @@ describe("the Runs rail", () => {
     ).toBe(TEST_ORGANIZATION_ID);
   });
 
-  it("renders each run as a row: dot and label, title, age and badges without an organization", async () => {
+  it("renders each run as a row: kind avatar and state dot, title, age and badges without an organization", async () => {
     pages[""] = {
       runs: [
         runRow({
@@ -186,19 +186,28 @@ describe("the Runs rail", () => {
     await waitFor(() => expect(rows()).toHaveLength(3));
     const [epic, review, ask] = rows() as [HTMLElement, HTMLElement, HTMLElement];
     const dot = (row: HTMLElement) => row.querySelector(".or-dot")!;
-    expect(dot(epic).getAttribute("aria-label")).toBe("Running · story 2 of 4");
+    // The kind is the avatar's icon, the state its dot: no line above the title.
+    const icon = (row: HTMLElement) =>
+      row.querySelector(".or-row-avatar svg")!.getAttribute("class");
+    expect(icon(epic)).toContain("tabler-icon-stack-2");
+    expect(icon(review)).toContain("tabler-icon-eye");
+    expect(icon(ask)).toContain("tabler-icon-message-question");
+    expect(epic.querySelector(".or-row__kind")).toBeNull();
+    expect(dot(epic).closest(".or-row-avatar")).not.toBeNull();
+    expect(dot(epic).getAttribute("aria-label")).toBe("Epic, running");
     expect(dot(epic).classList.contains("or-dot--run")).toBe(true);
-    expect(dot(review).getAttribute("aria-label")).toBe("Review · failed");
+    expect(dot(review).getAttribute("aria-label")).toBe("Review, failed");
     expect(dot(review).classList.contains("or-dot--fail")).toBe(true);
-    expect(dot(ask).getAttribute("aria-label")).toBe("Ask · waiting on you");
+    expect(dot(ask).getAttribute("aria-label")).toBe("Ask, waiting on you");
     expect(dot(ask).classList.contains("or-dot--need")).toBe(true);
     expect([epic, review, ask].map((row) => row.querySelector("time")!.textContent)).toEqual([
       "now",
       "2h",
       "3d",
     ]);
-    // Work item, repo, then the PR/MR; no organization with one organization selected.
-    expect(badges(epic)).toEqual(["Linear TOOL-42", "GitLab acme/portal", "!12"]);
+    // A running epic's story, then the work item, repo and PR/MR; no organization with one
+    // organization selected.
+    expect(badges(epic)).toEqual(["Story 2 of 4", "Linear TOOL-42", "GitLab acme/portal", "!12"]);
     expect(badges(review)).toEqual(["GitHub beta/web", "#7"]);
     expect(badges(ask)).toEqual([]);
     // The row link opens the run.
@@ -451,7 +460,7 @@ describe("live updates", () => {
     );
     await waitFor(() => expect(runRequests().length).toBe(before + 1));
     await waitFor(() =>
-      expect(rows()[0]!.querySelector(".or-dot")!.getAttribute("aria-label")).toBe("Epic · failed"),
+      expect(rows()[0]!.querySelector(".or-dot")!.getAttribute("aria-label")).toBe("Epic, failed"),
     );
   });
 

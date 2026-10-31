@@ -24,14 +24,14 @@ export function fileCount(n: number): string {
 }
 
 /**
- * What follows "Om" on an answer that came from an ask run: " · read-only · read 3 files · 41s"
- * (no duration while it isn't known). Null for any other Om message.
+ * The badges after "Om" on an answer that came from an ask run: "read-only", "read 3 files",
+ * "41s" (no duration while it isn't known). Null for any other Om message.
  */
-export function omRunMeta(run: AskMessageView["run"]): string | null {
+export function omRunMeta(run: AskMessageView["run"]): string[] | null {
   if (!run) return null;
   const parts = ["read-only", `read ${fileCount(run.filesRead)}`];
   if (run.durationMs !== null) parts.push(askDuration(run.durationMs));
-  return ` · ${parts.join(" · ")}`;
+  return parts;
 }
 
 /** A repo's short name for a sentence: the last segment of its path ("customer-portal"). */

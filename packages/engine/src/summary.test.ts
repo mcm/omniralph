@@ -30,7 +30,7 @@ const base: ReviewResult = {
   fixedOpenFindings: [],
 };
 
-const url = "https://omniralph.example.com/reviews/r-1";
+const url = "https://omniralph.example.com/runs/run-1?step=r-1&tab=findings";
 
 describe("renderSummary", () => {
   it("renders profile, severity counts, tokens, skipped files and the link", () => {
@@ -48,7 +48,7 @@ describe("renderSummary", () => {
   it("ends with a re-run footer using the bot handle", () => {
     const text = renderSummary(base, url, { botHandle: "reviewbot" });
     expect(text.trimEnd().split("\n").at(-1)).toBe(
-      `Re-run: comment \`@reviewbot review\` (new issues only) or \`@reviewbot review fresh\` (from scratch), or use **Re-run** on the [review page](${url}).`,
+      `Re-run: comment \`@reviewbot review\` (new issues only) or \`@reviewbot review fresh\` (from scratch), or use **Retry run** on the [run page](${url}).`,
     );
     expect(renderSummary(base, url)).toContain("`@omniralph review fresh`");
   });

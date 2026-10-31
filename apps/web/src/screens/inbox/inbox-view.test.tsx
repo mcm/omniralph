@@ -181,14 +181,17 @@ describe("the Inbox", () => {
     expect(header.firstElementChild!.textContent).toContain("Acme");
   });
 
-  it("renders each item as a row: dot tone, label, title, age and badges in order", async () => {
+  it("renders each item as a row: avatar and dot, why it's here, title, age and badges in order", async () => {
     renderInbox({ user: allOrganizations });
     await waitFor(() => expect(rows()).toHaveLength(3));
     const [manual, mr] = rows();
-    expect(within(manual!).getByRole("img", { name: "Manual story · Epic" }).className).toContain(
-      "or-dot--need",
-    );
-    expect(manual!.querySelector(".or-row__kind")!.textContent).toBe("Manual story · Epic");
+    // The avatar says what it is (an epic), its dot the state; the line says why it's here.
+    const avatar = manual!.querySelector(".or-row-avatar")!;
+    expect(avatar.querySelector("svg")!.getAttribute("class")).toContain("tabler-icon-stack-2");
+    expect(
+      within(avatar as HTMLElement).getByRole("img", { name: "Epic, waiting on you" }).className,
+    ).toContain("or-dot--need");
+    expect(manual!.querySelector(".or-row__kind")!.textContent).toBe("Manual story");
     expect(manual!.querySelector(".or-row__title")!.textContent).toBe(
       "Rotate the staging certificates",
     );
@@ -216,9 +219,13 @@ describe("the Inbox", () => {
     renderInbox({ search: "tab=problems" });
     await waitFor(() => expect(rows()).toHaveLength(1));
     const row = rows()[0]!;
-    expect(within(row).getByRole("img", { name: "Agent offline" }).className).toContain(
+    expect(row.querySelector(".or-row-avatar svg")!.getAttribute("class")).toContain(
+      "tabler-icon-spy",
+    );
+    expect(within(row).getByRole("img", { name: "Agent, offline" }).className).toContain(
       "or-dot--fail",
     );
+    expect(row.querySelector(".or-row__kind")!.textContent).toBe("Agent offline");
     expect(row.querySelector(".or-row__meta")!.textContent).toContain("build-box");
     expect(row.querySelector(".or-ref--agent")).not.toBeNull();
     expect(requests("/api/ui/inbox").at(-1)!.query.get("tab")).toBe("problems");
@@ -324,7 +331,11 @@ describe("the detail's More actions menu", () => {
     await user.click(within(detail()).getByRole("button", { name: "More actions" }));
     const menu = await screen.findByRole("menu");
     const items = within(menu).getAllByRole("menuitem");
-    return { user, menu, items, names: items.map((item) => item.textContent!.trim()) };
+    // A new-tab link's screen reader hint isn't part of its name here.
+    const names = items.map((item) =>
+      item.textContent!.replace(/\s*\(opens in a new tab\)$/, "").trim(),
+    );
+    return { user, menu, items, names };
   }
 
   async function copies(user: ReturnType<typeof userEvent.setup>, menu: HTMLElement, url: string) {
@@ -333,18 +344,32 @@ describe("the detail's More actions menu", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(url));
   }
 
-  it("a manual story: Open in Linear, Open the run and Copy link", async () => {
+  it("a manual story: the story's work item and Linear issue, its epic's PRD, the run and Copy link", async () => {
     const { user, menu, items, names } = await openMenu("tab=needs-you&item=manual_story%3As1");
-    expect(names).toEqual(["Open in Linear", "Open the run", "Copy link"]);
-    expect(items[0]!.getAttribute("href")).toBe("https://linear.app/acme/issue/TOOL-42");
-    expect(items[1]!.getAttribute("href")).toBe("/runs/run-1");
+    expect(names).toEqual([
+      "Open work item",
+      "Open in Linear",
+      "View PRD",
+      "Open the run",
+      "Copy link",
+    ]);
+    expect(items[0]!.getAttribute("href")).toBe("/backlog/linear-story-42");
+    expect(items[1]!.getAttribute("href")).toBe("https://linear.app/acme/issue/TOOL-42");
+    expect(items[3]!.getAttribute("href")).toBe("/runs/run-1");
     await copies(user, menu, `${window.location.origin}/?tab=needs-you&item=manual_story%3As1`);
   });
 
   it("an MR ready for review: Open merge request too", async () => {
     const { user, menu, items, names } = await openMenu("item=pr_waiting%3Alane-1");
-    expect(names).toEqual(["Open in Linear", "Open the run", "Open merge request", "Copy link"]);
-    expect(items[2]!.getAttribute("href")).toBe(
+    expect(names).toEqual([
+      "Open work item",
+      "Open in Linear",
+      "View PRD",
+      "Open the run",
+      "Open merge request",
+      "Copy link",
+    ]);
+    expect(items[4]!.getAttribute("href")).toBe(
       "https://gitlab.com/acme/portal/-/merge_requests/12",
     );
     await copies(user, menu, `${window.location.origin}/?tab=needs-you&item=pr_waiting%3Alane-1`);

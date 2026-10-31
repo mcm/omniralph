@@ -731,7 +731,8 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       expect(body).toContain("`https://evil.example/x`");
       expect(body).toContain("`@someone`");
       expect(body).toContain("@dev");
-      expect(body).toContain(`https://omniralph.example.com/reviews/`);
+      // A legacy review (no review run) isn't on Runs: the link is the Runs list of reviews.
+      expect(body).toContain("[View the finding](https://omniralph.example.com/runs?kind=review)");
       expect((await getJob(db, job!.id))!.scmCommentId).toBe("r1");
 
       // A failed reply posts an apology (once).

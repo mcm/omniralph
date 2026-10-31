@@ -6,6 +6,7 @@ export const STATUS_LINE_DOT_LABELS: Readonly<Record<StatusTone, string>> = {
   need: "Needs you",
   run: "Running",
   good: "Done",
+  warn: "Stopped",
   fail: "Failed",
   neutral: "Status",
 };

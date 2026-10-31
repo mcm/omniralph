@@ -55,8 +55,14 @@ export function relativeUntil(at: string, now: number): string {
 }
 
 export interface InboxItemLabel {
-  /** The row's kind and state, e.g. "Manual story · Epic"; it also names the dot. */
-  rowLabel: string;
+  /**
+   * The line above the row's title: why the item is here ("Question", "Failed", "Agent
+   * offline"); null when the dot already says it (a running run). What the item is shows in
+   * its avatar.
+   */
+  rowLabel: string | null;
+  /** Names the row's dot: what the item is and its state, e.g. "Review, failed". */
+  statusLabel: string;
   /** The row dot's and status line's tone. */
   tone: StatusTone;
   /** The status line, e.g. "Waiting on you for 15 days". */
@@ -73,50 +79,65 @@ export function isGitLab(item: Pick<InboxItem, "pullRequest" | "repository">): b
 }
 
 /**
- * An Inbox item's row label, tone and status line (the epic's "Inbox behavior" table): what
- * waits on a person is lavender ("Waiting on you for …"), failures and offline agents are
- * coral, running runs are mint. `now` is the current time in ms.
+ * An Inbox item's row label (why it's here), its dot's name and tone, and its status line (the
+ * epic's "Inbox behavior" table, Design rule 15): what waits on a person is lavender with a
+ * halo ("Waiting on you for …"), except a stopped epic, which waits on you in amber (stopped,
+ * not live); failures and offline agents are coral, running runs are lavender. `now` is the
+ * current time in ms.
  */
 export function inboxItemLabel(item: InboxItem, now: number): InboxItemLabel {
-  const waiting = (rowLabel: string): InboxItemLabel => ({
+  const kind = kindOf(item);
+  const waiting = (rowLabel: string, subject = kind): InboxItemLabel => ({
     rowLabel,
+    statusLabel: `${subject}, waiting on you`,
     tone: "need",
     statusLine: `Waiting on you for ${durationSince(item.since, now)}`,
   });
-  const failed = (rowLabel: string, statusLine: string): InboxItemLabel => ({
+  const failed = (rowLabel: string, statusLabel: string, statusLine: string): InboxItemLabel => ({
     rowLabel,
+    statusLabel,
     tone: "fail",
     statusLine,
   });
   switch (item.kind) {
     case "manual_story":
-      return waiting("Manual story · Epic");
+      return waiting("Manual story", "Epic");
     case "blocked_epic":
-      return waiting("Blocked · Epic");
+      return waiting("Blocked", "Epic");
     case "question":
-      return waiting(`Question · ${kindOf(item)}`);
+      return waiting("Question");
     case "stopped_epic":
-      return waiting(`Stopped · ${kindOf(item)}`);
+      return { ...waiting("Stopped"), statusLabel: `${kind}, stopped`, tone: "warn" };
     case "prd_ready":
-      return waiting("PRD ready · Triage");
+      return waiting("PRD ready", "Triage");
     case "pr_waiting":
       return waiting(isGitLab(item) ? "MR ready for your review" : "PR ready for your review");
     case "failed_run":
-      return failed(`${kindOf(item)} · failed`, `Failed ${relativeSince(item.since, now)}`);
+      return failed("Failed", `${kind}, failed`, `Failed ${relativeSince(item.since, now)}`);
     case "failed_system":
-      return failed("Background work · failed", `Failed ${relativeSince(item.since, now)}`);
+      return failed(
+        "Failed",
+        "Background work, failed",
+        `Failed ${relativeSince(item.since, now)}`,
+      );
     case "agent_offline":
-      return failed("Agent offline", `Offline for ${durationSince(item.since, now)}`);
+      return failed(
+        "Agent offline",
+        "Agent, offline",
+        `Offline for ${durationSince(item.since, now)}`,
+      );
     case "agent_update_failed":
       return failed(
         "Agent update failed",
+        "Agent, update failed",
         item.version
           ? `Update to ${item.version} failed ${relativeSince(item.since, now)}`
           : `Update failed ${relativeSince(item.since, now)}`,
       );
     case "run":
       return {
-        rowLabel: `${kindOf(item)} · running`,
+        rowLabel: null,
+        statusLabel: `${kind}, running`,
         tone: "run",
         statusLine: `Running for ${durationSince(item.since, now)}`,
       };

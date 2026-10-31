@@ -1,14 +1,13 @@
 "use client";
 
-import { Sheet, type MenuItem } from "@omniralph/ui";
-import { IconFileText } from "@tabler/icons-react";
-import type { RunDetailOverlay } from "@/components/runs/run-detail-overlay";
+import { Sheet } from "@omniralph/ui";
 import { useRunDetailOverlay } from "@/components/runs/run-detail-overlay";
 import { useRunDetail } from "@/components/runs/use-run-detail";
-import type { RunDetail, RunRow } from "@/lib/api/runs";
+import type { RunRow } from "@/lib/api/runs";
 import { PrdView, type PrdViewProps } from "./prd-view";
 import { useWorkItemDetail } from "./use-work-item-detail";
 
+/** The run detail's toolbar action and the triage card's button that open `ViewPrdSheet`. */
 export const VIEW_PRD = "View PRD";
 
 /** "PRD of SOC-412": the sheet's title. */
@@ -52,26 +51,4 @@ export function ViewPrdSheet({ runId, workItem }: ViewPrdSheetProps) {
       <PrdView workItemId={workItem.id} mode={mode} />
     </Sheet>
   );
-}
-
-/**
- * The run ⋯ menu's View PRD (Epic 5's `runMenuItems` `leading` items), for a run with a work
- * item: it opens `ViewPrdSheet` over the run detail.
- */
-export function viewPrdMenuItems(run: RunDetail, overlay: RunDetailOverlay): MenuItem[] {
-  const workItem = run.workItem;
-  if (!workItem?.id) return [];
-  return [
-    {
-      label: VIEW_PRD,
-      icon: IconFileText,
-      onSelect: () =>
-        overlay.open(
-          <ViewPrdSheet
-            runId={run.id}
-            workItem={{ id: workItem.id, identifier: workItem.identifier }}
-          />,
-        ),
-    },
-  ];
 }
