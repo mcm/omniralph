@@ -12,7 +12,7 @@ import type {
   Viewer,
 } from "@/lib/linear/gateway";
 import { parseIssueIdentifier } from "@/lib/linear/gateway";
-import { isTriageLabel, TRIAGE_LABEL } from "@/lib/linear/webhook";
+import { isTriageLabel, TRIAGE_LABEL, TRIAGE_LABEL_NAMES } from "@/lib/linear/webhook";
 import {
   readinessOf,
   readinessStateMatch,
@@ -195,6 +195,19 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     return (
       (await this.gateway.findLabel(teamId, name)) ?? (await this.gateway.createLabel(teamId, name))
     );
+  }
+
+  /**
+   * The triage label the team can use: its own or the workspace's, under either
+   * name (Linear won't create a team label a workspace label already has the
+   * name of). Created on the team as `coding:triage` when there is none.
+   */
+  private async triageLabel(teamId: string): Promise<IssueLabel> {
+    for (const name of TRIAGE_LABEL_NAMES) {
+      const label = await this.gateway.findLabel(teamId, name);
+      if (label) return label;
+    }
+    return this.gateway.createLabel(teamId, TRIAGE_LABEL);
   }
 
   /** The ID of the workspace's project of this name (or, `byId`, this ID), ignoring case. */
@@ -392,7 +405,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     const issue = await this.issue(ref);
     // Already labeled: the label webhook started triage when it was added.
     if (issue.labels.some(isTriageLabel)) return;
-    const label = await this.label(issue.teamId, TRIAGE_LABEL);
+    const label = await this.triageLabel(issue.teamId);
     await this.gateway.addIssueLabels(issue.id, [label.id]);
   }
 

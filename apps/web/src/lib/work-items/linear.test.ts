@@ -195,6 +195,35 @@ describe("LinearWorkItemTracker", () => {
     ]);
   });
 
+  it.each(["coding:triage", "Ralph:Triage"])(
+    "uses the workspace's %s label rather than creating one on the team",
+    async (name) => {
+      const h = linearAgent();
+      h.fake.labels = [{ id: "label-workspace", name, teamId: null }];
+      const { id } = await h.seed({ teamId: "team-a", title: "One", state: "backlog" });
+
+      await h.tracker.startTriage(id);
+
+      expect(h.fake.labels).toEqual([{ id: "label-workspace", name, teamId: null }]);
+      expect(h.fake.labelChanges).toEqual([{ issueId: id, added: ["label-workspace"] }]);
+    },
+  );
+
+  it("uses coding:triage (the team's or the workspace's) over the old name, never another team's", async () => {
+    const h = linearAgent();
+    h.fake.labels = [
+      { id: "label-ralph-team", name: "ralph:triage", teamId: "team-a" },
+      { id: "label-coding-workspace", name: "coding:triage", teamId: null },
+      { id: "label-coding-other-team", name: "coding:triage", teamId: "team-b" },
+    ];
+    const { id } = await h.seed({ teamId: "team-a", title: "One", state: "backlog" });
+
+    await h.tracker.startTriage(id);
+
+    expect(h.fake.labelChanges).toEqual([{ issueId: id, added: ["label-coding-workspace"] }]);
+    expect(h.fake.labels).toHaveLength(3);
+  });
+
   it("doesn't label an issue that already asks for triage under the old name", async () => {
     const h = linearAgent();
     const { id } = await h.seed({
