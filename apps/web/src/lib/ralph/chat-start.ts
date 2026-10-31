@@ -21,7 +21,7 @@ import {
 import { applyGuidance } from "./messages";
 import { errorMessage } from "./notify";
 import { addInstruction } from "./requests";
-import { markRalphActive } from "./active";
+import { scheduleRunSafetyCheck } from "./due";
 import { advanceRun, chatRunBranch, type RalphDeps } from "./run";
 import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
 
@@ -140,6 +140,7 @@ export async function startChatRequest(
       codingTaskId: input.codingTaskId ?? null,
     });
     if (!result.created) return result;
+    await scheduleRunSafetyCheck(result.run.id);
     let run = result.run;
     if (previous) {
       await copyLanes(tx, previous.id, run.id);
@@ -169,7 +170,6 @@ export async function startChatRequest(
     );
     return { run, created: true };
   });
-  await markRalphActive();
   if (!created) return { status: "already_running", run };
 
   try {

@@ -6,6 +6,7 @@ import { jobIdParam, notCurrentAgent, notFound, type JobRouteContext } from "@/l
 import { getDb } from "@/lib/db";
 import { removeJobsDue } from "@/lib/dispatch/due";
 import { organizationPlaybooks } from "@/lib/playbooks";
+import { scheduleJobOutcomeCheck } from "@/lib/ralph/due";
 import { jobHooks } from "@/lib/sinks";
 import { liveRoute } from "@/lib/live/request";
 
@@ -36,6 +37,8 @@ async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
   const handler = await jobHooks(job, organizationPlaybooks(db, job.organizationId));
   if (handler?.isValidResult && !handler.isValidResult(body.data.result)) return badRequest();
 
+  // Before the commit: a ralph run is advanced even if the outcome hook never runs.
+  await scheduleJobOutcomeCheck(job);
   const outcome = await completeJob(db, {
     jobId,
     agentId: principal.agentId,

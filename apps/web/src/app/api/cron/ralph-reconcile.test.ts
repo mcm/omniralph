@@ -93,6 +93,8 @@ describe("GET /api/cron/ralph-reconcile", () => {
       failed: 2,
       cleanup: { checked: 2, started: 2, expired: 0, failed: 0 },
       ci: { checked: 6, failed: 0 },
+      // Without Redis, nothing is due by the schedule.
+      due: { reconciled: 0, failed: 0 },
     });
     expect(state.passes).toEqual([
       ["runs", "org-a", "org-a"],

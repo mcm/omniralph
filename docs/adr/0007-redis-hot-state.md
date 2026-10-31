@@ -46,26 +46,25 @@ aren't derived from Postgres: they're read and written with `hotStateEnabled()` 
 `try`/`catch` around the Redis call, have no rebuilder, and losing one costs at most a Postgres
 query or write on the next request.
 
-| Key                                                                      | Kind             | Holds                                                                                                                                                         | Written by                                                                                                                                                                                                                                                                                                                                                                                   | Module                           |
-| ------------------------------------------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| `hot-state:epoch`                                                        | control          | When the derived keys were last rebuilt; no TTL                                                                                                               | The rebuild; deleted by a failed `writeHotState`                                                                                                                                                                                                                                                                                                                                             | `lib/hot-state/epoch.ts`         |
-| `hot-state:rebuild-lock`                                                 | control          | The rebuilding instance's token (`SET NX PX 30s`)                                                                                                             | The rebuild                                                                                                                                                                                                                                                                                                                                                                                  | `lib/hot-state/epoch.ts`         |
-| `harness-auth:{harnessId}`                                               | derived          | `active` or `revoked`, 24h TTL                                                                                                                                | Readers on a miss (`SET NX`); `revoked` after `revokeHarness` and after refresh-token reuse (token route). Rebuild deletes them all                                                                                                                                                                                                                                                          | `lib/harness-auth/auth-state.ts` |
-| `job-due:{organizationId}`                                               | derived          | Sorted set of queued and running jobs, scored by when each can next be claimed (`available_at`, or `lease_expires_at`)                                        | After every commit that changes a job's status, availability or lease: dispatch and cancel (dispatcher), claim, lease renewal (heartbeat), retry and fail, result, skip, revoke (requeue), expire, review correlation. Rebuilt from the queued and running jobs                                                                                                                              | `lib/dispatch/due.ts`            |
-| `job-queued-since`                                                       | derived          | Sorted set of every queued job, scored by `created_at`                                                                                                        | The same writers as `job-due:*` (`syncJobsDue`); rebuilt with it                                                                                                                                                                                                                                                                                                                             | `lib/dispatch/due.ts`            |
-| `ralph:active`                                                           | derived (signal) | A random value: there may be ralph work to reconcile                                                                                                          | Set after `advanceRun` (which also opens PRs/MRs) and after run creation (`start.ts`, `chat-start.ts`); compare-and-deleted by the reconcile cron when it found no work. The rebuild sets it                                                                                                                                                                                                 | `lib/ralph/active.ts`            |
-| `ralph:reconciled`                                                       | own              | The last full reconcile run, 24h TTL                                                                                                                          | The reconcile cron                                                                                                                                                                                                                                                                                                                                                                           | `lib/ralph/active.ts`            |
-| `ralph:backoff`                                                          | own              | `{interval}\|{due}\|{fingerprint}`: when the reconcile cron next runs a pass while ralph work exists, and the work's fingerprint after the last pass, 24h TTL | The reconcile cron after a pass with work left; deleted by `markRalphActive` outside the cron's pass, by a pass that found no work and by the rebuild                                                                                                                                                                                                                                        | `lib/ralph/active.ts`            |
-| `chat-run-events:pending`                                                | derived (signal) | A random value: there may be chat run events to relay                                                                                                         | Set after a run event is recorded (`recordChatRunEvent`); compare-and-deleted by the `chat-run-events` cron after a run that left no event pending. The rebuild sets it                                                                                                                                                                                                                      | `lib/chat/pending-run-events.ts` |
-| `agents-live-online`                                                     | derived          | Set of the agents announced online (`live_online`)                                                                                                            | The heartbeat adds its agent after `markAgentLiveOnline` (even when it was already online); the liveness sweep removes the agents it announces offline and those Postgres no longer has online. Rebuilt from `live_online`                                                                                                                                                                   | `lib/agents/liveness.ts`         |
-| `harness-organization:{harnessId}`                                       | own              | The harness's organization, 7-day TTL                                                                                                                         | Readers on a miss. A harness never changes organization, so there's no writer                                                                                                                                                                                                                                                                                                                | `lib/agents/organization.ts`     |
-| `harness-last-seen:{harnessId}`                                          | own              | The last heartbeat (ms), 30-day TTL                                                                                                                           | Every heartbeat. Read where the UI, chat and pinning show or sort by last heartbeat (`withLastSeen`, `readHarnessLastSeen`): the later of it and the row's `last_heartbeat_at` wins                                                                                                                                                                                                          | `lib/agents/last-seen.ts`        |
-| `harness-report:{harnessId}`                                             | own              | Fingerprint of the report last written to the harness row, 24h TTL                                                                                            | The heartbeat: deleted before it writes the row, set after                                                                                                                                                                                                                                                                                                                                   | `lib/agents/last-seen.ts`        |
-| `heartbeat-response:{harnessId}`                                         | own              | The last Postgres-built heartbeat response, with the epoch and change counters it was built under, 1h TTL                                                     | The heartbeat's Postgres path                                                                                                                                                                                                                                                                                                                                                                | `lib/agents/heartbeat-cache.ts`  |
-| `heartbeat-changes:harness:{harnessId}`, `heartbeat-changes:org:{orgId}` | own              | Change counters, 30-day TTL; created at a random value                                                                                                        | Incremented after every commit that changes a heartbeat response. Harness: config, desired version, pins and unpins, update requests, host tool paths, cancel requests, job messages to a running job. Organization: harness defaults (version, `latest` tracking, task types, concurrency, host tools), a new npm `latest`, repository disconnect and SCM connection removal (pins cascade) | `lib/agents/heartbeat-cache.ts`  |
-| `harness-latest-version:{orgId}`                                         | own              | npm's `latest` for organizations that track it, rechecked against npm after 5 min                                                                             | The heartbeat                                                                                                                                                                                                                                                                                                                                                                                | `lib/agents/heartbeat-cache.ts`  |
-| `rate-limit:{key}:{windowStartMs}`, `rate-limit:auth_lockout:ip:{ip}`    | own              | Rate-limit window counters and auth lockouts, expiring with their window                                                                                      | `hitRateLimit`, the auth lockout                                                                                                                                                                                                                                                                                                                                                             | `lib/rate-limit.ts`              |
-| `rate-limit:postgres-fallback-at`                                        | own              | When rate limiting last fell back to Postgres                                                                                                                 | `lib/rate-limit.ts`; cleared by the prune cron once the Postgres counters are past retention                                                                                                                                                                                                                                                                                                 | `lib/rate-limit.ts`              |
+| Key                                                                      | Kind             | Holds                                                                                                                  | Written by                                                                                                                                                                                                                                                                                                                                                                                                            | Module                           |
+| ------------------------------------------------------------------------ | ---------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `hot-state:epoch`                                                        | control          | When the derived keys were last rebuilt; no TTL                                                                        | The rebuild; deleted by a failed `writeHotState`                                                                                                                                                                                                                                                                                                                                                                      | `lib/hot-state/epoch.ts`         |
+| `hot-state:rebuild-lock`                                                 | control          | The rebuilding instance's token (`SET NX PX 30s`)                                                                      | The rebuild                                                                                                                                                                                                                                                                                                                                                                                                           | `lib/hot-state/epoch.ts`         |
+| `harness-auth:{harnessId}`                                               | derived          | `active` or `revoked`, 24h TTL                                                                                         | Readers on a miss (`SET NX`); `revoked` after `revokeHarness` and after refresh-token reuse (token route). Rebuild deletes them all                                                                                                                                                                                                                                                                                   | `lib/harness-auth/auth-state.ts` |
+| `job-due:{organizationId}`                                               | derived          | Sorted set of queued and running jobs, scored by when each can next be claimed (`available_at`, or `lease_expires_at`) | After every commit that changes a job's status, availability or lease: dispatch and cancel (dispatcher), claim, lease renewal (heartbeat), retry and fail, result, skip, revoke (requeue), expire, review correlation. Rebuilt from the queued and running jobs                                                                                                                                                       | `lib/dispatch/due.ts`            |
+| `job-queued-since`                                                       | derived          | Sorted set of every queued job, scored by `created_at`                                                                 | The same writers as `job-due:*` (`syncJobsDue`); rebuilt with it                                                                                                                                                                                                                                                                                                                                                      | `lib/dispatch/due.ts`            |
+| `ralph:due`                                                              | derived          | Sorted set of the ralph work the reconcile cron checks next, scored by when it's due (ms): `run:<id>` advances a run   | `advanceRun` (a safety check at +10 min before it starts, then its result: nothing for a job in flight, +1 h waiting, removed when finished or gone, +`RECONCILE_STALE_MS` pending or running without a job); run creation (`start.ts`, `chat-start.ts`, the safety check before the commit); a ralph job's result, failure or cancel (the safety check before the commit). Rebuilt with every unfinished run due now | `lib/ralph/due.ts`               |
+| `ralph:reconciled`                                                       | own              | The last full reconcile pass, 24h TTL                                                                                  | The reconcile cron                                                                                                                                                                                                                                                                                                                                                                                                    | `lib/ralph/due.ts`               |
+| `chat-run-events:pending`                                                | derived (signal) | A random value: there may be chat run events to relay                                                                  | Set after a run event is recorded (`recordChatRunEvent`); compare-and-deleted by the `chat-run-events` cron after a run that left no event pending. The rebuild sets it                                                                                                                                                                                                                                               | `lib/chat/pending-run-events.ts` |
+| `agents-live-online`                                                     | derived          | Set of the agents announced online (`live_online`)                                                                     | The heartbeat adds its agent after `markAgentLiveOnline` (even when it was already online); the liveness sweep removes the agents it announces offline and those Postgres no longer has online. Rebuilt from `live_online`                                                                                                                                                                                            | `lib/agents/liveness.ts`         |
+| `harness-organization:{harnessId}`                                       | own              | The harness's organization, 7-day TTL                                                                                  | Readers on a miss. A harness never changes organization, so there's no writer                                                                                                                                                                                                                                                                                                                                         | `lib/agents/organization.ts`     |
+| `harness-last-seen:{harnessId}`                                          | own              | The last heartbeat (ms), 30-day TTL                                                                                    | Every heartbeat. Read where the UI, chat and pinning show or sort by last heartbeat (`withLastSeen`, `readHarnessLastSeen`): the later of it and the row's `last_heartbeat_at` wins                                                                                                                                                                                                                                   | `lib/agents/last-seen.ts`        |
+| `harness-report:{harnessId}`                                             | own              | Fingerprint of the report last written to the harness row, 24h TTL                                                     | The heartbeat: deleted before it writes the row, set after                                                                                                                                                                                                                                                                                                                                                            | `lib/agents/last-seen.ts`        |
+| `heartbeat-response:{harnessId}`                                         | own              | The last Postgres-built heartbeat response, with the epoch and change counters it was built under, 1h TTL              | The heartbeat's Postgres path                                                                                                                                                                                                                                                                                                                                                                                         | `lib/agents/heartbeat-cache.ts`  |
+| `heartbeat-changes:harness:{harnessId}`, `heartbeat-changes:org:{orgId}` | own              | Change counters, 30-day TTL; created at a random value                                                                 | Incremented after every commit that changes a heartbeat response. Harness: config, desired version, pins and unpins, update requests, host tool paths, cancel requests, job messages to a running job. Organization: harness defaults (version, `latest` tracking, task types, concurrency, host tools), a new npm `latest`, repository disconnect and SCM connection removal (pins cascade)                          | `lib/agents/heartbeat-cache.ts`  |
+| `harness-latest-version:{orgId}`                                         | own              | npm's `latest` for organizations that track it, rechecked against npm after 5 min                                      | The heartbeat                                                                                                                                                                                                                                                                                                                                                                                                         | `lib/agents/heartbeat-cache.ts`  |
+| `rate-limit:{key}:{windowStartMs}`, `rate-limit:auth_lockout:ip:{ip}`    | own              | Rate-limit window counters and auth lockouts, expiring with their window                                               | `hitRateLimit`, the auth lockout                                                                                                                                                                                                                                                                                                                                                                                      | `lib/rate-limit.ts`              |
+| `rate-limit:postgres-fallback-at`                                        | own              | When rate limiting last fell back to Postgres                                                                          | `lib/rate-limit.ts`; cleared by the prune cron once the Postgres counters are past retention                                                                                                                                                                                                                                                                                                                          | `lib/rate-limit.ts`              |
 
 What each idle request does with them:
 
@@ -84,9 +83,9 @@ What each idle request does with them:
   stores a new response.
 - **`expire-jobs` cron**: returns `{ expired: 0 }` while `job-queued-since` has no job older than
   24h.
-- **`ralph-reconcile` cron**: returns `{ skipped: true }` while `ralph:active` is absent and
-  `ralph:reconciled` is present, so it runs fully at least once a day. While ralph work exists
-  (`ralph:active` set) it also skips until `ralph:backoff` is due: see _Reconcile backoff_.
+- **`ralph-reconcile` cron**: returns `{ skipped: true }` while no `ralph:due` entry is due and
+  `ralph:reconciled` is present, so it runs the full pass at least once a day: see _Reconcile
+  schedule_.
 - **`chat-run-events` cron**: returns `{ skipped: true }` while `chat-run-events:pending` is
   absent, before initialising the chat bot (whose state is in Postgres).
 - **Announcing an agent online** (every heartbeat, `noteAgentOnline`): nothing in Postgres while
@@ -97,36 +96,42 @@ What each idle request does with them:
 - **`prune-rate-limits` cron**: prunes nothing in Postgres unless `rate-limit:postgres-fallback-at`
   says rate limiting fell back to it.
 
-### Reconcile backoff (TOOL-276)
+### Reconcile schedule (TOOL-853)
 
-`hasRalphWork` is true as long as any run is unfinished, any ralph PR/MR is open or any lane's
-cleanup isn't through, so a single waiting run used to make the cron do a full pass every 10
-minutes, changing nothing; that alone kept Neon awake about 55% of the day. Now each pass that
-leaves work behind ends by computing `ralphWorkFingerprint`: a hash of what a pass can change
-(each unfinished run's status, blockers, job count and outstanding PR/MR and request jobs; its
-stories' status, attempts, job and lane; the lanes' PR/MR state, cleanup and publish; the queued
-and running ralph jobs), from those columns rather than `updated_at`, which a write that changes
-nothing still moves. A Lua script then sets `ralph:backoff` atomically:
+The reconcile cron used to poll: a marker (`ralph:active`) set after every `advanceRun` and a
+backoff (`ralph:backoff`, from every 10 minutes up to every hour while a fingerprint of the ralph
+work stayed unchanged) kept it querying Postgres as long as any ralph work existed, and every
+advance with a job in flight reset it to 10 minutes. Now `ralph:due` says when each run is due,
+and the cron touches Postgres only for runs that are.
 
-- **Nothing changed** (the fingerprint is the previous pass's and `ralph:active` still holds the
-  value the pass read): the interval doubles, 10 → 20 → 40 → 60 minutes (the cap).
-- **Anything changed** (the pass advanced a run or its stories, dispatched or canceled a job,
-  opened, merged or closed a PR/MR or updated a cleanup; or a writer marked ralph work during the
-  pass): back to 10 minutes.
+`ralph:due` is a sorted set: members `run:<id>`, scored by due time (ms). The cron reads
+`ZRANGEBYSCORE ralph:due -inf <now>`; with nothing due and `ralph:reconciled` present it returns
+`{ skipped: true }`. Otherwise it advances only the due runs, organization by organization (with
+the organization's Linear gateway, or a disconnected one for the chat runs of an organization
+without Linear; a Linear run of an organization that disconnected Linear leaves the schedule, as
+the full pass skips it too). A run that's gone leaves the schedule. Each advance reschedules its
+run from the result:
 
-The next pass is due at the pass's start plus the interval, less 5 minutes so an invocation a
-little early on the `*/10` schedule still runs; in between, the cron returns `{ skipped: true }`
-without querying Postgres. While nothing changes, it queries Postgres at most once an hour.
+| Result                                                                                   | Schedule                                |
+| ---------------------------------------------------------------------------------------- | --------------------------------------- |
+| A job in flight (`busy`, `enqueued`, `pushing`, `describing`, `preparing`, `requesting`) | Removed: the job's outcome is the event |
+| `waiting` on a blocker or a person                                                       | +1 h, for a missed webhook              |
+| Finished (`finished`, `completed`, `failed`) or `gone`                                   | Removed                                 |
+| `waiting` with the run still pending or running, no job                                  | +`RECONCILE_STALE_MS` (10 minutes)      |
 
-`markRalphActive` from outside the cron (webhooks, UI actions, job outcomes, run creation) sets a
-new `ralph:active` and deletes `ralph:backoff`, so the next invocation runs and the backoff starts
-again at 10 minutes. The cron's own pass runs inside `runReconcilePass` (an `AsyncLocalStorage`
-context): the `advanceRun` calls it makes only `SET NX` the marker, so they neither reset the
-backoff nor look like an outside change; whether the pass itself changed something is the
-fingerprint's call. A lost `ralph:backoff` (a flush, a rebuild, its 24h TTL) means the next
-invocation runs a pass and starts again at 10 minutes; with hot state off every invocation runs a
-pass, as before. The forced full pass once a day (`ralph:reconciled`) still runs whatever the
-backoff says.
+**Crash safety.** A `finally` doesn't run when Vercel kills the function, so a write that leaves
+follow-up work schedules a safety check (+10 minutes) _before_ it commits: `advanceRun` before it
+starts, run creation (`start.ts`, `chat-start.ts`) inside its transaction, a ralph job's result,
+failure or cancel (`scheduleJobOutcomeCheck`) before the job's row changes. The handler that does
+the follow-up replaces it (`advanceRun` from its result; `catchUpRun` removes it for a finished
+run). A throw leaves it, so a failed advance is retried about 10 minutes later; a commit that
+fails afterwards costs one spurious check. This is the one exception to rule 1: an entry that only
+schedules a check can't do harm when the transaction rolls back.
+
+`ralph:reconciled` (24h TTL) still forces the full pass once a day: every organization's waiting
+and stale runs, cleanup and CI. The runs it advanced are rescheduled, so it then advances only
+the runs still due. A flushed Redis is rebuilt with every unfinished run due now (`ralph-due`);
+with hot state off or Redis down, every invocation runs the full pass.
 
 ### Heartbeat cache bound and drift check (TOOL-276)
 
@@ -151,9 +156,10 @@ stale state until a TTL runs out:
 
 1. **Write Redis after the Postgres commit**, never inside the transaction: a rolled-back
    transaction must not leave a Redis change behind, and a Redis error must not roll back the
-   Postgres one.
+   Postgres one. The exception is a `ralph:due` safety check, written before the commit (see
+   _Reconcile schedule_).
 2. **Use the module's writer function** (`syncJobsDue`, `removeJobsDue`, `renewJobsDue`,
-   `skipJobAndClearDue`, `cacheHarnessRevoked`, `markRalphActive`, `markRunEventsPending`,
+   `skipJobAndClearDue`, `cacheHarnessRevoked`, `scheduleRun`, `markRunEventsPending`,
    `bumpHarnessHeartbeat`,
    `bumpOrganizationHeartbeat`). They go through `writeHotState`, which deletes the epoch when the
    write fails, so readers rebuild from Postgres rather than trust a key that missed the change.
@@ -164,9 +170,11 @@ stale state until a TTL runs out:
    or SCM connection drops pins.
 4. **A new write that changes a job's status, `available_at` or lease** updates the due set
    (`syncJobsDue`, or `syncJobsDueFromPostgres` when it doesn't have the row).
-5. **A new way to create or advance a ralph run** calls `markRalphActive()` (which also resets
-   the reconcile backoff, unless it runs inside the cron's `runReconcilePass`); **a new way to
-   record a chat run event** calls `markRunEventsPending()`.
+5. **A new way to create a ralph run** schedules its safety check (`scheduleRunSafetyCheck`)
+   before the commit, then advances it (`advanceRun`, which schedules it) or schedules it by its
+   status (`scheduleRunByStatus`); **a new way to finish a ralph job** calls
+   `scheduleJobOutcomeCheck` before the commit; **a new way to record a chat run event** calls
+   `markRunEventsPending()`.
 6. **A new derived key** registers a rebuilder with `registerHotStateRebuilder` at module import,
    and its module is added to `lib/hot-state/rebuilders.ts`.
 7. **Read change counters before the Postgres reads a cached value is built from; writers bump
@@ -174,7 +182,7 @@ stale state until a TTL runs out:
    composite value, store the epoch with it rather than registering a rebuilder.
 8. **A marker an idle consumer clears** holds a fresh random value per write, and the consumer
    compare-and-deletes the value it read before checking Postgres, so a write during the check is
-   never lost (`ralph:active`, `chat-run-events:pending`).
+   never lost (`chat-run-events:pending`).
 
 Tests prove an idle path makes no Postgres query by passing a `Proxy` around the database that
 counts or throws on any query method.
@@ -213,7 +221,7 @@ whose Redis update failed), the next `readHotState` call:
 2. runs every registered rebuilder: `job-due` deletes every `job-due:*` and `job-queued-since` and
    reloads them from the queued and running jobs; `harness-auth` deletes every `harness-auth:*`
    (they refill on the next miss); `agent-liveness` reloads `agents-live-online` from
-   `live_online`; `ralph-active` sets `ralph:active` (and deletes `ralph:backoff`) and `chat-run-events-pending` sets
+   `live_online`; `ralph-due` replaces `ralph:due` with every unfinished run due now and `chat-run-events-pending` sets
    `chat-run-events:pending`;
 3. sets the epoch and releases the lock (compare-and-delete on its token).
 
@@ -225,8 +233,9 @@ import; because Next bundles each route separately, every `readHotState` caller 
 A writer that commits while a rebuild is reading Postgres can have its Redis update overwritten by
 the rebuild's older snapshot. Each derived key tolerates that: a stale due entry costs one Postgres
 claim, which then corrects it (`reconcileDueJobs`, and `reconcileExpiredQueuedJobs` for the expire
-cron); `harness-auth` entries are deleted rather than reloaded; `ralph:active` and
-`chat-run-events:pending` are set, never cleared, by the rebuild. Cached heartbeat responses carry the epoch value they were built under, so
+cron); `harness-auth` entries are deleted rather than reloaded; a run missing from `ralph:due` is still
+advanced by the next job outcome, webhook or daily full pass; `chat-run-events:pending` is set,
+never cleared, by the rebuild. Cached heartbeat responses carry the epoch value they were built under, so
 a rebuild invalidates all of them.
 
 ### The fallback

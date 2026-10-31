@@ -62,7 +62,7 @@ import {
   ROUTED_BY_SELECTION,
 } from "./repository-selection";
 import { addInstruction, NOTHING_TO_DO, PASSED_TO_RUNNING_JOB } from "./requests";
-import { markRalphActive } from "./active";
+import { scheduleRunByStatus, scheduleRunSafetyCheck } from "./due";
 import { advanceRun, FINISHED_RUN_STATUSES, syncStories, type RalphDeps } from "./run";
 import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
 
@@ -421,13 +421,13 @@ async function askForRepositoryFirst(
       chatThreadId: await delegatingThread(tx, deps, event),
     });
     if (!result.created) return result;
+    await scheduleRunSafetyCheck(result.run.id);
     // Like v2a, the previous main lane's PR/MR isn't carried over to a repository a person picks.
     const run = await carryOver(tx, result.run, previous, previous?.repositoryId);
     await syncStories(tx, run.id, epic);
     await addStartInstruction(tx, run, start);
     return { run, created: true };
   });
-  await markRalphActive();
   if (!created) {
     if (run.linearAgentSessionId === event.sessionId) await advanceRun(run.id, deps);
     else {
@@ -441,6 +441,8 @@ async function askForRepositoryFirst(
   }
   await askForRepository(linearConversation(deps.linear, event.sessionId), repositories);
   await notifyRunThread(deps, run, { kind: "started" });
+  // Waiting on a person: the safety check gives way to the hourly re-check.
+  await scheduleRunByStatus(run);
   return { status: "selecting", run };
 }
 
@@ -700,6 +702,7 @@ async function startNewRun(
       chatThreadId: await delegatingThread(tx, deps, event),
     });
     if (!result.created) return { ...result, lane: null, left: null };
+    await scheduleRunSafetyCheck(result.run.id);
     let run = await carryOver(tx, result.run, previous);
     // Re-routing moved the issue to another repository: its earlier work there stays as it is.
     const moved = await moveToRepository(tx, run.id, chosen.repository.id, {
@@ -713,7 +716,6 @@ async function startNewRun(
     await addStartInstruction(tx, run, start);
     return { run, created: true, lane, left: moved.left };
   });
-  await markRalphActive();
   if (!created) {
     // Another delivery started this session's (or this issue's) run first.
     if (run.linearAgentSessionId === sessionId) await advanceRun(run.id, deps);
