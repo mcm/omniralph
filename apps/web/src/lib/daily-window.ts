@@ -29,3 +29,11 @@ export function currentDailyWindow(now: Date): number {
 export function nextDailyWindow(now: Date): number {
   return currentDailyWindow(now) + DAY_MS;
 }
+
+/**
+ * How long from `now` until the next window starts (ms, always > 0): the TTL of a cached key
+ * whose expiry sends the next request to Postgres, so that request lands in the window.
+ */
+export function msUntilNextDailyWindow(now: Date): number {
+  return nextDailyWindow(now) - now.getTime();
+}
