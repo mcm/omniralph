@@ -6,7 +6,11 @@
  * - A merge also resolves the run's Linear issue (`resolveMergedIssue`).
  * - Triggers: the PR/MR's merge webhook, the Linear issue moving to completed,
  *   any follow-up check that finds it merged (`recordClosedPullRequest`), and
- *   the reconcile cron (`reconcileCleanup`) as the fallback.
+ *   the reconcile cron's daily full pass (`reconcileCleanup`) as the fallback.
+ * - The reconcile cron checks a lane again only when it's due (`ralph:due`,
+ *   `lib/ralph/due`): a failed cleanup after an hour, a kept branch at its
+ *   question's deadline, a cleanup job's outcome that was never applied
+ *   (`reconcileLane`).
  * - A PR/MR closed without merging (its close webhook, or any check that
  *   finds it closed) and a stopped run (`stopRun`) start a keep-branch
  *   cleanup (`startKeepBranchCleanup`): it stashes uncommitted changes and
@@ -79,6 +83,12 @@ import {
 import { jobRepository } from "@/lib/scm/adapters";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { DEFAULT_CODING_SETTINGS, storyCodingSettings } from "./coding";
+import {
+  CLEANUP_DEDUPE_PREFIX,
+  rescheduleLane,
+  scheduleCheckedLane,
+  scheduleLaneSafetyCheck,
+} from "./due";
 import { conversationFor } from "./conversation";
 import { errorMessage, postActivity } from "./notify";
 import { jobFailure } from "./outcome";
@@ -90,7 +100,7 @@ const ACTIVE_JOB_STATUSES = new Set<Job["status"]>(["queued", "running"]);
 
 /** At most one cleanup job (`worktree.cleanup`, or a legacy `ralph.cleanup`) per lane at a time. */
 export function cleanupDedupeKey(laneId: string): string {
-  return `ralph-cleanup:${laneId}`;
+  return `${CLEANUP_DEDUPE_PREFIX}${laneId}`;
 }
 
 export type CleanupStart =
@@ -345,14 +355,15 @@ export async function dropKeepBranchCleanups(tx: RalphTransaction, runId: string
  * Records a PR/MR seen closed or merged (it's no longer followed up), and
  * starts the cleanup: when it merged, the merge cleanup; closed unmerged, the
  * keep-branch one. The single place every check that finds a ralph PR/MR
- * closed goes through. A cleanup that fails to start is logged: the
- * reconcile cron tries again.
+ * closed goes through. A cleanup that fails to start is logged: the lane's
+ * safety check, scheduled before the write, has the reconcile cron try again.
  */
 export async function recordClosedPullRequest(
   deps: RalphDeps,
   lane: RalphLane,
   state: ChangeRequestStatus,
 ): Promise<void> {
+  await scheduleLaneSafetyCheck(lane.id);
   await updateLane(deps.db, lane.id, {
     prClosed: true,
     prMerged: state.state === "merged",
@@ -362,6 +373,7 @@ export async function recordClosedPullRequest(
   try {
     if (state.state === "merged") await startCleanup(deps, lane.id, state.headSha);
     else await startKeepBranchCleanup(deps, lane.id, "closed");
+    await rescheduleLane(deps.db, lane.id);
   } catch (error) {
     console.error(`Starting the cleanup of ${lane.branch} (ralph lane ${lane.id}) failed`, error);
   }
@@ -820,16 +832,9 @@ export async function reconcileCleanup(
     }
   };
   const optedIn = new Map<string, boolean>();
-  const playbooks = organizationPlaybooks(deps.db, deps.organizationId);
-  const cleansUp = async (repositoryId: string) => {
+  const cleansUp: CleansUp = async (repositoryId) => {
     if (!optedIn.has(repositoryId)) {
-      const found = await getRepositoryWithConnection(deps.db, repositoryId);
-      optedIn.set(
-        repositoryId,
-        !!found &&
-          !found.repository.disconnectedAt &&
-          (await storyCodingSettings(found.repository, playbooks)).cleanupMergedWorktrees,
-      );
+      optedIn.set(repositoryId, await repositoryCleansUp(deps, repositoryId));
     }
     return optedIn.get(repositoryId) ?? false;
   };
@@ -843,33 +848,84 @@ export async function reconcileCleanup(
   }
 
   for (const { lane } of await listLanesToCleanUp(deps.db, deps.organizationId, origin)) {
-    const cleanup = lane.cleanup;
     await attempt(`Cleaning up ${lane.branch} (coding task lane ${lane.id})`, async () => {
-      if (cleanup?.jobId) {
-        const job = await getJob(deps.db, cleanup.jobId);
-        if (job && ACTIVE_JOB_STATUSES.has(job.status)) return;
-        if (job) {
-          await applyCleanupJob(deps, job.id);
-        } else {
-          const { jobId: _gone, answer: _answer, ...rest } = cleanup;
-          await updateLane(deps.db, lane.id, {
-            cleanup: { ...rest, status: rest.status === "running" ? "failed" : rest.status },
-          });
-        }
-        return;
-      }
-      if (!cleanup) {
-        if (!(await cleansUp(lane.repositoryId))) return;
-        if ((await checkMergedAgain(deps, lane))?.status === "enqueued") counts.started += 1;
-        return;
-      }
-      if (cleanup.status === "pending" || cleanup.status === "failed") {
-        const started = await beginCleanup(deps, lane.id, targetOf(cleanup));
-        if (started.status === "enqueued") counts.started += 1;
-        return;
-      }
-      if (await expireBranchQuestion(deps, lane, at)) counts.expired += 1;
+      const done = await reconcileLane(deps, lane, at, cleansUp);
+      if (done === "started") counts.started += 1;
+      if (done === "expired") counts.expired += 1;
     });
   }
   return counts;
+}
+
+/** Whether a repository cleans up merged worktrees (connected, `cleanupMergedWorktrees`). */
+type CleansUp = (repositoryId: string) => Promise<boolean>;
+
+async function repositoryCleansUp(deps: RalphDeps, repositoryId: string): Promise<boolean> {
+  const found = await getRepositoryWithConnection(deps.db, repositoryId);
+  return (
+    !!found &&
+    !found.repository.disconnectedAt &&
+    (
+      await storyCodingSettings(
+        found.repository,
+        organizationPlaybooks(deps.db, deps.organizationId),
+      )
+    ).cleanupMergedWorktrees
+  );
+}
+
+/**
+ * Checks a lane's cleanup (the reconcile cron: its full pass, or the lane's `ralph:due` entry)
+ * and reschedules it from what's left (`scheduleCheckedLane`): applies a finished cleanup
+ * job's outcome that was missed, starts a merged lane's cleanup that never started (or a
+ * closed one's keep-branch cleanup), starts a pending or failed one again, and deletes a kept
+ * branch whose question timed out. What it did: `started` (a cleanup job enqueued), `expired`
+ * (the kept branch's deletion enqueued), or null. Throws, leaving the lane's entry, on failure.
+ */
+export async function reconcileLane(
+  deps: RalphDeps,
+  lane: RalphLane,
+  at = new Date(),
+  cleansUp: CleansUp = (repositoryId) => repositoryCleansUp(deps, repositoryId),
+): Promise<"started" | "expired" | null> {
+  const done = await cleanUpLane(deps, lane, at, cleansUp);
+  const current = await getLane(deps.db, lane.id);
+  if (current) await scheduleCheckedLane(current, at.getTime());
+  return done;
+}
+
+async function cleanUpLane(
+  deps: RalphDeps,
+  lane: RalphLane,
+  at: Date,
+  cleansUp: CleansUp,
+): Promise<"started" | "expired" | null> {
+  const cleanup = lane.cleanup;
+  if (cleanup?.jobId) {
+    const job = await getJob(deps.db, cleanup.jobId);
+    if (job && ACTIVE_JOB_STATUSES.has(job.status)) return null;
+    if (job) {
+      await applyCleanupJob(deps, job.id);
+    } else {
+      const { jobId: _gone, answer: _answer, ...rest } = cleanup;
+      await updateLane(deps.db, lane.id, {
+        cleanup: { ...rest, status: rest.status === "running" ? "failed" : rest.status },
+      });
+    }
+    return null;
+  }
+  if (!cleanup) {
+    if (!lane.prClosed) return null;
+    if (!lane.prMerged) {
+      const started = await startKeepBranchCleanup(deps, lane.id, "closed");
+      return started.status === "enqueued" ? "started" : null;
+    }
+    if (!(await cleansUp(lane.repositoryId))) return null;
+    return (await checkMergedAgain(deps, lane))?.status === "enqueued" ? "started" : null;
+  }
+  if (cleanup.status === "pending" || cleanup.status === "failed") {
+    const started = await beginCleanup(deps, lane.id, targetOf(cleanup));
+    return started.status === "enqueued" ? "started" : null;
+  }
+  return (await expireBranchQuestion(deps, lane, at)) ? "expired" : null;
 }

@@ -1,11 +1,20 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import {
   closeDb,
+  connectRepository,
   createDb,
   createRun,
+  ensureLane,
+  getLane,
   organizations,
   ralphRuns,
+  repositories,
+  updateLane,
+  upsertScmConnection,
   type Database,
+  type Job,
+  type RalphLane,
+  type RalphLaneCleanup,
   type RalphRun,
 } from "@omniralph/db";
 import {
@@ -68,14 +77,19 @@ vi.mock("@/lib/ralph/reconcile-cron", async (importOriginal) => {
 process.env.CRON_SECRET = "cron-secret";
 const { EPOCH_KEY, closeRedis, ensureHotStateEpoch, getRedis } = await import("@/lib/hot-state");
 const {
+  RALPH_RETRY_MS,
   RALPH_SAFETY_MS,
   RALPH_WAITING_MS,
   RECONCILE_STALE_MS,
+  laneDueAt,
   runDueAt,
   scheduleJobOutcomeCheck,
+  scheduleLane,
   scheduleRun,
 } = await import("./due");
 const { advanceRun } = await import("./run");
+const { cleanupDedupeKey, recordClosedPullRequest } = await import("./cleanup");
+const { onRalphCleanupJobFinished } = await import("./jobs");
 const { GET } = await import("@/app/api/cron/ralph-reconcile/route");
 
 const databaseAvailable = testDatabaseAvailable();
@@ -115,11 +129,53 @@ describe("runDueAt", () => {
   });
 });
 
+describe("laneDueAt", () => {
+  const cleanup = (fields: Partial<RalphLaneCleanup>) => ({
+    cleanup: {
+      status: "done",
+      at: "",
+      mergedSha: "a",
+      questions: [],
+      ...fields,
+    } as RalphLaneCleanup,
+  });
+  const branch = {
+    kind: "branch" as const,
+    commits: 2,
+    askedAt: new Date(NOW).toISOString(),
+    deadline: new Date(NOW + 30 * MINUTE).toISOString(),
+  };
+  const stashes = { kind: "stashes" as const, shas: ["s"], askedAt: new Date(NOW).toISOString() };
+
+  it("schedules nothing while a cleanup job is in flight or waits for the run's job", () => {
+    expect(laneDueAt(cleanup({ status: "running", jobId: "j" }), NOW)).toBeNull();
+    expect(laneDueAt(cleanup({ questions: [branch], jobId: "j" }), NOW)).toBeNull();
+    expect(laneDueAt(cleanup({ status: "pending" }), NOW)).toBeNull();
+  });
+
+  it("retries a failed cleanup in an hour", () => {
+    expect(laneDueAt(cleanup({ status: "failed" }), NOW)).toBe(NOW + RALPH_RETRY_MS);
+  });
+
+  it("checks a kept branch at its question's deadline", () => {
+    expect(laneDueAt(cleanup({ questions: [stashes, branch] }), NOW)).toBe(NOW + 30 * MINUTE);
+  });
+
+  it("schedules nothing for a lane without cleanup, done, or only asked about stashes", () => {
+    expect(laneDueAt({ cleanup: null }, NOW)).toBeNull();
+    expect(laneDueAt(cleanup({}), NOW)).toBeNull();
+    expect(laneDueAt(cleanup({ questions: [stashes] }), NOW)).toBeNull();
+  });
+});
+
 describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile schedule", () => {
   let testDb: TestDatabase;
   let testRedis: TestRedis;
   let db: Database;
   let organizationId: string;
+  let repositoryId: string;
+  /** A repository that was disconnected: a cleanup job can't be enqueued there. */
+  let disconnectedRepositoryId: string;
   /** Postgres calls made through `state.db` (the route's `getDb()`). */
   let postgresCalls = 0;
 
@@ -151,6 +207,31 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile schedule
     });
     const [org] = await db.insert(organizations).values({ name: "Ralphco" }).returning();
     organizationId = org!.id;
+    const connection = (await upsertScmConnection(
+      db,
+      {
+        organizationId,
+        provider: "github",
+        name: "ralphco",
+        baseUrl: "https://api.github.com",
+        externalId: "1",
+        credentials: {},
+      },
+      randomBytes(32),
+    ))!;
+    const connect = (externalId: string) =>
+      connectRepository(db, {
+        connectionId: connection.id,
+        provider: "github",
+        externalId,
+        fullPath: `ralphco/repo-${externalId}`,
+      });
+    repositoryId = (await connect("1")).id;
+    disconnectedRepositoryId = (await connect("2")).id;
+    await db
+      .update(repositories)
+      .set({ disconnectedAt: new Date() })
+      .where(eq(repositories.id, disconnectedRepositoryId));
   }, 180_000);
 
   afterAll(async () => {
@@ -204,6 +285,44 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile schedule
     return value === null ? null : Number(value);
   };
 
+  const laneScore = async (laneId: string) => {
+    const value = await getRedis().zscore(DUE_KEY, `lane:${laneId}`);
+    return value === null ? null : Number(value);
+  };
+
+  /** A lane of a completed run, with `cleanup` and its PR/MR state. */
+  async function newLane(
+    cleanup: Partial<RalphLaneCleanup> | null,
+    fields: Partial<Pick<RalphLane, "prClosed" | "prMerged" | "repositoryId">> = {},
+  ): Promise<RalphLane> {
+    const run = await newRun("completed");
+    const lane = await ensureLane(db, {
+      runId: run.id,
+      repositoryId: fields.repositoryId ?? repositoryId,
+      branch: `omniralph/${run.id}`,
+      baseBranch: "main",
+    });
+    return (await updateLane(db, lane.id, {
+      prNumber: 7,
+      prClosed: fields.prClosed ?? true,
+      prMerged: fields.prMerged ?? true,
+      cleanup: cleanup && {
+        status: "done",
+        at: new Date(NOW).toISOString(),
+        mergedSha: "a".repeat(40),
+        questions: [],
+        ...cleanup,
+      },
+    }))!;
+  }
+
+  const branchQuestion = (deadline: number) => ({
+    kind: "branch" as const,
+    commits: 2,
+    askedAt: new Date(NOW - 60 * MINUTE).toISOString(),
+    deadline: new Date(deadline).toISOString(),
+  });
+
   /** Brings Redis to idle: the epoch built and the day's full pass done. */
   async function idle() {
     await cron();
@@ -217,6 +336,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile schedule
     await idle();
     const run = await newRun("waiting");
     await scheduleRun(run.id, NOW + RALPH_WAITING_MS);
+    await scheduleLane(randomUUID(), NOW + 55 * MINUTE);
     postgresCalls = 0;
     expect(await cron()).toEqual({ skipped: true });
     vi.setSystemTime(NOW + 50 * MINUTE);
@@ -235,7 +355,10 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile schedule
     await scheduleRun(gone, NOW - MINUTE);
     await scheduleRun(later.id, NOW + MINUTE);
 
-    expect(await cron()).toEqual({ due: { reconciled: 1, failed: 0 } });
+    expect(await cron()).toEqual({
+      due: { reconciled: 1, failed: 0 },
+      dueLanes: { checked: 0, started: 0, expired: 0, failed: 0 },
+    });
     expect(state.advanced).toEqual([due.id]);
     expect(state.fullPasses).toBe(0);
     // Finished: off the schedule; gone: removed without an advance.
@@ -279,10 +402,105 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile schedule
 
   it("schedules a ralph job's run before its outcome commits", async () => {
     const runId = randomUUID();
-    await scheduleJobOutcomeCheck({ ralphRunId: runId });
+    await scheduleJobOutcomeCheck({ ralphRunId: runId, dedupeKey: "something-else" });
     expect(await score(runId)).toBe(NOW + RALPH_SAFETY_MS);
     await scheduleJobOutcomeCheck({ ralphRunId: null });
     expect(await getRedis().zcard(DUE_KEY)).toBe(1);
+  });
+
+  it("schedules a cleanup job's lane too before its outcome commits", async () => {
+    const runId = randomUUID();
+    const laneId = randomUUID();
+    await scheduleJobOutcomeCheck({ ralphRunId: runId, dedupeKey: cleanupDedupeKey(laneId) });
+    expect(await score(runId)).toBe(NOW + RALPH_SAFETY_MS);
+    expect(await laneScore(laneId)).toBe(NOW + RALPH_SAFETY_MS);
+  });
+
+  it("checks only the due lanes, and reschedules each from what's left", async () => {
+    await idle();
+    const done = await newLane({});
+    const asked = await newLane({ questions: [branchQuestion(NOW + 30 * MINUTE)] });
+    const later = await newLane({ status: "failed" });
+    const gone = randomUUID();
+    // Safety checks of cleanup jobs' outcomes, applied meanwhile.
+    for (const laneId of [done.id, asked.id, gone]) await scheduleLane(laneId, NOW - MINUTE);
+    await scheduleLane(later.id, NOW + MINUTE);
+
+    expect(await cron()).toEqual({
+      due: { reconciled: 0, failed: 0 },
+      dueLanes: { checked: 2, started: 0, expired: 0, failed: 0 },
+    });
+    expect(state.fullPasses).toBe(0);
+    expect(state.advanced).toEqual([]);
+    expect(await laneScore(done.id)).toBeNull();
+    expect(await laneScore(asked.id)).toBe(NOW + 30 * MINUTE);
+    expect(await laneScore(gone)).toBeNull();
+    expect(await laneScore(later.id)).toBe(NOW + MINUTE);
+  });
+
+  it("retries a kept branch's deletion it couldn't start in an hour", async () => {
+    await idle();
+    const lane = await newLane(
+      { questions: [branchQuestion(NOW - MINUTE)] },
+      { repositoryId: disconnectedRepositoryId },
+    );
+    await scheduleLane(lane.id, NOW - MINUTE);
+    expect(await cron()).toMatchObject({
+      dueLanes: { checked: 1, started: 0, expired: 0, failed: 0 },
+    });
+    expect(await laneScore(lane.id)).toBe(NOW + RALPH_RETRY_MS);
+  });
+
+  it("checks a closed PR's lane again when its cleanup failed to start", async () => {
+    await idle();
+    const lane = await newLane(null, { prClosed: false, prMerged: false });
+    // The run's lock fails: the lane is recorded closed, but its cleanup doesn't start.
+    const broken = new Proxy(db, {
+      get(target, property, receiver) {
+        if (property === "transaction") return () => Promise.reject(new Error("Postgres blip"));
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    await recordClosedPullRequest({ db: broken } as unknown as RalphDeps, lane, {
+      state: "closed",
+      headSha: "b".repeat(40),
+      mergeSha: null,
+    } as never);
+    expect((await getLane(db, lane.id))?.cleanup).toBeNull();
+    expect(await laneScore(lane.id)).toBe(NOW + RALPH_SAFETY_MS);
+
+    vi.setSystemTime(NOW + RALPH_SAFETY_MS);
+    expect(await cron()).toMatchObject({ dueLanes: { checked: 1, failed: 0 } });
+    // The lane never ran a job on an agent: its keep-branch cleanup has nothing to remove.
+    expect((await getLane(db, lane.id))?.cleanup).toMatchObject({
+      status: "done",
+      keepBranch: "closed",
+    });
+    expect(await laneScore(lane.id)).toBeNull();
+  });
+
+  it("replaces a cleanup job's safety check from its lane once its outcome is handled", async () => {
+    const lane = await newLane({ questions: [branchQuestion(NOW + 30 * MINUTE)] });
+    const job = {
+      id: randomUUID(),
+      type: "worktree.cleanup",
+      status: "completed",
+      ralphRunId: lane.runId,
+      dedupeKey: cleanupDedupeKey(lane.id),
+      payload: {},
+      result: {},
+    } as unknown as Job;
+    await scheduleJobOutcomeCheck(job);
+    await onRalphCleanupJobFinished(db, job, {
+      db,
+      organizationId,
+      adapterFor: () => {
+        throw new Error("no code host here");
+      },
+    } as unknown as RalphDeps);
+    expect(await laneScore(lane.id)).toBe(NOW + 30 * MINUTE);
+    // The run is completed: its safety check is gone too.
+    expect(await score(lane.runId)).toBeNull();
   });
 
   it("does the full pass once a day, then the runs still due", async () => {
@@ -297,18 +515,31 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile schedule
     expect(await cron()).toEqual({ skipped: true });
   });
 
-  it("rebuilds the schedule with every unfinished run due now", async () => {
+  it("rebuilds the schedule: unfinished runs and waiting or failed cleanups now, kept branches at their deadline", async () => {
     const runs = await Promise.all(
       (["pending", "running", "waiting"] as const).map((status) => newRun(status)),
     );
     const done = await Promise.all(
       (["completed", "failed", "stopped"] as const).map((status) => newRun(status)),
     );
+    const lanes = {
+      pending: await newLane({ status: "pending" }),
+      failed: await newLane({ status: "failed" }),
+      asked: await newLane({ questions: [branchQuestion(NOW + 30 * MINUTE)] }),
+      done: await newLane({}),
+      open: await newLane(null, { prClosed: false, prMerged: false }),
+    };
     await scheduleRun(done[0]!.id, NOW + MINUTE);
+    await scheduleLane(lanes.done.id, NOW + MINUTE);
     await getRedis().del(EPOCH_KEY);
     expect(await ensureHotStateEpoch(getRedis(), db)).toBe(true);
     for (const run of runs) expect(await score(run.id)).toBe(NOW);
     for (const run of done) expect(await score(run.id)).toBeNull();
+    expect(await laneScore(lanes.pending.id)).toBe(NOW);
+    expect(await laneScore(lanes.failed.id)).toBe(NOW);
+    expect(await laneScore(lanes.asked.id)).toBe(NOW + 30 * MINUTE);
+    expect(await laneScore(lanes.done.id)).toBeNull();
+    expect(await laneScore(lanes.open.id)).toBeNull();
   });
 
   it("does the full pass on every invocation without Redis", async () => {

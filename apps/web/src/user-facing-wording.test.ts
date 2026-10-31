@@ -74,6 +74,7 @@ const RALPH_ALLOWED: Allowed[] = [
       "apps/web/src/lib/chat/run-events.ts",
       "apps/web/src/lib/ralph/run.ts",
       "apps/web/src/lib/ralph/cleanup.ts",
+      "apps/web/src/lib/ralph/due.ts",
       "apps/web/src/lib/ralph/hidden-refs.ts",
       "apps/web/src/lib/ralph/chat-notify.ts",
     ],
