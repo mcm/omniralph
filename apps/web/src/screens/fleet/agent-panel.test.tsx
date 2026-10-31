@@ -204,10 +204,9 @@ function busyDetail(): AgentDetail {
       },
     ],
     security: {
-      lastTokenRefreshAt: ago(2 * MINUTE + 5_000),
       reuseAlerts30d: 0,
       lastReuseAt: null,
-      authFailures30d: 0,
+      lastRefreshRejection: null,
     },
   };
 }
@@ -467,9 +466,7 @@ describe("the agent panel's sections", () => {
 
   it("says when the token was last refreshed", async () => {
     await openAgent(AGENT_ALPHA, "coder-1");
-    const line = within(section("Security")!).getByText(
-      "Token refreshed 2 minutes ago · no reuse alerts",
-    );
+    const line = within(section("Security")!).getByText("No reuse alerts");
     expect(line.getAttribute("data-tone")).toBe("neutral");
   });
 
@@ -477,10 +474,9 @@ describe("the agent panel's sections", () => {
     details[AGENT_ALPHA] = {
       ...busyDetail(),
       security: {
-        lastTokenRefreshAt: ago(MINUTE),
         reuseAlerts30d: 1,
         lastReuseAt: "2026-10-20T12:00:00.000Z",
-        authFailures30d: 0,
+        lastRefreshRejection: null,
       },
     };
     await openAgent(AGENT_ALPHA, "coder-1");

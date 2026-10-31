@@ -364,7 +364,6 @@ function statusLineHead(agent: AgentStatusLineInput): { label: string; tone: Fle
 }
 
 export interface SecurityInput {
-  lastTokenRefreshAt: Date | string | null;
   reuseAlerts30d: number;
   lastReuseAt: Date | string | null;
   /** Whether the agent has ever heartbeated. */
@@ -373,13 +372,10 @@ export interface SecurityInput {
 
 /**
  * The agent detail's Security line: "Token reuse detected Oct 20" (fail) when a refresh token
- * was reused in the last 30 days, else "Token refreshed 2 minutes ago · no reuse alerts", or
- * "Never connected" before its first heartbeat.
+ * was reused in the last 30 days, else "No reuse alerts", or "Never connected" before its first
+ * heartbeat.
  */
-export function securityLine(
-  security: SecurityInput,
-  now: Date = new Date(),
-): { label: string; tone: FleetTone } {
+export function securityLine(security: SecurityInput): { label: string; tone: FleetTone } {
   if (security.reuseAlerts30d > 0) {
     return {
       label: security.lastReuseAt
@@ -389,13 +385,7 @@ export function securityLine(
     };
   }
   if (!security.connected) return { label: "Never connected", tone: "neutral" };
-  if (!security.lastTokenRefreshAt) {
-    return { label: "Token not refreshed yet · no reuse alerts", tone: "neutral" };
-  }
-  return {
-    label: `Token refreshed ${relativeAgo(security.lastTokenRefreshAt, now)} · no reuse alerts`,
-    tone: "neutral",
-  };
+  return { label: "No reuse alerts", tone: "neutral" };
 }
 
 /** An audit event as the audit log shows it: what happened, in a sentence. */

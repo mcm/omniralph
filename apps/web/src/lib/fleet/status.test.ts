@@ -433,34 +433,23 @@ describe("lastSeenText", () => {
 
 describe("securityLine", () => {
   const security = {
-    lastTokenRefreshAt: ago(2 * MINUTE),
     reuseAlerts30d: 0,
     lastReuseAt: null,
     connected: true,
   };
 
-  it("says when the token was refreshed, with no reuse alerts", () => {
-    expect(securityLine(security, NOW)).toEqual({
-      label: "Token refreshed 2 minutes ago · no reuse alerts",
-      tone: "neutral",
-    });
-    expect(securityLine({ ...security, lastTokenRefreshAt: null }, NOW)).toEqual({
-      label: "Token not refreshed yet · no reuse alerts",
-      tone: "neutral",
-    });
+  it("says there are no reuse alerts", () => {
+    expect(securityLine(security)).toEqual({ label: "No reuse alerts", tone: "neutral" });
   });
 
   it("reports token reuse in the fail tone", () => {
     expect(
-      securityLine(
-        { ...security, reuseAlerts30d: 2, lastReuseAt: "2026-10-20T12:00:00.000Z" },
-        NOW,
-      ),
+      securityLine({ ...security, reuseAlerts30d: 2, lastReuseAt: "2026-10-20T12:00:00.000Z" }),
     ).toEqual({ label: "Token reuse detected Oct 20", tone: "fail" });
   });
 
   it("says Never connected before the first heartbeat", () => {
-    expect(securityLine({ ...security, lastTokenRefreshAt: null, connected: false }, NOW)).toEqual({
+    expect(securityLine({ ...security, connected: false })).toEqual({
       label: "Never connected",
       tone: "neutral",
     });

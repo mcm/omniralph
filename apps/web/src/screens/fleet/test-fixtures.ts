@@ -101,10 +101,9 @@ export function agentDetail(agent: FleetAgentRow = agentRow()): AgentDetail {
     runningNow: [],
     recentWork: [],
     security: {
-      lastTokenRefreshAt: null,
       reuseAlerts30d: 0,
       lastReuseAt: null,
-      authFailures30d: 0,
+      lastRefreshRejection: null,
     },
     globalDesiredVersion: "2.0.3 (latest on npm)",
     local: {

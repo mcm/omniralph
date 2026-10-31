@@ -189,6 +189,7 @@ export {
   type AgentAttempt,
   type AgentAuditListEntry,
   type AgentSecuritySummary,
+  type AgentRefreshRejection,
   type EffectiveAgentConfig,
   type AgentInstallJob,
   type AgentPinSyncJob,

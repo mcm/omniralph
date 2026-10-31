@@ -407,8 +407,26 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
       { agentId: ids["b-idle"], event: "token_refresh", createdAt: ago(40 * DAY) },
       { agentId: ids["b-idle"], event: "token_refresh", createdAt: ago(2 * MINUTE) },
       { agentId: ids["b-idle"], event: "refresh_reuse", createdAt: ago(DAY) },
-      { agentId: ids["b-idle"], event: "auth_failed", createdAt: ago(2 * DAY) },
-      { agentId: ids["b-idle"], event: "auth_failed", createdAt: ago(40 * DAY) },
+      // The latest refresh rejection is the newest auth_failed row on /api/agent/token, at
+      // any age: not the newer failure on another path.
+      {
+        agentId: ids["b-idle"],
+        event: "auth_failed",
+        detail: { reason: "agent_revoked", path: "/api/agent/heartbeat" },
+        createdAt: ago(2 * DAY),
+      },
+      {
+        agentId: ids["b-idle"],
+        event: "auth_failed",
+        detail: { reason: "refresh_expired", path: "/api/agent/token" },
+        createdAt: ago(40 * DAY),
+      },
+      {
+        agentId: ids["b-idle"],
+        event: "auth_failed",
+        detail: { reason: "refresh_wrong_typ", path: "/api/agent/token" },
+        createdAt: ago(41 * DAY),
+      },
     ]);
   }, 180_000);
 
@@ -635,10 +653,9 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
       },
     ]);
     expect(idle.body.security).toEqual({
-      lastTokenRefreshAt: ago(2 * MINUTE).toISOString(),
       reuseAlerts30d: 1,
       lastReuseAt: ago(DAY).toISOString(),
-      authFailures30d: 1,
+      lastRefreshRejection: { at: ago(40 * DAY).toISOString(), reason: "refresh_expired" },
     });
     // Newest first (the two 40-day-old events tie).
     expect(idle.body.audit.map((a) => a.event).slice(0, 3)).toEqual([
@@ -646,7 +663,7 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
       "refresh_reuse",
       "auth_failed",
     ]);
-    expect(idle.body.audit).toHaveLength(5);
+    expect(idle.body.audit).toHaveLength(6);
     expect(idle.body.audit.every((entry) => entry.actor === null)).toBe(true);
 
     const never = await detail(ids["d-never"]!);
@@ -654,12 +671,7 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
       runningNow: [],
       recentWork: [],
       installs: [],
-      security: {
-        lastTokenRefreshAt: null,
-        reuseAlerts30d: 0,
-        lastReuseAt: null,
-        authFailures30d: 0,
-      },
+      security: { reuseAlerts30d: 0, lastReuseAt: null, lastRefreshRejection: null },
     });
   });
 

@@ -225,13 +225,15 @@ export type RecentAttempt = z.infer<typeof recentAttemptSchema>;
 
 /** The agent's token health (the Security line). */
 export const agentSecuritySchema = z.object({
-  lastTokenRefreshAt: isoDate.nullable(),
   /** `refresh_reuse` audit events in the last 30 days. */
   reuseAlerts30d: z.number(),
   /** The latest of them; null when none. */
   lastReuseAt: isoDate.nullable(),
-  /** `auth_failed` audit events in the last 30 days. */
-  authFailures30d: z.number(),
+  /**
+   * The latest rejection of the agent's refresh token (its newest `auth_failed` audit row on
+   * `/api/agent/token`): when, and its `refresh_*` reason (`refresh_expired`, ...); null when none.
+   */
+  lastRefreshRejection: z.object({ at: isoDate, reason: z.string() }).nullable(),
 });
 
 /** An install on the agent that is queued or running, or failed in the last 24 hours (Packages). */
