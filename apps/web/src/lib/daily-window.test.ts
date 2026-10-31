@@ -42,4 +42,12 @@ describe("daily window", () => {
       ms("2026-11-01T03:15:00Z") - ms("2026-10-31T18:00:00Z"),
     );
   });
+
+  it("adds whole days to the time left until the next window start", () => {
+    const now = at("2026-10-31T18:00:00Z");
+    expect(new Date(now.getTime() + msUntilNextDailyWindow(now, 6)).toISOString()).toBe(
+      "2026-11-07T03:15:00.000Z",
+    );
+    expect(msUntilNextDailyWindow(at("2026-10-31T03:14:59.999Z"), 29)).toBe(29 * 24 * 3600_000 + 1);
+  });
 });
