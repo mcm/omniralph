@@ -19,7 +19,7 @@ import {
 import type { TaskType } from "@omniralph/tasks";
 import { ApiError, type ControlPanelApi } from "./api.js";
 import type { AttemptHistory } from "./attempts/history.js";
-import { ReenrollmentRequiredError } from "./auth.js";
+import { ReenrollmentRequiredError, type TokenManager } from "./auth.js";
 import {
   RetryableJobError,
   type CapabilityRegistry,
@@ -74,8 +74,11 @@ export interface DaemonOptions {
   repos?: RepoCache;
   version: string;
   api: ControlPanelApi;
-  /** Asked to refresh when an authenticated call gets 401. */
-  tokens: { refresh(): Promise<string> };
+  /**
+   * Asked to refresh when an authenticated call gets 401. Its failing streak of
+   * refreshes (`refreshStatus()`) goes in every heartbeat as `tokenRefresh`, only while failing.
+   */
+  tokens: Pick<TokenManager, "refresh" | "refreshStatus">;
   /** Runs legacy jobs (no run spec), by job type. */
   registry: CapabilityRegistry;
   /** Runs jobs of task type `system`, by job type (default: `defaultSystemRpcs()`). */
@@ -513,6 +516,7 @@ export class AgentDaemon implements DrainableDaemon {
     const hostTools = await this.checkHostTools();
     const claude = await this.options.claude?.current();
     const local = this.localSettings();
+    const tokenRefresh = this.options.tokens.refreshStatus();
     try {
       const response = await this.options.api.heartbeat({
         version: this.options.version,
@@ -535,6 +539,7 @@ export class AgentDaemon implements DrainableDaemon {
         },
         ...this.options.updater?.report(),
         ...this.wakeReport(),
+        ...(tokenRefresh && { tokenRefresh }),
       });
       this.lastHeartbeatAt = new Date();
       this.unreachableSince = null;
