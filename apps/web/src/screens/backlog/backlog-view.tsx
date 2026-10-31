@@ -7,6 +7,7 @@ import {
   FilterMenu,
   IconButton,
   ListRow,
+  MetaBadge,
   RowList,
   rowListProps,
   SplitView,
@@ -17,12 +18,14 @@ import { IconPlus } from "@tabler/icons-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
 import { useCurrentUser, type SessionUser } from "@/components/current-user";
+import { TrackerMark } from "@/components/row-avatars";
 import { ShareLinkSheet } from "@/components/work-items/share-link-sheet";
 import type { Backlog } from "@/lib/api/backlog";
 import { useKeyShortcuts, useShortcut } from "@/lib/shortcuts";
 import type { WorkItemDetail, WorkItemRow } from "@/lib/api/work-items";
 import { joinNames } from "@/lib/work-items/join-names";
 import { BacklogRowBadges } from "./backlog-row-badges";
+import { BacklogListSkeleton } from "./backlog-skeletons";
 import { NewWorkItemSheet } from "./new-work-item-sheet";
 import { useBacklog } from "./queries";
 import {
@@ -243,28 +246,30 @@ export function BacklogView({
 
   const list = (
     <div className="or-backlog__pane">
-      <div className="or-backlog__header">
-        <h1 className="or-backlog__title">Backlog</h1>
-        <IconButton
-          icon={IconPlus}
-          label={NEW_WORK_ITEM}
-          onClick={newWorkItem}
-          aria-keyshortcuts={newWorkItemKeys}
-        />
-      </div>
-      <div className="or-backlog__filters" role="group" aria-label="Filters">
-        <FilterMenu
-          label="Source"
-          options={sourceOptions}
-          selected={filters.source ? [filters.source] : []}
-          onChange={([source]) => setFilters({ ...filters, source: source ?? null })}
-        />
-        <FilterMenu
-          label="Repo"
-          options={repoOptions}
-          selected={filters.repo ? [filters.repo] : []}
-          onChange={([repo]) => setFilters({ ...filters, repo: repo ?? null })}
-        />
+      <div className="or-backlog__top or-split__sticky">
+        <div className="or-backlog__header">
+          <h1 className="or-backlog__title">Backlog</h1>
+          <IconButton
+            icon={IconPlus}
+            label={NEW_WORK_ITEM}
+            onClick={newWorkItem}
+            aria-keyshortcuts={newWorkItemKeys}
+          />
+        </div>
+        <div className="or-backlog__filters" role="group" aria-label="Filters">
+          <FilterMenu
+            label="Source"
+            options={sourceOptions}
+            selected={filters.source ? [filters.source] : []}
+            onChange={([source]) => setFilters({ ...filters, source: source ?? null })}
+          />
+          <FilterMenu
+            label="Repo"
+            options={repoOptions}
+            selected={filters.repo ? [filters.repo] : []}
+            onChange={([repo]) => setFilters({ ...filters, repo: repo ?? null })}
+          />
+        </div>
       </div>
       <div className="or-backlog__list">
         {data && data.unavailable.length > 0 ? (
@@ -294,7 +299,9 @@ export function BacklogView({
               </Button>
             }
           />
-        ) : !data ? null : groups.length === 0 ? (
+        ) : !data ? (
+          <BacklogListSkeleton />
+        ) : groups.length === 0 ? (
           empty()
         ) : (
           // One list for Next and Previous item, across both groups.
@@ -309,14 +316,14 @@ export function BacklogView({
                 aria-labelledby={`backlog-${group.key}`}
               >
                 <h2 id={`backlog-${group.key}`} className="or-backlog__group-title">
-                  {group.label} · {group.rows.length}
+                  {group.label} <MetaBadge text={String(group.rows.length)} mono />
                 </h2>
                 <RowList aria-label={group.label}>
                   {group.rows.map((row) => (
                     <ListRow
                       key={row.id}
                       href={backlogItemHref(row.id, filters)}
-                      mark={<BrandMark brand={row.tracker} />}
+                      avatar={<TrackerMark tracker={row.tracker} />}
                       title={row.title}
                       meta={<BacklogRowBadges row={row} showOrganization={showOrganization} />}
                       selected={row.id === shownId}

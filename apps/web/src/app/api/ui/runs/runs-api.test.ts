@@ -500,7 +500,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       branch: (await getMainLane(db, epic))!.branch,
       pullRequest: { provider: "github", number: 7, url: "https://github.com/acme/api/pull/7" },
       agent,
-      progress: { done: 1, total: 2 },
+      progress: { done: 1, total: 2, current: null },
       tokens: { in: 1200, out: 300 },
       createdAt: "2026-10-01T00:00:00.000Z",
       startedAt: "2026-10-01T09:00:00.000Z",
@@ -820,6 +820,40 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
   }
 
   const at = (hour: number, minute = 0) => new Date(Date.UTC(2026, 9, 1, hour, minute));
+
+  it("lists an epic's stories in execution order: by first attempt, then the rest in order", async () => {
+    const run = await newRun();
+    const [first, second, third, fourth] = await upsertStories(db, run.id, [
+      { linearIssueId: "o-1", identifier: "ENG-51", title: "Planned first" },
+      { linearIssueId: "o-2", identifier: "ENG-52", title: "Planned second" },
+      { linearIssueId: "o-3", identifier: "ENG-53", title: "Planned third" },
+      { linearIssueId: "o-4", identifier: "ENG-54", title: "Planned fourth" },
+    ]);
+    // The third story ran first, then the first one (twice); the others haven't run.
+    await attempt(
+      { type: "ralph.story", ralphRunId: run.id, ralphStoryId: first!.id },
+      { status: "failed", createdAt: at(11) },
+    );
+    await attempt(
+      { type: "ralph.story", ralphRunId: run.id, ralphStoryId: third!.id },
+      { status: "completed", createdAt: at(9) },
+    );
+    await attempt(
+      { type: "ralph.story", ralphRunId: run.id, ralphStoryId: first!.id },
+      { status: "failed", createdAt: at(10) },
+    );
+    const view = await detailPage(run.id);
+    expect(view.steps.map((step) => step.id)).toEqual([
+      third!.id,
+      first!.id,
+      second!.id,
+      fourth!.id,
+    ]);
+    // Its row numbers the running story the same way: the first planned story ran second.
+    await updateStory(db, first!.id, { status: "running" });
+    const row = (await listPage()).runs.find((entry) => entry.id === run.id);
+    expect(row?.progress).toEqual({ done: 0, total: 4, current: 2 });
+  });
 
   it("shows a multi-story epic: stories with their attempts, lanes, PR and actions", async () => {
     const run = await newRun();

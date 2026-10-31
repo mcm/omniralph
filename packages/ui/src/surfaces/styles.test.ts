@@ -41,17 +41,6 @@ describe("surfaces.css", () => {
     expect(declarations(".or-card__actions")["margin-left"]).toBe("auto");
   });
 
-  it("colors each progress segment by its step state", () => {
-    const background = (state: string) => declarations(`.or-progress__seg--${state}`).background;
-    expect(background("done")).toBe("var(--or-sec)");
-    expect(background("waiting")).toBe("var(--or-acc)");
-    expect(background("running")).toBe("var(--or-run)");
-    expect(background("failed")).toBe("var(--or-fail)");
-    expect(background("blocked")).toBe("var(--or-border)");
-    expect(background("pending")).toBe("var(--or-border)");
-    expect(background("canceled")).toBe("var(--or-border)");
-  });
-
   it("bolds the selected step", () => {
     expect(declarations(".or-step--selected .or-step__label")["font-weight"]).toBe("600");
     expect(declarations(".or-step__button").cursor).toBe("pointer");

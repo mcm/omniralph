@@ -74,8 +74,11 @@ export class FakeLinearGateway implements LinearGateway {
   teams: Team[] = [{ id: "team-1", key: "ENG", name: "Engineering" }];
   /** What `getViewer` returns: the app user. */
   viewer: Viewer = { id: "app-user", name: "Omniralph" };
-  /** Every delegation, by `delegateIssue` or `createIssue` with `delegateId`, in order. */
-  delegations: Array<{ issueId: string; delegateId: string }> = [];
+  /**
+   * Every delegation, by `delegateIssue` or `createIssue` with `delegateId`, in order; a null
+   * `delegateId` removed the issue's delegate.
+   */
+  delegations: Array<{ issueId: string; delegateId: string | null }> = [];
   /** Workflow states of particular teams, in position order (others have `workflowStates`). */
   workflowStatesByTeam = new Map<string, WorkflowState[]>();
   /** Every `listIssues` filter, in order. */
@@ -197,7 +200,8 @@ export class FakeLinearGateway implements LinearGateway {
     const stateId = this.stateIdOf(issue);
     const teamName = issue.teamName ?? this.teams.find((t) => t.id === issue.teamId)?.name;
     const projectId = this.projectIdOf(issue);
-    const delegateId = issue.delegateId ?? this.delegateOf(issue.id);
+    const delegated = this.delegations.some((d) => d.issueId === issue.id);
+    const delegateId = delegated ? this.delegateOf(issue.id) : issue.delegateId;
     return {
       ...issue,
       ...(delegateId && { delegateId }),
@@ -209,7 +213,7 @@ export class FakeLinearGateway implements LinearGateway {
 
   /** Who the issue is delegated to: its latest delegation. */
   delegateOf(issueId: string): string | undefined {
-    return this.delegations.findLast((d) => d.issueId === issueId)?.delegateId;
+    return this.delegations.findLast((d) => d.issueId === issueId)?.delegateId ?? undefined;
   }
 
   private fail(method: string): void {
@@ -530,7 +534,7 @@ export class FakeLinearGateway implements LinearGateway {
     if (labels.length !== issue.labels.length) issue.updatedAt = this.tick();
     issue.labels = labels;
   }
-  async delegateIssue(issueId: string, delegateId: string) {
+  async delegateIssue(issueId: string, delegateId: string | null) {
     this.fail("delegateIssue");
     const issue = this.find(issueId);
     issue.updatedAt = this.tick();

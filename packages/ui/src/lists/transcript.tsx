@@ -1,4 +1,7 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useId, useState, type ReactNode } from "react";
+import { Button } from "../actions/button.js";
 
 /** One thing an agent did while it worked: a thought (its text) or an action (a tool call). */
 export interface TranscriptEvent {
@@ -40,10 +43,57 @@ export function transcriptOffset(at: Date | string, startedAt: Date | string): s
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
 }
 
+/** Lines of a long parameter or thought shown before "View more". */
+export const TRANSCRIPT_PREVIEW_LINES = 4;
+
+/**
+ * The first {@link TRANSCRIPT_PREVIEW_LINES} lines of a text longer than that, or null when it
+ * is short enough to show whole. One line past the preview shows whole too: a "View more"
+ * that reveals a single line saves nothing.
+ */
+export function transcriptPreview(text: string): string | null {
+  const lines = text.split("\n");
+  if (lines.length <= TRANSCRIPT_PREVIEW_LINES + 1) return null;
+  return lines.slice(0, TRANSCRIPT_PREVIEW_LINES).join("\n");
+}
+
+/**
+ * An action's parameter (mono) or a thought (prose). Past the preview it shows its first
+ * lines and "View more", which shows it whole, untruncated, until "View less".
+ */
+function TranscriptText({ text, kind }: { text: string; kind: "param" | "thought" }) {
+  const id = useId();
+  const [expanded, setExpanded] = useState(false);
+  const preview = transcriptPreview(text);
+  const Tag = kind === "param" ? "code" : "p";
+  const className = kind === "param" ? "or-transcript__param or-mono" : "or-transcript__thought";
+  if (preview === null) {
+    return <Tag className={`or-transcript__text ${className}`}>{text}</Tag>;
+  }
+  return (
+    <div className="or-transcript__text or-transcript__fold">
+      <Tag id={id} className={className}>
+        {expanded ? text : preview}
+      </Tag>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="or-transcript__toggle"
+        aria-expanded={expanded}
+        aria-controls={id}
+        onClick={() => setExpanded((open) => !open)}
+      >
+        {expanded ? "View less" : "View more"}
+      </Button>
+    </div>
+  );
+}
+
 /**
  * What an agent thought and ran, one row per event: its offset from `startedAt`, the action's
- * name or "thinking", and the action's parameter in mono or the thought in prose. An
- * `error` comes last, in coral, as an alert.
+ * name or "thinking", and the action's parameter in mono or the thought in prose (past
+ * {@link TRANSCRIPT_PREVIEW_LINES} lines, its first lines and "View more"). An `error` comes
+ * last, in coral, as an alert.
  */
 export function Transcript({
   events,
@@ -71,12 +121,10 @@ export function Transcript({
                 <span className="or-transcript__name">{action ? event.body : "thinking"}</span>
                 {action ? (
                   event.parameter ? (
-                    <code className="or-transcript__text or-transcript__param or-mono">
-                      {event.parameter}
-                    </code>
+                    <TranscriptText text={event.parameter} kind="param" />
                   ) : null
                 ) : (
-                  <p className="or-transcript__text or-transcript__thought">{event.body}</p>
+                  <TranscriptText text={event.body} kind="thought" />
                 )}
               </li>
             );

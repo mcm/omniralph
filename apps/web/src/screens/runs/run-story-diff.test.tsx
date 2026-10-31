@@ -237,9 +237,11 @@ describe("the step panel's Diff tab", () => {
     renderRun({ search: "step=1&tab=diff" });
     await waitFor(() => changedFiles());
     expect(panel().textContent).toContain("This diff is too large to show in full.");
-    expect(within(panel()).getByRole("link", { name: "Open on GitHub" }).getAttribute("href")).toBe(
-      `https://github.com/acme/portal/commit/${COMMIT}`,
-    );
+    expect(
+      within(panel())
+        .getByRole("link", { name: /^Open on GitHub/ })
+        .getAttribute("href"),
+    ).toBe(`https://github.com/acme/portal/commit/${COMMIT}`);
   });
 
   it("shows the server's reason when the diff fails, and retries", async () => {

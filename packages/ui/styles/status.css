@@ -1,6 +1,7 @@
 /*
- * Status (Design rule 15): lavender means needs you, mint means good, coral means
- * failed, everything else is neutral.
+ * Status (Design rule 15): lavender means live now (running; with a halo, needs you), mint
+ * means finished or good, amber means stopped, coral means failed, everything else (not
+ * started, idle, canceled) is neutral.
  */
 .or-dot {
   display: inline-block;
@@ -17,12 +18,15 @@
 }
 
 .or-dot--run {
-  background: var(--or-run);
-  box-shadow: 0 0 0 3px var(--or-run-glow);
+  background: var(--or-acc);
 }
 
 .or-dot--good {
-  background: var(--or-run);
+  background: var(--or-good);
+}
+
+.or-dot--warn {
+  background: var(--or-warn);
 }
 
 .or-dot--fail {
@@ -43,13 +47,17 @@
   white-space: nowrap;
 }
 
-.or-status--need {
+.or-status--need,
+.or-status--run {
   color: var(--or-acc);
 }
 
-.or-status--run,
 .or-status--good {
-  color: var(--or-run);
+  color: var(--or-good);
+}
+
+.or-status--warn {
+  color: var(--or-warn);
 }
 
 .or-status--fail {
@@ -72,13 +80,17 @@
   line-height: 1.3;
 }
 
-.or-statusline--need {
+.or-statusline--need,
+.or-statusline--run {
   color: var(--or-acc);
 }
 
-.or-statusline--run,
 .or-statusline--good {
-  color: var(--or-run);
+  color: var(--or-good);
+}
+
+.or-statusline--warn {
+  color: var(--or-warn);
 }
 
 .or-statusline--fail {

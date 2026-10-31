@@ -333,7 +333,7 @@ ${diff}
     await expectTornDown();
   });
 
-  it("tees the review session's events into the attempt's tail", async () => {
+  it("posts the review session's events as the job's activities and tees them into the tail", async () => {
     const prompts: string[] = [];
     const query = (params: { prompt: string }) =>
       (async function* () {
@@ -343,11 +343,34 @@ ${diff}
       })();
     const tail = new JobTail({ now: () => new Date("2026-10-28T10:00:00Z") });
     const ctx = { ...context(), sessions: sessionTee((event) => tail.event(event)) };
+    const posted: { url: string; auth: string | null; body: unknown }[] = [];
+    const recordingFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      posted.push({
+        url: String(input),
+        auth: new Headers(init?.headers).get("authorization"),
+        body: JSON.parse(String(init?.body)) as unknown,
+      });
+      return Response.json({ forwarded: false });
+    }) as typeof fetch;
+    const runSpec = spec();
 
-    const output = await runReviewTask(spec(), ctx, { query });
+    const output = await runReviewTask(runSpec, ctx, { query, fetch: recordingFetch });
 
     expect(prompts).toHaveLength(1);
     expect(output.findings).toEqual([]);
+    const url = `https://omniralph.example.com/api/agent/jobs/${runSpec.jobId}/activities`;
+    expect(posted).toEqual([
+      {
+        url,
+        auth: "Bearer session-token",
+        body: { type: "thought", body: "Looking at last().", ephemeral: false },
+      },
+      {
+        url,
+        auth: "Bearer session-token",
+        body: { type: "action", body: "Read", parameter: "", ephemeral: true },
+      },
+    ]);
     expect(tail.events()).toEqual([
       {
         type: "thought",

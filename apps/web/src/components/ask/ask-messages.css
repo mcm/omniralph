@@ -38,9 +38,7 @@
 }
 
 .or-ask-om__meta {
-  color: var(--or-ter);
   font-weight: 500;
-  white-space: pre;
 }
 
 .or-ask-om__body {

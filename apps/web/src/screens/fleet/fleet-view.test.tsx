@@ -139,6 +139,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** The Health value: its "n of m online" text, and its offline badge (null when none). */
+const health = (value: Element) => ({
+  text: value.querySelector(".or-fleet__health > span:not(.or-ref)")?.textContent ?? null,
+  offline: value.querySelector(".or-ref")?.textContent ?? null,
+});
+
 describe("Fleet", () => {
   it("shows the heading, Enroll, the summary and the agents of the active organization", async () => {
     renderFleet();
@@ -189,14 +195,14 @@ describe("the summary", () => {
 
   it("shows health with the offline part in the fail tone, then the busy count", () => {
     renderCells(summary());
-    expect(value("Health").textContent).toBe("6 of 7 online · 1 offline");
-    expect(within(cell("Health")).getByText("1 offline").className).toContain("or-fleet__fail");
+    expect(health(value("Health"))).toEqual({ text: "6 of 7 online", offline: "1 offline" });
+    expect(value("Health").querySelector(".or-ref")!.className).toContain("or-fleet__fail");
     expect(detail("Health")!.textContent).toBe("1 busy");
   });
 
   it("leaves out the offline part at zero", () => {
     renderCells(summary({ online: 7, offline: 0, busy: 0 }));
-    expect(value("Health").textContent).toBe("7 of 7 online");
+    expect(health(value("Health"))).toEqual({ text: "7 of 7 online", offline: null });
     expect(cell("Health").querySelector(".or-fleet__fail")).toBeNull();
     expect(detail("Health")!.textContent).toBe("0 busy");
   });
@@ -225,9 +231,9 @@ describe("the summary", () => {
 
   it("says how many agents are pinned on the agent, never as behind", () => {
     renderCells(summary({ versions: { onTarget: 5, behind: 0, pinned: 1, updateFailed: 0 } }));
-    expect(detail("Version policy")!.textContent).toBe(
-      "All agents on2.0.3 · 1 pinned on the agent",
-    );
+    expect(
+      [...detail("Version policy")!.querySelectorAll(".or-ref")].map((badge) => badge.textContent),
+    ).toEqual(["2.0.3", "1 pinned on the agent"]);
     cleanup();
     renderCells(summary({ versions: { onTarget: 0, behind: 0, pinned: 2, updateFailed: 0 } }));
     expect(detail("Version policy")!.textContent).toBe("2 pinned on the agent");
@@ -437,9 +443,10 @@ describe("live updates", () => {
     renderFleet({ live });
     await waitFor(() => expect(bodyRows()).toHaveLength(3));
     await connected(live, TEST_ORGANIZATION_ID);
-    expect(healthCell().querySelector(".or-stats__value")!.textContent).toBe(
-      "1 of 2 online · 1 offline",
-    );
+    expect(health(healthCell().querySelector(".or-stats__value")!)).toEqual({
+      text: "1 of 2 online",
+      offline: "1 offline",
+    });
 
     const next = fleet();
     next.agents[2] = {
@@ -454,9 +461,10 @@ describe("live updates", () => {
     await waitFor(() =>
       expect(within(bodyRows()[0]!).getAllByRole("cell")[1]!.textContent).toBe("Offline 1m"),
     );
-    expect(healthCell().querySelector(".or-stats__value")!.textContent).toBe(
-      "0 of 2 online · 2 offline",
-    );
+    expect(health(healthCell().querySelector(".or-stats__value")!)).toEqual({
+      text: "0 of 2 online",
+      offline: "2 offline",
+    });
     expect(listRequests()).toHaveLength(2);
   });
 

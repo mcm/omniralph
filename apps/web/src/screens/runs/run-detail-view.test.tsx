@@ -34,7 +34,7 @@ import {
   runSession,
   storyStep,
 } from "@/components/runs/test-fixtures";
-import type { RunDetail, RunList, RunRetryResult } from "@/lib/api/runs";
+import type { RunDetail, RunList, RunRetryResult, RunTriageSummary } from "@/lib/api/runs";
 import { RUN_NOT_FOUND, RunDetailView, type RunMenuExtension } from "./run-detail-view";
 import { RunsView } from "./runs-view";
 import { askRow, BETA_ID, FILTER_OPTIONS, NOW, reviewRow, runRow } from "./test-fixtures";
@@ -106,6 +106,32 @@ function runningEpic(overrides: Partial<RunDetail> = {}): RunDetail {
   };
 }
 
+/** A finished triage that left an open question. */
+function triageSummary(overrides: Partial<RunTriageSummary> = {}): RunTriageSummary {
+  return {
+    outcome: "needs_answers",
+    summary: "Wrote a PRD and planned **3 stories**.",
+    error: null,
+    change: "prd",
+    size: "L",
+    storyCount: 3,
+    openQuestions: ["Which currency do invoices use?", "Who can export?"],
+    originalIssue: { title: "billing export", description: "export invoices pls" },
+    ...overrides,
+  };
+}
+
+/** A triage run of TOOL-42. */
+function triageRun(status: RunDetail["status"]): RunDetail {
+  return runDetail(null, {
+    id: RUN_ID,
+    kind: "triage",
+    status,
+    title: "Triage TOOL-42",
+    progress: null,
+  });
+}
+
 /** A stopped epic that Retry run can resume. */
 function stoppedEpic(): RunDetail {
   const run = runningEpic({
@@ -127,6 +153,7 @@ function stoppedEpic(): RunDetail {
 }
 
 let detail: RunDetail;
+let triage: RunTriageSummary;
 let list: RunList;
 let seen: SeenRequest[];
 let stopAnswer: () => Response | Promise<Response>;
@@ -139,6 +166,8 @@ function serve() {
     "GET /api/ui/runs/filter-options": FILTER_OPTIONS,
     [`GET /api/ui/runs/${RUN_ID}`]: () => detailAnswer?.() ?? jsonResponse(detail),
     [`GET /api/ui/runs/${RUN_ID}/session`]: () => jsonResponse(runSession()),
+    [`GET /api/ui/runs/${RUN_ID}/triage`]: () => jsonResponse(triage),
+    [`GET /api/ui/work-items/linear-issue-tool-42`]: () => jsonResponse({ error: "gone" }, 404),
     [`POST /api/ui/runs/${RUN_ID}/stop`]: () => stopAnswer(),
     [`POST /api/ui/runs/${RUN_ID}/retry`]: () => retryAnswer(),
   });
@@ -214,6 +243,9 @@ const headerBadges = () =>
 const rows = () =>
   screen.queryAllByRole("listitem").filter((row) => row.classList.contains("or-row"));
 
+/** A menu item's label, without the screen-reader note an external link adds. */
+const menuLabel = (item: HTMLElement) => item.textContent!.replace(" (opens in a new tab)", "");
+
 async function openMenu() {
   await userEvent.click(within(toolbar()).getByRole("button", { name: "More actions" }));
   return screen.getByRole("menu");
@@ -226,6 +258,7 @@ beforeEach(() => {
   nav.router.replace.mockReset();
   ui.toast.mockReset();
   detail = runningEpic();
+  triage = triageSummary();
   list = { runs: [runRow(), reviewRow(), askRow()], nextCursor: null };
   stopAnswer = () => jsonResponse({ ok: true });
   retryAnswer = () => jsonResponse({ ...detail, warning: null });
@@ -252,8 +285,24 @@ describe("the run detail", () => {
   it("shows the header badges, toolbar, status line, title and no reason while running", async () => {
     renderRun();
     await loaded();
-    expect(headerBadges()).toEqual(["Epic", "Linear TOOL-42", "GitLab acme/portal"]);
-    expect(statusLine().textContent).toContain("Running · story 2 of 3");
+    // Identity, then the run's facts: branch, agent, tokens in and out, attempts.
+    expect(headerBadges()).toEqual([
+      "Epic",
+      "Linear TOOL-42",
+      "GitLab acme/portal",
+      "omniralph/tool-42",
+      "build-01",
+      "45.2M in",
+      "225k out",
+      "3 attempts",
+    ]);
+    // The work item badge opens its Backlog page (Open in Linear is in the ⋯ menu).
+    expect(
+      within(pane())
+        .getByRole("link", { name: /TOOL-42/ })
+        .getAttribute("href"),
+    ).toBe("/backlog/linear-issue-tool-42");
+    expect(statusLine().textContent).toContain("Running Story 2 of 3");
     expect(pane().querySelector(".or-run-detail__reason")).toBeNull();
     expect(within(pane()).queryByRole("form", { name: "Answer" })).toBeNull();
   });
@@ -349,16 +398,7 @@ describe("the run detail", () => {
     await expectAskRepo("acme/portal");
   });
 
-  it("lists the details in a collapsed section", async () => {
-    renderRun();
-    await loaded();
-    const section = pane().querySelector("details.or-run-details") as HTMLDetailsElement;
-    expect(section.open).toBe(false);
-    expect(section.querySelector("summary")!.textContent).toBe("Details");
-    expect(within(section).getByText("45.2M in · 225k out")).toBeTruthy();
-  });
-
-  it("keeps an epic's Session collapsed between Details and Activity", async () => {
+  it("keeps an epic's Session collapsed before Activity", async () => {
     renderRun();
     await loaded();
     const session = await waitFor(
@@ -366,11 +406,7 @@ describe("the run detail", () => {
     );
     expect(session.open).toBe(false);
     expect(session.querySelector("summary")!.textContent).toBe("Session");
-    const details = pane().querySelector("details.or-run-details")!;
     const activity = within(pane()).getByRole("list", { name: "Run activity" });
-    expect(
-      details.compareDocumentPosition(session) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
     expect(
       session.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -380,7 +416,6 @@ describe("the run detail", () => {
     detail = reviewRunDetail({ id: RUN_ID });
     renderRun();
     await loaded();
-    expect(pane().querySelector("details.or-run-details")).not.toBeNull();
     expect(pane().querySelector("details.or-run-session")).toBeNull();
     expect(seen.some((r) => r.path.endsWith("/session"))).toBe(false);
   });
@@ -407,6 +442,82 @@ describe("the run detail", () => {
   });
 });
 
+describe("a triage run", () => {
+  const card = () => within(pane()).getByRole("region", { name: "Triage" });
+
+  it("shows the outcome, what triage did, its open questions and the issue before triage", async () => {
+    detail = triageRun("completed");
+    renderRun();
+    await loaded();
+    const summary = await waitFor(card);
+    expect(within(summary).getByRole("img", { name: "Needs answers" })).toBeTruthy();
+    expect([...summary.querySelectorAll(".or-ref")].map((b) => b.textContent!.trim())).toEqual([
+      "New PRD",
+      "3 stories",
+    ]);
+    expect(within(summary).getByRole("img", { name: "Size L" })).toBeTruthy();
+    expect(within(summary).getByText("3 stories", { selector: "strong" })).toBeTruthy();
+    const questions = within(summary).getByRole("region", { name: "Open questions" });
+    expect(
+      within(questions)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Which currency do invoices use?", "Who can export?"]);
+    const original = summary.querySelector("details")!;
+    expect(original.open).toBe(false);
+    expect(original.querySelector("summary")!.textContent).toBe("Original issue");
+    expect(within(original).getByText("export invoices pls")).toBeTruthy();
+  });
+
+  it("says why it failed in place of the summary", async () => {
+    detail = triageRun("failed");
+    triage = triageSummary({
+      outcome: "failed",
+      summary: "the triage ended without a result (error)",
+      error: "the triage ended without a result (error)",
+      change: null,
+      size: null,
+      storyCount: 0,
+      openQuestions: [],
+    });
+    renderRun();
+    await loaded();
+    const summary = await waitFor(card);
+    expect(within(summary).getByRole("img", { name: "Triage failed" })).toBeTruthy();
+    expect(within(summary).getAllByText("the triage ended without a result (error)")).toHaveLength(
+      1,
+    );
+  });
+
+  it("shows neither a summary nor questions from an earlier job while it triages again", async () => {
+    detail = triageRun("running");
+    triage = triageSummary({ outcome: "triaging" });
+    renderRun();
+    await loaded();
+    const summary = await waitFor(card);
+    expect(within(summary).getByRole("img", { name: "Triaging" })).toBeTruthy();
+    expect(within(summary).queryByRole("region", { name: "Open questions" })).toBeNull();
+    expect(within(summary).queryByText(/Wrote a PRD/)).toBeNull();
+    // The issue before triage still shows.
+    expect(within(summary).getByText("Original issue")).toBeTruthy();
+  });
+
+  it("opens the PRD in a sheet from its View PRD button", async () => {
+    detail = triageRun("completed");
+    renderRun();
+    await loaded();
+    await userEvent.click(within(await waitFor(card)).getByRole("button", { name: "View PRD" }));
+    expect(await screen.findByRole("dialog", { name: "PRD of TOOL-42" })).toBeTruthy();
+  });
+
+  it("has no triage card for other run kinds", async () => {
+    renderRun();
+    await loaded();
+    expect(within(pane()).queryByRole("region", { name: "Triage" })).toBeNull();
+    expect(seen.some((r) => r.path.split("/").at(-1) === "triage")).toBe(false);
+  });
+});
+
 describe("the toolbar and menu", () => {
   it("opens the merge request and retries from icon buttons with tooltips", async () => {
     const stopped = stoppedEpic();
@@ -416,17 +527,18 @@ describe("the toolbar and menu", () => {
     };
     renderRun();
     await loaded();
-    const link = within(toolbar()).getByRole("link", { name: "Open merge request" });
+    const link = within(toolbar()).getByRole("link", { name: /^Open merge request/ });
     expect(link.getAttribute("href")).toBe("https://gitlab.com/mr/12");
     expect(within(toolbar()).getByRole("button", { name: "Retry run" })).toBeTruthy();
   });
 
-  it("offers Open in Linear, Copy branch and, after a divider, Stop run", async () => {
+  it("offers the work item, Open in Linear, Copy branch and, after a divider, Stop run", async () => {
     renderRun();
     await loaded();
     const menu = await openMenu();
     const items = within(menu).getAllByRole("menuitem");
-    expect(items.map((item) => item.textContent)).toEqual([
+    expect(items.map(menuLabel)).toEqual([
+      "Open work item",
       "Open in Linear",
       "Copy branch",
       "Stop run",
@@ -440,8 +552,9 @@ describe("the toolbar and menu", () => {
     await loaded();
     const menu = await openMenu();
     const items = within(menu).getAllByRole("menuitem");
-    expect(items.map((item) => item.textContent)).toEqual([
+    expect(items.map(menuLabel)).toEqual([
       "Open chat",
+      "Open work item",
       "Open in Linear",
       "Copy branch",
       "Stop run",
@@ -512,7 +625,7 @@ describe("Stop and Retry", () => {
         variant: "danger",
       }),
     );
-    await waitFor(() => expect(statusLine().textContent).toContain("Running · story 2 of 3"));
+    await waitFor(() => expect(statusLine().textContent).toContain("Running Story 2 of 3"));
   });
 
   it("retries the run: queued, the step running and the button disabled before the server answers", async () => {
@@ -543,7 +656,7 @@ describe("Stop and Retry", () => {
     };
     detail = resumed;
     held.resolve(jsonResponse(resumed));
-    await waitFor(() => expect(statusLine().textContent).toBe("Running · story 2 of 3"));
+    await waitFor(() => expect(statusLine().textContent).toBe("Running Story 2 of 3"));
     expect(within(toolbar()).queryByRole("button", { name: "Retry run" })).toBeNull();
   });
 

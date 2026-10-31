@@ -9,7 +9,8 @@ import {
   RepoBadge,
   SizeBadge,
 } from "@omniralph/ui";
-import { IconEye, IconPlayerPlay } from "@tabler/icons-react";
+import { IconEye, type TablerIcon } from "@tabler/icons-react";
+import { AGENT_ICON, BACKGROUND_WORK_ICON, RUN_KIND_ICONS } from "@/components/row-avatars";
 import type { InboxItem } from "@/lib/api/inbox";
 import { agentHref } from "@/lib/runs/hrefs";
 import { openFindingsCount, RUN_KIND_LABELS } from "./labels";
@@ -61,7 +62,9 @@ export function InboxHeaderBadges({
   return (
     <>
       {showOrganization ? <OrgBadge name={item.organization.name} /> : null}
-      {item.run ? <MetaBadge icon={IconPlayerPlay} text={RUN_KIND_LABELS[item.run.kind]} /> : null}
+      {item.run ? (
+        <MetaBadge icon={RUN_KIND_ICONS[item.run.kind]} text={RUN_KIND_LABELS[item.run.kind]} />
+      ) : null}
       {item.workItem ? (
         <IssueBadge
           tracker="linear"
@@ -83,4 +86,11 @@ export function InboxHeaderBadges({
       {item.size ? <SizeBadge size={item.size} /> : null}
     </>
   );
+}
+
+/** What an Inbox item is about, as its row's avatar icon: its run's kind, an agent or background work. */
+export function inboxItemIcon(item: Pick<InboxItem, "kind" | "run">): TablerIcon {
+  if (item.kind === "agent_offline" || item.kind === "agent_update_failed") return AGENT_ICON;
+  if (item.run) return RUN_KIND_ICONS[item.run.kind];
+  return BACKGROUND_WORK_ICON;
 }

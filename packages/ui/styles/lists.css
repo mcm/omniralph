@@ -221,6 +221,60 @@
   color: var(--or-sec);
 }
 
+/* A list pane row's avatar: what the row is, its state a dot on the corner (`RowAvatar`). */
+.or-row {
+  --or-row-bg: var(--or-page);
+}
+
+.or-row:hover {
+  --or-row-bg: var(--or-hover);
+}
+
+.or-row[aria-current="true"] {
+  --or-row-bg: var(--or-sel);
+}
+
+.or-row-avatar {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--or-line);
+  border-radius: 50%;
+  background: var(--or-raised);
+  color: var(--or-sec);
+}
+
+.or-row-avatar__icon {
+  display: inline-flex;
+}
+
+.or-row-avatar__icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.or-row-avatar__status {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: inline-flex;
+}
+
+/* A ring in the row's color sets the dot off the circle; a needs-you dot keeps its halo outside it. */
+.or-row-avatar__status .or-dot {
+  box-shadow: 0 0 0 2px var(--or-row-bg, var(--or-page));
+}
+
+.or-row-avatar__status .or-dot--need {
+  box-shadow:
+    0 0 0 2px var(--or-row-bg, var(--or-page)),
+    0 0 0 4px var(--or-halo);
+}
+
 .or-row__main {
   display: flex;
   flex: 1;
@@ -331,6 +385,27 @@
 .or-transcript__thought {
   color: var(--or-sec);
   white-space: pre-wrap;
+}
+
+/* A long parameter or thought: its first lines, then View more / View less under them */
+.or-transcript__fold {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.or-transcript__fold > code,
+.or-transcript__fold > p {
+  max-width: 100%;
+  margin: 0;
+}
+
+.or-transcript__toggle.or-btn--sm {
+  height: 24px;
+  margin-left: -6px;
+  padding: 0 6px;
+  font-size: 12px;
 }
 
 .or-transcript__error {

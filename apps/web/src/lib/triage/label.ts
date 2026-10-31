@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import {
   createTriageRun,
   getActiveTriageRun,
+  getRunByIssue,
   getTriageRunBySession,
   setTriageRunSession,
   setTriageRunStatus,
@@ -63,6 +64,35 @@ export async function removeTriageLabel(linear: LinearGateway, issueId: string):
   for (const name of issue.labels.filter(isTriageLabel)) {
     const label = await linear.findLabel(issue.teamId, name);
     if (label) await linear.removeIssueLabel(issue.id, label.id);
+  }
+}
+
+/**
+ * Once triage applied its PRD: when the issue is still delegated to Om (a delegation of a
+ * work item that needed refining is triaged in that delegation's session, so Om stays its
+ * delegate), the delegate is removed. Delegating the issue to Om again is then a change
+ * Linear acts on, which starts the run; while Om stays the delegate, Linear sends nothing
+ * for it. Left alone while a coding run of the issue is active (it is that run's
+ * delegation). Returns whether the delegate was removed; a failure is logged, not thrown.
+ */
+export async function releaseTriageDelegation(
+  deps: Pick<TriageDeps, "db" | "organizationId" | "linear">,
+  issueId: string,
+): Promise<boolean> {
+  try {
+    const [issue, viewer] = await Promise.all([
+      deps.linear.getIssue(issueId),
+      deps.linear.getViewer(),
+    ]);
+    if (!issue.delegateId || issue.delegateId !== viewer.id) return false;
+    if (await getRunByIssue(deps.db, deps.organizationId, issue.id, { activeOnly: true })) {
+      return false;
+    }
+    await deps.linear.delegateIssue(issue.id, null);
+    return true;
+  } catch (error) {
+    console.error(`Removing Om as the delegate of ${issueId} after triage failed`, error);
+    return false;
   }
 }
 

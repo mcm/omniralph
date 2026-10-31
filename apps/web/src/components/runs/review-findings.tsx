@@ -1,7 +1,7 @@
 "use client";
 
 import { FEEDBACK_REASON_LABELS } from "@omniralph/shared";
-import { activityDate, Button, TextLink } from "@omniralph/ui";
+import { activityDate, Button, MetaBadge, TextLink } from "@omniralph/ui";
 import { IconFileCode } from "@tabler/icons-react";
 import type {
   ReviewFindingFile,
@@ -14,7 +14,7 @@ import { NO_RUN_FILTERS, runInListHref } from "@/screens/runs/filters";
 import {
   FINDING_SEVERITY_LABELS,
   FINDING_STATUS_LABELS,
-  findingFacts,
+  confidenceText,
   lineRange,
   noFindingsText,
   openFindingsTotal,
@@ -46,14 +46,16 @@ function FindingFeedback({ feedback }: { feedback: ReviewFindingView["feedback"]
     <ul className="or-finding__feedback">
       {feedback.map((entry) => (
         <li key={entry.id}>
-          <span>
-            Dismissed by {entry.actor} · {FEEDBACK_REASON_LABELS[entry.reason]} ·{" "}
+          <span className="or-finding__event">
+            <span>Dismissed by {entry.actor}</span>
+            <MetaBadge text={FEEDBACK_REASON_LABELS[entry.reason]} />
             <Time at={entry.createdAt} />
           </span>
           {entry.note ? <q className="or-finding__note">{entry.note}</q> : null}
           {entry.restoredAt ? (
-            <span>
-              Restored by {entry.restoredBy} · <Time at={entry.restoredAt} />
+            <span className="or-finding__event">
+              <span>Restored by {entry.restoredBy}</span>
+              <Time at={entry.restoredAt} />
             </span>
           ) : null}
         </li>
@@ -73,8 +75,9 @@ function FindingItem({ finding }: { finding: ReviewFindingView }) {
       <h5 className="or-finding__title">{finding.title}</h5>
       <div className="or-finding__meta">
         <span className="or-finding__severity">{FINDING_SEVERITY_LABELS[finding.severity]}</span>
-        <span className="or-mono">{lineRange(finding)}</span>
-        <span>{findingFacts(finding)}</span>
+        <MetaBadge text={lineRange(finding)} mono />
+        <MetaBadge text={finding.category} />
+        <MetaBadge text={confidenceText(finding)} />
         {finding.status !== "open" ? (
           <span className="or-finding__status">{FINDING_STATUS_LABELS[finding.status]}</span>
         ) : null}

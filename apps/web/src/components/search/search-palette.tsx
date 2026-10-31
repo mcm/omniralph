@@ -1,17 +1,17 @@
 "use client";
 
-import {
-  BrandMark,
-  MetaBadge,
-  OrgBadge,
-  RepoBadge,
-  SearchPalette,
-  type SearchPaletteItem,
-} from "@omniralph/ui";
-import { IconSettings } from "@tabler/icons-react";
+import { MetaBadge, OrgBadge, SearchPalette, type SearchPaletteItem } from "@omniralph/ui";
+import { IconFolder, IconSettings } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { useCurrentUser } from "@/components/current-user";
+import {
+  AGENT_ICON,
+  AvatarIcon,
+  CodeHostMark,
+  RUN_KIND_ICONS,
+  TrackerMark,
+} from "@/components/row-avatars";
 import { api, ApiError } from "@/lib/api/client";
 import { mutationResultSchema } from "@/lib/api/schemas";
 import {
@@ -136,13 +136,13 @@ export function paletteItem(result: SearchResult, showOrganization: boolean): Pa
   const org = (name: string) => (showOrganization ? <OrgBadge name={name} /> : null);
   switch (result.kind) {
     case "run": {
-      const { label, tone } = runRowLabel(result.run);
+      const { statusLabel, tone } = runRowLabel(result.run);
       return {
         id,
         result,
         title: result.run.title,
-        kindLabel: label,
-        tone,
+        avatar: <AvatarIcon icon={RUN_KIND_ICONS[result.run.kind]} />,
+        status: { tone, label: statusLabel },
         meta: <RunRowBadges run={result.run} showOrganization={showOrganization} />,
       };
     }
@@ -151,20 +151,23 @@ export function paletteItem(result: SearchResult, showOrganization: boolean): Pa
         id,
         result,
         title: result.workItem.title,
-        mark: <BrandMark brand={result.workItem.tracker} />,
+        avatar: <TrackerMark tracker={result.workItem.tracker} />,
         meta: <BacklogRowBadges row={result.workItem} showOrganization={showOrganization} />,
       };
     case "repository": {
       const { repository } = result;
+      const { name, group } = splitRepositoryPath(repository.fullPath);
       return {
         id,
         result,
-        title: splitRepositoryPath(repository.fullPath).name,
-        mark: <BrandMark brand={repository.provider} />,
+        title: name,
+        // As the Repos list draws it: the code host's mark, the name as the title, its
+        // namespace a badge.
+        avatar: <CodeHostMark provider={repository.provider} />,
         meta: (
           <>
             {org(repository.organization.name)}
-            <RepoBadge host={repository.provider} name={repository.fullPath} />
+            {group ? <MetaBadge icon={IconFolder} text={group} /> : null}
           </>
         ),
       };
@@ -175,8 +178,8 @@ export function paletteItem(result: SearchResult, showOrganization: boolean): Pa
         id,
         result,
         title: agent.name,
-        kindLabel: `Agent · ${agent.status.label}`,
-        tone: agent.status.tone,
+        avatar: <AvatarIcon icon={AGENT_ICON} />,
+        status: { tone: agent.status.tone, label: `Agent, ${agent.status.label}` },
         // The name is the title: only the organization, under All organizations.
         meta: showOrganization ? <OrgBadge name={agent.organization.name} /> : undefined,
       };
@@ -187,7 +190,12 @@ export function paletteItem(result: SearchResult, showOrganization: boolean): Pa
         result,
         title: result.settings.title,
         mark: <IconSettings size={16} stroke={1.75} role="img" aria-label="Settings page" />,
-        meta: <MetaBadge text={`Settings · ${result.settings.section}`} />,
+        meta: (
+          <>
+            <MetaBadge text="Settings" />
+            <MetaBadge text={result.settings.section} />
+          </>
+        ),
       };
   }
 }

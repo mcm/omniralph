@@ -3,8 +3,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
 /**
- * Opens an element (a sheet, a dialog) over the run detail: what a run ⋯ menu item that
- * other screens add (the Backlog's "View PRD", Ask's "Open chat") shows when chosen.
+ * Opens an element (a sheet, a dialog) over the run detail: the View PRD sheet, or what a run
+ * ⋯ menu item that other screens add shows when chosen.
  */
 export interface RunDetailOverlay {
   /** Shows `element` in the run detail, in place of any open one. */

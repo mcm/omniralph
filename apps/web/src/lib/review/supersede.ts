@@ -1,5 +1,6 @@
 import "server-only";
 import {
+  reviewRunIdsOf,
   supersedeOpenFindings,
   type Database,
   type ReviewTarget,
@@ -27,6 +28,10 @@ export async function supersedeEarlierFindings(
   );
   const [first] = superseded;
   if (!first) return superseded;
+  const runOf = await reviewRunIdsOf(
+    db,
+    superseded.map((s) => s.by.reviewId),
+  );
   await closeFindingThreads(db, first.by.reviewId, {
     kind: "superseded",
     message: "A fresh review raised this issue again, so this thread is superseded.",
@@ -34,7 +39,7 @@ export async function supersedeEarlierFindings(
       .filter((s) => s.finding.scmCommentId !== null)
       .map(({ finding, by }) => ({
         finding,
-        link: `${reviewUrl(by.reviewId)}#finding-${by.id}`,
+        link: reviewUrl({ id: by.reviewId, reviewRunId: runOf[by.reviewId] ?? null }, by.id),
       })),
   });
   return superseded;

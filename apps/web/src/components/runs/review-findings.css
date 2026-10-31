@@ -150,6 +150,13 @@
   gap: 2px;
 }
 
+.or-finding__event {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
 .or-finding__note {
   color: var(--or-sec);
   white-space: pre-wrap;

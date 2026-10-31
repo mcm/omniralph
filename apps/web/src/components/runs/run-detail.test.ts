@@ -44,46 +44,74 @@ describe("runStatusLine", () => {
     skipped: "Skipped",
   };
   const TONES: Record<RunDetail["status"], string> = {
-    queued: "run",
+    queued: "neutral",
     running: "run",
     waiting: "need",
-    completed: "neutral",
+    completed: "good",
     failed: "fail",
-    stopped: "need",
+    stopped: "warn",
     skipped: "neutral",
   };
 
   it.each(RUN_STATUSES)("reads %s without a PR/MR, and with one on either code host", (status) => {
     const run = runDetail(null, { kind: "request", status, progress: null });
-    expect(runStatusLine(run)).toEqual({ text: WORDS[status], tone: TONES[status] });
-    expect(runStatusLine(withPullRequest(run, MR)).text).toBe(
-      `${WORDS[status]} · merge request open`,
-    );
-    expect(runStatusLine(withPullRequest(run, PR)).text).toBe(
-      `${WORDS[status]} · pull request open`,
-    );
+    expect(runStatusLine(run)).toEqual({
+      text: WORDS[status],
+      tone: TONES[status],
+      story: null,
+      change: null,
+    });
+    // The PR/MR's state is a badge after the state word, not part of its sentence.
+    expect(runStatusLine(withPullRequest(run, MR))).toMatchObject({
+      text: WORDS[status],
+      change: { provider: "gitlab", text: "merge request open" },
+    });
+    expect(runStatusLine(withPullRequest(run, PR)).change).toEqual({
+      provider: "github",
+      text: "pull request open",
+    });
   });
 
   it("says whether the PR/MR is merged or closed", () => {
     const run = runDetail(null, { status: "completed" });
-    expect(runStatusLine(withPullRequest(run, MR, { merged: true, closed: false })).text).toBe(
-      "Finished · merge request merged",
-    );
-    expect(runStatusLine(withPullRequest(run, PR, { merged: false, closed: true })).text).toBe(
-      "Finished · pull request closed",
-    );
+    expect(
+      runStatusLine(withPullRequest(run, MR, { merged: true, closed: false })).change?.text,
+    ).toBe("merge request merged");
+    expect(
+      runStatusLine(withPullRequest(run, PR, { merged: false, closed: true })).change?.text,
+    ).toBe("pull request closed");
     // A review of a PR Om didn't open: its state is unknown, so it reads as open.
-    expect(runStatusLine(withPullRequest(run, PR, { merged: null, closed: null })).text).toBe(
-      "Finished · pull request open",
-    );
+    expect(
+      runStatusLine(withPullRequest(run, PR, { merged: null, closed: null })).change?.text,
+    ).toBe("pull request open");
   });
 
   it("counts the story a running epic is on", () => {
     const run = runDetail(null, { status: "running", progress: { done: 1, total: 4 } });
-    expect(runStatusLine(run)).toEqual({ text: "Running · story 2 of 4", tone: "run" });
-    expect(runStatusLine(withPullRequest(run, MR)).text).toBe(
-      "Running · story 2 of 4 · merge request open",
-    );
+    expect(runStatusLine(run)).toMatchObject({ text: "Running", story: "Story 2 of 4" });
+    expect(runStatusLine(withPullRequest(run, MR))).toMatchObject({
+      story: "Story 2 of 4",
+      change: { text: "merge request open" },
+    });
+    // The last story stays the last; a finished epic has none.
+    expect(runStatusLine({ ...run, progress: { done: 4, total: 4 } }).story).toBe("Story 4 of 4");
+    expect(runStatusLine({ ...run, status: "completed" }).story).toBeNull();
+  });
+
+  it("numbers the running story by its place in the progress card, not the done count", () => {
+    // Two finished (one canceled) and the third running: story 3, though `done` counts 2 + 1.
+    const run = runDetail(null, {
+      status: "running",
+      progress: { done: 3, total: 5 },
+      steps: [
+        storyStep("1", "completed", 1),
+        storyStep("2", "canceled"),
+        storyStep("3", "running", 1),
+        storyStep("4", "completed", 1),
+        storyStep("5", "pending"),
+      ],
+    });
+    expect(runStatusLine(run).story).toBe("Story 3 of 5");
   });
 });
 
@@ -122,23 +150,25 @@ describe("defaultStep", () => {
     ).toBe("2");
   });
 
-  it("else the last step that has an attempt", () => {
+  it("else an epic's earliest story that has an attempt", () => {
+    // A finished epic opens on its first story, not its latest.
     expect(
       defaultStep(
         steps(
-          storyStep("1", "completed", 1),
+          storyStep("1", "pending"),
           storyStep("2", "completed", 1),
-          storyStep("3", "pending"),
+          storyStep("3", "completed", 1),
+          storyStep("4", "pending"),
         ),
       ),
     ).toBe("2");
     // A story with an attempt the epic hasn't counted yet.
     expect(
       defaultStep({
-        steps: [storyStep("1", "completed", 1), storyStep("2", "canceled")],
-        attempts: [attempt("a2", { step: "2" })],
+        steps: [storyStep("1", "canceled"), storyStep("2", "completed", 1)],
+        attempts: [attempt("a1", { step: "1" })],
       }),
-    ).toBe("2");
+    ).toBe("1");
     expect(defaultStep(steps(storyStep("1", "pending")))).toBeUndefined();
     expect(defaultStep(steps())).toBeUndefined();
   });
@@ -149,7 +179,31 @@ describe("defaultStep", () => {
       { kind: "attempt", id: "t1", label: "Worked", status: "completed", durationMs: 1 },
       { kind: "attempt", id: "t2", label: "Worked", status: "completed", durationMs: 1 },
     ];
+    // A request's turns open on the latest.
     expect(defaultStep(steps(...turns))).toBe("t2");
+  });
+
+  it("opens a finished review on its first pass with open findings, never the correlation", () => {
+    const finished = (findings: Record<string, number>) => {
+      const review = reviewRunDetail();
+      return {
+        ...review,
+        steps: review.steps.map((step) =>
+          step.kind === "review_pass"
+            ? {
+                ...step,
+                status: "completed",
+                openFindings: { ...step.openFindings, high: findings[step.id] ?? 0 },
+              }
+            : { ...step, status: "completed" },
+        ) as RunStep[],
+      };
+    };
+    expect(defaultStep(finished({ "pass-2": 3 }))).toBe("pass-2");
+    // No open findings: the first pass.
+    expect(defaultStep(finished({}))).toBe("pass-1");
+    // A running pass still wins.
+    expect(defaultStep(reviewRunDetail())).toBe("pass-2");
   });
 
   it("gives way to the URL's step when the run has it", () => {
@@ -227,12 +281,18 @@ describe("runMenuItems", () => {
       item === "separator" ? "—" : `${item.label}${item.destructive ? " (destructive)" : ""}`,
     );
 
-  it("offers Linear, Copy branch and Stop on a running epic", () => {
+  it("offers the work item, Linear, Copy branch and Stop on a running epic", () => {
     const run = { ...epicRunDetail(), branch: "omniralph/tool-42" };
     const h = handlers();
     const items = runMenuItems(run, h);
-    expect(labels(items)).toEqual(["Open in Linear", "Copy branch", "Stop run (destructive)"]);
-    const [linear, copy, stop] = items as Exclude<MenuItem, "separator">[];
+    expect(labels(items)).toEqual([
+      "Open work item",
+      "Open in Linear",
+      "Copy branch",
+      "Stop run (destructive)",
+    ]);
+    const [workItem, linear, copy, stop] = items as Exclude<MenuItem, "separator">[];
+    expect(workItem!.href).toBe("/backlog/linear-issue-tool-42");
     expect(linear!.href).toBe("https://linear.app/acme/issue/TOOL-42");
     copy!.onSelect!();
     expect(h.onCopyBranch).toHaveBeenCalled();
@@ -242,7 +302,11 @@ describe("runMenuItems", () => {
 
   it("can't stop a finished epic", () => {
     const run = withActions({ ...epicRunDetail({ status: "completed" }), branch: "b" }, {});
-    expect(labels(runMenuItems(run, handlers()))).toEqual(["Open in Linear", "Copy branch"]);
+    expect(labels(runMenuItems(run, handlers()))).toEqual([
+      "Open work item",
+      "Open in Linear",
+      "Copy branch",
+    ]);
   });
 
   it("offers Linear and Copy branch on a failed request", () => {
@@ -250,12 +314,16 @@ describe("runMenuItems", () => {
       { ...runDetail(null, { kind: "request", status: "failed" }), branch: "b" },
       {},
     );
-    expect(labels(runMenuItems(run, handlers()))).toEqual(["Open in Linear", "Copy branch"]);
+    expect(labels(runMenuItems(run, handlers()))).toEqual([
+      "Open work item",
+      "Open in Linear",
+      "Copy branch",
+    ]);
   });
 
-  it("offers Linear alone on a review and a triage run without a branch", () => {
+  it("offers the work item and Linear alone on a review and a triage run without a branch", () => {
     const review = withActions(reviewRunDetail(), {});
-    expect(labels(runMenuItems(review, handlers()))).toEqual(["Open in Linear"]);
+    expect(labels(runMenuItems(review, handlers()))).toEqual(["Open work item", "Open in Linear"]);
     const triage = withActions(
       runDetail(null, { kind: "triage", status: "completed", workItem: null }),
       {},
@@ -269,7 +337,12 @@ describe("runMenuItems", () => {
       ...handlers(),
       leading: [{ label: "View PRD", onSelect: () => {} }],
     });
-    expect(labels(items)).toEqual(["View PRD", "Open in Linear", "Stop run (destructive)"]);
+    expect(labels(items)).toEqual([
+      "View PRD",
+      "Open work item",
+      "Open in Linear",
+      "Stop run (destructive)",
+    ]);
   });
 
   it("opens the caller's own Ask chat the run came from, before the divider", () => {
@@ -297,7 +370,11 @@ describe("runMenuItems", () => {
         { ...runDetail(null, { kind: "request", status: "failed" }), branch: "b", chat },
         {},
       );
-      expect(labels(runMenuItems(request, handlers()))).toEqual(["Open in Linear", "Copy branch"]);
+      expect(labels(runMenuItems(request, handlers()))).toEqual([
+        "Open work item",
+        "Open in Linear",
+        "Copy branch",
+      ]);
     }
   });
 });

@@ -84,15 +84,12 @@
 }
 
 .or-progress__seg--done {
-  background: var(--or-sec);
+  background: var(--or-good);
 }
 
-.or-progress__seg--waiting {
-  background: var(--or-acc);
-}
-
+.or-progress__seg--waiting,
 .or-progress__seg--running {
-  background: var(--or-run);
+  background: var(--or-acc);
 }
 
 .or-progress__seg--failed {
@@ -176,6 +173,10 @@
   width: 8px;
   height: 8px;
   color: var(--or-ter);
+}
+
+.or-step__icon--done {
+  color: var(--or-good);
 }
 
 /* Selectable steps: the whole row is a button, the selected one bold */
@@ -723,6 +724,7 @@
 }
 
 .or-palette__option[aria-selected="true"] {
+  --or-row-bg: var(--or-sel);
   background: var(--or-sel);
 }
 

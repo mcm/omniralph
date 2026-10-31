@@ -16,6 +16,7 @@ import { getAppUrl } from "@/lib/app-url";
 import { getPlaybookTask, organizationPlaybooks, type PlaybookSource } from "@/lib/playbooks";
 import { connectionBotHandle } from "@/lib/mentions/commands";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
+import { runHref, runListHref } from "@/lib/runs/links";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import {
   capSummary,
@@ -30,9 +31,19 @@ import {
 /** Longest error text quoted in a failure note. */
 const MAX_FAILURE_NOTE_ERROR_CHARS = 1_000;
 
-/** The review's page in the control panel (Epic B). */
-export function reviewUrl(reviewId: string): string {
-  return `${getAppUrl()}/reviews/${reviewId}`;
+/**
+ * A review's page in the control panel: its review run on Runs, on the review's step and
+ * its Findings tab (`/runs/{reviewRunId}?step={reviewId}&tab=findings`), with
+ * `#finding-{id}` when `findingId` is given. A legacy review (no review run) isn't on Runs:
+ * its link is the Runs list of reviews.
+ */
+export function reviewUrl(
+  review: Pick<Review, "id" | "reviewRunId">,
+  findingId?: string | null,
+): string {
+  if (!review.reviewRunId) return `${getAppUrl()}${runListHref({ kind: ["review"] })}`;
+  const href = runHref(review.reviewRunId, { step: review.id, tab: "findings" });
+  return `${getAppUrl()}${href}${findingId ? `#finding-${findingId}` : ""}`;
 }
 
 /** Where and how to post for a review: the SCM adapter, repository, bot handle and sanitize context. */
@@ -180,7 +191,7 @@ export function reviewRunSummaryInput(
 /** The review run's page: that of its first review. */
 function reviewRunUrl(reviews: readonly Review[]): string | null {
   const [first] = reviews;
-  return first ? reviewUrl(first.id) : null;
+  return first ? reviewUrl(first) : null;
 }
 
 /**

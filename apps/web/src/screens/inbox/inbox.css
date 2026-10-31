@@ -27,6 +27,20 @@
   border-bottom: 1px solid var(--or-line);
 }
 
+/*
+ * On desktop the list pane scrolls on its own: the title (`or-split__sticky`) and, under it,
+ * the tabs stay put while the rows scroll. The title is 56px tall (20px + 12px padding and a
+ * 24px line), so the tabs stick just below it.
+ */
+@media (min-width: 1200px) {
+  .or-inbox__list .or-tabs {
+    position: sticky;
+    top: 56px;
+    z-index: 2;
+    background: var(--or-page);
+  }
+}
+
 .or-inbox__panel {
   min-height: 0;
   padding: 8px 0;

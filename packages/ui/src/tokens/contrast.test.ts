@@ -17,7 +17,7 @@ const THEMES = [
 ] as const;
 
 const SURFACES = ["page", "side", "surf", "raised", "sel", "hover"];
-const TEXT_PAIRS = ["text", "sec", "ter", "acc", "run", "fail"].flatMap((fg) =>
+const TEXT_PAIRS = ["text", "sec", "ter", "acc", "good", "warn", "run", "fail"].flatMap((fg) =>
   SURFACES.map((bg) => [fg, bg, 4.5] as const),
 );
 const PAIRS: (readonly [string, string, number])[] = [

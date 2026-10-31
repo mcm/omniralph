@@ -156,12 +156,12 @@ describe("QuestionForm", () => {
           );
         }
 
-        // The buttons: Send answer (primary) first; the Inbox adds Done and Snooze.
+        // The buttons: Send answer (primary) first; the Inbox adds View PRD, Dismiss and Snooze.
         const buttons = within(form())
           .getAllByRole("button")
           .filter((button) => button.getAttribute("role") !== "radio");
         expect(buttons.map((button) => button.textContent)).toEqual(
-          variant === "inbox" ? ["Send answer", "Done", "Snooze"] : ["Send answer"],
+          variant === "inbox" ? ["Send answer", "View PRD", "Dismiss", "Snooze"] : ["Send answer"],
         );
         expect(form().querySelectorAll(".or-btn--primary")).toHaveLength(1);
         expect(sendButton().classList.contains("or-btn--primary")).toBe(true);

@@ -185,6 +185,7 @@ const detailRequests = (id: string) =>
   );
 const badgeTexts = (row: HTMLElement) =>
   [...row.querySelectorAll(".or-ref__text")].map((badge) => badge.textContent!.trim());
+const rowTitle = (row: HTMLElement) => row.querySelector(".or-repo-row__title")!.textContent;
 const dot = (row: HTMLElement) => row.querySelector<HTMLElement>(".or-dot");
 
 async function loadedDetail() {
@@ -193,6 +194,8 @@ async function loadedDetail() {
 
 beforeEach(() => {
   nav.router.push.mockReset();
+  nav.router.replace.mockReset();
+  window.history.replaceState(null, "", window.location.pathname);
   ui.toast.mockReset();
   rows = [portalRow(), webRow()];
   details = {
@@ -217,25 +220,24 @@ describe("the rail", () => {
     expect(listRequests()[0]!.query.get("organization")).toBe(TEST_ORGANIZATION_ID);
   });
 
-  it("shows the repo name and group badges, without the organization in one organization", async () => {
+  it("shows the repo name as the title and its group as a badge, without the organization in one organization", async () => {
     renderRepos();
     await waitFor(() => expect(railRows()).toHaveLength(2));
     const [portal, web] = railRows();
-    expect(badgeTexts(portal!)).toEqual(["customer-portal", "managed-services"]);
-    expect(badgeTexts(web!)).toEqual(["web", "acme"]);
+    expect(rowTitle(portal!)).toBe("customer-portal");
+    expect(badgeTexts(portal!)).toEqual(["managed-services"]);
+    expect(rowTitle(web!)).toBe("web");
+    expect(badgeTexts(web!)).toEqual(["acme"]);
     expect(within(portal!).queryByRole("img", { name: "Organization" })).toBeNull();
   });
 
-  it("marks each repo badge with its code host", async () => {
+  it("leads each row with its code host's mark as the avatar", async () => {
     renderRepos();
     await waitFor(() => expect(railRows()).toHaveLength(2));
     const [portal, web] = railRows();
-    expect(
-      within(portal!.querySelector(".or-ref")!).getByRole("img", { name: "GitLab" }),
-    ).toBeTruthy();
-    expect(
-      within(web!.querySelector(".or-ref")!).getByRole("img", { name: "GitHub" }),
-    ).toBeTruthy();
+    const avatar = (row: HTMLElement) => row.querySelector<HTMLElement>(".or-row-avatar")!;
+    expect(within(avatar(portal!)).getByRole("img", { name: "GitLab" })).toBeTruthy();
+    expect(within(avatar(web!)).getByRole("img", { name: "GitHub" })).toBeTruthy();
   });
 
   it("leads each row with its organization under All organizations, and asks for all", async () => {
@@ -244,9 +246,9 @@ describe("the rail", () => {
     await waitFor(() => expect(railRows()).toHaveLength(2));
     expect(listRequests()[0]!.query.get("organization")).toBe("all");
     const [portal, beta] = railRows();
-    expect(badgeTexts(portal!)).toEqual(["Acme", "customer-portal", "managed-services"]);
+    expect(badgeTexts(portal!)).toEqual(["Acme", "managed-services"]);
     // No group: no group badge.
-    expect(badgeTexts(beta!)).toEqual(["Beta", "api"]);
+    expect(badgeTexts(beta!)).toEqual(["Beta"]);
   });
 
   it("names the Reviews, Coding and Ask icons on or off, dimming the ones that are off", async () => {
@@ -603,7 +605,7 @@ describe("Remove repo…", () => {
     // Gone before the server answers, and without a refetch.
     await waitFor(() => expect(railRows()).toHaveLength(1));
     expect(listRequests()).toHaveLength(before);
-    expect(badgeTexts(railRows()[0]!)).toEqual(["web", "acme"]);
+    expect(rowTitle(railRows()[0]!)).toBe("web");
     const removal = seen.find((request) => request.method === "DELETE")!;
     expect(removal.path).toBe(`/api/ui/repositories/${REPO_PORTAL}`);
     rows = [webRow()];
@@ -728,100 +730,70 @@ describe("problems", () => {
   );
 });
 
-describe("the section index", () => {
-  it("lists Reviews, Coding, Ask, Agents, Rules and Advanced, each with its section and heading", async () => {
-    renderRepos({ repositoryId: REPO_PORTAL });
-    const article = await loadedDetail();
-    const index = within(article).getByRole("navigation", { name: "Sections" });
-    const links = within(index).getAllByRole("link");
-    expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
-      ["Reviews", "#reviews"],
-      ["Coding", "#coding"],
-      ["Ask", "#ask"],
-      ["Agents", "#agents"],
-      ["Rules", "#rules"],
-      ["Advanced", "#advanced"],
-    ]);
-    expect(links[0]!.getAttribute("aria-current")).toBe("true");
-    for (const [id, label] of [
-      ["reviews", "Reviews"],
-      ["coding", "Coding"],
-      ["ask", "Ask"],
-      ["agents", "Agents"],
-      ["rules", "Rules"],
-      ["advanced", "Advanced"],
-    ]) {
-      const section = article.querySelector<HTMLElement>(`section#${id}`)!;
-      expect(within(section).getByRole("heading", { level: 2, name: label })).toBeTruthy();
-    }
-  });
+describe("the section tabs", () => {
+  const tablist = (article: HTMLElement) =>
+    within(article).getByRole("tablist", { name: "Sections" });
+  const selectedTab = (article: HTMLElement) =>
+    within(tablist(article))
+      .getAllByRole("tab")
+      .find((tab) => tab.getAttribute("aria-selected") === "true")?.textContent;
+  /** The one section on show, by its heading. */
+  const shownHeading = (article: HTMLElement) =>
+    within(within(article).getByRole("tabpanel")).getAllByRole("heading", { level: 2 })[0]!
+      .textContent;
 
-  it("marks the section in view as current, watching the detail pane", async () => {
-    type Entry = { target: Element; isIntersecting: boolean };
-    const observed: { callback: (entries: Entry[]) => void; root: Element | null }[] = [];
-    vi.stubGlobal(
-      "IntersectionObserver",
-      class {
-        observe = vi.fn();
-        disconnect = vi.fn();
-        constructor(callback: (entries: Entry[]) => void, options: { root: Element | null }) {
-          observed.push({ callback, root: options.root });
-        }
-      },
-    );
+  it("shows one section at a time, Reviews first", async () => {
     renderRepos({ repositoryId: REPO_PORTAL });
     const article = await loadedDetail();
-    const index = within(article).getByRole("navigation", { name: "Sections" });
-    await waitFor(() => expect(observed.length).toBeGreaterThan(0));
-    const { callback, root } = observed.at(-1)!;
-    expect(root).toBe(article.closest(".or-split__detail"));
-    act(() =>
-      callback([
-        { target: article.querySelector("section#reviews")!, isIntersecting: false },
-        { target: article.querySelector("section#rules")!, isIntersecting: true },
-      ]),
-    );
-    expect(within(index).getByRole("link", { name: "Rules" }).getAttribute("aria-current")).toBe(
-      "true",
-    );
     expect(
-      within(index).getByRole("link", { name: "Reviews" }).getAttribute("aria-current"),
-    ).toBeNull();
+      within(tablist(article))
+        .getAllByRole("tab")
+        .map((tab) => tab.textContent),
+    ).toEqual(["Reviews", "Coding", "Ask", "Agents", "Rules", "Advanced"]);
+    expect(selectedTab(article)).toBe("Reviews");
+    expect(within(article).getAllByRole("tabpanel")).toHaveLength(1);
+    expect(shownHeading(article)).toBe("Reviews");
+    expect(within(article).queryByRole("link", { name: "Coding" })).toBeNull();
   });
 
-  it("scrolls to ?section= on load", async () => {
-    const scrolled: string[] = [];
-    vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
-      scrolled.push(this.id);
-    });
-    renderRepos({ repositoryId: REPO_PORTAL, search: "section=coding" });
-    await loadedDetail();
-    await waitFor(() => expect(scrolled).toEqual(["coding"]));
-    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Coding" }));
+  it.each([
+    ["tab=coding", "Coding"],
+    ["section=rules", "Rules"],
+    ["tab=nowhere", "Reviews"],
+  ])("opens on the tab ?%s names", async (search, label) => {
+    renderRepos({ repositoryId: REPO_PORTAL, search });
+    const article = await loadedDetail();
+    expect(selectedTab(article)).toBe(label);
+    expect(shownHeading(article)).toBe(label);
   });
 
-  it("ignores an unknown ?section=", async () => {
-    const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
-    renderRepos({ repositoryId: REPO_PORTAL, search: "section=nowhere" });
-    await loadedDetail();
-    expect(scroll).not.toHaveBeenCalled();
-  });
-
-  it("writes ?section= in place when an entry is clicked", async () => {
-    const replace = vi.spyOn(window.history, "replaceState");
+  it("shows a clicked tab at once and writes it to the URL in place", async () => {
     renderRepos({ repositoryId: REPO_PORTAL });
     const article = await loadedDetail();
-    const index = within(article).getByRole("navigation", { name: "Sections" });
-    const scrolled: string[] = [];
-    vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
-      scrolled.push(this.id);
+    const user = userEvent.setup();
+    await user.click(within(tablist(article)).getByRole("tab", { name: "Agents" }));
+    expect(shownHeading(article)).toBe("Agents");
+    expect(nav.router.replace).toHaveBeenLastCalledWith(`/repos/${REPO_PORTAL}?tab=agents`, {
+      scroll: false,
     });
-    await userEvent.setup().click(within(index).getByRole("link", { name: "Agents" }));
-    expect(scrolled).toEqual(["agents"]);
-    expect(replace).toHaveBeenCalledTimes(1);
-    const url = new URL(String(replace.mock.calls[0]![2]), "http://localhost");
-    expect(url.searchParams.get("section")).toBe("agents");
+    await user.click(within(tablist(article)).getByRole("tab", { name: "Reviews" }));
+    expect(nav.router.replace).toHaveBeenLastCalledWith(`/repos/${REPO_PORTAL}`, {
+      scroll: false,
+    });
     expect(nav.router.push).not.toHaveBeenCalled();
+  });
+
+  it("opens the tab a followed #section anchor names", async () => {
+    renderRepos({ repositoryId: REPO_PORTAL });
+    const article = await loadedDetail();
+    act(() => {
+      window.location.hash = "#advanced";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    expect(selectedTab(article)).toBe("Advanced");
+    expect(nav.router.replace).toHaveBeenLastCalledWith(`/repos/${REPO_PORTAL}?tab=advanced`, {
+      scroll: false,
+    });
   });
 });
 

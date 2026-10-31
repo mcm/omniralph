@@ -15,20 +15,11 @@ import {
   type MenuItem,
   type ToolbarAction,
 } from "@omniralph/ui";
-import {
-  IconEye,
-  IconGitMerge,
-  IconGitPullRequest,
-  IconListSearch,
-  IconMessage2,
-  IconMessageQuestion,
-  IconRefresh,
-  IconStack2,
-  type TablerIcon,
-} from "@tabler/icons-react";
+import { IconFileText, IconGitMerge, IconGitPullRequest, IconRefresh } from "@tabler/icons-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useCurrentUser } from "@/components/current-user";
+import { RUN_KIND_ICONS } from "@/components/row-avatars";
 import { QuestionForm } from "@/components/runs/question-form";
 import { RunActivity } from "@/components/runs/run-activity";
 import { RunReason } from "@/components/runs/run-reason";
@@ -44,7 +35,7 @@ import {
   useRunDetailOverlay,
   type RunDetailOverlay,
 } from "@/components/runs/run-detail-overlay";
-import { RunDetails } from "@/components/runs/run-details";
+import { RunFactBadges, RunLanes } from "@/components/runs/run-details";
 import { RunProgress } from "@/components/runs/run-progress";
 import { RunSession } from "@/components/runs/run-session";
 import { reviewFindingsTabs } from "@/components/runs/review-findings";
@@ -52,6 +43,9 @@ import { StepPanel } from "@/components/runs/step-panel";
 import { storyDiffTabs } from "@/components/runs/story-diff";
 import { useRunRetry, useRunRetryPending, useRunStop } from "@/components/runs/use-run-actions";
 import { useRunDetail } from "@/components/runs/use-run-detail";
+import { TriageSummary } from "@/components/runs/triage-summary";
+import { VIEW_PRD, ViewPrdSheet } from "@/components/work-items/view-prd-sheet";
+import { workItemHref } from "@/components/work-items/work-item-links";
 import { ApiError } from "@/lib/api/client";
 import type { RunDetail } from "@/lib/api/runs";
 import { useKeyShortcuts, useShortcut } from "@/lib/shortcuts";
@@ -71,17 +65,9 @@ export const RUN_DETAIL_FAILED = "Couldn't load this run.";
 /** A queued run has a reason only while it waits for something (a missing host tool). */
 const REASON_STATUSES: readonly RunDetail["status"][] = ["waiting", "queued", "stopped", "failed"];
 
-const KIND_ICONS: Record<RunDetail["kind"], TablerIcon> = {
-  epic: IconStack2,
-  request: IconMessage2,
-  review: IconEye,
-  triage: IconListSearch,
-  ask: IconMessageQuestion,
-};
-
 /**
  * Items other screens add to the run ⋯ menu, first: each may open an element over the run
- * detail through `overlay` (the Backlog's "View PRD" sheet, Ask's "Open chat").
+ * detail through `overlay`.
  */
 export type RunMenuExtension = (run: RunDetail, overlay: RunDetailOverlay) => MenuItem[];
 
@@ -99,22 +85,27 @@ async function copyBranch(branch: string) {
   }
 }
 
-/** The header badges (Design rules 1 and 13): organization (All organizations), kind, work item, repo. */
+/**
+ * The header badges (Design rules 1 and 13): organization (All organizations), kind, work
+ * item (linking to its Backlog page; Open in Linear is in the ⋯ menu), repo, then the run's
+ * facts (`RunFactBadges`: branch, agent, tokens in and out, cost, attempts).
+ */
 function RunHeaderBadges({ run, showOrganization }: { run: RunDetail; showOrganization: boolean }) {
   return (
     <>
       {showOrganization ? <OrgBadge name={run.organization.name} /> : null}
-      <MetaBadge icon={KIND_ICONS[run.kind]} text={RUN_KIND_LABELS[run.kind]} />
+      <MetaBadge icon={RUN_KIND_ICONS[run.kind]} text={RUN_KIND_LABELS[run.kind]} />
       {run.workItem ? (
         <IssueBadge
           tracker="linear"
           id={run.workItem.identifier}
-          href={run.workItem.url ?? undefined}
+          href={run.workItem.id ? workItemHref(run.workItem.id) : (run.workItem.url ?? undefined)}
         />
       ) : null}
       {run.repository ? (
         <RepoBadge host={run.repository.provider} name={run.repository.fullPath} />
       ) : null}
+      <RunFactBadges run={run} />
     </>
   );
 }
@@ -177,10 +168,26 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
           onSelect: () => retryRun(item),
           keyShortcuts: retryKeys,
         };
-  const actions = toolbar.map(toolbarAction).slice(0, 2) as
+  // View PRD: the run's work item's PRD in a sheet over the detail (every run with a work
+  // item has it, so a running run has a call to action too).
+  const workItem = run.workItem?.id ? run.workItem : null;
+  const openPrd = workItem
+    ? () =>
+        overlay.open(
+          <ViewPrdSheet
+            runId={run.id}
+            workItem={{ id: workItem.id, identifier: workItem.identifier }}
+          />,
+        )
+    : undefined;
+  const viewPrd: ToolbarAction[] = openPrd
+    ? [{ label: VIEW_PRD, icon: IconFileText, onSelect: openPrd }]
+    : [];
+  const actions = [...toolbar.map(toolbarAction).slice(0, 2), ...viewPrd] as
     | []
     | [ToolbarAction]
-    | [ToolbarAction, ToolbarAction];
+    | [ToolbarAction, ToolbarAction]
+    | [ToolbarAction, ToolbarAction, ToolbarAction];
   const menu = runMenuItems(run, {
     onCopyBranch: () => void copyBranch(run.branch ?? ""),
     onStop: () => setConfirmStop(true),
@@ -199,12 +206,32 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
         </div>
         <Toolbar label="Run actions" actions={actions} menu={menu} />
       </header>
-      <StatusLine tone={status.tone} dotLabel={runRowLabel(run).label}>
+      <StatusLine
+        className="or-run-detail__status"
+        tone={status.tone}
+        dotLabel={runRowLabel(run).statusLabel}
+      >
         {status.text}
+        {status.story ? (
+          <>
+            {" "}
+            <MetaBadge text={status.story} />
+          </>
+        ) : null}
+        {status.change ? (
+          <>
+            {" "}
+            <MetaBadge
+              icon={status.change.provider === "gitlab" ? IconGitMerge : IconGitPullRequest}
+              text={status.change.text}
+            />
+          </>
+        ) : null}
       </StatusLine>
       <h2 id="or-run-detail-title" className="or-run-detail__title">
         {run.title}
       </h2>
+      <RunLanes run={run} />
       {reason ? (
         <RunReason className="or-run-detail__reason" reason={reason} link={run.reasonLink} />
       ) : null}
@@ -217,6 +244,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
         />
       ) : null}
       <div className="or-run-detail__cards">
+        {run.kind === "triage" ? <TriageSummary runId={run.id} onViewPrd={openPrd} /> : null}
         {run.steps.length > 0 ? (
           <RunProgress
             run={run}
@@ -255,7 +283,6 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
             }
           />
         ) : null}
-        <RunDetails run={run} />
         <RunSession run={run} />
         <RunActivity run={run} reason={reason} headingLevel={3} />
       </div>
@@ -274,10 +301,11 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
 
 /**
  * A run of any kind on the Runs screen (Design board Runs): its header badges and toolbar
- * (Design rule 5), its status line, title and, for a waiting, stopped or failed run, why;
+ * (Design rule 5, with View PRD for a run with a work item), its status line, title, a
+ * multi-repo epic's lanes and, for a waiting, stopped or failed run, why;
  * an open question's form; the progress card with the selected step (`?step=`, else
- * `defaultStep`) and its `StepPanel`; the collapsed Details; an epic's or request's collapsed Session; and the
- * run's Activity. A live query: the run's
+ * `defaultStep`) and its `StepPanel`; a triage run's summary; an epic's or request's collapsed
+ * Session; and the run's Activity. A live query: the run's
  * change events refetch it. `menuItems` adds entries to the ⋯ menu, which may open an
  * element over the detail (`useRunDetailOverlay`).
  */

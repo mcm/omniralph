@@ -446,7 +446,7 @@ describe("live updates", () => {
         .deliver("user:user-1:changes", changeEvent(ORG, { resource: "chat", ids: [CHAT_ID] })),
     );
     await screen.findByText("LoginForm.tsx", { selector: "code" });
-    expect(screen.getByText(/read-only · read 3 files · 41s/)).toBeTruthy();
+    expect(screen.getByText("read 3 files")).toBeTruthy();
     expect(screen.queryByText(/Om is reading/)).toBeNull();
   });
 

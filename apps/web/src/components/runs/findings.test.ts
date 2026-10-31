@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RunStep } from "@/lib/api/runs";
-import { findingFacts, lineRange, noFindingsText, openFindingsTotal } from "./findings";
+import { confidenceText, lineRange, noFindingsText, openFindingsTotal } from "./findings";
 
 type ReviewPassStep = Extract<RunStep, { kind: "review_pass" }>;
 
@@ -11,9 +11,9 @@ describe("lineRange", () => {
   });
 });
 
-describe("findingFacts", () => {
-  it("names the category and the rounded confidence", () => {
-    expect(findingFacts({ category: "bug", confidence: 0.826 })).toBe("bug · 83% confidence");
+describe("confidenceText", () => {
+  it("rounds the confidence to a percentage", () => {
+    expect(confidenceText({ confidence: 0.826 })).toBe("83% confidence");
   });
 });
 

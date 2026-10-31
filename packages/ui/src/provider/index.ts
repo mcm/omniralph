@@ -1,4 +1,10 @@
 export {
+  externalLinkProps,
+  isExternalHref,
+  NEW_TAB_HINT,
+  withExternalLinks,
+} from "./external-link.js";
+export {
   locationNavigate,
   PlainLink,
   UiProvider,

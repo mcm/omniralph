@@ -43,7 +43,7 @@ import { getDispatcher } from "@/lib/dispatch";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
 import type { WorkItemTracker } from "@/lib/work-items/tracker";
-import { removeTriageLabelQuietly } from "./label";
+import { releaseTriageDelegation, removeTriageLabelQuietly } from "./label";
 import { continueTriageAfterJob } from "./reply";
 import { lockedIssues, lockedMessage, type TriageDeps } from "./start";
 
@@ -475,6 +475,8 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
       linear.addComment(issue.id, openQuestionsComment(issue, triage.openQuestions)),
     );
   }
+  // Before the final response: a later delegation to Om must be a change Linear acts on.
+  await releaseTriageDelegation({ db, organizationId: run.organizationId, linear }, issue.id);
   await postActivity(linearConversation(linear, sessionId), {
     type: "response",
     body: appliedMessage(issue, triage, created, readiness, notes, reformat ? children.length : 0),

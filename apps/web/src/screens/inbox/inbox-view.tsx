@@ -5,6 +5,7 @@ import {
   EmptyState,
   ListRow,
   RowList,
+  SPLIT_STICKY_CLASS,
   SplitView,
   TabPanel,
   Tabs,
@@ -13,11 +14,12 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
 import { useCurrentUser } from "@/components/current-user";
+import { AvatarIcon } from "@/components/row-avatars";
 import { DecisionButtons } from "@/components/runs/decision-buttons";
 import { inboxDecisions } from "@/components/runs/decisions";
 import type { InboxCountsResponse, InboxItem, InboxTabParam } from "@/lib/api/inbox";
 import { useClock } from "../clock";
-import { InboxRowBadges } from "./inbox-badges";
+import { InboxRowBadges, inboxItemIcon } from "./inbox-badges";
 import { InboxDetail, InboxItemHandled } from "./inbox-detail";
 import { InboxEmptyState, inboxEmptyRunning } from "./inbox-empty-state";
 import { compactAge, inboxItemLabel } from "./labels";
@@ -122,7 +124,7 @@ export function InboxView({ upNext }: { upNext?: React.ReactNode } = {}) {
 
   const list = (
     <div className="or-inbox__list">
-      <h1 className="or-inbox__title">Inbox</h1>
+      <h1 className={`or-inbox__title ${SPLIT_STICKY_CLASS}`}>Inbox</h1>
       <Tabs
         tabs={tabs}
         value={tab}
@@ -156,15 +158,16 @@ export function InboxView({ upNext }: { upNext?: React.ReactNode } = {}) {
                     className="or-inbox-row"
                     href={inboxHref(tab, item.key)}
                     title={item.title}
-                    kindLabel={label.rowLabel}
-                    tone={label.tone}
+                    avatar={<AvatarIcon icon={inboxItemIcon(item)} />}
+                    status={{ tone: label.tone, label: label.statusLabel }}
+                    kindLabel={label.rowLabel ?? undefined}
                     time={<time dateTime={item.since}>{compactAge(item.since, now)}</time>}
                     meta={<InboxRowBadges item={item} showOrganization={showOrganization} />}
                     selected={isSelected}
                     actions={
                       isSelected && hasInlineDecisions(item) ? (
                         <div className="or-inbox-row__decisions">
-                          <DecisionButtons item={item} />
+                          <DecisionButtons item={item} steps="primary" />
                         </div>
                       ) : undefined
                     }

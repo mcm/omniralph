@@ -285,11 +285,14 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       organization: { id: state.orgId, name: "Acme", role: "member" },
       title: "Point DNS at the new host",
       run: { id: ids.waiting, kind: "epic", status: "waiting" },
+      // The story, by its Backlog URL ID; its epic's PRD is what View PRD opens.
       workItem: {
         tracker: "linear",
+        id: "linear-story-1",
         identifier: "ENG-11",
         url: "https://linear.app/acme/issue/ENG-11",
       },
+      epic: expect.objectContaining({ id: "linear-issue-waiting" }),
       repository: { id: repoId, provider: "github", fullPath: "acme/web" },
       pullRequest: null,
       agent: null,

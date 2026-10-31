@@ -1,5 +1,6 @@
 import type { MenuItem, StatusTone } from "@omniralph/ui";
-import { IconCopy, IconExternalLink, IconMessage, IconPlayerStop } from "@tabler/icons-react";
+import { IconCopy, IconMessage, IconPlayerStop } from "@tabler/icons-react";
+import { workItemLinkMenuItems } from "@/components/work-items/work-item-links";
 import type { RunDetail, RunRetryTarget, RunStep } from "@/lib/api/runs";
 import { stepState } from "./progress";
 import { RUN_STATUS_LABELS, RUN_STATUS_TONES } from "./run-status";
@@ -11,35 +12,64 @@ function changeRequestWord(provider: Provider): string {
   return provider === "gitlab" ? "merge request" : "pull request";
 }
 
-/** The run's state word: "Running · story 2 of 4" for a running epic with progress. */
-function stateWord(detail: Pick<RunDetail, "kind" | "status" | "progress">): string {
-  const { progress } = detail;
-  if (detail.kind === "epic" && detail.status === "running" && progress && progress.total > 0) {
-    return `Running · story ${Math.min(progress.done + 1, progress.total)} of ${progress.total}`;
-  }
-  return RUN_STATUS_LABELS[detail.status];
+/** "merge request open|merged|closed" (or "pull request …"), the state of a run's PR/MR. */
+function changeRequestState(
+  detail: Pick<RunDetail, "pullRequest" | "details">,
+): RunStatusLineView["change"] {
+  const pullRequest = detail.details.pullRequest ?? detail.pullRequest;
+  if (!pullRequest) return null;
+  const { merged = null, closed = null } = detail.details.pullRequest ?? {};
+  const state = merged ? "merged" : closed ? "closed" : "open";
+  return {
+    provider: pullRequest.provider,
+    text: `${changeRequestWord(pullRequest.provider)} ${state}`,
+  };
 }
 
 export interface RunStatusLineView {
+  /** The state word: "Running", "Finished". */
   text: string;
   tone: StatusTone;
+  /** A running epic's story: "Story 2 of 4"; null otherwise. */
+  story: string | null;
+  /** The run's PR/MR and its state, "merge request open"; null without one. */
+  change: { provider: Provider; text: string } | null;
 }
 
 /**
- * The run detail's status line: the state word, plus " · merge request open|merged|closed"
- * (or "pull request …") when the run has a PR/MR, e.g. "Finished · merge request open" or
- * "Running · story 2 of 4". Its tone is the status's (Design rule 15).
+ * A running epic's story number: the running story's position in execution order, so it
+ * matches the progress card's numbering; else (no story running yet) the one after the done
+ * ones (`progress.done` counts canceled stories too).
+ */
+function runningStoryNumber(
+  steps: RunDetail["steps"],
+  progress: NonNullable<RunDetail["progress"]>,
+): number {
+  const stories = steps.filter((step) => step.kind === "story");
+  const running = stories.findIndex((step) => stepState(step.status) === "running");
+  return running >= 0 ? running + 1 : Math.min(progress.done + 1, progress.total);
+}
+
+/**
+ * The run detail's status line: the state word, then badges for a running epic's story
+ * ("Story 2 of 4") and the run's PR/MR state ("merge request open|merged|closed", or "pull
+ * request …"), e.g. "Finished [merge request open]". Its tone is the status's (Design rule 15).
  */
 export function runStatusLine(
-  detail: Pick<RunDetail, "kind" | "status" | "progress" | "pullRequest" | "details">,
+  detail: Pick<RunDetail, "kind" | "status" | "progress" | "pullRequest" | "details"> &
+    Partial<Pick<RunDetail, "steps">>,
 ): RunStatusLineView {
-  const tone = RUN_STATUS_TONES[detail.status];
-  const word = stateWord(detail);
-  const pullRequest = detail.details.pullRequest ?? detail.pullRequest;
-  if (!pullRequest) return { text: word, tone };
-  const { merged = null, closed = null } = detail.details.pullRequest ?? {};
-  const state = merged ? "merged" : closed ? "closed" : "open";
-  return { text: `${word} · ${changeRequestWord(pullRequest.provider)} ${state}`, tone };
+  const { progress } = detail;
+  const story =
+    detail.kind === "epic" && detail.status === "running" && progress && progress.total > 0
+      ? `Story ${runningStoryNumber(detail.steps ?? [], progress)} of ${progress.total}`
+      : null;
+  return {
+    text: RUN_STATUS_LABELS[detail.status],
+    tone: RUN_STATUS_TONES[detail.status],
+    story,
+    change: changeRequestState(detail),
+  };
 }
 
 /** Whether the step has an attempt (a story counts its finished ones). */
@@ -49,10 +79,19 @@ function hasAttempt(step: RunStep, attempts: RunDetail["attempts"]): boolean {
   return attempts.some((attempt) => attempt.step === step.id);
 }
 
+/** The open findings of a review pass, all severities. */
+function openFindings(step: Extract<RunStep, { kind: "review_pass" }>): number {
+  const { critical, high, medium, low, info } = step.openFindings;
+  return critical + high + medium + low + info;
+}
+
 /**
  * The step a run opens on: the first running step, else the first failed one, else the
- * first waiting one, else the last step that has an attempt. None for a run without steps
- * (or whose steps haven't started).
+ * first waiting one. Then, for a review, its first pass with open findings, else its first
+ * pass (never the correlation step, which has no findings); for an epic, the first story that
+ * has an attempt (its stories are in execution order, so a finished epic opens on its
+ * earliest story); else the last step that has an attempt (a request's latest turn). None
+ * for a run without steps (or whose steps haven't started).
  */
 export function defaultStep(detail: Pick<RunDetail, "steps" | "attempts">): string | undefined {
   const { steps } = detail;
@@ -60,7 +99,10 @@ export function defaultStep(detail: Pick<RunDetail, "steps" | "attempts">): stri
     const step = steps.find((candidate) => stepState(candidate.status) === state);
     if (step) return step.id;
   }
-  return steps.findLast((step) => hasAttempt(step, detail.attempts))?.id;
+  const passes = steps.filter((step) => step.kind === "review_pass");
+  if (passes.length > 0) return (passes.find((pass) => openFindings(pass) > 0) ?? passes[0])!.id;
+  const started = steps.filter((step) => hasAttempt(step, detail.attempts));
+  return (started.find((step) => step.kind === "story") ?? started.at(-1))?.id;
 }
 
 /** The step the URL names, when the run has it; else `defaultStep`. */
@@ -119,7 +161,7 @@ export interface RunMenuHandlers {
   onCopyBranch: () => void;
   /** Asks to confirm, then stops the run. */
   onStop: () => void;
-  /** Items other screens add first (the Backlog's "View PRD"). */
+  /** Items other screens add first (e.g. Ask's). */
   leading?: readonly MenuItem[];
   /** "Stop run"'s shortcut key, in `aria-keyshortcuts` form. */
   stopKeyShortcuts?: string;
@@ -127,8 +169,8 @@ export interface RunMenuHandlers {
 
 /**
  * The run detail's ⋯ menu, the single source of its entries: the `leading` items other
- * screens add, Open chat (the caller's own Ask chat the run came from), Open in Linear (the
- * work item) and Copy branch, then, after a divider, "Stop run" (destructive; `onStop`
+ * screens add, Open chat (the caller's own Ask chat the run came from), Open work item (its
+ * Backlog page) and Open in Linear (`workItemLinkMenuItems`) and Copy branch, then, after a divider, "Stop run" (destructive; `onStop`
  * confirms) when the run can be stopped.
  */
 export function runMenuItems(
@@ -138,9 +180,7 @@ export function runMenuItems(
   const items: MenuItem[] = [...leading];
   if (detail.chat?.href)
     items.push({ label: "Open chat", icon: IconMessage, href: detail.chat.href });
-  if (detail.workItem?.url) {
-    items.push({ label: "Open in Linear", icon: IconExternalLink, href: detail.workItem.url });
-  }
+  items.push(...workItemLinkMenuItems(detail.workItem));
   if (detail.branch) items.push({ label: "Copy branch", icon: IconCopy, onSelect: onCopyBranch });
   if (detail.details.actions.stop) {
     items.push({

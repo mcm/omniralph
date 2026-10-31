@@ -161,9 +161,11 @@ describe("RequestDraftCard", () => {
       />,
     );
     expect(screen.getByText("Added to the backlog · Om is triaging it")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Linear TOOL-77" }).getAttribute("href")).toBe(
-      "https://linear.app/t/77",
-    );
+    expect(
+      screen
+        .getByRole("link", { name: "Linear TOOL-77 (opens in a new tab)" })
+        .getAttribute("href"),
+    ).toBe("https://linear.app/t/77");
   });
 
   it.each([
@@ -287,9 +289,11 @@ describe("LinearIssueDraftCard", () => {
     );
     expect(buttons()).toEqual([]);
     expect(screen.getByText("Created")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Linear TOOL-88" }).getAttribute("href")).toBe(
-      "https://linear.app/t/88",
-    );
+    expect(
+      screen
+        .getByRole("link", { name: "Linear TOOL-88 (opens in a new tab)" })
+        .getAttribute("href"),
+    ).toBe("https://linear.app/t/88");
   });
 
   it.each([

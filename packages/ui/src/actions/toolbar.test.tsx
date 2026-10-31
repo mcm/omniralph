@@ -41,10 +41,10 @@ describe("Toolbar", () => {
         ]}
       />,
     );
-    const link = screen.getByRole("link", { name: "Open run" });
+    const link = screen.getByRole("link", { name: "Open run (opens in a new tab)" });
     expect(link.getAttribute("href")).toBe("https://omniralph.example.com/runs/1");
     expect(link.getAttribute("target")).toBe("_blank");
-    expect(link.getAttribute("rel")).toBe("noreferrer");
+    expect(link.getAttribute("rel")).toBe("noreferrer noopener");
   });
 
   it("runs actions and opens the menu from More actions", async () => {

@@ -6,7 +6,7 @@ import {
   IconButton,
   MetaBadge,
   OrgBadge,
-  RepoBadge,
+  RowAvatar,
   rowLinkProps,
   rowListProps,
   SplitView,
@@ -25,6 +25,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { createElement, useEffect, useRef, useState, type ReactNode } from "react";
 import { useCurrentUser, type SessionUser } from "@/components/current-user";
+import { CodeHostMark } from "@/components/row-avatars";
 import type { RepositoryListItem } from "@/lib/api/repositories";
 import { REPOS_PATH, repoHref } from "@/lib/repositories/hrefs";
 import { AddRepoSheet, isGitHubNotice, type AddRepoStart } from "./add-repo-sheet";
@@ -108,8 +109,9 @@ function RowDot({ status }: { status: RepositoryListItem["status"] }) {
 }
 
 /**
- * One rail row, a single link to the repo: organization (All organizations), repo and group
- * badges, the Reviews, Coding and Ask icons and the status dot. It holds nothing interactive.
+ * One rail row, a single link to the repo: its code host's mark as the avatar (the status dot
+ * on its corner), the repo's name as the title, its organization (All organizations) and group
+ * as badges below, then the Reviews, Coding and Ask icons. It holds nothing interactive.
  */
 function RepoRow({
   repository,
@@ -133,17 +135,23 @@ function RepoRow({
           className: "or-repo-row__link",
           "aria-current": selected ? "page" : undefined,
         },
-        <span className="or-repo-row__badges">
-          {showOrganization ? <OrgBadge name={repository.organization.name} /> : null}
-          <RepoBadge host={repository.provider} name={repository.name} strong />
-          {repository.group ? <MetaBadge icon={IconFolder} text={repository.group} /> : null}
+        <RowAvatar statusSlot={<RowDot status={repository.status} />}>
+          <CodeHostMark provider={repository.provider} />
+        </RowAvatar>,
+        <span className="or-repo-row__main">
+          <span className="or-repo-row__title">{repository.name}</span>
+          {showOrganization || repository.group ? (
+            <span className="or-repo-row__badges">
+              {showOrganization ? <OrgBadge name={repository.organization.name} /> : null}
+              {repository.group ? <MetaBadge icon={IconFolder} text={repository.group} /> : null}
+            </span>
+          ) : null}
         </span>,
         <span className="or-repo-row__switches">
           <SwitchIcon icon={IconEye} name="Reviews" on={repository.reviewsEnabled} />
           <SwitchIcon icon={IconCode} name="Coding" on={repository.codingEnabled} />
           <SwitchIcon icon={IconMessageQuestion} name="Ask" on={repository.askEnabled} />
         </span>,
-        <RowDot status={repository.status} />,
       )}
     </li>
   );
@@ -203,7 +211,7 @@ export function ReposView({ repositoryId = null, renderDetail = defaultDetail }:
 
   const rail = (
     <div className="or-repos__rail">
-      <div className="or-repos__head">
+      <div className="or-repos__head or-split__sticky">
         <h1 className="or-repos__title">Repos</h1>
         {admin ? addRepo : null}
       </div>

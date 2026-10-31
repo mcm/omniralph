@@ -590,6 +590,40 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     expect((await linear.getIssue(again.id)).stateType).toBe("unstarted");
   });
 
+  describe("a delegation that triage ran in", () => {
+    it("removes Om as the delegate once the PRD is applied, before the final response", async () => {
+      const issue = addIssue();
+      await linear.delegateIssue(issue.id, linear.viewer.id);
+      const { job, sessionId } = await completedJob(issue, result());
+      const delegationsBefore = linear.delegations.length;
+      let delegateWhenResponding: string | undefined = "unset";
+      const createActivity = linear.createActivity.bind(linear);
+      linear.createActivity = async (...args) => {
+        if (args[1].type === "response") delegateWhenResponding = linear.delegateOf(issue.id);
+        return createActivity(...args);
+      };
+
+      expect(await applyTriageJob(deps(), job)).toMatchObject({ status: "applied" });
+
+      expect(linear.delegations.slice(delegationsBefore)).toEqual([
+        { issueId: issue.id, delegateId: null },
+      ]);
+      expect((await linear.getIssue(issue.id)).delegateId).toBeUndefined();
+      expect(delegateWhenResponding).toBeUndefined();
+      expect(responses(sessionId).at(-1)).toMatchObject({ type: "response" });
+    });
+
+    it("keeps another agent's delegation", async () => {
+      const issue = addIssue();
+      await linear.delegateIssue(issue.id, "other-agent");
+      const { job } = await completedJob(issue, result());
+
+      await applyTriageJob(deps(), job);
+
+      expect(linear.delegateOf(issue.id)).toBe("other-agent");
+    });
+  });
+
   it("changes nothing when work started while triage ran", async () => {
     const issue = addIssue();
     const { job, sessionId, run } = await completedJob(

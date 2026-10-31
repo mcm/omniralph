@@ -34,6 +34,10 @@
 }
 
 .or-change-history__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 4px;
   color: var(--or-text);
   font-size: 12px;

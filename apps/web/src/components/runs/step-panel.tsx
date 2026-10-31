@@ -11,7 +11,7 @@ import {
   type ToolbarAction,
 } from "@omniralph/ui";
 import { IconGitCommit, IconLink, IconRefresh } from "@tabler/icons-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { RunAttempt, RunDetail, RunStep } from "@/lib/api/runs";
 import { AttemptList } from "./attempt-list";
 import { AttemptOutcome } from "./attempt-outcome";
@@ -71,11 +71,15 @@ async function copy(text: string, done: string, failed: string) {
   }
 }
 
-/** The shown attempt's transcript: its first events, then "{n} more events · Show all". */
+/**
+ * The shown attempt's transcript: its first events, then "{n} more events · Show all", which
+ * loads the rest; "Show fewer" folds it back to the first events.
+ */
 function AttemptTranscriptView({ runId, attempt }: { runId: string; attempt: RunAttempt }) {
   const live = isLiveAttempt(attempt);
   const transcript = useAttemptTranscript(runId, attempt.id, live);
   const [expanded, setExpanded] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
   const { data, loadMore, loadingMore, loadMoreFailed } = transcript;
 
   // "Show all" loads the rest a page at a time.
@@ -109,29 +113,41 @@ function AttemptTranscriptView({ runId, attempt }: { runId: string; attempt: Run
   const hidden = total - shown.length;
   const error = isFailedAttempt(attempt) ? attempt.error : null;
 
+  const loading = expanded && nextCursor !== null;
+  // Folding a long transcript moves the toggle up: keep it in view.
+  const collapse = () => {
+    setExpanded(false);
+    requestAnimationFrame(() => toggleRef.current?.scrollIntoView?.({ block: "nearest" }));
+  };
   let more: ReactNode = null;
-  if (!expanded && hidden > 0) {
-    more = (
-      <p className="or-transcript__more">
-        <span>{moreEvents(hidden)} · </span>
-        <Button variant="ghost" size="sm" onClick={() => setExpanded(true)}>
-          Show all
-        </Button>
-      </p>
-    );
-  } else if (expanded && loadMoreFailed) {
+  if (expanded && loadMoreFailed) {
     more = (
       <p className="or-run-error" role="alert">
         Couldn&apos;t load the rest of the transcript.
         <Button variant="outline" size="sm" onClick={() => void loadMore()}>
           Retry
         </Button>
+        <Button variant="ghost" size="sm" onClick={collapse}>
+          Show fewer
+        </Button>
       </p>
     );
-  } else if (expanded && nextCursor) {
+  } else if (expanded ? events.length > TRANSCRIPT_PREVIEW_EVENTS || loading : hidden > 0) {
+    // One button flips between Show all and Show fewer, so focus stays on it.
     more = (
-      <p className="or-transcript__more" role="status">
-        Loading {moreEvents(Math.max(hidden, 1))}…
+      <p className="or-transcript__more">
+        <span role="status">
+          {loading ? `Loading ${moreEvents(Math.max(hidden, 1))}… · ` : null}
+          {expanded ? null : `${moreEvents(hidden)} · `}
+        </span>
+        <Button
+          ref={toggleRef}
+          variant="ghost"
+          size="sm"
+          onClick={expanded ? collapse : () => setExpanded(true)}
+        >
+          {expanded ? "Show fewer" : "Show all"}
+        </Button>
       </p>
     );
   }

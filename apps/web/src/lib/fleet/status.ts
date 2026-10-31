@@ -9,8 +9,8 @@ import type { AgentUpdateReport, SelfUpdateSupport, TokenRefreshReport } from "@
 import type { AuditEventName } from "@/lib/agents/display";
 
 /**
- * Fleet's tones (Design rule 15): mint for online (`good` idle, `run` with a glow while
- * running), coral for trouble, neutral otherwise.
+ * Fleet's tones (Design rule 15): mint (`good`) for online and idle, lavender (`run`) while
+ * a job is in flight, coral for trouble, neutral otherwise.
  */
 export type FleetTone = "good" | "run" | "fail" | "neutral";
 

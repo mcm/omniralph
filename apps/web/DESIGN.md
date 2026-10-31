@@ -23,8 +23,8 @@ component or styling library.
 The panel is where an unattended agent fleet is configured and audited after the fact. It
 should read like a well-kept instrument log: a calm dark page (or warm paper in light), dense
 rows of exact facts (states, IDs, SHAs, timestamps, counts) in Geist Mono, and settings that
-explain their consequences before they are saved. Lavender is rare on purpose: it means the
-screen needs you.
+explain their consequences before they are saved. Lavender is rare on purpose: it means
+something is live right now, and with its halo, that the screen needs you.
 
 **Key Characteristics:**
 
@@ -47,9 +47,22 @@ both themes (enforced in `packages/ui`).
 
 ### Named Rules
 
-**The Meaning of Color Rule.** Lavender/violet (`--or-acc`) means needs you, mint (`--or-run`)
-means good or running, coral (`--or-fail`) means failed, and everything else is neutral. Only
-the button that clears a needs-you item is `primary` (lavender, with the glow); Save, Add and
+**The Meaning of Color Rule.** One palette for every state, on every screen (Runs, Inbox,
+Backlog, Fleet, Repos):
+
+| Tone      | Color                                   | Means                                               |
+| --------- | --------------------------------------- | --------------------------------------------------- |
+| `need`    | lavender with its halo (`--or-acc`)     | waiting on you                                      |
+| `run`     | lavender (`--or-acc`)                   | running, current, in progress, an agent's job: live |
+| `good`    | mint (`--or-good`)                      | finished, done, succeeded, merged, healthy, online  |
+| `warn`    | amber (`--or-warn`)                     | stopped (no longer live, not finished)              |
+| `fail`    | coral (`--or-fail`)                     | failed, offline, exhausted                          |
+| `neutral` | gray (`--or-done` dot, `--or-sec` text) | not started, queued, pending, canceled, skipped     |
+
+Finished is never neutral: a done step shows a mint check, its progress segment is mint.
+An online agent is mint (Idle: available), lavender while it has a job in flight.
+Color is never the only signal: every dot is named and every status has a label. Only the
+button that clears a needs-you item is `primary` (lavender, with the glow); Save, Add and
 every other action are outline or solid neutral. A toast is never lavender.
 
 **The State Vocabulary Rule.** Every run, story, job, review and agent state maps to exactly one
@@ -95,10 +108,19 @@ Everything comes from `@omniralph/ui`. The rules its components make the default
 
 - **Every reference carries its icon**: repository = code-host mark + name, issue = tracker
   mark + ID, organization = building icon. Icon beats badge beats text.
+- **A list pane's rows lead with an avatar** (`RowAvatar`, a list with a detail pane beside it):
+  what the row is (a run kind's icon, an agent, background work, a chat; a work item's tracker
+  mark, else Omniralph's; a repo's code-host mark, else Git's), its state a dot on the corner,
+  which names the state for assistive tech ("Review, failed"). No kind line: only the Inbox
+  has a line above the title, and it says why the item is there ("Question", "Failed"). The
+  kind icons live in `src/components/row-avatars.tsx`, and a detail header's kind badge uses
+  the same one. A repo row is the one exception to the reference rule: its mark is the avatar,
+  its name the title, its namespace a badge below. Fleet's table has no avatars.
 - **Detail actions** go in a `Toolbar` of icon buttons with tooltips plus a ⋯ menu;
   destructive items go last, after a divider, and ask to confirm (`ConfirmDialog`).
 - **No keyboard-shortcut hints** anywhere, and no hint text about where things are.
-- **One progress view** (`ProgressCard`: bar, one-line count, steps). Provenance sits behind an
+- **One progress view** (`ProgressCard`: bar, one-line count, steps, in execution order:
+  an epic's earliest story first). Provenance sits behind an
   ⓘ button next to a card's title; details behind an ID-card button; lists of values are token
   inputs; ordered steps are numbered lists.
 - **Empty states** (`EmptyState`) say what will appear and how to make it happen.
@@ -122,7 +144,8 @@ Everything comes from `@omniralph/ui`. The rules its components make the default
 
 - **Do** take tokens and components from `@omniralph/ui`, and add a shared component there when
   two screens need it.
-- **Do** keep lavender for what needs the user, mint for good, coral for failed.
+- **Do** keep lavender for what is live or needs the user, mint for finished, amber for
+  stopped, coral for failed, gray for not started.
 - **Do** put IDs, SHAs, counts, durations and timestamps in mono.
 - **Do** describe each setting's effect next to it, and confirm changes that affect runs.
 
