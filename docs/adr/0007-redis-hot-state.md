@@ -54,7 +54,7 @@ query or write on the next request.
 | `job-due:{organizationId}`                                               | derived          | Sorted set of queued and running jobs, scored by when each can next be claimed (`available_at`, or `lease_expires_at`)                                    | After every commit that changes a job's status, availability or lease: dispatch and cancel (dispatcher), claim, lease renewal (heartbeat), retry and fail, result, skip, revoke (requeue), expire, review correlation. Rebuilt from the queued and running jobs                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `lib/dispatch/due.ts`            |
 | `job-queued-since`                                                       | derived          | Sorted set of every queued job, scored by `created_at`                                                                                                    | The same writers as `job-due:*` (`syncJobsDue`); rebuilt with it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `lib/dispatch/due.ts`            |
 | `ralph:due`                                                              | derived          | Sorted set of the ralph work the reconcile cron checks next, scored by when it's due (ms): `run:<id>` advances a run, `lane:<id>` checks a lane's cleanup | `advanceRun` (a safety check at +10 min before it starts, then its result: nothing for a job in flight, +1 h waiting, removed when finished or gone, +`RECONCILE_STALE_MS` pending or running without a job); run creation (`start.ts`, `chat-start.ts`, the safety check before the commit); a ralph job's result, failure or cancel (the safety check before the commit; a cleanup job's lane too, replaced once its outcome is applied: +1 h failed, the kept-branch question's deadline, else removed); recording a PR/MR closed or merged (the lane's safety check, replaced once its cleanup started). Rebuilt with every unfinished run due now, every failed or pending cleanup now and every kept-branch question at its deadline | `lib/ralph/due.ts`               |
-| `ralph:reconciled`                                                       | own              | The last full reconcile pass, 24h TTL                                                                                                                     | The reconcile cron                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `lib/ralph/due.ts`               |
+| `ralph:reconciled`                                                       | own              | The daily window of the last full pass                                                                                                                    | The reconcile cron                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `lib/ralph/due.ts`               |
 | `chat-run-events:pending`                                                | derived (signal) | A random value: there may be chat run events to relay                                                                                                     | Set after a run event is recorded (`recordChatRunEvent`); compare-and-deleted by the `chat-run-events` cron after a run that left no event pending. The rebuild sets it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `lib/chat/pending-run-events.ts` |
 | `agents-live-online`                                                     | derived          | Set of the agents announced online (`live_online`)                                                                                                        | The heartbeat adds its agent after `markAgentLiveOnline` (even when it was already online); the liveness sweep removes the agents it announces offline and those Postgres no longer has online. Rebuilt from `live_online`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `lib/agents/liveness.ts`         |
 | `harness-organization:{harnessId}`                                       | own              | The harness's organization, 7-day TTL                                                                                                                     | Readers on a miss. A harness never changes organization, so there's no writer                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `lib/agents/organization.ts`     |
@@ -84,8 +84,8 @@ What each idle request does with them:
 - **`expire-jobs` cron**: returns `{ expired: 0 }` while `job-queued-since` has no job older than
   24h.
 - **`ralph-reconcile` cron**: returns `{ skipped: true }` while no `ralph:due` entry is due and
-  `ralph:reconciled` is present, so it runs the full pass at least once a day: see _Reconcile
-  schedule_.
+  `ralph:reconciled` records the current daily window, so it runs the full pass once a day: see
+  _Reconcile schedule_ and _Daily window_.
 - **`chat-run-events` cron**: returns `{ skipped: true }` while `chat-run-events:pending` is
   absent, before initialising the chat bot (whose state is in Postgres).
 - **Announcing an agent online** (every heartbeat, `noteAgentOnline`): nothing in Postgres while
@@ -105,7 +105,7 @@ advance with a job in flight reset it to 10 minutes. Now `ralph:due` says when e
 and the cron touches Postgres only for runs that are.
 
 `ralph:due` is a sorted set: members `run:<id>` and `lane:<id>`, scored by due time (ms). The cron reads
-`ZRANGEBYSCORE ralph:due -inf <now>`; with nothing due and `ralph:reconciled` present it returns
+`ZRANGEBYSCORE ralph:due -inf <now>`; with nothing due and the full pass done for the current daily window it returns
 `{ skipped: true }`. Otherwise it advances only the due runs, organization by organization (with
 the organization's Linear gateway, or a disconnected one for the chat runs of an organization
 without Linear; a Linear run of an organization that disconnected Linear leaves the schedule, as
@@ -145,11 +145,28 @@ run). A throw leaves it, so a failed advance is retried about 10 minutes later; 
 fails afterwards costs one spurious check. This is the one exception to rule 1: an entry that only
 schedules a check can't do harm when the transaction rolls back.
 
-`ralph:reconciled` (24h TTL) still forces the full pass once a day: every organization's waiting
-and stale runs, cleanup and CI. The runs it advanced are rescheduled, so it then advances only
+The full pass still runs once a day, in the daily window (see _Daily window_): every
+organization's waiting and stale runs, cleanup and CI. The runs it advanced are rescheduled, so it then advances only
 the runs and lanes still due. A flushed Redis is rebuilt with every unfinished run due now, every
 failed or pending cleanup now and every kept-branch question at its deadline (`ralph-due`);
 with hot state off or Redis down, every invocation runs the full pass.
+
+### Daily window (TOOL-855)
+
+Every daily task that queries Postgres runs in one window starting at 03:15 UTC
+(`lib/daily-window.ts`: `dailyWindowStart(day)`, `currentDailyWindow(now)`,
+`nextDailyWindow(now)`), so an idle day wakes Neon once instead of at scattered times. The daily
+crons (`gitlab-maintenance`, `model-prices`, `prune-hidden-refs`, `prune-inbox-states`,
+`prune-webhook-deliveries`) are all scheduled at `15 3 * * *` and run in parallel: they touch
+separate tables.
+
+The reconcile cron's full pass used to run whenever `ralph:reconciled` (24h TTL) expired, a time
+of day that drifted with when the key was first set. Now `ralph:reconciled` records the start
+(ms) of the window its last full pass ran for, without a TTL: the first invocation at or after a
+window's start (03:20 UTC, on the `*/10` schedule) finds an older window and does the pass. If
+that invocation didn't run, the next one does. Between windows the cron runs only the due
+`ralph:due` entries. A lost key (a flush) makes the next invocation do the pass, which records the
+current window, so the next pass is still at the next window.
 
 ### Heartbeat cache bound and drift check (TOOL-276)
 

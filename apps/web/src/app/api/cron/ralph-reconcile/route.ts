@@ -21,8 +21,9 @@ import { liveRoute } from "@/lib/live/request";
  * from its result. A lane with an open PR/MR is never due: webhooks follow it.
  * With none due, it returns `{ skipped: true }` without querying Postgres.
  *
- * Once a day (`ralph:reconciled`), and on every invocation without Redis, it does
- * the full pass instead: for every organization with a Linear workspace connected
+ * At its first invocation in the daily window (03:15 UTC, `lib/daily-window`; the next one
+ * if that one didn't run), recorded in `ralph:reconciled`, and on every invocation without
+ * Redis, it does the full pass instead: for every organization with a Linear workspace connected
  * (with that workspace's gateway), and for the chat runs of organizations without
  * one, advances waiting and stale runs, cleans up merged ralph PRs/MRs (the
  * fallback for merge webhooks; it also deletes kept branches nobody answered
@@ -33,7 +34,8 @@ async function get(req: Request): Promise<Response> {
   if (!isCronRequest(req)) return cronUnauthorized();
   const db = getDb();
   const deps = { db, dispatcher: getDispatcher(), adapterFor: scmAdapterFor };
-  const check = await checkRalphReconcile(db);
+  const now = new Date();
+  const check = await checkRalphReconcile(db, now);
   if (!check.fullPass && check.dueRunIds.length === 0 && check.dueLaneIds.length === 0) {
     return Response.json({ skipped: true });
   }
@@ -42,7 +44,7 @@ async function get(req: Request): Promise<Response> {
   let totals;
   if (check.fullPass) {
     totals = await reconcileAllOrganizations(deps);
-    await finishRalphFullPass();
+    await finishRalphFullPass(now);
     // The runs and lanes the full pass checked were rescheduled: only the others are still due.
     ({ dueRunIds, dueLaneIds } = await checkRalphReconcile(db));
   }

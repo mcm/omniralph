@@ -16,6 +16,7 @@ import {
   writeHotState,
 } from "@/lib/hot-state";
 import "@/lib/hot-state/rebuilders";
+import { currentDailyWindow } from "@/lib/daily-window";
 import type { AdvanceResult } from "./run";
 
 /**
@@ -42,8 +43,9 @@ import type { AdvanceResult } from "./run";
  *   check before the write, and replaces it once the cleanup started.
  * - The cron reschedules each lane it checked (`scheduleCheckedLane`).
  *
- * `ralph:reconciled` (24h TTL) records the last full pass: once it's gone, the cron runs
- * every organization's runs, cleanup and CI. Lost (a flush): the `ralph-due` rebuilder
+ * `ralph:reconciled` records the daily window (`lib/daily-window`) of the last full pass: the
+ * cron's first invocation at or after a window's start (03:15 UTC) runs every organization's
+ * runs, cleanup and CI, once per window; if that invocation didn't run, the next one does. Lost (a flush): the `ralph-due` rebuilder
  * schedules every unfinished run now, every lane with a kept-branch question at its
  * deadline, and every failed or pending cleanup now.
  */
@@ -54,8 +56,6 @@ const RUN_PREFIX = "run:";
 const LANE_PREFIX = "lane:";
 /** The dedupe key prefix of a lane's cleanup jobs (`cleanupDedupeKey`), followed by its ID. */
 export const CLEANUP_DEDUPE_PREFIX = "ralph-cleanup:";
-/** Longest the cron goes without a full pass. */
-const FULL_PASS_INTERVAL_SECONDS = 24 * 60 * 60;
 /** When a write that leaves follow-up work is checked again if nothing replaces its entry. */
 export const RALPH_SAFETY_MS = 10 * 60_000;
 /** How often a run waiting on a blocker or a person is re-checked, for a missed webhook. */
@@ -214,9 +214,9 @@ function membersWith(members: readonly string[], prefix: string): string[] {
 }
 
 /**
- * What the reconcile cron has to do: the runs and lanes due, and whether the full pass is due (the
- * last one is a day old, or Redis can't tell: hot state off, a rebuild elsewhere, Redis
- * down). Queries Postgres only when Redis can't tell.
+ * What the reconcile cron has to do: the runs and lanes due, and whether the full pass is due (none
+ * ran for the current daily window yet, or Redis can't tell: hot state off, a rebuild elsewhere,
+ * Redis down). Queries Postgres only when Redis can't tell.
  */
 export async function checkRalphReconcile(
   db: Database,
@@ -227,10 +227,10 @@ export async function checkRalphReconcile(
     async (redis) => {
       const [members, reconciled] = await Promise.all([
         redis.zrangebyscore(DUE_KEY, "-inf", now.getTime()),
-        redis.exists(RECONCILED_KEY),
+        redis.get(RECONCILED_KEY),
       ]);
       return {
-        fullPass: reconciled === 0,
+        fullPass: reconciled === null || Number(reconciled) < currentDailyWindow(now),
         dueRunIds: membersWith(members, RUN_PREFIX),
         dueLaneIds: membersWith(members, LANE_PREFIX),
       };
@@ -239,11 +239,14 @@ export async function checkRalphReconcile(
   );
 }
 
-/** Records a full pass: the next one is due in a day. */
+/**
+ * Records the full pass for the daily window it started in (`now`, as given to
+ * `checkRalphReconcile`): the next one is due at the next window's start.
+ */
 export async function finishRalphFullPass(now = new Date()): Promise<void> {
   if (!hotStateEnabled()) return;
   try {
-    await getRedis().set(RECONCILED_KEY, String(now.getTime()), "EX", FULL_PASS_INTERVAL_SECONDS);
+    await getRedis().set(RECONCILED_KEY, String(currentDailyWindow(now)));
   } catch (error) {
     console.warn("hot-state: recording the ralph full pass failed", error);
   }
