@@ -5,7 +5,7 @@ import {
   WorktreeExecResult,
   type JobPayload,
 } from "@omniralph/shared";
-import { withoutJobEnv } from "../job-env.js";
+import { commandEnv } from "../lifecycle/commands.js";
 import type { BranchWorktree } from "../workspace/repoCache.js";
 import { CommandError, runShell } from "../workspace/git.js";
 import type { SystemRpc, SystemRpcContext } from "./index.js";
@@ -41,7 +41,8 @@ async function headMatches(
  * Nothing runs when the worktree HEAD or the commands changed since the
  * approval (`stale`); otherwise the commands run one at a time with `bash -lc`
  * and stop at the first failure. The commands get the agent's environment
- * without the job token, so no git credential. `onCommand` is told about each
+ * without the job token or any inherited `GIT_CONFIG_*` override, so no git
+ * credential or credential helper. `onCommand` is told about each
  * command before it runs.
  */
 export async function runApprovedCommands(
@@ -56,7 +57,7 @@ export async function runApprovedCommands(
     story: payload.story.identifier,
   });
   const env = ctx.env();
-  const plainEnv = withoutJobEnv(env);
+  const plainEnv = commandEnv(env);
 
   return ctx.repos.withBranchWorktree(
     payload.repository,

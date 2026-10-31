@@ -61,9 +61,13 @@ describe("worktree.exec", { timeout: 60_000 }, () => {
     vi.restoreAllMocks();
   });
 
-  function context(): { ctx: SystemRpcContext; env: ReturnType<typeof vi.fn> } {
+  function context(agentEnv: NodeJS.ProcessEnv = {}): {
+    ctx: SystemRpcContext;
+    env: ReturnType<typeof vi.fn>;
+  } {
     const env = vi.fn((extra?: NodeJS.ProcessEnv) => ({
       ...ENV,
+      ...agentEnv,
       OMNIRALPH_JOB_TOKEN: "job-token",
       ...extra,
     }));
@@ -157,11 +161,20 @@ describe("worktree.exec", { timeout: 60_000 }, () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("gives the commands no git credential helper", async () => {
-    const out = await run(
-      job([
-        'echo "helper=$(git config --get-all credential.helper || echo none) count=${GIT_CONFIG_COUNT:-none} file=${OMNIRALPH_JOB_TOKEN_FILE:-none}"',
-      ]),
+  it("gives the commands no git credential helper, even one the agent inherited", async () => {
+    const { ctx } = context({
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "credential.helper",
+      GIT_CONFIG_VALUE_0: "!echo x",
+      GIT_CONFIG_PARAMETERS: "'credential.helper'='!echo y'",
+    });
+    const out = WorktreeExecResult.parse(
+      await worktreeExecRpc.run(
+        job([
+          'echo "helper=$(git config --get-all credential.helper || echo none) count=${GIT_CONFIG_COUNT:-none} file=${OMNIRALPH_JOB_TOKEN_FILE:-none}"',
+        ]),
+        ctx,
+      ),
     );
     expect(out.status).toBe("completed");
     expect(out.commands[0]!.output).toBe("helper=none count=none file=none");
