@@ -84,7 +84,7 @@ import { errorMessage, postActivity } from "./notify";
 import { jobFailure } from "./outcome";
 import { jobSettings } from "./payload";
 import { changeRequestTerm } from "./publish";
-import { advanceRun, FINISHED_RUN_STATUSES, stickyAgentId, type RalphDeps } from "./run";
+import { FINISHED_RUN_STATUSES, stickyAgentId, type RalphDeps } from "./run";
 
 const ACTIVE_JOB_STATUSES = new Set<Job["status"]>(["queued", "running"]);
 
@@ -690,37 +690,14 @@ async function ask(
 }
 
 /**
- * A cleanup job finished (completed, failed for good or canceled):
- * its outcome is applied, cleanups of the run's other lanes that waited for
- * it start, and an unfinished run moves on. Errors are logged; the reconcile
- * cron catches up.
- */
-export async function onCleanupJobFinished(deps: RalphDeps, job: Job): Promise<void> {
-  try {
-    await applyCleanupJob(deps, job.id);
-    if (job.ralphRunId) await afterRunJob(deps, job.ralphRunId);
-  } catch (error) {
-    console.error(`Applying the outcome of cleanup job ${job.id} failed`, error);
-  }
-}
-
-/**
- * After one of the run's jobs finished: an unfinished run moves on (only
- * after a cleanup job; other jobs advance it themselves), and the lanes whose
- * cleanup waited start it.
+ * After one of the run's jobs finished (its outcome hooks, `catchUpRun`): the lanes whose
+ * cleanup waited for the run's jobs start it.
  */
 export async function startPendingCleanups(deps: RalphDeps, runId: string): Promise<void> {
   for (const lane of await listLanes(deps.db, runId)) {
     if (lane.cleanup?.status !== "pending") continue;
     await beginCleanup(deps, lane.id, targetOf(lane.cleanup));
   }
-}
-
-async function afterRunJob(deps: RalphDeps, runId: string): Promise<void> {
-  const run = await getRun(deps.db, runId);
-  if (!run) return;
-  if (!FINISHED_RUN_STATUSES.has(run.status)) await advanceRun(run.id, deps);
-  await startPendingCleanups(deps, run.id);
 }
 
 export type CleanupAnswer =

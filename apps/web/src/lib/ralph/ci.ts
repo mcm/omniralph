@@ -6,11 +6,12 @@
  * job in the lane's branch worktree.
  *
  * - Triggers: GitHub `workflow_run` (completed) and GitLab `Pipeline Hook`
- *   webhooks (`respondToCiEvent`), and the ralph reconcile cron, which checks
- *   every open ralph PR/MR (`reconcileCi`).
+ *   webhooks (`respondToCiEvent`), the outcome of each of the run's jobs
+ *   (`checkRunCi`), and the ralph reconcile cron, which checks every open
+ *   ralph PR/MR (`reconcileCi`).
  * - Skipped: repositories with `respondToReviewsAndCi` off, stopped (or failed)
- *   runs, and runs with an active job (it may push again; a later check
- *   catches up). A closed or merged PR/MR is recorded and left to cleanup.
+ *   runs, and runs with an active job (it may push again; the job's outcome
+ *   checks again). A closed or merged PR/MR is recorded and left to cleanup.
  * - Only `failed` acts, once per head commit (`handled_ci_shas`), at most
  *   `maxFixRounds` times per PR/MR; after that the run says it's leaving it
  *   for a person.
@@ -20,7 +21,9 @@ import {
   findLaneByPullRequest,
   getLane,
   getRepositoryWithConnection,
+  getRun,
   listActiveRunJobIds,
+  listLanes,
   listOpenPullRequestLanes,
   lockRun,
   updateLane,
@@ -236,6 +239,34 @@ export async function respondToCiEvent(
     responses.push(await respondToCi(deps, found, { busyRunIds }));
   }
   return responses;
+}
+
+/**
+ * One of the run's jobs finished and its outcome was applied: the CI of the run's open PRs/MRs,
+ * skipped while the job was active, is checked now (unless another job is active: its outcome
+ * checks again). Failures are logged and counted.
+ */
+export async function checkRunCi(
+  deps: RalphDeps,
+  runId: string,
+): Promise<{ checked: number; failed: number }> {
+  const run = await getRun(deps.db, runId);
+  if (!run || OVER.has(run.status)) return { checked: 0, failed: 0 };
+  const lanes = (await listLanes(deps.db, run.id)).filter(
+    (lane) => lane.prNumber !== null && !lane.prClosed,
+  );
+  if (lanes.length === 0 || (await runIsBusy(deps, run.id))) return { checked: 0, failed: 0 };
+  const busyRunIds = new Set<string>();
+  let failed = 0;
+  for (const lane of lanes) {
+    try {
+      await respondToCi(deps, { lane, run }, { busyRunIds });
+    } catch (error) {
+      failed += 1;
+      console.error(`Checking the CI of ralph lane ${lane.id} failed`, error);
+    }
+  }
+  return { checked: lanes.length - failed, failed };
 }
 
 /**
