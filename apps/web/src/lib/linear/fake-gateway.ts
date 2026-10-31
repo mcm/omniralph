@@ -386,10 +386,19 @@ export class FakeLinearGateway implements LinearGateway {
     this.fail("getWorkflowStates");
     return this.statesOf(teamId).map((s) => ({ ...s }));
   }
+  /** Like Linear's: the team's label of this name, else the workspace's. */
   async findLabel(teamId: string, name: string) {
-    return this.labels.find((l) => l.name.toLowerCase() === name.toLowerCase()) ?? null;
+    const named = this.labels.filter((l) => l.name.toLowerCase() === name.toLowerCase());
+    return named.find((l) => l.teamId === teamId) ?? named.find((l) => !l.teamId) ?? null;
   }
+  /** Like Linear's, refuses a name the team or the workspace has a label of already. */
   async createLabel(teamId: string, name: string) {
+    const taken = this.labels.some(
+      (l) => l.name.toLowerCase() === name.toLowerCase() && (!l.teamId || l.teamId === teamId),
+    );
+    if (taken) {
+      throw new InvalidInputLinearError({ message: `A label named ${name} already exists` });
+    }
     const label = { id: `label-${this.labels.length + 1}`, name, teamId };
     this.labels.push(label);
     return label;

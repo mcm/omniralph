@@ -116,6 +116,9 @@ export type LinearIgnoreReason = Extract<
 /** The label that asks for triage (matched ignoring case). */
 export const TRIAGE_LABEL = "coding:triage";
 
+/** Every name of the triage label, current first: workspaces may still use the old one. */
+export const TRIAGE_LABEL_NAMES = [TRIAGE_LABEL, "ralph:triage"] as const;
+
 /**
  * A label that asks for triage: `coding:triage`, or the label's name from
  * before the rename to Coding, which workspaces may still use.

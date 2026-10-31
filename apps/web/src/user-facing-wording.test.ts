@@ -100,6 +100,11 @@ const RALPH_ALLOWED: Allowed[] = [
     files: ["packages/ralph/src/triage.ts", "packages/tasks/src/builtin/triage.ts"],
     reason: "tells triage to drop the legacy `## Ralph Metadata` section from issues",
   },
+  {
+    text: /^ralph:triage$/g,
+    files: ["apps/web/src/lib/linear/webhook.ts"],
+    reason: "the triage label's old name, which workspaces may still have and the web UI reuses",
+  },
 ];
 
 /** Also scanned for "harness": the agent, the packages it bundles and the release script. */
