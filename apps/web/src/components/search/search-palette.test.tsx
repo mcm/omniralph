@@ -289,7 +289,9 @@ describe("SearchProvider", () => {
     renderSearch();
     const { user, dialog, input } = await openPalette();
     await user.type(input, "api");
-    await user.click(await within(dialog).findByRole("option", { name: /acme\/api/ }));
+    // The recent items list acme/api too: wait for the search's answer before clicking it.
+    const repos = await within(dialog).findByRole("group", { name: "Repos" });
+    await user.click(within(repos).getByRole("option", { name: /acme\/api/ }));
     expect(nav.router.push).toHaveBeenCalledWith(`/repos/${REPO_ID}`);
   });
 

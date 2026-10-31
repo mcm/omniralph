@@ -152,9 +152,11 @@
   border-radius: inherit;
 }
 
-/* Controls in a linked row stay above its link */
-.or-tbl__row--linked :is(a, button, input, label, select, textarea):not(.or-row-link),
-.or-cardrow--linked :is(a, button, input, label, select, textarea):not(.or-row-link) {
+/* Controls, and statuses with a tooltip, in a linked row stay above its link */
+.or-tbl__row--linked
+  :is(a, button, input, label, select, textarea, .or-status-indicator):not(.or-row-link),
+.or-cardrow--linked
+  :is(a, button, input, label, select, textarea, .or-status-indicator):not(.or-row-link) {
   position: relative;
   z-index: 1;
 }
