@@ -31,7 +31,7 @@ import {
 import type { ScopedOrganization } from "@/lib/api/scope";
 import { hasRole } from "@/lib/auth/roles";
 import { getDispatcher } from "@/lib/dispatch";
-import { AGENT_ONLINE_WINDOW_MS } from "@/lib/agents/display";
+import { readAgentLastSeen } from "@/lib/agents/last-seen";
 import { rerunJob } from "@/lib/jobs/rerun";
 import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
 import { finishManualStory, startEpicAnyway } from "@/lib/ralph/person-actions";
@@ -73,7 +73,7 @@ export async function actOnInboxItem(
   const item = await findInboxItem(db, {
     organizationIds: organizations.map((o) => o.id),
     key,
-    onlineWindowMs: AGENT_ONLINE_WINDOW_MS,
+    agentLastSeen: readAgentLastSeen,
     now,
   });
   const organization = item && organizations.find((o) => o.id === item.organizationId);

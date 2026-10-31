@@ -177,10 +177,16 @@ export interface InboxQuery {
   userId: string;
   /** Only this tab's items; all tabs when unset. */
   tab?: InboxTab;
-  /** An agent whose last heartbeat is older than this is offline. */
-  onlineWindowMs: number;
+  /**
+   * The agents' last-seen times kept outside Postgres (the web app's Redis), when later than
+   * their rows' `last_heartbeat_at`: an offline item's `since` and key. The row's value without.
+   */
+  agentLastSeen?: AgentLastSeen;
   now?: Date;
 }
+
+/** The last-seen time of each agent that has one; agents without are left out. */
+export type AgentLastSeen = (agentIds: readonly string[]) => Promise<ReadonlyMap<string, Date>>;
 
 const ISO_US = `'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'`;
 const iso = (column: string) => sql.raw(`to_char(${column} at time zone 'UTC', ${ISO_US})`);
@@ -735,11 +741,17 @@ async function failedSystemAttempts(db: Queryable, scope: Scope): Promise<InboxC
   }));
 }
 
-/** Agents that stopped checking in, and agents whose update failed. */
+/**
+ * Agents that stopped checking in, and agents whose update failed. Offline is the agent's
+ * `live_online` flag (the liveness sweep clears it from the real last heartbeat): the row's
+ * `last_heartbeat_at` is only written when the report changes or once a day, so it can't
+ * tell. An offline item's `since` and key are its last heartbeat, from `agentLastSeen` when
+ * later than the row's.
+ */
 async function agentProblems(
   db: Queryable,
   scope: Scope,
-  onlineWindowMs: number,
+  agentLastSeen: AgentLastSeen | undefined,
 ): Promise<InboxCandidate[]> {
   const result = await db.execute<{
     id: string;
@@ -753,8 +765,7 @@ async function agentProblems(
     updated_at: string;
   }>(sql`
     select h.id, h.name, h.organization_id, ${iso("h.last_heartbeat_at")} as last_heartbeat_at,
-      (h.last_heartbeat_at < ${scope.now}::timestamptz - make_interval(secs => ${onlineWindowMs / 1000}))
-        as offline,
+      not h.live_online as offline,
       h.update_state ->> 'error' as update_error, h.update_state ->> 'version' as update_version,
       (case when d.version = any(h.failed_versions) then d.version end) as desired_failed,
       ${iso("h.updated_at")} as updated_at
@@ -768,16 +779,23 @@ async function agentProblems(
     ) d on true
     where h.organization_id in (${scope.orgs}) and h.revoked_at is null and h.deleted_at is null
       and h.last_heartbeat_at is not null`);
+  const offlineIds = result.rows.filter((row) => row.offline).map((row) => row.id);
+  const lastSeen =
+    agentLastSeen && offlineIds.length > 0 ? await agentLastSeen(offlineIds) : new Map();
   const items: InboxCandidate[] = [];
   for (const row of result.rows) {
     const agent = { id: row.id, name: row.name };
     const base = { tab: "problems" as const, organizationId: row.organization_id, run: null };
     if (row.offline && row.last_heartbeat_at) {
+      const seen = lastSeen.get(row.id);
+      // The row's own string when it's the latest, so its key keeps the microseconds.
+      const at =
+        seen && seen > new Date(row.last_heartbeat_at) ? seen.toISOString() : row.last_heartbeat_at;
       items.push({
         ...base,
-        key: `agent_offline:${row.id}:${row.last_heartbeat_at}`,
-        since: new Date(row.last_heartbeat_at),
-        facts: { kind: "agent_offline", agent, lastHeartbeatAt: row.last_heartbeat_at },
+        key: `agent_offline:${row.id}:${at}`,
+        since: new Date(at),
+        facts: { kind: "agent_offline", agent, lastHeartbeatAt: at },
       });
     }
     const version = row.update_error
@@ -824,7 +842,7 @@ async function runningRuns(db: Queryable, scope: Scope): Promise<InboxCandidate[
 function tabQueries(
   db: Queryable,
   scope: Scope,
-  onlineWindowMs: number,
+  agentLastSeen: AgentLastSeen | undefined,
 ): Record<InboxTab, (() => Promise<InboxCandidate[]>)[]> {
   return {
     needs_you: [
@@ -838,7 +856,7 @@ function tabQueries(
     problems: [
       () => failedRuns(db, scope),
       () => failedSystemAttempts(db, scope),
-      () => agentProblems(db, scope, onlineWindowMs),
+      () => agentProblems(db, scope, agentLastSeen),
     ],
     running: [() => runningRuns(db, scope)],
   };
@@ -880,7 +898,7 @@ async function deriveInboxItems(
     now: now.toISOString(),
     cutoff: new Date(now.getTime() - INBOX_WINDOW_DAYS * 86_400_000).toISOString(),
   };
-  const queries = tabQueries(db, scope, query.onlineWindowMs);
+  const queries = tabQueries(db, scope, query.agentLastSeen);
   const found = (await Promise.all(tabs.flatMap((tab) => queries[tab]).map((q) => q()))).flat();
   // One item per key (a key is what the user marks).
   return new Map(found.map((item) => [item.key, item]));

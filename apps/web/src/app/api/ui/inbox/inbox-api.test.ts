@@ -210,6 +210,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       organizationId: state.orgId,
       name: "edge-box",
       lastHeartbeatAt: new Date(),
+      liveOnline: true,
       updateState: {
         state: "idle",
         version: "1.4.0",
