@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import { closeDb, createDb, agents, organizations, type Database } from "@omniralph/db";
 import {
   createTestDatabase,
@@ -47,14 +47,39 @@ process.env.LOCAL_AGENT_SIGNING_KEY = privateKey
   .toString();
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 
-const { agentLastSeenKey, agentReportKey, readAgentLastSeen, recordHeartbeat } =
-  await import("./last-seen");
+const {
+  agentLastSeenKey,
+  agentReportKey,
+  heartbeatReportFingerprint,
+  readAgentLastSeen,
+  recordHeartbeat,
+} = await import("./last-seen");
 const { closeRedis, getRedis } = await import("@/lib/hot-state");
 const { POST: heartbeat } = await import("@/app/api/agent/heartbeat/route");
 const { GET: listAgents } = await import("@/app/api/ui/agents/route");
 const { getTokenSigner } = await import("@/lib/agent-auth/signer");
 
 const REPORT = { version: "1.4.0", selfUpdate: "supported" as const, failedVersions: [] };
+
+const TOKEN_REFRESH = {
+  failingSince: "2026-10-16T11:58:00.000Z",
+  consecutiveFailures: 3,
+  lastError: "network",
+  accessTokenExpiresAt: "2026-10-16T12:01:00.000Z",
+  refreshTokenExpiresAt: null,
+};
+
+describe("heartbeatReportFingerprint", () => {
+  it("is the same with no token-refresh report as before there was one", () => {
+    // What a healthy heartbeat fingerprinted before `tokenRefresh` existed (11 fields).
+    const legacy = createHash("sha256")
+      .update(JSON.stringify(["1.4.0", "supported", null, [], [], [], null, null, null, [], null]))
+      .digest("base64url");
+    expect(heartbeatReportFingerprint(REPORT)).toBe(legacy);
+    expect(heartbeatReportFingerprint({ ...REPORT, tokenRefresh: null })).toBe(legacy);
+    expect(heartbeatReportFingerprint({ ...REPORT, tokenRefresh: TOKEN_REFRESH })).not.toBe(legacy);
+  });
+});
 
 const databaseAvailable = testDatabaseAvailable();
 const redisAvailable = await testRedisAvailable();
@@ -161,6 +186,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent last-seen", () => 
         },
       ],
       ["host", { host: { hostname: "coder-ws-1", coder: { owner: "steve", workspace: "w" } } }],
+      ["token-refresh streak", { tokenRefresh: TOKEN_REFRESH }],
     ])("writes the row when the %s changed", async (_name, change) => {
       const agentId = await newAgent();
       await recordHeartbeat(db, agentId, REPORT, at(0));
@@ -168,6 +194,19 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent last-seen", () => 
       expect((await row(agentId)).lastHeartbeatAt).toEqual(at(20));
       // And the new report is the one an unchanged heartbeat is compared with.
       await recordHeartbeat(db, agentId, { ...REPORT, ...change }, at(40));
+      expect((await row(agentId)).lastHeartbeatAt).toEqual(at(20));
+    });
+
+    it("stores a failing token-refresh streak and clears it with one write once refreshes succeed", async () => {
+      const agentId = await newAgent();
+      await recordHeartbeat(db, agentId, { ...REPORT, tokenRefresh: TOKEN_REFRESH }, at(0));
+      expect((await row(agentId)).reportedTokenRefresh).toEqual(TOKEN_REFRESH);
+      await recordHeartbeat(db, agentId, { ...REPORT, tokenRefresh: null }, at(20));
+      expect(await row(agentId)).toMatchObject({
+        reportedTokenRefresh: null,
+        lastHeartbeatAt: at(20),
+      });
+      await recordHeartbeat(db, agentId, { ...REPORT, tokenRefresh: null }, at(40));
       expect((await row(agentId)).lastHeartbeatAt).toEqual(at(20));
     });
 

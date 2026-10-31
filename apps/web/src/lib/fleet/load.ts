@@ -259,6 +259,7 @@ export async function loadAgentDetail(
         at: security.lastRefreshRejection.at.toISOString(),
         reason: security.lastRefreshRejection.reason,
       },
+      tokenRefresh: agent.reportedTokenRefresh,
     },
     globalDesiredVersion: version.tracksLatest
       ? version.version

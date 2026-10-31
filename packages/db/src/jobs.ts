@@ -27,6 +27,7 @@ import {
   poolForTaskType,
   type AgentHostReport,
   type ClaudeLoginReport,
+  type TokenRefreshReport,
   type HostToolReport,
   type PinnedRepository,
 } from "@omniralph/shared";
@@ -918,6 +919,8 @@ async function writeAgentHeartbeat(
     hostTools?: readonly HostToolReport[];
     /** Whether the agent's Claude login works; replaces the last report. Older agents send none, which keeps it. */
     claude?: ClaudeLoginReport;
+    /** The agent's failing token-refresh streak; replaces the last report (none clears it). */
+    tokenRefresh?: TokenRefreshReport | null;
     now?: Date;
   },
 ): Promise<typeof agents.$inferSelect | null> {
@@ -947,6 +950,15 @@ async function writeAgentHeartbeat(
           checkedAt: input.claude.checkedAt,
         },
       }),
+      reportedTokenRefresh: input.tokenRefresh
+        ? {
+            failingSince: input.tokenRefresh.failingSince,
+            consecutiveFailures: input.tokenRefresh.consecutiveFailures,
+            lastError: input.tokenRefresh.lastError,
+            accessTokenExpiresAt: input.tokenRefresh.accessTokenExpiresAt,
+            refreshTokenExpiresAt: input.tokenRefresh.refreshTokenExpiresAt,
+          }
+        : null,
       ...(input.local && {
         reportedMaxConcurrency: input.local.maxConcurrency,
         reportedPoolLimits: {
@@ -977,12 +989,13 @@ async function writeAgentHeartbeat(
         reportedInstallablesAllow: previous.reportedInstallablesAllow,
         reportedHostTools: previous.reportedHostTools,
         reportedClaude: previous.reportedClaude,
+        reportedTokenRefresh: previous.reportedTokenRefresh,
       },
     });
   if (!updated) return null;
   const { row, before } = updated;
   // What the fleet shows changed (version, update state, installs, task types, host, local
-  // settings, host tools, Claude login state): not a steady heartbeat, nor a Claude re-check
+  // settings, host tools, Claude login state, token-refresh streak): not a steady heartbeat, nor a Claude re-check
   // that found the same state.
   const after = {
     reportedVersion: row.reportedVersion,
@@ -999,6 +1012,7 @@ async function writeAgentHeartbeat(
     reportedInstallablesAllow: row.reportedInstallablesAllow,
     reportedHostTools: row.reportedHostTools,
     reportedClaude: row.reportedClaude,
+    reportedTokenRefresh: row.reportedTokenRefresh,
   };
   if (
     JSON.stringify({ ...before, reportedClaude: claudeLoginState(before.reportedClaude) }) !==

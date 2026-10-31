@@ -47,6 +47,18 @@ export function heartbeatReportFingerprint(report: HeartbeatReport): string {
     report.local ?? null,
     report.hostTools ?? [],
     report.claude ?? null,
+    // Only while refreshes fail: a healthy heartbeat keeps the fingerprint it had before.
+    ...(report.tokenRefresh
+      ? [
+          {
+            failingSince: report.tokenRefresh.failingSince,
+            consecutiveFailures: report.tokenRefresh.consecutiveFailures,
+            lastError: report.tokenRefresh.lastError,
+            accessTokenExpiresAt: report.tokenRefresh.accessTokenExpiresAt,
+            refreshTokenExpiresAt: report.tokenRefresh.refreshTokenExpiresAt,
+          },
+        ]
+      : []),
   ];
   return createHash("sha256").update(JSON.stringify(normalized)).digest("base64url");
 }

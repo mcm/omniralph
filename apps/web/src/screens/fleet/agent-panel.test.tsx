@@ -207,6 +207,7 @@ function busyDetail(): AgentDetail {
       reuseAlerts30d: 0,
       lastReuseAt: null,
       lastRefreshRejection: null,
+      tokenRefresh: null,
     },
   };
 }
@@ -477,6 +478,7 @@ describe("the agent panel's sections", () => {
         reuseAlerts30d: 1,
         lastReuseAt: "2026-10-20T12:00:00.000Z",
         lastRefreshRejection: null,
+        tokenRefresh: null,
       },
     };
     await openAgent(AGENT_ALPHA, "coder-1");
