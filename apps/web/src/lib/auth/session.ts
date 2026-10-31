@@ -11,6 +11,7 @@ import { cache } from "react";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { getDb } from "@/lib/db";
+import type { SoundPreference } from "@/lib/sound/preference";
 import { assertRole, AuthorizationError, hasRole, type Role } from "./roles";
 import {
   ACCESS_DENIED_PATH,
@@ -42,6 +43,8 @@ export interface CurrentUser {
    * (and `useShowAdvanced`): no API handler, routing or run code reads it.
    */
   showAdvanced: boolean;
+  /** Whether the control panel plays sounds, and how loud (`SoundProvider`). */
+  sound: SoundPreference;
 }
 
 /** A signed-in user working in an organization. */
@@ -64,7 +67,7 @@ async function resolveOrganization(userId: string) {
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await auth();
   if (!session?.user?.id) return null;
-  const { id, name, email, image, theme, showAdvanced } = session.user;
+  const { id, name, email, image, theme, showAdvanced, sound } = session.user;
   const organization = await resolveOrganization(id);
   return {
     id,
@@ -75,6 +78,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     image: image ?? null,
     theme,
     showAdvanced,
+    sound,
   };
 });
 

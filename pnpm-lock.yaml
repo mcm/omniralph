@@ -207,6 +207,9 @@ importers:
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
+      uisfx:
+        specifier: 0.4.0
+        version: 0.4.0
       zod:
         specifier: ^4.6.5
         version: 4.6.5
@@ -5505,6 +5508,9 @@ packages:
   ufo@1.6.4:
     resolution: {integrity: sha512-JFNbkD1Svwe0KvGi8GOeLcP4kAWQ609twvCdcHxq1oSL8svv39ZuSvajcD8B+5D0eL4+s1Is2D/O6KN3qcTeRA==}
 
+  uisfx@0.4.0:
+    resolution: {integrity: sha512-W891N75C09cvpaNeChP+7BiP0Yp5VSbrIcRgZvzpFUT3o/2DxZqROmUcX50oxeyMnY4Hqxu4jEfjndVUpmheEQ==}
+
   ulid@2.4.0:
     resolution: {integrity: sha512-fIRiVTJNcSRmXKPZtGzFQv9WRrZ3M9eoptl/teFJvjOzmpU+/K/JH6HZ8deBfb5vMEpicJcLn7JmvdknlMq7Zg==}
     hasBin: true
@@ -10676,6 +10682,8 @@ snapshots:
   typescript@5.9.3: {}
 
   ufo@1.6.4: {}
+
+  uisfx@0.4.0: {}
 
   ulid@2.4.0: {}
 

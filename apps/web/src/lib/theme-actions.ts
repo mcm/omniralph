@@ -1,12 +1,13 @@
 "use server";
 
-import { setUserShowAdvanced, setUserTheme } from "@omniralph/db";
+import { setUserShowAdvanced, setUserSound, setUserTheme } from "@omniralph/db";
 import { recordChange } from "@omniralph/db/changes";
 import type { ThemePreference } from "@omniralph/ui";
 import type { ActionResult } from "@/lib/action-result";
 import { runSignedInAction } from "@/lib/auth/admin-action";
 import type { CurrentUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
+import type { SoundPreference } from "@/lib/sound/preference";
 import { parseThemePreference } from "@/lib/theme";
 
 /**
@@ -34,6 +35,29 @@ export async function saveShowAdvancedPreference(value: boolean): Promise<Action
     if (typeof value !== "boolean") return { ok: false, error: "Unknown setting." };
     const db = getDb();
     await setUserShowAdvanced(db, user.id, value);
+    recordProfileChange(db, user);
+  });
+}
+
+/**
+ * Remembers whether the signed-in user's control panel plays sounds, and how loud (see
+ * `SoundProvider`). Like the theme, the user's other devices hear of it as a `settings`
+ * change (section `profile`).
+ */
+export async function saveSoundPreference(sound: SoundPreference): Promise<ActionResult> {
+  return runSignedInAction(async (user) => {
+    const { enabled, volume } = sound ?? {};
+    if (
+      typeof enabled !== "boolean" ||
+      typeof volume !== "number" ||
+      !Number.isFinite(volume) ||
+      volume < 0 ||
+      volume > 1
+    ) {
+      return { ok: false, error: "Unknown setting." };
+    }
+    const db = getDb();
+    await setUserSound(db, user.id, { enabled, volume });
     recordProfileChange(db, user);
   });
 }

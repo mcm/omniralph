@@ -126,6 +126,8 @@ export const inboxCountsSchema = z.object({
   needsYou: z.number(),
   problems: z.number(),
   running: z.number(),
+  /** How many of the needs-you items are Om's questions (a question gets its own sound). */
+  questions: z.number(),
 });
 export type InboxCountsResponse = z.infer<typeof inboxCountsSchema>;
 

@@ -36,6 +36,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       organizationCookie={jar.get(ORGANIZATION_COOKIE)?.value ?? null}
       scopeCookie={jar.get(ORGANIZATION_SCOPE_COOKIE)?.value ?? null}
       showAdvanced={user.showAdvanced}
+      sound={user.sound}
     >
       <PageFrame>{children}</PageFrame>
     </AppShell>

@@ -6,6 +6,7 @@ import { MUTATION_FAILED } from "@/components/use-api-mutation";
 import type { AskChat } from "@/lib/api/ask";
 import { ApiError } from "@/lib/api/client";
 import { streamAskTurn, type AskTurnEvent } from "@/lib/ask/stream-client";
+import { sounds } from "@/lib/sound/player";
 import {
   pendingUserMessage,
   withMessage,
@@ -57,6 +58,11 @@ export async function runAskTurn({
   onChat,
 }: AskTurnOptions): Promise<AskSendResult> {
   let chatId = initialChatId;
+  // Sounds: the message stored (`send`), Om's reply finished (`receive`), or the turn failed
+  // (`error`), each once and only after it happened.
+  let sent = false;
+  let received = false;
+  let failed = false;
   const pending = pendingUserMessage(String(++pendingSeq), text);
   const write = (id: string, update: (data: AskChatData) => AskChatData) =>
     client.setQueryData<AskChatData>(chatKey(id), (data) => (data ? update(data) : data));
@@ -74,6 +80,11 @@ export async function runAskTurn({
       case "message": {
         const { message } = event;
         write(id, (data) => withMessage(data, message));
+        if (message.author === "user" && !sent) {
+          sent = true;
+          sounds.play("send");
+        }
+        if (message.author === "om" && message.status !== "streaming") received = true;
         setAskTurn(id, (current) => {
           const streamed = new Map(current.streamed);
           if (message.status === "streaming") streamed.set(message.id, message.markdown);
@@ -100,6 +111,7 @@ export async function runAskTurn({
         setAskTurn(id, (state) => ({ ...state, status: event.text }));
         return;
       case "error":
+        failed = true;
         toast(event.message, { variant: "danger" });
         return;
       case "done":
@@ -129,12 +141,18 @@ export async function runAskTurn({
           return;
         }
         if (chatId !== null) apply(chatId, event);
-        else if (event.event === "error") toast(event.message, { variant: "danger" });
+        else if (event.event === "error") {
+          failed = true;
+          toast(event.message, { variant: "danger" });
+        }
       },
     });
   } catch (error) {
+    failed = true;
     toast(error instanceof ApiError ? error.message : MUTATION_FAILED, { variant: "danger" });
   }
+  if (failed) sounds.play("error");
+  else if (received) sounds.play("receive");
   if (chatId === null) return "failed";
   const id = chatId;
   const ended = askTurn(id);

@@ -126,9 +126,13 @@ describe("SHORTCUTS", () => {
 describe("one listener", () => {
   it("adds no document- or window-level keydown listener outside the engine", () => {
     const engine = path.join(UI_SRC, "shortcuts") + path.sep;
+    // Audio unlock: browsers allow sound only after a gesture, and keydown is one; it reads
+    // no key and prevents nothing, so it's not a shortcut.
+    const audioUnlock = path.join(WEB_SRC, "components", "sound-provider.tsx");
     const offenders = ALL_SOURCES.filter(
       (file) =>
         !file.startsWith(engine) &&
+        file !== audioUnlock &&
         /\b(?:window|document|ownerDocument)\s*\.\s*addEventListener\(\s*["']keydown["']/.test(
           readFileSync(file, "utf8"),
         ),

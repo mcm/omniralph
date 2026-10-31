@@ -43,6 +43,7 @@ function renderPage() {
       organizationCookie={null}
       scopeCookie={null}
       showAdvanced={false}
+      sound={{ enabled: true, volume: 0.7 }}
     >
       <PageFrame>
         <RoutingPage />

@@ -124,7 +124,7 @@ describe("navItems", () => {
     // Nothing in Ask needs you: the live indicators never mark it.
     const marked = withNavIndicators(
       navItems,
-      { needsYou: 3, problems: 1, running: 2 },
+      { needsYou: 3, problems: 1, running: 2, questions: 0 },
       { readyToStart: 1, needsRefining: 1, total: 2 },
       {
         fleet: { offline: 1, updateFailed: 1 },
@@ -266,14 +266,24 @@ describe("withNavIndicators", () => {
     items.find((item) => item.id === id)?.indicator;
 
   it("counts what needs the user on Inbox and dots Runs while runs run", () => {
-    const items = withNavIndicators(navItems, { needsYou: 3, problems: 1, running: 2 });
+    const items = withNavIndicators(navItems, {
+      needsYou: 3,
+      problems: 1,
+      running: 2,
+      questions: 0,
+    });
     expect(indicator(items, "inbox")).toEqual({ kind: "count", value: 3, label: "3 need you" });
     expect(indicator(items, "runs")).toEqual({ kind: "dot", tone: "run", label: "2 running" });
     expect(indicator(items, "repos")).toBeUndefined();
   });
 
   it("shows neither at 0 or before the counts load", () => {
-    const zero = withNavIndicators(navItems, { needsYou: 0, problems: 4, running: 0 });
+    const zero = withNavIndicators(navItems, {
+      needsYou: 0,
+      problems: 4,
+      running: 0,
+      questions: 0,
+    });
     expect(zero.every((item) => item.indicator === undefined)).toBe(true);
     expect(withNavIndicators(navItems, undefined)).toBe(navItems);
     expect(withNavIndicators(navItems, undefined, undefined)).toBe(navItems);
@@ -300,7 +310,7 @@ describe("withNavIndicators", () => {
     expect(indicator(one, "backlog")).toMatchObject({ value: 1, label: "1 item" });
     const zero = withNavIndicators(
       navItems,
-      { needsYou: 0, problems: 0, running: 0 },
+      { needsYou: 0, problems: 0, running: 0, questions: 0 },
       { readyToStart: 0, needsRefining: 0, total: 0 },
     );
     expect(indicator(zero, "backlog")).toBeUndefined();
@@ -348,7 +358,7 @@ describe("withNavIndicators", () => {
   it("shows no Fleet or Settings dot at 0, and keeps the Inbox counts beside them", () => {
     const items = withNavIndicators(
       navItems,
-      { needsYou: 1, problems: 0, running: 0 },
+      { needsYou: 1, problems: 0, running: 0, questions: 0 },
       undefined,
       indicators({ offline: 0, updateFailed: 0 }),
     );

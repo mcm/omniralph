@@ -70,6 +70,7 @@ describe.skipIf(!testDatabaseAvailable())("GET /api/ui/live/token", () => {
       image: null,
       theme: null,
       showAdvanced: false,
+      sound: { enabled: true, volume: 0.7 },
     };
   }, 180_000);
 

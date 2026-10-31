@@ -10,6 +10,7 @@ import {
 } from "@omniralph/ui";
 import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
+import type { SoundPreference } from "@/lib/sound/preference";
 import { navItems } from "@/lib/navigation";
 import { SHORTCUTS, useKeyShortcuts } from "@/lib/shortcuts";
 import { userDisplayName, userInitials } from "@/lib/user-display";
@@ -28,6 +29,7 @@ import { ALL_ORGANIZATIONS_LABEL, OrganizationPicker } from "./organization-pick
 import { QueryProvider } from "./query-provider";
 import { SavedThemeProvider } from "./saved-theme";
 import { SearchProvider, useSearch } from "./search/search-palette";
+import { SoundProvider } from "./sound-provider";
 import { ShowAdvancedProvider } from "./show-advanced";
 import { UserMenu } from "./user-menu";
 
@@ -48,6 +50,7 @@ export function AppShell({
   organizationCookie,
   scopeCookie,
   showAdvanced,
+  sound,
   children,
 }: {
   /** The signed-in user, with their organizations and scope (for the organization picker). */
@@ -60,6 +63,8 @@ export function AppShell({
   scopeCookie: string | null;
   /** The user's saved "Show advanced settings" preference (see `useShowAdvanced`). */
   showAdvanced: boolean;
+  /** The user's saved sound preference (see `SoundProvider`). */
+  sound: SoundPreference;
   /** The page, wrapped in `app/(app)/page-frame.tsx` (the unsaved-changes guard and bar). */
   children: React.ReactNode;
 }) {
@@ -76,57 +81,59 @@ export function AppShell({
     <SavedThemeProvider preference={themePreference}>
       <CurrentUserProvider user={user}>
         <ShowAdvancedProvider initial={showAdvanced}>
-          {/* Live data for every page (src/lib/api, src/lib/live, README "Data fetching").
+          <SoundProvider initial={sound}>
+            {/* Live data for every page (src/lib/api, src/lib/live, README "Data fetching").
       Keyed by the organization and scope: any change of either starts over with an empty
       cache, subscribed to the new scope's change channels. */}
-          <QueryProvider
-            key={`${user.organization.id}:${user.scope}`}
-            organizationId={user.organization.id}
-          >
-            <LiveCurrentUser>
-              <LiveProvider>
-                <OrganizationGuard
-                  organizationName={
-                    user.scope === "all" ? ALL_ORGANIZATIONS_LABEL : user.organization.name
-                  }
-                  renderedCookie={organizationCookie}
-                  renderedScopeCookie={scopeCookie}
-                >
-                  <UiProvider linkComponent={Link} navigate={navigate}>
-                    <ShortcutProvider
-                      definitions={SHORTCUTS}
-                      reportConflicts={process.env.NODE_ENV !== "production"}
-                    >
-                      <AppShortcuts />
-                      <AskContextProvider>
-                        <AskPanelProvider>
-                          <SearchProvider>
-                            <AskFrame
-                              currentPath={pathname}
-                              hideTabBar={isAskFullScreenPath(pathname)}
-                              brandHref="/"
-                              nav={navItems}
-                              orgPicker={<OrganizationPicker />}
-                              user={{
-                                name,
-                                image: user.image ?? undefined,
-                                initials: userInitials(user),
-                              }}
-                              userMenu={(trigger) => <UserMenu trigger={trigger} />}
-                            >
-                              <LiveNoticeSlot />
-                              {children}
-                            </AskFrame>
-                          </SearchProvider>
-                        </AskPanelProvider>
-                      </AskContextProvider>
-                    </ShortcutProvider>
-                    <Toaster />
-                  </UiProvider>
-                </OrganizationGuard>
-              </LiveProvider>
-            </LiveCurrentUser>
-          </QueryProvider>
+            <QueryProvider
+              key={`${user.organization.id}:${user.scope}`}
+              organizationId={user.organization.id}
+            >
+              <LiveCurrentUser>
+                <LiveProvider>
+                  <OrganizationGuard
+                    organizationName={
+                      user.scope === "all" ? ALL_ORGANIZATIONS_LABEL : user.organization.name
+                    }
+                    renderedCookie={organizationCookie}
+                    renderedScopeCookie={scopeCookie}
+                  >
+                    <UiProvider linkComponent={Link} navigate={navigate}>
+                      <ShortcutProvider
+                        definitions={SHORTCUTS}
+                        reportConflicts={process.env.NODE_ENV !== "production"}
+                      >
+                        <AppShortcuts />
+                        <AskContextProvider>
+                          <AskPanelProvider>
+                            <SearchProvider>
+                              <AskFrame
+                                currentPath={pathname}
+                                hideTabBar={isAskFullScreenPath(pathname)}
+                                brandHref="/"
+                                nav={navItems}
+                                orgPicker={<OrganizationPicker />}
+                                user={{
+                                  name,
+                                  image: user.image ?? undefined,
+                                  initials: userInitials(user),
+                                }}
+                                userMenu={(trigger) => <UserMenu trigger={trigger} />}
+                              >
+                                <LiveNoticeSlot />
+                                {children}
+                              </AskFrame>
+                            </SearchProvider>
+                          </AskPanelProvider>
+                        </AskContextProvider>
+                      </ShortcutProvider>
+                      <Toaster />
+                    </UiProvider>
+                  </OrganizationGuard>
+                </LiveProvider>
+              </LiveCurrentUser>
+            </QueryProvider>
+          </SoundProvider>
         </ShowAdvancedProvider>
       </CurrentUserProvider>
     </SavedThemeProvider>

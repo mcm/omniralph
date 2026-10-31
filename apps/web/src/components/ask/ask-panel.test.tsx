@@ -61,7 +61,7 @@ const list: AskChatList = { chats: [chat], nextCursor: null };
 function mockAsk() {
   return mockFetch({
     "GET /api/ui/live/token": { token: null },
-    "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 0 },
+    "GET /api/ui/inbox/counts": { needsYou: 0, problems: 0, running: 0, questions: 0 },
     "GET /api/ui/backlog/counts": { readyToStart: 0, needsRefining: 0, total: 0 },
     "GET /api/ui/nav-indicators": {
       fleet: { offline: 0, updateFailed: 0 },
@@ -102,6 +102,7 @@ function shell(children: React.ReactNode = <h1>Page content</h1>) {
       organizationCookie={null}
       scopeCookie={null}
       showAdvanced={false}
+      sound={{ enabled: true, volume: 0.7 }}
     >
       {children}
     </AppShell>

@@ -1027,7 +1027,8 @@ export async function pruneInboxItemStates(db: Queryable, now = new Date()): Pro
   return deleted.length;
 }
 
-export type InboxCounts = Record<InboxTab, number>;
+/** Each tab's item count, and how many of the needs-you items are Om's questions. */
+export type InboxCounts = Record<InboxTab, number> & { questions: number };
 
 /** How many items each tab has for the user (`listInboxItems` of all tabs, counted). */
 export async function countInboxItems(
@@ -1035,8 +1036,11 @@ export async function countInboxItems(
   query: Omit<InboxQuery, "tab">,
 ): Promise<InboxCounts> {
   const items = await listInboxItems(db, query);
-  const counts: InboxCounts = { needs_you: 0, problems: 0, running: 0 };
-  for (const item of items) counts[item.tab] += 1;
+  const counts: InboxCounts = { needs_you: 0, problems: 0, running: 0, questions: 0 };
+  for (const item of items) {
+    counts[item.tab] += 1;
+    if (item.facts.kind === "question") counts.questions += 1;
+  }
   return counts;
 }
 

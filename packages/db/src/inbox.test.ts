@@ -798,7 +798,10 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       needs_you: items.filter((i) => i.tab === "needs_you").length,
       problems: items.filter((i) => i.tab === "problems").length,
       running: items.filter((i) => i.tab === "running").length,
+      questions: items.filter((i) => i.facts.kind === "question").length,
     });
+    // The fixture has a question waiting: the count isn't trivially zero.
+    expect(counts.questions).toBeGreaterThan(0);
   });
 
   it("counts with a fixed number of queries whatever the number of runs", async () => {
