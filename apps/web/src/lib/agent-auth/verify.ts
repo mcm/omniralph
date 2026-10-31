@@ -25,7 +25,7 @@ export interface JobPrincipal {
   kind: JobTokenKind;
 }
 
-type TokenType = "agent" | "job";
+type TokenType = "agent" | "job" | "refresh";
 
 class AuthError extends Error {
   constructor(
@@ -90,6 +90,39 @@ function uuidClaim(value: unknown): string {
     throw new AuthError("invalid_claims", null, true);
   }
   return value;
+}
+
+/** A signed refresh token's claims, or why it was rejected. */
+export type VerifiedRefreshToken =
+  | { ok: true; agentId: string; generation: number; tokenId: string }
+  | {
+      ok: false;
+      reason: string;
+      /** The token carries our signature: a stale client, not a guessing attempt. */
+      signed: boolean;
+    };
+
+/** Verifies a signed refresh token (signature, `aud`, `exp`, `typ: "refresh"`, claims). */
+export async function verifyRefreshToken(token: string): Promise<VerifiedRefreshToken> {
+  try {
+    const payload = await verifyToken(token, "refresh");
+    const agentId = uuidClaim(payload.sub);
+    const generation = payload.gen;
+    const tokenId = payload.jti;
+    if (
+      typeof generation !== "number" ||
+      !Number.isSafeInteger(generation) ||
+      generation < 1 ||
+      typeof tokenId !== "string" ||
+      tokenId.length === 0
+    ) {
+      throw new AuthError("invalid_claims", null, true);
+    }
+    return { ok: true, agentId, generation, tokenId };
+  } catch (error) {
+    if (!(error instanceof AuthError)) throw error;
+    return { ok: false, reason: error.reason, signed: error.signed };
+  }
 }
 
 async function checkAgent(db: Database, agentId: string): Promise<void> {

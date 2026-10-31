@@ -17,6 +17,20 @@ import { createRemoteJWKSet, SignJWT, type JWTVerifyGetKey } from "jose";
 
 type Env = Record<string, string | undefined>;
 
+/**
+ * Lifetime of signed refresh tokens: an agent that hasn't refreshed for 90 days (offline
+ * that long) re-enrolls. Rotation replaces the token about every 12 minutes.
+ */
+export const AGENT_REFRESH_TOKEN_TTL_SECONDS = 90 * 86_400;
+
+export interface RefreshTokenInput {
+  agentId: string;
+  /** Counts the agent's refresh tokens: each rotation issues the next one. */
+  generation: number;
+  /** A random ID, so two tokens of one generation differ (reuse detection). */
+  tokenId: string;
+}
+
 export interface JobTokenInput {
   jobId: string;
   agentId: string;
@@ -26,18 +40,25 @@ export interface JobTokenInput {
 }
 
 /**
- * Signs agent access tokens (RS256, `AGENT_ACCESS_TOKEN_TTL_SECONDS`) and job tokens
- * (`JOB_TOKEN_TTL_SECONDS`). See `docs/adr/0002-agent-auth.md`.
+ * Signs agent access tokens (RS256, `AGENT_ACCESS_TOKEN_TTL_SECONDS`), refresh tokens
+ * (`AGENT_REFRESH_TOKEN_TTL_SECONDS`) and job tokens (`JOB_TOKEN_TTL_SECONDS`). See
+ * `docs/adr/0002-agent-auth.md`.
  */
 export interface TokenSigner {
   /** `{ typ: "agent", sub: agentId, aud: "omniralph-agent" }` */
   signAccessToken(agentId: string): Promise<string>;
+  /** `{ typ: "refresh", sub: agentId, gen: generation, jti: tokenId, aud: "omniralph-agent" }` */
+  signRefreshToken(input: RefreshTokenInput): Promise<string>;
   /** `{ typ: "job", sub: jobId, agentId, scopes, kind?, aud: "omniralph-agent" }` */
   signJobToken(input: JobTokenInput): Promise<string>;
 }
 
 function accessClaims(agentId: string) {
   return { typ: "agent", sub: agentId, aud: AGENT_TOKEN_AUDIENCE };
+}
+
+function refreshClaims({ agentId, generation, tokenId }: RefreshTokenInput) {
+  return { typ: "refresh", sub: agentId, gen: generation, jti: tokenId, aud: AGENT_TOKEN_AUDIENCE };
 }
 
 function jobClaims({ jobId, agentId, scopes, kind }: JobTokenInput) {
@@ -72,6 +93,10 @@ export class KmsTokenSigner implements TokenSigner {
 
   signAccessToken(agentId: string): Promise<string> {
     return this.sign(accessClaims(agentId), AGENT_ACCESS_TOKEN_TTL_SECONDS);
+  }
+
+  signRefreshToken(input: RefreshTokenInput): Promise<string> {
+    return this.sign(refreshClaims(input), AGENT_REFRESH_TOKEN_TTL_SECONDS);
   }
 
   signJobToken(input: JobTokenInput): Promise<string> {
@@ -129,6 +154,10 @@ export class LocalTokenSigner implements TokenSigner {
 
   signAccessToken(agentId: string): Promise<string> {
     return this.sign(accessClaims(agentId), AGENT_ACCESS_TOKEN_TTL_SECONDS);
+  }
+
+  signRefreshToken(input: RefreshTokenInput): Promise<string> {
+    return this.sign(refreshClaims(input), AGENT_REFRESH_TOKEN_TTL_SECONDS);
   }
 
   signJobToken(input: JobTokenInput): Promise<string> {

@@ -4,5 +4,6 @@
 import "@/lib/chat/pending-run-events";
 import "@/lib/dispatch/due";
 import "@/lib/agent-auth/auth-state";
+import "@/lib/agent-auth/refresh";
 import "@/lib/agents/liveness";
 import "@/lib/ralph/due";

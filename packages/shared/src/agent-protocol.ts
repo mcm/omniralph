@@ -4,11 +4,12 @@ import { z } from "zod";
 export const AGENT_TOKEN_AUDIENCE = "omniralph-agent";
 
 /**
- * Lifetime of agent access tokens, in seconds: a day, so an agent refreshes (and rotates
- * its refresh token in Postgres) about once a day. Revocation still takes effect on the
- * next request: every request checks the agent's auth state. See `docs/adr/0002-agent-auth.md`.
+ * Lifetime of agent access tokens, in seconds: 15 minutes, so an agent refreshes about every
+ * 12 minutes (at 80% of `expiresIn`). Refreshing writes nothing to Postgres while Redis is up
+ * (TOOL-856). Revocation takes effect on the next request: every request checks the agent's
+ * auth state. See `docs/adr/0002-agent-auth.md`.
  */
-export const AGENT_ACCESS_TOKEN_TTL_SECONDS = 86_400;
+export const AGENT_ACCESS_TOKEN_TTL_SECONDS = 900;
 
 /** Lifetime of job tokens, in seconds; the heartbeat renews them while the job runs. */
 export const JOB_TOKEN_TTL_SECONDS = 900;
@@ -60,7 +61,8 @@ export type EnrollResponse = z.infer<typeof EnrollResponse>;
 
 /** `POST /api/agent/token`: exchanges (and rotates) a refresh token. */
 export const TokenRequest = z.object({
-  refreshToken: z.string().min(1).max(256),
+  /** An opaque `orr_` token (before TOOL-856) or a signed one (a JWT, ~700 characters). */
+  refreshToken: z.string().min(1).max(4096),
 });
 export type TokenRequest = z.infer<typeof TokenRequest>;
 

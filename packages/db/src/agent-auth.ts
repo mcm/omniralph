@@ -1,11 +1,12 @@
 /**
  * Agent identity: one-time enrollment tokens, rotating refresh tokens with
  * reuse detection, revocation, the security audit log and fixed-window rate
- * limit counters. Tokens are 256-bit random values stored only as SHA-256
- * hashes (`hashToken()`).
+ * limit counters. Enrollment and legacy refresh tokens are 256-bit random values
+ * stored only as SHA-256 hashes (`hashToken()`); signed refresh tokens (TOOL-856)
+ * are tracked by generation and the hash of their random ID (`agents.refresh_generation`).
  */
-import { randomBytes, randomUUID } from "node:crypto";
-import { and, eq, gt, gte, isNull, lt, sql } from "drizzle-orm";
+import { randomBytes } from "node:crypto";
+import { and, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { hashToken } from "./crypto.js";
@@ -20,6 +21,8 @@ import {
   rateLimits,
 } from "./schema.js";
 
+type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
 export type Agent = typeof agents.$inferSelect;
 export type AgentAuditEvent = (typeof agentAudit.$inferSelect)["event"];
 export type AgentAuditEntry = typeof agentAudit.$inferSelect;
@@ -28,7 +31,7 @@ export type AgentAuditEntry = typeof agentAudit.$inferSelect;
 export const ENROLLMENT_TOKEN_TTL_MS = 60 * 60 * 1000;
 
 const ENROLLMENT_TOKEN_PREFIX = "ore_";
-const REFRESH_TOKEN_PREFIX = "orr_";
+const LEGACY_REFRESH_TOKEN_PREFIX = "orr_";
 
 /** A 256-bit random token, base64url-encoded with a recognisable prefix. */
 function generateToken(prefix: string): string {
@@ -117,23 +120,41 @@ export async function getAgentEnrollmentStatus(
   };
 }
 
+/** A signed refresh token and what Postgres records of it. */
+export interface IssuedRefreshToken {
+  token: string;
+  generation: number;
+  /** `hashToken()` of the token's random ID. */
+  tokenIdHash: string;
+}
+
+/** The generation of an agent's current signed refresh token and the hash of its random ID. */
+export interface RefreshTokenState {
+  generation: number;
+  tokenIdHash: string;
+}
+
 export interface EnrollAgentInput {
   enrollmentToken: string;
   name: string;
   version: string;
+  /**
+   * Signs the new agent's first refresh token. Called inside the transaction, so a signing
+   * failure leaves the enrollment token unused. Without it (tests), the agent gets none.
+   */
+  issueRefreshToken?: (agentId: string) => Promise<IssuedRefreshToken>;
   now?: Date;
 }
 
 /**
  * Consumes an unused, unexpired enrollment token, creates the agent (in the
- * enrollment's organization) and its
- * first refresh token (a new family). Returns `null` if the token is unknown,
- * expired or already used.
+ * enrollment's organization) and records its first signed refresh token. Returns
+ * `null` if the token is unknown, expired or already used.
  */
 export async function enrollAgent(
   db: Database,
   input: EnrollAgentInput,
-): Promise<{ agentId: string; refreshToken: string } | null> {
+): Promise<{ agentId: string; refreshToken: IssuedRefreshToken | null } | null> {
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
     const [enrollment] = await tx
@@ -165,13 +186,16 @@ export async function enrollAgent(
       .set({ agentId })
       .where(eq(agentEnrollments.id, enrollment.id));
 
-    const refreshToken = generateToken(REFRESH_TOKEN_PREFIX);
-    await tx.insert(agentRefreshTokens).values({
-      agentId,
-      familyId: randomUUID(),
-      tokenHash: hashToken(refreshToken),
-      createdAt: now,
-    });
+    const refreshToken = (await input.issueRefreshToken?.(agentId)) ?? null;
+    if (refreshToken) {
+      await tx
+        .update(agents)
+        .set({
+          refreshGeneration: refreshToken.generation,
+          refreshTokenIdHash: refreshToken.tokenIdHash,
+        })
+        .where(eq(agents.id, agentId));
+    }
     recordChange(tx, {
       resource: "agent",
       ids: [agentId],
@@ -181,7 +205,15 @@ export async function enrollAgent(
   });
 }
 
-/** The agent a refresh token belongs to (for per-agent rate limiting), without consuming it. */
+/** Whether a refresh token is a legacy opaque one (from before TOOL-856). */
+export function isLegacyRefreshToken(refreshToken: string): boolean {
+  return refreshToken.startsWith(LEGACY_REFRESH_TOKEN_PREFIX);
+}
+
+/**
+ * The agent a legacy refresh token belongs to (for per-agent rate limiting), without
+ * consuming it.
+ */
 export async function findRefreshTokenAgent(
   db: Database,
   refreshToken: string,
@@ -194,7 +226,7 @@ export async function findRefreshTokenAgent(
 }
 
 export type RotateRefreshTokenResult =
-  | { status: "rotated"; agentId: string; familyId: string; refreshToken: string }
+  | { status: "rotated"; agentId: string; familyId: string }
   /** The token was already used: its family and the agent have been revoked. */
   | { status: "reused"; agentId: string; familyId: string }
   | {
@@ -204,15 +236,37 @@ export type RotateRefreshTokenResult =
     };
 
 /**
- * Rotates a refresh token: marks it used and issues a new one in the same
- * family. Presenting an already-used token revokes the whole family and the
- * agent, then refreshes its organization's host tool waits. Rows are locked, so
- * concurrent presentations of one token resolve to exactly one rotation (the
+ * Revokes an agent for refresh-token reuse: its legacy refresh-token families and the agent
+ * itself, then refreshes its organization's host tool waits.
+ */
+async function revokeForReuse(
+  tx: Tx,
+  agent: { id: string; organizationId: string },
+  now: Date,
+): Promise<void> {
+  await tx
+    .update(agentRefreshTokens)
+    .set({ revokedAt: now })
+    .where(and(eq(agentRefreshTokens.agentId, agent.id), isNull(agentRefreshTokens.revokedAt)));
+  await tx
+    .update(agents)
+    .set({ revokedAt: sql`coalesce(${agents.revokedAt}, ${now})` })
+    .where(eq(agents.id, agent.id));
+  // Its host tools no longer count for the organization's queued jobs.
+  await refreshHostToolWaits({ db: tx, organizationId: agent.organizationId });
+}
+
+/**
+ * Redeems a legacy refresh token: marks it used and records `next`, the agent's first
+ * signed refresh token, in its place. Presenting an already-used token revokes the whole
+ * family and the agent, then refreshes its organization's host tool waits. Rows are
+ * locked, so concurrent presentations of one token resolve to exactly one rotation (the
  * other is treated as reuse).
  */
 export async function rotateRefreshToken(
   db: Database,
   refreshToken: string,
+  next: RefreshTokenState,
   now: Date = new Date(),
 ): Promise<RotateRefreshTokenResult> {
   return db.transaction(async (tx): Promise<RotateRefreshTokenResult> => {
@@ -235,15 +289,7 @@ export async function rotateRefreshToken(
     if (token.agentRevokedAt) return { status: "invalid", agentId, reason: "agent_revoked" };
 
     if (token.usedAt) {
-      await tx
-        .update(agentRefreshTokens)
-        .set({ revokedAt: now })
-        .where(
-          and(eq(agentRefreshTokens.familyId, familyId), isNull(agentRefreshTokens.revokedAt)),
-        );
-      await tx.update(agents).set({ revokedAt: now }).where(eq(agents.id, agentId));
-      // Its host tools no longer count for the organization's queued jobs.
-      await refreshHostToolWaits({ db: tx, organizationId: token.organizationId });
+      await revokeForReuse(tx, { id: agentId, organizationId: token.organizationId }, now);
       return { status: "reused", agentId, familyId };
     }
     if (token.revokedAt) return { status: "invalid", agentId, reason: "revoked" };
@@ -252,12 +298,150 @@ export async function rotateRefreshToken(
       .update(agentRefreshTokens)
       .set({ usedAt: now })
       .where(eq(agentRefreshTokens.id, token.id));
-    const next = generateToken(REFRESH_TOKEN_PREFIX);
     await tx
-      .insert(agentRefreshTokens)
-      .values({ agentId, familyId, tokenHash: hashToken(next), createdAt: now });
-    return { status: "rotated", agentId, familyId, refreshToken: next };
+      .update(agents)
+      .set({ refreshGeneration: next.generation, refreshTokenIdHash: next.tokenIdHash })
+      .where(eq(agents.id, agentId));
+    return { status: "rotated", agentId, familyId };
   });
+}
+
+/**
+ * How a presented signed refresh token compares with the agent's current one: the same
+ * generation and random ID rotates; a newer generation than recorded catches up (the
+ * record is behind: Postgres before the daily flush, or Redis after it lost its state);
+ * anything else (an older generation, or the same one with another random ID) is reuse.
+ */
+export function compareRefreshToken(
+  current: RefreshTokenState | null,
+  presented: RefreshTokenState,
+): "rotated" | "caught_up" | "reused" {
+  if (!current || presented.generation > current.generation) return "caught_up";
+  if (
+    presented.generation === current.generation &&
+    presented.tokenIdHash === current.tokenIdHash
+  ) {
+    return "rotated";
+  }
+  return "reused";
+}
+
+export type RotateSignedRefreshTokenResult =
+  | { status: "rotated" | "caught_up" | "reused"; agentId: string }
+  | { status: "invalid"; agentId: string | null; reason: "unknown" | "agent_revoked" };
+
+/**
+ * Rotates a signed refresh token in Postgres (hot state off, or Redis unavailable):
+ * compares the presented token with the agent's (`compareRefreshToken`) and records `next`
+ * in its place, or revokes the agent on reuse. The agent row is locked, so concurrent
+ * presentations of one token resolve to one rotation and one reuse.
+ */
+export async function rotateSignedRefreshToken(
+  db: Database,
+  input: { agentId: string; presented: RefreshTokenState; next: RefreshTokenState },
+  now: Date = new Date(),
+): Promise<RotateSignedRefreshTokenResult> {
+  const { agentId } = input;
+  return db.transaction(async (tx): Promise<RotateSignedRefreshTokenResult> => {
+    const [agent] = await tx
+      .select({
+        organizationId: agents.organizationId,
+        revokedAt: agents.revokedAt,
+        generation: agents.refreshGeneration,
+        tokenIdHash: agents.refreshTokenIdHash,
+      })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .for("update");
+    if (!agent) return { status: "invalid", agentId: null, reason: "unknown" };
+    if (agent.revokedAt) return { status: "invalid", agentId, reason: "agent_revoked" };
+    const current =
+      agent.generation !== null && agent.tokenIdHash !== null
+        ? { generation: agent.generation, tokenIdHash: agent.tokenIdHash }
+        : null;
+    const status = compareRefreshToken(current, input.presented);
+    if (status === "reused") {
+      await revokeForReuse(tx, { id: agentId, organizationId: agent.organizationId }, now);
+      return { status, agentId };
+    }
+    await tx
+      .update(agents)
+      .set({
+        refreshGeneration: input.next.generation,
+        refreshTokenIdHash: input.next.tokenIdHash,
+      })
+      .where(eq(agents.id, agentId));
+    return { status, agentId };
+  });
+}
+
+/**
+ * Revokes an agent whose signed refresh token was reused (detected in Redis). Returns
+ * false for an unknown agent.
+ */
+export async function revokeAgentForRefreshReuse(
+  db: Database,
+  agentId: string,
+  now: Date = new Date(),
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [agent] = await tx
+      .select({ organizationId: agents.organizationId })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .for("update");
+    if (!agent) return false;
+    await revokeForReuse(tx, { id: agentId, organizationId: agent.organizationId }, now);
+    return true;
+  });
+}
+
+/**
+ * Agents' current signed refresh tokens as Postgres last recorded them (the hot-state
+ * rebuild), for agents that aren't revoked.
+ */
+export async function listAgentRefreshTokenStates(
+  db: Database,
+): Promise<(RefreshTokenState & { agentId: string })[]> {
+  const rows = await db
+    .select({
+      agentId: agents.id,
+      generation: agents.refreshGeneration,
+      tokenIdHash: agents.refreshTokenIdHash,
+    })
+    .from(agents)
+    .where(isNull(agents.revokedAt));
+  return rows.flatMap((r) =>
+    r.generation !== null && r.tokenIdHash !== null
+      ? [{ agentId: r.agentId, generation: r.generation, tokenIdHash: r.tokenIdHash }]
+      : [],
+  );
+}
+
+/**
+ * Records agents' current signed refresh tokens (the daily flush from Redis). Only moves a
+ * generation forward: a refresh through Postgres since then may already have recorded a
+ * newer one. Returns how many agents were updated.
+ */
+export async function saveAgentRefreshTokenStates(
+  db: Database,
+  states: (RefreshTokenState & { agentId: string })[],
+): Promise<number> {
+  let updated = 0;
+  for (const state of states) {
+    const rows = await db
+      .update(agents)
+      .set({ refreshGeneration: state.generation, refreshTokenIdHash: state.tokenIdHash })
+      .where(
+        and(
+          eq(agents.id, state.agentId),
+          or(isNull(agents.refreshGeneration), lt(agents.refreshGeneration, state.generation)),
+        ),
+      )
+      .returning({ id: agents.id });
+    updated += rows.length;
+  }
+  return updated;
 }
 
 export interface RevokeAgentResult {
@@ -388,15 +572,36 @@ export interface AgentAuditInput {
   event: AgentAuditEvent;
   ip?: string | null;
   detail?: Record<string, unknown>;
+  /** When it happened, for rows written later (buffered); now by default. */
+  createdAt?: Date;
 }
 
 export async function writeAgentAudit(db: Database, input: AgentAuditInput): Promise<void> {
-  await db.insert(agentAudit).values({
-    agentId: input.agentId ?? null,
-    event: input.event,
-    ip: input.ip ?? null,
-    detail: input.detail ?? {},
-  });
+  await writeAgentAudits(db, [input]);
+}
+
+/** Writes several audit rows in one insert (a buffered batch). */
+export async function writeAgentAudits(db: Database, inputs: AgentAuditInput[]): Promise<void> {
+  if (inputs.length === 0) return;
+  // An agent deleted since a buffered row was written would fail the foreign key.
+  const agentIds = [...new Set(inputs.flatMap((i) => (i.agentId ? [i.agentId] : [])))];
+  const known =
+    agentIds.length === 0
+      ? new Set<string>()
+      : new Set(
+          (await db.select({ id: agents.id }).from(agents).where(inArray(agents.id, agentIds))).map(
+            (r) => r.id,
+          ),
+        );
+  await db.insert(agentAudit).values(
+    inputs.map((input) => ({
+      agentId: input.agentId && known.has(input.agentId) ? input.agentId : null,
+      event: input.event,
+      ip: input.ip ?? null,
+      detail: input.detail ?? {},
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+    })),
+  );
 }
 
 export async function listAgentAudit(

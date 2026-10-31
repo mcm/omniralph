@@ -23,7 +23,7 @@ const AGENT_ID = "5b1c7c1e-7a51-4d33-9d0f-5b2a3a7d1e01";
 const JOB_ID = "0f6f0c55-4d41-4f2b-8a8c-3d9a2b6f7e02";
 
 describe("LocalTokenSigner", () => {
-  it("signs RS256 access tokens with the agent claims and a one-day TTL", async () => {
+  it("signs RS256 access tokens with the agent claims and a 15-minute TTL", async () => {
     const now = Date.UTC(2026, 9, 4, 12);
     const signer = new LocalTokenSigner({ env: {}, now: () => now });
     const token = await signer.signAccessToken(AGENT_ID);
@@ -36,8 +36,22 @@ describe("LocalTokenSigner", () => {
       sub: AGENT_ID,
       aud: "omniralph-agent",
       iat: now / 1000,
-      exp: now / 1000 + 86_400,
+      exp: now / 1000 + 900,
     });
+  });
+
+  it("signs refresh tokens with the agent, generation and random ID, valid 90 days", async () => {
+    const signer = new LocalTokenSigner({ env: {} });
+    const token = await signer.signRefreshToken({ agentId: AGENT_ID, generation: 3, tokenId: "r" });
+    const { payload } = await jwtVerify(token, signer.publicKey);
+    expect(payload).toMatchObject({
+      typ: "refresh",
+      sub: AGENT_ID,
+      gen: 3,
+      jti: "r",
+      aud: "omniralph-agent",
+    });
+    expect(payload.exp! - payload.iat!).toBe(90 * 86_400);
   });
 
   it("signs job tokens with the job, agent and scopes, and a 900s TTL", async () => {
@@ -119,7 +133,7 @@ describe("KmsTokenSigner", () => {
         {
           issuerId: "iss_agents",
           claims: { typ: "agent", sub: AGENT_ID, aud: "omniralph-agent" },
-          ttl: 86_400,
+          ttl: 900,
         },
       ],
       [

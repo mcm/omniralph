@@ -54,6 +54,8 @@ query or write on the next request.
 | `job-due:{organizationId}`                                               | derived          | Sorted set of queued and running jobs, scored by when each can next be claimed (`available_at`, or `lease_expires_at`)                                    | After every commit that changes a job's status, availability or lease: dispatch and cancel (dispatcher), claim, lease renewal (heartbeat), retry and fail, result, skip, revoke (requeue), expire, review correlation. Rebuilt from the queued and running jobs                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `lib/dispatch/due.ts`            |
 | `job-queued-since`                                                       | derived          | Sorted set of every queued job, scored by `created_at`                                                                                                    | The same writers as `job-due:*` (`syncJobsDue`); rebuilt with it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `lib/dispatch/due.ts`            |
 | `ralph:due`                                                              | derived          | Sorted set of the ralph work the reconcile cron checks next, scored by when it's due (ms): `run:<id>` advances a run, `lane:<id>` checks a lane's cleanup | `advanceRun` (a safety check at +10 min before it starts, then its result: nothing for a job in flight, +1 h waiting, removed when finished or gone, +`RECONCILE_STALE_MS` pending or running without a job); run creation (`start.ts`, `chat-start.ts`, the safety check before the commit); a ralph job's result, failure or cancel (the safety check before the commit; a cleanup job's lane too, replaced once its outcome is applied: +1 h failed, the kept-branch question's deadline, else removed); recording a PR/MR closed or merged (the lane's safety check, replaced once its cleanup started). Rebuilt with every unfinished run due now, every failed or pending cleanup now and every kept-branch question at its deadline | `lib/ralph/due.ts`               |
+| `agent-refresh:tokens`                                                   | derived          | Hash of each agent's current signed refresh token: `<generation>:<hash of its random ID>`                                                                 | The token route (one script: compare, advance, buffer the audit row), enrollment and legacy-token redemption (after the commit). Rebuilt from `agents.refresh_generation`, never lowering a newer generation Redis holds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `lib/agent-auth/refresh.ts`      |
+| `agent-refresh:audit`                                                    | own              | List of buffered `token_refresh` audit rows (JSON)                                                                                                        | The token route; drained by the `flush-agent-auth` cron after each insert. Lost with Redis                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `lib/agent-auth/refresh.ts`      |
 | `ralph:reconciled`                                                       | own              | The daily window of the last full pass                                                                                                                    | The reconcile cron                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `lib/ralph/due.ts`               |
 | `chat-run-events:pending`                                                | derived (signal) | A random value: there may be chat run events to relay                                                                                                     | Set after a run event is recorded (`recordChatRunEvent`); compare-and-deleted by the `chat-run-events` cron after a run that left no event pending. The rebuild sets it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `lib/chat/pending-run-events.ts` |
 | `agents-live-online`                                                     | derived          | Set of the agents announced online (`live_online`)                                                                                                        | The heartbeat adds its agent after `markAgentLiveOnline` (even when it was already online); the liveness sweep removes the agents it announces offline and those Postgres no longer has online. Rebuilt from `live_online`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `lib/agents/liveness.ts`         |
@@ -71,6 +73,10 @@ What each idle request does with them:
 - **Harness auth** (`requireHarness`, `requireJob`): `harness-auth:{id}`. Revocation writes
   `revoked` right after its commit, so it still takes effect on the next request.
 - **Rate limits and lockouts** (`guard()`): counted in Redis with the same windows as before.
+- **Token refresh** (`/api/agent/token`, every ~12 minutes per agent): `agent-refresh:tokens`
+  and `harness-auth:{id}`; see _Write-free token refresh_. Only reuse writes to Postgres.
+- **`flush-agent-auth` cron** (daily window): writes `agent-refresh:tokens` to
+  `agents.refresh_generation` and drains `agent-refresh:audit` into `agent_audit`.
 - **Claim long-poll**: each look asks `job-due:{org}` (via `harness-organization:{id}`) whether a
   job is due. Only then does it read the harness and claim from Postgres; otherwise it only
   re-checks `harness-auth:{id}` and waits 2s. A Postgres claim that finds nothing re-checks the due
@@ -156,9 +162,9 @@ with hot state off or Redis down, every invocation runs the full pass.
 Every daily task that queries Postgres runs in one window starting at 03:15 UTC
 (`lib/daily-window.ts`: `dailyWindowStart(day)`, `currentDailyWindow(now)`,
 `nextDailyWindow(now)`), so an idle day wakes Neon once instead of at scattered times. The daily
-crons (`gitlab-maintenance`, `model-prices`, `prune-hidden-refs`, `prune-inbox-states`,
-`prune-webhook-deliveries`) are all scheduled at `15 3 * * *` and run in parallel: they touch
-separate tables.
+crons (`flush-agent-auth`, `gitlab-maintenance`, `model-prices`, `prune-hidden-refs`,
+`prune-inbox-states`, `prune-webhook-deliveries`) are all scheduled at `15 3 * * *` and run in
+parallel: they touch separate tables.
 
 The reconcile cron's full pass used to run whenever `ralph:reconciled` (24h TTL) expired, a time
 of day that drifted with when the key was first set. Now `ralph:reconciled` records the start
@@ -167,6 +173,25 @@ window's start (03:20 UTC, on the `*/10` schedule) finds an older window and doe
 that invocation didn't run, the next one does. Between windows the cron runs only the due
 `ralph:due` entries. A lost key (a flush) makes the next invocation do the pass, which records the
 current window, so the next pass is still at the next window.
+
+### Write-free token refresh (TOOL-856)
+
+A refresh used to rotate the refresh token in Postgres and write a `token_refresh` audit row.
+Refresh tokens are now signed (see [ADR 0002](0002-agent-auth.md)) and carry the agent ID, a
+generation and a random ID; `agent-refresh:tokens` holds each agent's current generation and the
+hash of its random ID. One Lua script compares the presented token with it, records the next token
+and buffers the audit row in `agent-refresh:audit`, so a refresh reads only Redis (plus the cached
+auth state and rate limits) and writes nothing to Postgres. The `flush-agent-auth` cron, in the
+daily window, writes the generations (only forward) and the buffered rows to Postgres.
+
+- **Rebuild.** The rebuilder merges `agents.refresh_generation` in without lowering a newer
+  generation Redis holds: a rebuild forced by another writer's failure keeps today's generations,
+  so older tokens stay reuse. After Redis loses its state, its generations are the last flush's: a
+  newer one presented is accepted once and Redis catches up (see ADR 0002).
+- **Fallback.** With hot state off, while another instance rebuilds, or when Redis errors, the
+  refresh rotates in Postgres (`rotateSignedRefreshToken`, the same comparison) and writes its
+  audit row there. A Redis error also deletes the epoch, since the script may have run.
+- **Loss.** Audit rows buffered since the last flush are lost with Redis's state.
 
 ### Heartbeat cache bound and drift check (TOOL-276)
 
@@ -307,9 +332,6 @@ use `ioredis` over TCP:
 
 With every harness idle and no UI or webhook traffic, these still query Postgres:
 
-- **Token refresh** (`/api/agent/token`): each harness refreshes its one-day access token about
-  once a day, which reads and rotates its refresh token in Postgres ([ADR 0002](0002-agent-auth.md),
-  TOOL-276; it was every ~12 minutes with 15-minute tokens).
 - **Cache expiry**, rare per harness: a heartbeat whose cached response is a day old (with the
   drift check), a harness row write once a day (`harness-report:{id}` expires),
   `harness-auth:{id}` refilled once a day,
@@ -317,7 +339,7 @@ With every harness idle and no UI or webhook traffic, these still query Postgres
 - **`ralph-reconcile` while ralph work exists**: a pass at most once an hour while nothing
   changes (every 10 minutes after a change).
 - **Daily crons**: the forced `ralph-reconcile` run, `prune-webhook-deliveries`,
-  `prune-hidden-refs`, `gitlab-maintenance`.
+  `prune-hidden-refs`, `gitlab-maintenance`, `flush-agent-auth`.
 - **Anything after a change**: a counter bump, a due job (including a lapsed lease), an epoch
   rebuild, or a Redis outage sends the next idle request down the Postgres path once.
 
