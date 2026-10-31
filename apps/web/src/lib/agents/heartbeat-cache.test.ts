@@ -54,11 +54,12 @@ const { PostgresDispatcher } = await import("@/lib/dispatch/dispatcher");
 const { jobDueKey } = await import("@/lib/dispatch/due");
 const {
   CACHED_RESPONSE_KEEP_MS,
-  CACHED_RESPONSE_TTL_MS,
+  cachedResponseDueAt,
   checkHeartbeatDrift,
   heartbeatResponseKey,
   latestVersionKey,
 } = await import("./heartbeat-cache");
+const { currentDailyWindow } = await import("@/lib/daily-window");
 const defaults = await import("./defaults");
 const { pinRepository } = await import("./pins");
 const { saveAgentsCard } = await import("@/lib/repositories/cards");
@@ -480,11 +481,11 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     expect(after.response.versionPolicy).toBe("latest");
   });
 
-  /** Moves the cached response's build time back to `ms` ago. */
-  async function ageCachedResponse(agentId: string, ms: number) {
+  /** Sets the cached response's build time (ms). */
+  async function setBuiltAt(agentId: string, builtAt: number) {
     const key = heartbeatResponseKey(agentId);
     const entry = JSON.parse((await getRedis().get(key))!) as { builtAt: number };
-    entry.builtAt = Date.now() - ms;
+    entry.builtAt = builtAt;
     await getRedis().set(key, JSON.stringify(entry), "PX", CACHED_RESPONSE_KEEP_MS);
   }
 
@@ -493,19 +494,21 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
       vi.restoreAllMocks();
     });
 
-    it("uses a cached response for a day, then builds it from Postgres", async () => {
+    it("uses a cached response until the next daily window, then builds it from Postgres", async () => {
       const errors = vi.spyOn(console, "error");
       const { agentId } = await newAgent();
       const cached = await warm(agentId);
-      expect(CACHED_RESPONSE_TTL_MS).toBe(24 * 3600_000);
       // Kept past the bound, for the drift check.
       expect(await getRedis().pttl(heartbeatResponseKey(agentId))).toBeGreaterThan(
-        CACHED_RESPONSE_TTL_MS,
+        cachedResponseDueAt(Date.now()) - Date.now(),
       );
-      await ageCachedResponse(agentId, CACHED_RESPONSE_TTL_MS - 60_000);
+      // Built at the latest window's start, up to a day ago: still used.
+      const window = currentDailyWindow(new Date());
+      await setBuiltAt(agentId, window);
       expect((await send(agentId)).calls).toBe(0);
 
-      await ageCachedResponse(agentId, CACHED_RESPONSE_TTL_MS);
+      // Built a minute before it, however recently: due.
+      await setBuiltAt(agentId, window - 60_000);
       const fresh = await send(agentId);
       expect(fresh.calls).toBeGreaterThan(0);
       expect(fresh.response).toEqual(cached);
@@ -525,8 +528,8 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
       expect(stale.calls).toBe(0);
       expect(stale.response.pinnedRepositories).toEqual([]);
 
-      // ...until it reaches the bound: the agent gets the fresh one, and the drift is logged.
-      await ageCachedResponse(agentId, CACHED_RESPONSE_TTL_MS);
+      // ...until a daily window passes: the agent gets the fresh one, and the drift is logged.
+      await setBuiltAt(agentId, currentDailyWindow(new Date()) - 60_000);
       const fresh = await send(agentId);
       expect(fresh.calls).toBeGreaterThan(0);
       expect(fresh.response.pinnedRepositories).toHaveLength(1);
@@ -580,6 +583,16 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("heartbeat answered from 
     await closeRedis();
     expect((await send(agentId)).calls).toBeGreaterThan(0);
     expect((await send(agentId)).calls).toBeGreaterThan(0);
+  });
+});
+
+describe("cachedResponseDueAt", () => {
+  const at = (iso: string) => new Date(iso).getTime();
+
+  it("is the first daily window start after the build, whenever in the day it was built", () => {
+    expect(cachedResponseDueAt(at("2026-10-31T02:00:00Z"))).toBe(at("2026-10-31T03:15:00Z"));
+    expect(cachedResponseDueAt(at("2026-10-31T03:15:00Z"))).toBe(at("2026-11-01T03:15:00Z"));
+    expect(cachedResponseDueAt(at("2026-10-31T23:59:00Z"))).toBe(at("2026-11-01T03:15:00Z"));
   });
 });
 
