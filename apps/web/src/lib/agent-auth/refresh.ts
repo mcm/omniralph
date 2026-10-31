@@ -29,13 +29,19 @@ import { getTokenSigner } from "./signer";
  * generation and a random ID; Redis holds each agent's current generation and the hash of
  * its random ID (`agent-refresh:tokens`, field = agent ID, value `<generation>:<hash>`),
  * rebuilt from Postgres through the hot-state epoch. A refresh compares and advances it in
- * one script (`compareRefreshToken`) and buffers its `token_refresh` audit row
- * (`agent-refresh:audit`); the daily `flush-agent-auth` cron writes both to Postgres.
+ * one script (`compareRefreshToken`), marks the agent changed (`agent-refresh:changed`) and
+ * buffers its `token_refresh` audit row (`agent-refresh:audit`); the daily
+ * `flush-agent-auth` cron writes the changed agents' tokens and the rows to Postgres.
  * With hot state off or Redis unavailable, refresh rotates in Postgres instead.
  */
 
 export const REFRESH_TOKENS_KEY = "agent-refresh:tokens";
 export const REFRESH_AUDIT_KEY = "agent-refresh:audit";
+/** The agents whose token in Redis is newer than Postgres's (until the flush). */
+export const REFRESH_CHANGED_KEY = "agent-refresh:changed";
+/** Held by a running flush, so a cron event delivered twice doesn't write its rows twice. */
+const FLUSH_LOCK_KEY = "agent-refresh:flush-lock";
+const FLUSH_LOCK_MS = 15 * 60_000;
 /** Audit rows written per insert by the flush. */
 const FLUSH_BATCH = 500;
 /** Agents merged per rebuild script call. */
@@ -82,8 +88,18 @@ if cur then
   end
 end
 redis.call('HSET', KEYS[1], ARGV[1], ARGV[4])
+redis.call('SADD', KEYS[3], ARGV[1])
 redis.call('RPUSH', KEYS[2], ARGV[5])
 return status`;
+
+// After the flush wrote them: unmarks each agent (ARGV: agent ID, value) whose token is
+// still the one written; one that refreshed meanwhile stays for the next flush.
+const FLUSHED_SCRIPT = `for i = 1, #ARGV, 2 do
+  if redis.call('HGET', KEYS[1], ARGV[i]) == ARGV[i + 1] then
+    redis.call('SREM', KEYS[2], ARGV[i])
+  end
+end
+return 1`;
 
 // Sets each agent's state from Postgres unless Redis already holds a newer generation
 // (Redis runs ahead of Postgres until the daily flush). ARGV: agent ID, generation, hash, ...
@@ -143,9 +159,10 @@ export async function rotateRefreshTokenState(
         const audit: BufferedAudit = { agentId, ip, detail, createdAt: now.toISOString() };
         const status = (await redis.eval(
           ROTATE_SCRIPT,
-          2,
+          3,
           REFRESH_TOKENS_KEY,
           REFRESH_AUDIT_KEY,
+          REFRESH_CHANGED_KEY,
           agentId,
           String(presented.generation),
           presented.tokenIdHash,
@@ -197,30 +214,55 @@ export interface AgentAuthFlush {
 }
 
 /**
- * The daily flush (`flush-agent-auth`): writes Redis's refresh-token generations and the
- * buffered `token_refresh` audit rows to Postgres. A no-op with hot state off. Rows leave
- * the buffer only after their insert, so a failure retries them at the next flush.
+ * The daily flush (`flush-agent-auth`): writes the refresh-token generations of the agents
+ * that refreshed through Redis since the last flush, and the buffered `token_refresh` audit
+ * rows, to Postgres. Makes no Postgres query when there's neither; a no-op with hot state
+ * off, or while another flush runs. Agents are unmarked and rows leave the buffer only after
+ * their write, so a failure retries them at the next flush.
  */
 export async function flushAgentAuth(db: Database): Promise<AgentAuthFlush> {
-  if (!hotStateEnabled()) return { generations: 0, audits: 0 };
+  const none = { generations: 0, audits: 0 };
+  if (!hotStateEnabled()) return none;
   const redis = getRedis();
-  const states = Object.entries(await redis.hgetall(REFRESH_TOKENS_KEY)).flatMap(
-    ([agentId, value]) => {
-      const state = decodeState(value);
-      return state ? [{ agentId, ...state }] : [];
-    },
-  );
-  const generations = states.length > 0 ? await saveAgentRefreshTokenStates(db, states) : 0;
-  let audits = 0;
-  for (;;) {
-    const batch = await redis.lrange(REFRESH_AUDIT_KEY, 0, FLUSH_BATCH - 1);
-    if (batch.length === 0) break;
-    const rows = batch.flatMap((value) => parseAudit(value) ?? []);
-    await writeAgentAudits(db, rows);
-    await redis.ltrim(REFRESH_AUDIT_KEY, batch.length, -1);
-    audits += rows.length;
+  const lock = randomBytes(16).toString("base64url");
+  if ((await redis.set(FLUSH_LOCK_KEY, lock, "PX", FLUSH_LOCK_MS, "NX")) !== "OK") return none;
+  try {
+    const changed = await redis.smembers(REFRESH_CHANGED_KEY);
+    let generations = 0;
+    if (changed.length > 0) {
+      const values = await redis.hmget(REFRESH_TOKENS_KEY, ...changed);
+      const written: string[] = [];
+      const states = changed.flatMap((agentId, i) => {
+        const value = values[i];
+        const state = value ? decodeState(value) : null;
+        if (!state) return [];
+        written.push(agentId, value!);
+        return [{ agentId, ...state }];
+      });
+      if (states.length > 0) generations = await saveAgentRefreshTokenStates(db, states);
+      // Agents without a token in Redis (a rebuild dropped them) have nothing to write.
+      const gone = changed.filter((_, i) => !values[i]);
+      if (gone.length > 0) await redis.srem(REFRESH_CHANGED_KEY, ...gone);
+      if (written.length > 0) {
+        await redis.eval(FLUSHED_SCRIPT, 2, REFRESH_TOKENS_KEY, REFRESH_CHANGED_KEY, ...written);
+      }
+    }
+    let audits = 0;
+    for (;;) {
+      const batch = await redis.lrange(REFRESH_AUDIT_KEY, 0, FLUSH_BATCH - 1);
+      if (batch.length === 0) break;
+      const rows = batch.flatMap((value) => parseAudit(value) ?? []);
+      await writeAgentAudits(db, rows);
+      await redis.ltrim(REFRESH_AUDIT_KEY, batch.length, -1);
+      audits += rows.length;
+    }
+    return { generations, audits };
+  } finally {
+    // Only our own lock: one that expired may be another flush's by now.
+    if ((await redis.get(FLUSH_LOCK_KEY).catch(() => null)) === lock) {
+      await redis.del(FLUSH_LOCK_KEY).catch(() => undefined);
+    }
   }
-  return { generations, audits };
 }
 
 // Merges Postgres's last recorded generations in (the buffered audit rows aren't derived

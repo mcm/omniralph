@@ -21,6 +21,7 @@ import { signJobTokens, type SignedJobTokens } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
 import { RunSpecError, resolveRunSpec } from "@/lib/runs/resolve";
 import { organizationPlaybooks } from "@/lib/playbooks";
+import { scheduleJobOutcomeChecks } from "@/lib/ralph/due";
 import { jobHooks } from "@/lib/sinks";
 import { liveRoute } from "@/lib/live/request";
 
@@ -117,6 +118,8 @@ async function claimNext(
       },
     });
     await syncJobsDue([...settled.map(({ job }) => job), ...(claim ? [claim.job] : [])]);
+    // Their ralph runs are advanced even if the outcome hooks below never run.
+    await scheduleJobOutcomeChecks(settled.map(({ job }) => job));
     for (const job of settled) await onSettled(db, job);
     if (!claim || !tokens) return null;
 

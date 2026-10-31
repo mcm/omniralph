@@ -20,6 +20,7 @@ import {
   unauthorized,
 } from "@/lib/agent-auth/request";
 import { cacheAgentRevoked } from "@/lib/agent-auth/auth-state";
+import { revokeAgent } from "@/lib/agent-auth/revoke";
 import {
   cacheRefreshToken,
   issueRefreshToken,
@@ -54,7 +55,11 @@ function accessTokenLifetime(token: string): number {
 
 type FailureInput = { agentId: string | null; reason: string; lockout?: boolean };
 
-/** Reuse detected: the agent is revoked in Postgres; cache and audit it. */
+/**
+ * Reuse detected: the agent is revoked in Postgres; cache and audit it, then finish the
+ * revocation as the Agents page does (`revokeAgent`: its running jobs requeued, failed or
+ * canceled, its pins removed, the jobs targeted at it redispatched).
+ */
 async function reused(
   db: Database,
   req: Request,
@@ -62,6 +67,12 @@ async function reused(
   now: Date,
 ): Promise<Response> {
   await cacheAgentRevoked(input.agentId);
+  try {
+    await revokeAgent(input.agentId, { ip: clientIp(req), db });
+  } catch (error) {
+    // The agent is revoked: its jobs' leases expire without its heartbeats.
+    console.error(`Revoking agent ${input.agentId} after refresh token reuse failed`, error);
+  }
   await writeAgentAudit(db, {
     agentId: input.agentId,
     event: "refresh_reuse",

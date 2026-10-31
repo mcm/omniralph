@@ -6,6 +6,8 @@ import {
   createRun,
   ensureLane,
   getLane,
+  insertJob,
+  jobs,
   organizations,
   ralphRuns,
   repositories,
@@ -28,6 +30,7 @@ import { startTestRedis, testRedisAvailable, type TestRedis } from "@/lib/hot-st
 import type * as LinearClient from "@/lib/linear/client";
 import type * as ReconcileCron from "./reconcile-cron";
 import type * as Run from "./run";
+import type * as Sinks from "@/lib/sinks";
 import type { AdvanceResult, RalphDeps } from "./run";
 
 vi.mock("server-only", () => ({}));
@@ -39,6 +42,8 @@ const state = vi.hoisted(() => ({
   advanced: [] as string[],
   /** Organizations with Linear connected. */
   linearConnected: new Set<string>(),
+  /** Whether looking up a job's outcome hooks throws (a hook that never runs). */
+  hooksFail: false,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => ({}) }));
@@ -60,6 +65,16 @@ vi.mock("@/lib/ralph/run", async (importOriginal) => {
     advanceRun: (runId: string, deps: RalphDeps) => {
       state.advanced.push(runId);
       return actual.advanceRun(runId, deps);
+    },
+  };
+});
+vi.mock("@/lib/sinks", async (importOriginal) => {
+  const actual = await importOriginal<typeof Sinks>();
+  return {
+    ...actual,
+    jobHooks: (...args: Parameters<typeof actual.jobHooks>) => {
+      if (state.hooksFail) throw new Error("killed before the hook");
+      return actual.jobHooks(...args);
     },
   };
 });
@@ -91,6 +106,7 @@ const { advanceRun } = await import("./run");
 const { cleanupDedupeKey, recordClosedPullRequest } = await import("./cleanup");
 const { onRalphCleanupJobFinished } = await import("./jobs");
 const { GET } = await import("@/app/api/cron/ralph-reconcile/route");
+const { GET: expireJobs } = await import("@/app/api/cron/expire-jobs/route");
 
 const databaseAvailable = testDatabaseAvailable();
 const redisAvailable = await testRedisAvailable();
@@ -250,6 +266,7 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile schedule
     state.fullPasses = 0;
     state.advanced = [];
     state.linearConnected = new Set([organizationId]);
+    state.hooksFail = false;
     // Only `Date`: Redis and Postgres keep real timers.
     vi.useFakeTimers({ toFake: ["Date"], now: NOW });
   });
@@ -414,6 +431,28 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile schedule
     await scheduleJobOutcomeCheck({ ralphRunId: runId, dedupeKey: cleanupDedupeKey(laneId) });
     expect(await score(runId)).toBe(NOW + RALPH_SAFETY_MS);
     expect(await laneScore(laneId)).toBe(NOW + RALPH_SAFETY_MS);
+  });
+
+  it("schedules an expired ralph job's run before its outcome hook runs", async () => {
+    const run = await newRun("completed");
+    const { job } = await insertJob(db, {
+      organizationId,
+      type: "worktree.exec",
+      taskType: "system",
+      ralphRunId: run.id,
+    });
+    await db
+      .update(jobs)
+      .set({ createdAt: new Date(NOW - 2 * 24 * 60 * MINUTE) })
+      .where(eq(jobs.id, job.id));
+    state.hooksFail = true;
+    const response = await expireJobs(
+      new Request("http://localhost/api/cron/expire-jobs", {
+        headers: { authorization: "Bearer cron-secret" },
+      }),
+    );
+    expect(await response.json()).toEqual({ expired: 1 });
+    expect(await score(run.id)).toBe(NOW + RALPH_SAFETY_MS);
   });
 
   it("checks only the due lanes, and reschedules each from what's left", async () => {
