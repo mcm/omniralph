@@ -27,7 +27,6 @@ import {
   type WorkflowState,
 } from "../types.js";
 import {
-  isLinearUploadUrl,
   type Cycle,
   type LinearCreateIssueInput,
   type LinearGateway,
@@ -39,6 +38,7 @@ import {
   type RoutingIssueFields,
   type User,
 } from "./gateway.js";
+import { findLinearUploads, isLinearUploadUrl } from "./uploads.js";
 
 export interface FakeActivity {
   sessionId: string;
@@ -572,6 +572,7 @@ export class FakeLinearGateway implements LinearGateway {
 
   readonly uploads: TrackerUploads = {
     isUploadUrl: isLinearUploadUrl,
+    findUploads: findLinearUploads,
     downloadUpload: async (url) => {
       this.fail("downloadUpload");
       this.downloads.push(url);

@@ -37,6 +37,7 @@ import {
   type RoutingIssue,
   type RoutingIssueFields,
 } from "../routing.js";
+import { findLinearUploads, isLinearUploadUrl } from "./uploads.js";
 
 export { parseIssueIdentifier };
 export type { RoutingIssue, RoutingIssueFields };
@@ -110,14 +111,6 @@ export interface LinearGateway extends GatewayWith<TrackerCapability> {
   listCycles(): Promise<Cycle[]>;
   /** The workspace's active users (every page). */
   listUsers(): Promise<User[]>;
-}
-
-/** Linear's upload storage: files pasted into issues and comments. */
-const UPLOAD_URL = /^https:\/\/uploads\.linear\.app\/[A-Za-z0-9/_.-]+$/;
-
-/** Whether `url` is exactly an (unsigned) Linear upload URL. */
-export function isLinearUploadUrl(url: string): boolean {
-  return UPLOAD_URL.test(url) && !url.endsWith(".");
 }
 
 /** A Linear workflow state type as the neutral one (Linear's are the same six). */
@@ -461,6 +454,7 @@ export class SdkLinearGateway implements LinearGateway {
 
   readonly uploads: TrackerUploads = {
     isUploadUrl: isLinearUploadUrl,
+    findUploads: findLinearUploads,
     downloadUpload: (url, signal) => this.downloadUpload(url, signal),
     uploadFile: (input) => this.uploadFile(input),
   };
