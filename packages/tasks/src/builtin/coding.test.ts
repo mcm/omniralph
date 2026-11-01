@@ -1,3 +1,4 @@
+import { FIX_SECTIONS, splitFixDescription } from "@omniralph/planning";
 import {
   buildDescribePrPrompt,
   buildRequestPrompt,
@@ -41,6 +42,30 @@ function render(template: string, context: object): string {
   return renderTemplate(template, context as Record<string, unknown>);
 }
 
+/**
+ * A story's description with each part fenced as the template fences it: a
+ * Fix's behavior sections stay under their headings (outside the fences), so
+ * today's builder still finds them.
+ */
+function fenceDescription(story: PromptContext["story"]): string {
+  const description = story.description.trim();
+  if (story.kind !== "fix") return description && fenced("story.description", description);
+  const parts = splitFixDescription(description);
+  const sections = [
+    ["current", parts.current],
+    ["expected", parts.expected],
+    ["unchanged", parts.unchanged],
+  ] as const;
+  return [
+    parts.description && fenced("story.description", parts.description),
+    ...sections.flatMap(([key, body]) =>
+      body ? [`## ${FIX_SECTIONS[key]}\n\n${fenced(`story.fix.${key}`, body)}`] : [],
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 /** `ctx` with each untrusted value fenced, for today's story builder. */
 function fenceStory(ctx: PromptContext): PromptContext {
   const { epic, story } = ctx;
@@ -52,11 +77,16 @@ function fenceStory(ctx: PromptContext): PromptContext {
     epic: {
       ...epic,
       description: epic.description.trim() && fenced("epic.prd", epic.description.trim()),
+      ...(epic.requirements && {
+        requirements: epic.requirements.map((r) => ({
+          ...r,
+          text: fenced("story.covers.items.text", r.text),
+        })),
+      }),
     },
     story: {
       ...story,
-      description:
-        story.description.trim() && fenced("story.description", story.description.trim()),
+      description: fenceDescription(story),
       acceptanceCriteria: story.acceptanceCriteria.map((c) =>
         fenced("story.acceptanceCriteria.items", c),
       ),

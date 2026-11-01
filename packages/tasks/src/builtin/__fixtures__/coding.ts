@@ -1,6 +1,7 @@
 /**
  * Inputs of today's coding prompt builders (`@omniralph/ralph`) for the
- * built-in coding task tests: a PRD epic and a single issue (story runs),
+ * built-in coding task tests: a PRD epic, a planning-format epic's story and
+ * fix, and a single issue (story runs),
  * tracker (Linear) and chat requests, `/ship` with stashes, `historyRewrite: never` and `always`,
  * and PR descriptions.
  */
@@ -74,6 +75,75 @@ pnpm export --all
   externalIssues: { "ext-9": "OPS-9" },
 };
 
+const PLANNING_STORY = story({
+  key: "issue-22",
+  storyId: "ENG-22",
+  title: "Export widgets as CSV",
+  url: "https://linear.app/acme/issue/ENG-22",
+  description:
+    "As an admin, I want a CSV export so that I can share widgets.\n\nFiles: `src/export.ts`.",
+  covers: ["FR-1", "FR-3", "FR-9"],
+  acceptanceCriteria: ["The export button downloads `widgets.csv` with a header row"],
+  dependsOn: ["issue-21"],
+  status: "in_progress",
+  kind: "story",
+});
+
+const PLANNING_FIX = story({
+  key: "issue-23",
+  storyId: "ENG-23",
+  title: "Keep commas inside quoted cells",
+  url: "https://linear.app/acme/issue/ENG-23",
+  description: `## Current behavior
+
+A cell holding \`a, b\` splits into two columns.
+
+## Expected behavior
+
+The cell is quoted and stays one column.
+
+## Unchanged behavior
+
+Cells without commas export unquoted.`,
+  covers: ["FR-2"],
+  acceptanceCriteria: ["Exporting a widget named `a, b` yields one quoted cell"],
+  status: "open",
+  kind: "fix",
+});
+
+const PLANNING_EPIC: Epic = {
+  kind: "children",
+  issueId: "epic-20",
+  identifier: "ENG-20",
+  title: "Widget exports",
+  description: `## Problem
+Admins can't share widgets outside the app.
+
+## Scope
+### In
+- CSV export
+### Out
+- PDF export
+
+## Requirements
+- FR-1: The system must export widgets as CSV.
+- FR-2: The system must quote cells that hold a comma.
+- FR-3: WHEN an export is empty, the system must still write the header row.`,
+  url: "https://linear.app/acme/issue/ENG-20",
+  branchName: "eng-20-widget-exports",
+  qualityGates: [],
+  requirements: [
+    { id: "FR-1", text: "The system must export widgets as CSV." },
+    { id: "FR-2", text: "The system must quote cells that hold a comma." },
+    { id: "FR-3", text: "WHEN an export is empty, the system must still write the header row." },
+  ],
+  stories: [
+    story({ key: "issue-21", storyId: "ENG-21", title: "Widgets table", status: "completed" }),
+    PLANNING_STORY,
+    PLANNING_FIX,
+  ],
+};
+
 const PROGRESS = `# Ralph Progress Log
 
 ## Codebase Patterns (Study These First)
@@ -128,6 +198,30 @@ export const STORY_FIXTURES: Record<string, PromptContext> = {
       },
     ],
     attachments: "- **mockup.png** (from ENG-12 description): `/tmp/attachments/mockup.png`",
+    now: NOW,
+  },
+  "planning-story": {
+    trackerName: "Linear",
+    epic: PLANNING_EPIC,
+    story: PLANNING_STORY,
+    progressFile: "/tmp/omniralph-progress-p/progress.md",
+    progress: PROGRESS,
+    attempt: 1,
+    maxAttempts: 3,
+    followUps: true,
+    checks: ["pnpm test"],
+    now: NOW,
+  },
+  "planning-fix": {
+    trackerName: "Linear",
+    epic: PLANNING_EPIC,
+    story: PLANNING_FIX,
+    progressFile: "/tmp/omniralph-progress-p/progress.md",
+    progress: PROGRESS,
+    attempt: 1,
+    maxAttempts: 3,
+    followUps: true,
+    checks: ["pnpm test"],
     now: NOW,
   },
   "single-issue": {

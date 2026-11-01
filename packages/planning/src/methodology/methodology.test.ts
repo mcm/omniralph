@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { splitFixDescription } from "./task-prompt.js";
 import { type Fragment, SHARED_RULES, renderFragment } from "./rules.js";
 import {
   EPIC_TEMPLATE,
@@ -137,5 +138,28 @@ describe("renderTriageMethodology", () => {
     expect(methodology).toContain("Acme Tracker");
     expect(methodology).toContain("`ACME.md`");
     expect(methodology).not.toMatch(/\{\{/);
+  });
+});
+
+describe("splitFixDescription", () => {
+  it("takes the behavior sections out, keeping the lead and any other section", () => {
+    const parts = splitFixDescription(
+      "Seen on Safari.\n\n## Expected behavior\nIt stays.\n\n## Notes\nSee the log.\n\n## Current behavior\nIt vanishes.",
+    );
+    expect(parts).toEqual({
+      description: "Seen on Safari.\n\n## Notes\n\nSee the log.",
+      current: "It vanishes.",
+      expected: "It stays.",
+      unchanged: null,
+    });
+  });
+
+  it("returns text without behavior sections whole", () => {
+    expect(splitFixDescription("  The picker shows UTC.  ")).toEqual({
+      description: "The picker shows UTC.",
+      current: null,
+      expected: null,
+      unchanged: null,
+    });
   });
 });

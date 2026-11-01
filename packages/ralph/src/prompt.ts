@@ -5,6 +5,18 @@
  *
  * Custom templates use a Handlebars-compatible subset: `{{var}}`, `{{#if var}}...{{else}}...{{/if}}`.
  */
+import {
+  COVERED_REQUIREMENTS_HEADING,
+  COVERED_REQUIREMENTS_NOTE,
+  CRITERIA_AS_EVIDENCE_NOTE,
+  EPIC_CONTEXT_HEADING,
+  EPIC_CONTEXT_NOTE,
+  FIX_SECTIONS,
+  FIX_TASK_NOTE,
+  UNKNOWN_REQUIREMENT_TEXT,
+  requirementId,
+  splitFixDescription,
+} from "@omniralph/planning";
 import { extractCodebasePatterns, recentProgressEntries } from "./progress.js";
 import { templateList, type TemplateList } from "./triage.js";
 import { type Epic, type Story, dependencyLabel } from "./types.js";
@@ -88,16 +100,26 @@ export interface PromptContext {
   now?: Date;
 }
 
-export const DEFAULT_STORY_TEMPLATE = `You are working through a PRD epic from {{trackerName}}, one user story per session.
+export const DEFAULT_STORY_TEMPLATE = `{{#if planningEpic}}You are working through an epic from {{trackerName}}, one task per session.
+Each session starts with a fresh context: the epic, the progress log and the repo are your memory.
+
+## Epic: {{epicTitle}} ({{epicIdentifier}}){{else}}You are working through a PRD epic from {{trackerName}}, one user story per session.
 Each session starts with a fresh context: the PRD, the progress log and the repository are your memory.
 
-## PRD: {{epicTitle}} ({{epicIdentifier}})
+## PRD: {{epicTitle}} ({{epicIdentifier}}){{/if}}
 ### Progress: {{completedCount}}/{{totalCount}} stories complete
 
 {{#if prdOverview}}
-<prd-document>
+{{#if planningEpic}}### ${EPIC_CONTEXT_HEADING}
+${EPIC_CONTEXT_NOTE}
+
+<epic-context>
+{{prdOverview}}
+</epic-context>
+{{else}}<prd-document>
 {{prdOverview}}
 </prd-document>
+{{/if}}
 
 {{/if}}
 ### All Stories
@@ -111,6 +133,9 @@ Each session starts with a fresh context: the PRD, the progress log and the repo
 ## Your Task: {{storyId}} - {{storyTitle}}
 {{#if storyIdentifier}}{{trackerName}} issue: {{storyIdentifier}}{{#if storyUrl}} ({{storyUrl}}){{/if}}
 {{/if}}Kind: {{storyKind}}
+{{#if isFix}}
+${FIX_TASK_NOTE}
+{{/if}}
 
 {{#if repository}}Repository: \`{{repository}}\`. This story belongs in this repository rather than the epic's main one, and this worktree is a checkout of it: make every change here.
 {{/if}}
@@ -119,8 +144,30 @@ Each session starts with a fresh context: the PRD, the progress log and the repo
 {{storyDescription}}
 
 {{/if}}
+{{#if currentBehavior}}
+### ${FIX_SECTIONS.current}
+{{currentBehavior}}
+
+{{/if}}
+{{#if expectedBehavior}}
+### ${FIX_SECTIONS.expected}
+{{expectedBehavior}}
+
+{{/if}}
+{{#if unchangedBehavior}}
+### ${FIX_SECTIONS.unchanged}
+{{unchangedBehavior}}
+
+{{/if}}
+{{#if coveredRequirements}}
+### ${COVERED_REQUIREMENTS_HEADING}
+${COVERED_REQUIREMENTS_NOTE}
+{{coveredRequirements}}
+
+{{/if}}
 {{#if acceptanceCriteria}}
 ### Acceptance Criteria
+${CRITERIA_AS_EVIDENCE_NOTE}
 {{acceptanceCriteria}}
 
 {{/if}}
@@ -172,7 +219,7 @@ Review each one with \`git stash show -p --include-untracked <sha>\` and apply w
 
 {{/if}}
 ## Workflow
-1. Study the PRD context above to understand the bigger picture.
+{{#if planningEpic}}1. Read the epic context above for background, then build only what this task asks for.{{else}}1. Study the PRD context above to understand the bigger picture.{{/if}}
 2. Read the progress log at \`{{progressFile}}\` for status, learnings and gotchas.
 3. Implement ONLY this story ({{storyId}}), satisfying every acceptance criterion. Do not start other stories. Implement it end to end: no TODOs, stubs or placeholders for anything its acceptance criteria cover. The tests and error handling its new code needs are part of this story, not later work.
 4. Run the quality gates and fix any failures.
@@ -293,11 +340,43 @@ export function storyKindLabel(story: Pick<Story, "kind">): StoryKindLabel {
   return story.kind === "fix" ? "Fix" : "Story";
 }
 
+/** Whether the epic is in the planning format (it has `## Requirements`), not a legacy PRD or a single issue. */
+function planningEpic(epic: Epic): boolean {
+  return epic.kind !== "single" && epic.requirements !== undefined;
+}
+
+/** A requirement of a story's `Covers:` line, with its text from the epic (null when the epic doesn't have it). */
+export interface CoveredRequirement {
+  id: string;
+  text: string | null;
+}
+
+/** The requirements of `story`'s `Covers:` line that are requirement identifiers, with their text from `epic`. */
+export function coveredRequirements(epic: Epic, story: Story): CoveredRequirement[] {
+  return (story.covers ?? [])
+    .filter((id) => requirementId(id))
+    .map((id) => ({
+      id,
+      text: epic.requirements?.find((r) => r.id === id)?.text.trim() || null,
+    }));
+}
+
+/** A story's description as its prompt shows it: a Fix's behavior sections apart from the rest. */
+function storyParts(story: Story) {
+  const description = story.description.trim();
+  if (story.kind !== "fix") {
+    return { description, current: null, expected: null, unchanged: null };
+  }
+  return splitFixDescription(description);
+}
+
 export function buildStoryPrompt(ctx: PromptContext, template = DEFAULT_STORY_TEMPLATE): string {
   const { epic, story } = ctx;
   const completed = completedCount(epic);
   const { checks, qualityGates } = storyGates(ctx);
+  const parts = storyParts(story);
   const vars: Vars = {
+    planningEpic: planningEpic(epic) ? "yes" : undefined,
     trackerName: ctx.trackerName,
     epicTitle: epic.title,
     epicIdentifier: epic.identifier,
@@ -313,8 +392,16 @@ export function buildStoryPrompt(ctx: PromptContext, template = DEFAULT_STORY_TE
     storyIdentifier: story.identifier,
     storyUrl: story.url,
     storyKind: storyKindLabel(story),
+    isFix: story.kind === "fix" ? "yes" : undefined,
     repository: story.repo?.name,
-    storyDescription: story.description.trim() || undefined,
+    storyDescription: parts.description || undefined,
+    currentBehavior: parts.current ?? undefined,
+    expectedBehavior: parts.expected ?? undefined,
+    unchangedBehavior: parts.unchanged ?? undefined,
+    coveredRequirements:
+      coveredRequirements(epic, story)
+        .map((r) => `- ${r.id}: ${r.text ?? UNKNOWN_REQUIREMENT_TEXT}`)
+        .join("\n") || undefined,
     acceptanceCriteria: story.acceptanceCriteria.map((c) => `- [ ] ${c}`).join("\n") || undefined,
     notes: story.notes,
     attachments: ctx.attachments,
@@ -738,9 +825,11 @@ export interface StoryTemplateContext {
     identifier: string;
     title: string;
     url: string | null;
-    /** The PRD; null for a single issue or a blank one. */
+    /** The PRD (the epic's description); null for a single issue or a blank one. */
     prd: string | null;
     single: boolean;
+    /** The epic is in the planning format: its description is background for the task, not a PRD. */
+    planning: boolean;
   };
   stories: StoryListContext;
   story: {
@@ -754,8 +843,16 @@ export interface StoryTemplateContext {
     kind: StoryKindLabel;
     /** The repository it's worked in, when not the epic's main one. */
     repository: string | null;
-    /** Trimmed; null when blank. */
+    /** Trimmed, without a Fix's behavior sections; null when blank. */
     description: string | null;
+    /** A Fix's behavior sections (each null when it has none); null for a Story. */
+    fix: {
+      current: string | null;
+      expected: string | null;
+      unchanged: string | null;
+    } | null;
+    /** The requirements of its `Covers:` line, with their text from the epic. */
+    covers: TemplateList<CoveredRequirement>;
     acceptanceCriteria: TemplateList<string>;
     notes: string | null;
   };
@@ -785,6 +882,7 @@ export interface StoryTemplateContext {
 export function storyTemplateContext(ctx: PromptContext): StoryTemplateContext {
   const { epic, story } = ctx;
   const { checks, qualityGates } = storyGates(ctx);
+  const parts = storyParts(story);
   return {
     tracker: { name: ctx.trackerName },
     epic: {
@@ -793,6 +891,7 @@ export function storyTemplateContext(ctx: PromptContext): StoryTemplateContext {
       url: epic.url ?? null,
       prd: epic.kind === "single" ? null : epic.description.trim() || null,
       single: epic.kind === "single",
+      planning: planningEpic(epic),
     },
     stories: storyListContext(epic, story),
     story: {
@@ -802,7 +901,12 @@ export function storyTemplateContext(ctx: PromptContext): StoryTemplateContext {
       title: oneLine(story.title),
       kind: storyKindLabel(story),
       repository: story.repo?.name ?? null,
-      description: story.description.trim() || null,
+      description: parts.description || null,
+      fix:
+        story.kind === "fix"
+          ? { current: parts.current, expected: parts.expected, unchanged: parts.unchanged }
+          : null,
+      covers: templateList(coveredRequirements(epic, story)),
       acceptanceCriteria: templateList(story.acceptanceCriteria),
       notes: story.notes || null,
     },
