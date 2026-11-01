@@ -26,6 +26,7 @@ import {
   REVOKE_DESCRIPTION,
 } from "./agent-actions";
 import { AGENT_NOT_FOUND } from "./agent-panel";
+import { REENROLL_REUSE_WARNING, reenrollDescription } from "./enroll-sheet";
 import { FleetView } from "./fleet-view";
 import {
   AGENT_ALPHA,
@@ -155,20 +156,27 @@ function withRole(role: "admin" | "member") {
 }
 
 describe("the ⋯ menu", () => {
-  it("offers an admin Install package…, Audit log, Copy agent ID, then Revoke agent… on a live agent", async () => {
+  it("offers an admin Install package…, Audit log, Copy agent ID, Re-enroll…, then Revoke agent… on a live agent", async () => {
     await openAgent(AGENT_ALPHA, "coder-1");
     expect((await openMenu()).items).toEqual([
       "Install package…",
       "Audit log",
       "Copy agent ID",
+      "Re-enroll…",
       "—",
       "Revoke agent…",
     ]);
   });
 
-  it("offers an admin Audit log, Copy agent ID, then Remove agent… on a revoked agent", async () => {
+  it("offers an admin Audit log, Copy agent ID, Re-enroll…, then Remove agent… on a revoked agent", async () => {
     await openAgent(AGENT_REVOKED, "aardvark");
-    expect((await openMenu()).items).toEqual(["Audit log", "Copy agent ID", "—", "Remove agent…"]);
+    expect((await openMenu()).items).toEqual([
+      "Audit log",
+      "Copy agent ID",
+      "Re-enroll…",
+      "—",
+      "Remove agent…",
+    ]);
   });
 
   it.each([
@@ -419,6 +427,94 @@ describe("Audit log", () => {
   });
 });
 
+describe("Re-enroll…", () => {
+  const ENROLLMENT_ID = "5b0f3c55-6f43-4b1e-9d4a-2f1e7c9a1a01";
+
+  function serveReenrollment(state: { redeemed: boolean }) {
+    serve({
+      [`POST /api/ui/agents/${AGENT_REVOKED}/reenroll`]: () =>
+        jsonResponse({
+          ok: true,
+          id: ENROLLMENT_ID,
+          token: "ore_again",
+          expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+          command: "omniralph-agent enroll --server https://x --token ore_again",
+        }),
+      [`GET /api/ui/agent-enrollments/${ENROLLMENT_ID}`]: () =>
+        jsonResponse({
+          id: ENROLLMENT_ID,
+          expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+          agent: state.redeemed ? { id: AGENT_REVOKED, name: "aardvark" } : null,
+        }),
+    });
+  }
+
+  async function openReenroll() {
+    await openAgent(AGENT_REVOKED, "aardvark");
+    await choose("Re-enroll…");
+    return screen.findByRole("dialog", { name: "Re-enroll aardvark" });
+  }
+
+  it("creates a token bound to the agent and shows the same commands as Enroll", async () => {
+    serveReenrollment({ redeemed: false });
+    const sheet = await openReenroll();
+    expect(within(sheet).getByText(reenrollDescription("aardvark"))).toBeTruthy();
+    expect(within(sheet).queryByText(REENROLL_REUSE_WARNING)).toBeNull();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Generate token" }));
+    expect((await within(sheet).findByLabelText("Token")).textContent).toBe("ore_again");
+    expect(writes("POST", `/api/ui/agents/${AGENT_REVOKED}/reenroll`)).toHaveLength(1);
+    expect(within(sheet).getByLabelText("Install command").textContent).toBe(
+      "npm install -g @omniralph/agent",
+    );
+    expect(within(sheet).getByLabelText("Enroll command").textContent).toBe(
+      "omniralph-agent enroll --server https://x --token ore_again",
+    );
+    expect(within(sheet).getByRole("status").textContent).toBe("Waiting for aardvark to connect…");
+  });
+
+  it("says to find out why first after token reuse", async () => {
+    const revoked = data.agents.find((row) => row.id === AGENT_REVOKED)!;
+    const detail = agentDetail(revoked);
+    details = {
+      [AGENT_REVOKED]: {
+        ...detail,
+        security: { ...detail.security, reuseAlerts30d: 1, lastReuseAt: detail.agent.revokedAt },
+      },
+    };
+    serveReenrollment({ redeemed: false });
+    const sheet = await openReenroll();
+    expect(within(sheet).getByRole("alert").textContent).toBe(REENROLL_REUSE_WARNING);
+  });
+
+  it("switches to Connected once the agent redeems the token", async () => {
+    const state = { redeemed: false };
+    serveReenrollment(state);
+    const live = fakeAbly();
+    await openAgent(AGENT_REVOKED, "aardvark", { live });
+    await waitFor(() =>
+      expect(live.current().subscribed()).toContain(`org:${TEST_ORGANIZATION_ID}:changes`),
+    );
+    await choose("Re-enroll…");
+    const sheet = await screen.findByRole("dialog", { name: "Re-enroll aardvark" });
+    await userEvent.click(within(sheet).getByRole("button", { name: "Generate token" }));
+    await within(sheet).findByLabelText("Token");
+
+    state.redeemed = true;
+    act(() =>
+      live
+        .current()
+        .deliver(
+          `org:${TEST_ORGANIZATION_ID}:changes`,
+          changeEvent(TEST_ORGANIZATION_ID, { resource: "agent", ids: [AGENT_REVOKED] }),
+        ),
+    );
+    await waitFor(() => expect(within(sheet).getByRole("status").textContent).toBe("Connected"));
+    expect(within(sheet).getByRole("link", { name: "Open aardvark" }).getAttribute("href")).toBe(
+      `/fleet/${AGENT_REVOKED}`,
+    );
+  });
+});
+
 describe("Revoke agent…", () => {
   async function openRevoke() {
     await openAgent(AGENT_ALPHA, "coder-1");
@@ -453,8 +549,14 @@ describe("Revoke agent…", () => {
     expect(within(panel()).getByText(/^Revoked/)).toBeTruthy();
     expect(within(tableRow("coder-1")!).getByText("Revoked")).toBeTruthy();
     await waitFor(() => expect(ui.toast).toHaveBeenCalledWith("coder-1 revoked"));
-    // A revoked agent offers Remove next.
-    expect((await openMenu()).items).toEqual(["Audit log", "Copy agent ID", "—", "Remove agent…"]);
+    // A revoked agent offers Re-enroll and Remove next.
+    expect((await openMenu()).items).toEqual([
+      "Audit log",
+      "Copy agent ID",
+      "Re-enroll…",
+      "—",
+      "Remove agent…",
+    ]);
   });
 
   it("puts the agent back when the server refuses", async () => {

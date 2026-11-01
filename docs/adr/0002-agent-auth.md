@@ -191,8 +191,8 @@ rotation and a `token_refresh` audit row in Postgres per refresh) moved to Redis
   random ID (hot state, rebuilt from `agents.refresh_generation`). The same
   generation and random ID rotates; an older generation, or the same generation
   with another random ID, is reuse and revokes the agent, as before; its running
-  jobs are requeued (or failed, or canceled) and its pins removed, as when it's
-  revoked from the Agents page.
+  jobs are requeued (or failed, or canceled), as when it's revoked from the Agents
+  page. Its pins stay (see _Re-enrollment in place_ below).
 - **A newer generation than Redis knows** is possible only after Redis lost state
   (it was rebuilt from Postgres, which the daily flush updates), or when a refresh
   fell back to Postgres while another instance was rebuilding. It's accepted once
@@ -223,6 +223,43 @@ rotation and a `token_refresh` audit row in Postgres per refresh) moved to Redis
 - **Signing.** Refresh tokens are RS256 like every other token (no HS\* keys), so
   each refresh costs two KMS signatures. A signed token is about 700 characters;
   `TokenRequest` accepts up to 4,096.
+
+### Re-enrollment in place (TOOL-925)
+
+An agent that was revoked (by an admin, or for `refresh_reuse`) or whose refresh
+token expired (90 days without a refresh; it isn't revoked but can't authenticate)
+is re-enrolled **in place**, keeping its ID and everything keyed on it: name, repo
+pins, reported state, audit and attempt history.
+
+- **Bound enrollment tokens.** **Fleet › _agent_ › ⋯ › Re-enroll…** (admins)
+  creates an enrollment token like any other (one hour, single use, hashed) with
+  `agent_enrollments.reenroll_agent_id` set. `POST /api/agent/enroll` redeems it
+  by re-activating that agent instead of inserting one: it clears `revoked_at`,
+  deletes the agent's legacy `agent_refresh_tokens` (so those become unknown, not
+  "used" tokens whose reuse would revoke it), records the new token and writes a
+  `reenroll` audit row (`wasRevoked`, `reenrolledBy`, and `compromisedFamily` when
+  a `refresh_reuse` happened since the agent last enrolled). A deleted agent's
+  token is refused.
+- **A fresh token family.** The first token's generation is past every generation
+  issued before: the larger of Postgres's `refresh_generation` and Redis's live
+  one, plus a gap of 1,000 (`REENROLL_GENERATION_GAP`) covering refreshes Redis
+  ran ahead of Postgres by and may have lost. It's also stored as
+  `agents.refresh_family_start` (and in Redis, `agent-refresh:families`, rebuilt
+  from Postgres with the tokens). A refresh token of an older generation is
+  rejected as `refresh_stale_family` in both the Redis script and the Postgres
+  fallback, before the generation comparison, so a stolen old token is neither
+  accepted as "a newer generation" to catch up to nor treated as reuse that would
+  revoke the re-enrolled agent. After the commit, the new token is cached in Redis
+  (replacing an older-family generation) and the cached auth state is set to
+  `active`, overwriting `revoked`.
+- **Revoking keeps the pins.** Revocation no longer deletes `agent_repo_pins`.
+  While the agent is revoked its pins count as none: dispatch (`pinnedAgentFor`,
+  the coding and query agent lists), repository status ("No agent online") and
+  the Repos list ignore them, and **Repos › Agents** shows the agent as revoked.
+  Deleting an agent still removes its pins.
+- **Trade-off.** Access tokens issued before a revocation are checked against the
+  agent's auth state only, so one that is still unexpired (at most 15 minutes old)
+  works again once the agent is re-enrolled.
 
 ### Consequences
 

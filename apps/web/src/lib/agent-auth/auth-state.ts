@@ -58,6 +58,16 @@ export async function cacheAgentRevoked(agentId: string): Promise<void> {
   );
 }
 
+/**
+ * Records a re-enrollment (TOOL-925) in Redis, overwriting a cached `revoked`; call after the
+ * Postgres commit.
+ */
+export async function cacheAgentActive(agentId: string): Promise<void> {
+  await writeHotState((redis) =>
+    redis.set(agentAuthKey(agentId), "active", "PX", cachedStateTtlMs()),
+  );
+}
+
 // A rebuild may follow a failed revocation write: drop every cached state so each is
 // read from Postgres again on its next request.
 registerHotStateRebuilder("agent-auth", async (redis) => {

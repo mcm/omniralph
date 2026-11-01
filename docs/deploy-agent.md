@@ -680,8 +680,8 @@ runs.
 Pinning a repository to an agent routes its jobs to that agent only and makes the agent pre-clone it
 (`repo.sync`). **Fleet** shows each agent's status (online, offline since its last heartbeat,
 running: "Running 2 of 4" once it reports its slots), its running and recent work, its packages, its
-security line and, under **⋯ › Audit log**, its audit log (enrollment, token refreshes, credential
-issuance, revocation). From each heartbeat it also shows, read-only: "· pinned to 2.0.3" in the
+security line and, under **⋯ › Audit log**, its audit log (enrollment and re-enrollment, token
+refreshes, credential issuance, revocation). From each heartbeat it also shows, read-only: "· pinned to 2.0.3" in the
 status line when the agent has a local pin, "Missing host tools: gh" when a playbook requires a
 host tool the agent doesn't have, "Claude isn't signed in" under **Models reported**, and, in
 **⋯ › Install package…**, which packages the agent's allow-list lets it install (a name outside it
@@ -873,27 +873,40 @@ again` when the control panel rejects its refresh token:
   processes ran with the same config, or the agent crashed between receiving and saving a rotated
   token.
 - **Revoked**: an admin of its organization revoked the agent (**Fleet › _agent_ › ⋯ › Revoke agent…**).
+- **Expired**: the agent didn't refresh for 90 days (offline that long), so its refresh token
+  expired. The agent isn't revoked, but it can't authenticate again; its **Security** line says
+  "Needs re-enrollment: refresh token rejected (expired)".
 
-What to do:
+Re-enroll the agent **in place**: it keeps its ID, name, repository pins, audit log and attempt
+history. Revoking an agent keeps its pins (repos ignore them while it's revoked: their jobs go to
+other agents and "No agent online" doesn't count it), so they apply again as soon as it's back.
 
 1. Stop the agent (`sudo systemctl stop omniralph-agent`, or `pm2 stop omniralph-agent`) so it
    stops being restarted.
 2. For `refresh_reuse`, find out why before re-enrolling: check the agent's audit log (the IP the
    reused token came from), whether another host or process uses a copy of `agent.json`, and
    delete any copies. If you can't explain it, treat the host as compromised: rotate the Claude
-   credentials on it and check the agent user's files.
-3. Enroll again with a new enrollment token from **Fleet › Enroll** (in the same
-   organization), as the agent's user. This
-   creates a **new agent** (new ID) and overwrites `agent.json`; the revoked agent stays in the list
-   for its history.
-4. Pin the old agent's repositories to the new one again from **Repos › Agents** (pins belong to
-   the agent ID). Add back any optional keys of the old `agent.json` you used
-   (`blockedExecPaths`, `dataDir`, `ui`). `settings.json` stays as it was.
-5. Start the agent again.
+   credentials on it and check the agent user's files. The Re-enroll sheet repeats this.
+3. Open **Fleet › _agent_ › ⋯ › Re-enroll…** (admins of its organization) and generate a token. The
+   sheet shows the same install and enroll commands as **Enroll**; the token is single use, valid
+   for 1 hour and bound to this agent. Run the enroll command as the agent's user. It overwrites
+   `agent.json`; add back any optional keys of the old one you used (`blockedExecPaths`, `dataDir`,
+   `ui`). `settings.json` stays as it was.
+4. Start the agent again. The sheet says "Connected" once it has re-enrolled, and the audit log
+   shows "Re-enrolled by _you_".
+
+Re-enrolling starts a new refresh-token family: every refresh token issued before stops working,
+including a stolen copy, which is rejected without revoking the agent again. After a
+`refresh_reuse`, the `reenroll` audit row notes that the old family was compromised
+(`compromisedFamily`).
+
+**Fleet › Enroll** still creates a **new agent** (new ID) for a host you want to start over with;
+the old agent stays in the list for its history until you remove it (removing an agent deletes its
+pins).
 
 When an admin revokes an agent, its running jobs are re-queued at once. After a `refresh_reuse`, the
 agent's unfinished jobs are redelivered once their leases lapse (2 minutes without a heartbeat). Either way another agent (or
-the newly enrolled one) picks them up.
+the re-enrolled one) picks them up.
 
 ## Troubleshooting
 

@@ -6,7 +6,7 @@
  * are tracked by generation and the hash of their random ID (`agents.refresh_generation`).
  */
 import { randomBytes } from "node:crypto";
-import { and, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { hashToken } from "./crypto.js";
@@ -15,7 +15,6 @@ import {
   agentAudit,
   agentEnrollments,
   agentRefreshTokens,
-  agentRepoPins,
   agents,
   jobs,
   rateLimits,
@@ -66,6 +65,41 @@ export async function createAgentEnrollment(
       organizationId: input.organizationId,
       tokenHash: hashToken(token),
       name: input.name ?? null,
+      expiresAt,
+      createdBy: input.createdBy ?? null,
+    })
+    .returning({ id: agentEnrollments.id });
+  return { id: row!.id, token, expiresAt };
+}
+
+/**
+ * Creates a one-time enrollment token bound to an existing agent of `organizationId`
+ * (TOOL-925): redeeming it re-enrolls that agent in place (`enrollAgent`), keeping its ID,
+ * name, pins and history. Null for an unknown or deleted agent, or another organization's.
+ */
+export async function createAgentReenrollment(
+  db: Database,
+  input: { organizationId: string; agentId: string; createdBy?: string | null; now?: Date },
+): Promise<CreatedEnrollment | null> {
+  const [agent] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.id, input.agentId),
+        eq(agents.organizationId, input.organizationId),
+        isNull(agents.deletedAt),
+      ),
+    );
+  if (!agent) return null;
+  const token = generateToken(ENROLLMENT_TOKEN_PREFIX);
+  const expiresAt = new Date((input.now ?? new Date()).getTime() + ENROLLMENT_TOKEN_TTL_MS);
+  const [row] = await db
+    .insert(agentEnrollments)
+    .values({
+      organizationId: input.organizationId,
+      tokenHash: hashToken(token),
+      reenrollAgentId: agent.id,
       expiresAt,
       createdBy: input.createdBy ?? null,
     })
@@ -139,22 +173,143 @@ export interface EnrollAgentInput {
   name: string;
   version: string;
   /**
-   * Signs the new agent's first refresh token. Called inside the transaction, so a signing
-   * failure leaves the enrollment token unused. Without it (tests), the agent gets none.
+   * Signs the agent's first refresh token. Called inside the transaction, so a signing
+   * failure (or a throw) leaves the enrollment token unused. `previousGeneration` is the
+   * generation Postgres last recorded for a re-enrolled agent (null for a new agent, or one
+   * that never held a signed token): the token must be of a later generation than any issued
+   * before (see `enrollAgent`). Without it (tests), the agent gets none.
    */
-  issueRefreshToken?: (agentId: string) => Promise<IssuedRefreshToken>;
+  issueRefreshToken?: (
+    agentId: string,
+    previousGeneration: number | null,
+  ) => Promise<IssuedRefreshToken>;
   now?: Date;
 }
 
+/** How a re-enrollment found the agent (`reenroll` audit row). */
+export interface Reenrollment {
+  /** The agent was revoked (by an admin or for refresh-token reuse) until now. */
+  wasRevoked: boolean;
+  /**
+   * Its last refresh-token family was compromised: a `refresh_reuse` since it last
+   * (re-)enrolled.
+   */
+  compromisedFamily: boolean;
+  /** The user who created the re-enrollment token (null once they're deleted). */
+  reenrolledBy: string | null;
+}
+
+export interface EnrolledAgent {
+  agentId: string;
+  refreshToken: IssuedRefreshToken | null;
+  /** Set when the token re-enrolled an existing agent in place; null for a new agent. */
+  reenrolled: Reenrollment | null;
+}
+
+/** Whether `agentId` had a `refresh_reuse` since it last enrolled or re-enrolled. */
+async function reusedSinceEnrollment(tx: Tx, agentId: string): Promise<boolean> {
+  const [latest] = await tx
+    .select({ event: agentAudit.event })
+    .from(agentAudit)
+    .where(
+      and(
+        eq(agentAudit.agentId, agentId),
+        inArray(agentAudit.event, ["enroll", "reenroll", "refresh_reuse"]),
+      ),
+    )
+    .orderBy(desc(agentAudit.createdAt))
+    .limit(1);
+  return latest?.event === "refresh_reuse";
+}
+
 /**
- * Consumes an unused, unexpired enrollment token, creates the agent (in the
- * enrollment's organization) and records its first signed refresh token. Returns
- * `null` if the token is unknown, expired or already used.
+ * Re-activates an existing agent for a bound enrollment token (TOOL-925): clears
+ * `revoked_at`, drops its legacy refresh tokens and starts a fresh refresh-token family
+ * (`refresh_family_start`) past every generation issued before, so no earlier refresh token
+ * is accepted again. Its ID, name, pins and history stay. Null for a deleted agent.
+ */
+async function reenrollAgent(
+  tx: Tx,
+  enrollment: {
+    id: string;
+    organizationId: string;
+    reenrollAgentId: string;
+    createdBy: string | null;
+  },
+  input: EnrollAgentInput,
+): Promise<EnrolledAgent | null> {
+  const [agent] = await tx
+    .select({
+      id: agents.id,
+      revokedAt: agents.revokedAt,
+      generation: agents.refreshGeneration,
+      familyStart: agents.refreshFamilyStart,
+    })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.id, enrollment.reenrollAgentId),
+        eq(agents.organizationId, enrollment.organizationId),
+        isNull(agents.deletedAt),
+      ),
+    )
+    .for("update");
+  if (!agent) return null;
+  const agentId = agent.id;
+  const compromisedFamily = await reusedSinceEnrollment(tx, agentId);
+
+  // Earlier opaque tokens become unknown, rather than "used" tokens whose reuse revokes.
+  await tx.delete(agentRefreshTokens).where(eq(agentRefreshTokens.agentId, agentId));
+  const previous =
+    agent.generation === null && agent.familyStart === null
+      ? null
+      : Math.max(agent.generation ?? 0, (agent.familyStart ?? 1) - 1);
+  const refreshToken = (await input.issueRefreshToken?.(agentId, previous)) ?? null;
+  if (refreshToken && previous !== null && refreshToken.generation <= previous) {
+    throw new Error("A re-enrolled agent's refresh token must start a later generation");
+  }
+  await tx
+    .update(agents)
+    .set({
+      revokedAt: null,
+      reportedVersion: input.version,
+      // Its failing refresh streak ended with this enrollment.
+      reportedTokenRefresh: null,
+      refreshGeneration: refreshToken?.generation ?? null,
+      refreshTokenIdHash: refreshToken?.tokenIdHash ?? null,
+      refreshFamilyStart: refreshToken?.generation ?? (previous ?? 0) + 1,
+    })
+    .where(eq(agents.id, agentId));
+  await tx.update(agentEnrollments).set({ agentId }).where(eq(agentEnrollments.id, enrollment.id));
+  // Its host tools count again for the organization's queued jobs.
+  await refreshHostToolWaits({ db: tx, organizationId: enrollment.organizationId });
+  recordChange(tx, {
+    resource: "agent",
+    ids: [agentId],
+    organizationId: enrollment.organizationId,
+  });
+  return {
+    agentId,
+    refreshToken,
+    reenrolled: {
+      wasRevoked: agent.revokedAt !== null,
+      compromisedFamily,
+      reenrolledBy: enrollment.createdBy,
+    },
+  };
+}
+
+/**
+ * Consumes an unused, unexpired enrollment token and records the agent's first signed
+ * refresh token. A token bound to an existing agent (`createAgentReenrollment`) re-enrolls
+ * it in place (`reenrolled` set); any other creates a new agent in the enrollment's
+ * organization. Returns `null` if the token is unknown, expired or already used, or its
+ * agent was deleted since.
  */
 export async function enrollAgent(
   db: Database,
   input: EnrollAgentInput,
-): Promise<{ agentId: string; refreshToken: IssuedRefreshToken | null } | null> {
+): Promise<EnrolledAgent | null> {
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
     const [enrollment] = await tx
@@ -169,6 +324,13 @@ export async function enrollAgent(
       )
       .returning();
     if (!enrollment) return null;
+    if (enrollment.reenrollAgentId) {
+      return reenrollAgent(
+        tx,
+        { ...enrollment, reenrollAgentId: enrollment.reenrollAgentId },
+        input,
+      );
+    }
 
     const [agent] = await tx
       .insert(agents)
@@ -186,7 +348,7 @@ export async function enrollAgent(
       .set({ agentId })
       .where(eq(agentEnrollments.id, enrollment.id));
 
-    const refreshToken = (await input.issueRefreshToken?.(agentId)) ?? null;
+    const refreshToken = (await input.issueRefreshToken?.(agentId, null)) ?? null;
     if (refreshToken) {
       await tx
         .update(agents)
@@ -201,7 +363,7 @@ export async function enrollAgent(
       ids: [agentId],
       organizationId: enrollment.organizationId,
     });
-    return { agentId, refreshToken };
+    return { agentId, refreshToken, reenrolled: null };
   });
 }
 
@@ -307,6 +469,15 @@ export async function rotateRefreshToken(
 }
 
 /**
+ * Whether a presented signed refresh token is of a family the agent left behind: one issued
+ * before it was re-enrolled in place (TOOL-925), so older than its family's first generation.
+ * Such a token is rejected without revoking the agent.
+ */
+export function isStaleRefreshFamily(familyStart: number | null, generation: number): boolean {
+  return familyStart !== null && generation < familyStart;
+}
+
+/**
  * How a presented signed refresh token compares with the agent's current one: the same
  * generation and random ID rotates; a newer generation than recorded catches up (the
  * record is behind: Postgres before the daily flush, or Redis after it lost its state);
@@ -328,13 +499,18 @@ export function compareRefreshToken(
 
 export type RotateSignedRefreshTokenResult =
   | { status: "rotated" | "caught_up" | "reused"; agentId: string }
-  | { status: "invalid"; agentId: string | null; reason: "unknown" | "agent_revoked" };
+  | {
+      status: "invalid";
+      agentId: string | null;
+      reason: "unknown" | "agent_revoked" | "stale_family";
+    };
 
 /**
  * Rotates a signed refresh token in Postgres (hot state off, or Redis unavailable):
  * compares the presented token with the agent's (`compareRefreshToken`) and records `next`
  * in its place, or revokes the agent on reuse. The agent row is locked, so concurrent
- * presentations of one token resolve to one rotation and one reuse.
+ * presentations of one token resolve to one rotation and one reuse. A token from before the
+ * agent was re-enrolled (`isStaleRefreshFamily`) is invalid.
  */
 export async function rotateSignedRefreshToken(
   db: Database,
@@ -349,12 +525,16 @@ export async function rotateSignedRefreshToken(
         revokedAt: agents.revokedAt,
         generation: agents.refreshGeneration,
         tokenIdHash: agents.refreshTokenIdHash,
+        familyStart: agents.refreshFamilyStart,
       })
       .from(agents)
       .where(eq(agents.id, agentId))
       .for("update");
     if (!agent) return { status: "invalid", agentId: null, reason: "unknown" };
     if (agent.revokedAt) return { status: "invalid", agentId, reason: "agent_revoked" };
+    if (isStaleRefreshFamily(agent.familyStart, input.presented.generation)) {
+      return { status: "invalid", agentId, reason: "stale_family" };
+    }
     const current =
       agent.generation !== null && agent.tokenIdHash !== null
         ? { generation: agent.generation, tokenIdHash: agent.tokenIdHash }
@@ -398,22 +578,31 @@ export async function revokeAgentForRefreshReuse(
 
 /**
  * Agents' current signed refresh tokens as Postgres last recorded them (the hot-state
- * rebuild), for agents that aren't revoked.
+ * rebuild), for agents that aren't revoked, with the first generation of each one's family
+ * (null until it's re-enrolled).
  */
 export async function listAgentRefreshTokenStates(
   db: Database,
-): Promise<(RefreshTokenState & { agentId: string })[]> {
+): Promise<(RefreshTokenState & { agentId: string; familyStart: number | null })[]> {
   const rows = await db
     .select({
       agentId: agents.id,
       generation: agents.refreshGeneration,
       tokenIdHash: agents.refreshTokenIdHash,
+      familyStart: agents.refreshFamilyStart,
     })
     .from(agents)
     .where(isNull(agents.revokedAt));
   return rows.flatMap((r) =>
     r.generation !== null && r.tokenIdHash !== null
-      ? [{ agentId: r.agentId, generation: r.generation, tokenIdHash: r.tokenIdHash }]
+      ? [
+          {
+            agentId: r.agentId,
+            generation: r.generation,
+            tokenIdHash: r.tokenIdHash,
+            familyStart: r.familyStart,
+          },
+        ]
       : [],
   );
 }
@@ -451,8 +640,6 @@ export interface RevokeAgentResult {
   failedJobs: Job[];
   /** Running jobs with a cancel request, now `canceled`. */
   canceledJobs: Job[];
-  /** Repositories that were pinned to the agent (the pins are removed). */
-  unpinnedRepositoryIds: string[];
 }
 
 /**
@@ -460,8 +647,9 @@ export interface RevokeAgentResult {
  * Outstanding access and job tokens stop working immediately because every
  * authenticated request checks `revoked_at`. Its running jobs are failed as
  * retryable (back to `queued`, or `failed` once `maxDeliveries` is reached,
- * like `failJob`), so other agents claim them again, and its repository pins are removed.
- * Then refreshes the organization's host tool waits (`refreshHostToolWaits`). Returns null
+ * like `failJob`), so other agents claim them again. Its repository pins stay (TOOL-925): a
+ * revoked agent's pins count as none (dispatch, repo status) until it's re-enrolled, and
+ * deleting it removes them. Then refreshes the organization's host tool waits (`refreshHostToolWaits`). Returns null
  * for unknown agents (with `organizationId`, also for agents of another
  * organization).
  */
@@ -507,28 +695,10 @@ export async function revokeAgent(
       .set({ status: "queued", agentId: null, error })
       .where(running)
       .returning();
-    const unpinned = await tx
-      .delete(agentRepoPins)
-      .where(eq(agentRepoPins.agentId, agentId))
-      .returning({ repositoryId: agentRepoPins.repositoryId });
     recordJobChanges(tx, [...canceledJobs, ...failedJobs, ...requeuedJobs]);
     // Its host tools no longer count, and its requeued jobs may wait for one.
     await refreshHostToolWaits({ db: tx, organizationId: agent.organizationId });
-    for (const repositoryId of unpinned.map((p) => p.repositoryId)) {
-      recordChange(tx, {
-        resource: "settings",
-        section: "repository.agents",
-        ids: [repositoryId],
-        subjectId: repositoryId,
-        organizationId: agent.organizationId,
-      });
-    }
-    return {
-      requeuedJobs,
-      failedJobs,
-      canceledJobs,
-      unpinnedRepositoryIds: unpinned.map((p) => p.repositoryId),
-    };
+    return { requeuedJobs, failedJobs, canceledJobs };
   });
 }
 

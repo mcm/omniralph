@@ -21,15 +21,17 @@ const REVOKED = "Agent revoked";
 
 /**
  * Revokes an agent (Agents page): sets `revoked_at`, revokes every refresh-token
- * family, fails its running jobs as retryable, removes its pins and writes a
- * `revoke` audit row. Unexpired access and job tokens are rejected from the next
- * request on, because `requireAgent`/`requireJob` check the agent's auth state
- * (written to Redis here, after the Postgres commit).
+ * family, fails its running jobs as retryable and writes a `revoke` audit row. Its
+ * pins stay, ignored while it's revoked, so re-enrolling it in place brings them back.
+ * Unexpired access and job tokens are rejected from the next request on, because
+ * `requireAgent`/`requireJob` check the agent's auth state (written to Redis here,
+ * after the Postgres commit).
  *
  * Requeued untargeted jobs are claimed by other agents. Queued jobs only the
  * revoked agent may claim (`target_agent_id`) are redispatched: `repo.sync` jobs
- * are skipped, the rest go wherever the repo's remaining pins send them. Returns false for
- * unknown agents (with `organizationId`, also for another organization's).
+ * are skipped, the rest go wherever the pins of the repo's other (non-revoked)
+ * agents send them. Returns false for unknown agents (with `organizationId`, also
+ * for another organization's).
  */
 export async function revokeAgent(
   agentId: string,
@@ -62,7 +64,6 @@ export async function revokeAgent(
       requeuedJobIds: revoked.requeuedJobs.map((j) => j.id),
       failedJobIds: revoked.failedJobs.map((j) => j.id),
       canceledJobIds: revoked.canceledJobs.map((j) => j.id),
-      unpinnedRepositoryIds: revoked.unpinnedRepositoryIds,
     },
   });
 
@@ -88,7 +89,7 @@ export async function revokeAgent(
 /**
  * Deletes an agent of the organization (Agents page): revokes it first unless
  * it already is (see `revokeAgent`), then soft-deletes it so it's hidden from
- * the Agents pages, and writes a `delete` audit row. Returns false for unknown,
+ * the Agents pages (removing its pins), and writes a `delete` audit row. Returns false for unknown,
  * already deleted and other organizations' agents.
  */
 export async function deleteAgent(

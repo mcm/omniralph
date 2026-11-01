@@ -15,6 +15,7 @@ import {
   listAgentAudit,
   listAgentOverview,
   listRecentAgentAudit,
+  pinnedAgentFor,
   setDesiredAgentVersion,
   unpinRepositoryFromAgent,
   upsertScmConnection,
@@ -80,6 +81,7 @@ process.env.APP_URL = "https://omniralph.example.com/";
 
 const agentDetail = await import("@/app/api/ui/agents/[id]/route");
 const agentRevoke = await import("@/app/api/ui/agents/[id]/revoke/route");
+const agentReenroll = await import("@/app/api/ui/agents/[id]/reenroll/route");
 const agentInstalls = await import("@/app/api/ui/agents/[id]/installs/route");
 const pins = await import("@/lib/agents/pins");
 const { bumpAgentHeartbeat } = await import("@/lib/agents/heartbeat-cache");
@@ -1088,16 +1090,18 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       });
       expect(await jobRow(syncForIt!.id)).toMatchObject({ status: "skipped" });
 
-      // Pins removed; audited.
+      // Pins kept for a re-enrollment, but dispatch ignores them; audited.
       expect(
-        await db.select().from(agentRepoPins).where(eq(agentRepoPins.agentId, agentId)),
-      ).toEqual([]);
+        (await db.select().from(agentRepoPins).where(eq(agentRepoPins.agentId, agentId))).map(
+          (p) => p.repositoryId,
+        ),
+      ).toEqual([repoA]);
+      expect(await pinnedAgentFor(db, orgId, repoA)).not.toBe(agentId);
       const [audit] = await listAgentAudit(db, { agentId, event: "revoke" });
       expect(audit!.detail).toMatchObject({
         revokedBy: adminId,
         requeuedJobIds: [running!.id],
         failedJobIds: [lastDelivery!.id],
-        unpinnedRepositoryIds: [repoA],
       });
       expect(audit!.ip).toBe("192.0.2.1");
 
@@ -1113,6 +1117,42 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       expect(agent!.revokedAt).toBeNull();
       state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
       expect(await revokeAgent(randomUUID())).toMatchObject({ ok: false });
+    });
+  });
+
+  describe("re-enroll", () => {
+    const reenroll = async (id: string) => {
+      const response = await agentReenroll.POST(
+        new Request(`http://localhost/api/ui/agents/${id}/reenroll`, { method: "POST" }),
+        { params: Promise.resolve({ id }) },
+      );
+      return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+    };
+
+    it("creates a one-time token that brings the revoked agent back with its pins", async () => {
+      const { agentId } = await enrolledAgent("kept-name");
+      await pinRepository(agentId, repoA);
+      expect(await revokeAgent(agentId)).toEqual({ ok: true });
+
+      const { status, body } = await reenroll(agentId);
+      expect(status).toBe(200);
+      expect(body.command).toMatch(/^omniralph-agent enroll .*--token ore_/);
+      const res = await redeem(body.token as string);
+      expect(((await res.json()) as { agentId: string }).agentId).toBe(agentId);
+
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent).toMatchObject({ revokedAt: null, name: "kept-name" });
+      expect(await pinnedAgentFor(db, orgId, repoA)).toBe(agentId);
+      const [audit] = await listRecentAgentAudit(db, agentId, 1);
+      expect(audit).toMatchObject({ event: "reenroll", actorName: expect.any(String) });
+    });
+
+    it("is admin-only and reports unknown agents", async () => {
+      const { agentId } = await enrolledAgent();
+      state.user = { id: "member-1", role: "member", name: null, email: null, image: null };
+      expect((await reenroll(agentId)).status).toBe(403);
+      state.user = { id: adminId, role: "admin", name: null, email: null, image: null };
+      expect((await reenroll(randomUUID())).status).toBe(404);
     });
   });
 
@@ -1152,14 +1192,18 @@ describe.skipIf(!databaseAvailable)("agents and jobs pages: server actions", () 
       expect(await deleteAgent(agentId)).toMatchObject({ ok: false });
     });
 
-    it("deletes an already revoked agent without revoking it again", async () => {
+    it("deletes an already revoked agent without revoking it again, and removes its pins", async () => {
       const { agentId } = await enrolledAgent();
+      await pinRepository(agentId, repoA);
       expect(await revokeAgent(agentId)).toEqual({ ok: true });
       const [before] = await db.select().from(agents).where(eq(agents.id, agentId));
       expect(await deleteAgent(agentId)).toEqual({ ok: true });
       const [after] = await db.select().from(agents).where(eq(agents.id, agentId));
       expect(after!.revokedAt).toEqual(before!.revokedAt);
       expect(after!.deletedAt).not.toBeNull();
+      expect(
+        await db.select().from(agentRepoPins).where(eq(agentRepoPins.agentId, agentId)),
+      ).toEqual([]);
       expect(await listAgentAudit(db, { agentId, event: "revoke" })).toHaveLength(1);
     });
 

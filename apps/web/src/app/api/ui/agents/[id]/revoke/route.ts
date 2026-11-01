@@ -4,8 +4,9 @@ import { clientIp } from "@/lib/agents/request";
 import { revokeAgent } from "@/lib/agents/manage";
 
 /**
- * Revokes the agent: its tokens stop working, its running jobs are redelivered, its pins
- * removed. For admins of the agent's own organization (any of the user's).
+ * Revokes the agent: its tokens stop working and its running jobs are redelivered; its
+ * pins stay, ignored until it's re-enrolled. For admins of the agent's own organization
+ * (any of the user's).
  */
 export const POST = apiHandler<"member", undefined, undefined, { id: string }>(
   {},
