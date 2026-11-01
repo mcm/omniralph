@@ -1,6 +1,6 @@
 /**
  * Story runs (`ralph.story` before the port): one attempt at one story of an
- * epic delegated in Linear, in the run's branch worktree. The prompt is
+ * epic delegated in the tracker, in the run's branch worktree. The prompt is
  * ralph's story prompt (`buildStoryPrompt` in `@omniralph/ralph`): the PRD,
  * the story list, the story and how to work it. The story-specific rules of
  * ralph's story system prompt close it, since the engineer persona's system
@@ -11,15 +11,15 @@ import { ENGINEER_PERSONA } from "./engineer.js";
 
 /** The story-specific rules of ralph's story system prompt (`RALPH_SYSTEM_APPEND`). */
 export const STORY_RULES = `## Rules
-You are working a Linear epic one user story at a time (the coding loop).
+You are working an epic one user story at a time (the coding loop).
 - Work only on the single story you are given; other stories get their own sessions.
-- Never run git commit, git push, or open pull requests: the orchestrator handles version control and Linear updates. If guidance asks for a push or a PR/MR, skip that part without comment; the orchestrator does it.
+- Never run git commit, git push, or open pull requests: the orchestrator handles version control and work item updates. If guidance asks for a push or a PR/MR, skip that part without comment; the orchestrator does it.
 - Be precise and verifiable. Only report the status "complete" in your structured result when the story truly meets its acceptance criteria.
 - To wait for background work, end your turn with the status "waiting".`;
 
 // Guidance is fenced item by item, without the list bullets of today's prompt (a fence can't be
 // indented under a bullet).
-const STORY_TEMPLATE = `You are working through a PRD epic from Linear, one user story per session.
+const STORY_TEMPLATE = `You are working through a PRD epic from {{tracker.name}}, one user story per session.
 Each session starts with a fresh context: the PRD, the progress log and the repository are your memory.
 
 ## PRD: {{epic.title}} ({{epic.identifier}})
@@ -43,7 +43,7 @@ Each session starts with a fresh context: the PRD, the progress log and the repo
 {{/codebasePatterns}}
 ## Your Task: {{story.id}} - {{story.title}}
 {{#story.identifier}}
-Linear issue: {{story.identifier}}{{#story.url}} ({{story.url}}){{/story.url}}
+{{tracker.name}} issue: {{story.identifier}}{{#story.url}} ({{story.url}}){{/story.url}}
 {{/story.identifier}}
 
 {{#story.repository}}
@@ -69,7 +69,7 @@ Repository: \`{{story.repository}}\`. This story belongs in this repository rath
 {{/story.notes}}
 {{#attachments}}
 ### Attachments
-Files attached in Linear (screenshots, mockups, documents). Open each one with the Read tool (it shows images) before you start, and treat them as part of the spec:
+Files attached in {{tracker.name}} (screenshots, mockups, documents). Open each one with the Read tool (it shows images) before you start, and treat them as part of the spec:
 {{attachments}}
 
 {{/attachments}}
@@ -149,11 +149,11 @@ Your session ends with a structured result (the JSON schema you were given). It 
 - \`status: "blocked"\` when something another attempt can't get past stops you (missing access or credentials, an unavailable service, a decision only a person can make). Explain in \`summary\` precisely why and what would unblock you. The story is then set aside without retries until someone replies. Changes you leave in the worktree are committed as work in progress when the quality gates pass, and stashed otherwise: describe them in one line with \`commit: { summary }\`.
 - \`status: "incomplete"\` when the story is just unfinished: it gets another attempt.
 - \`status: "waiting"\` only to end your turn while background work you started (subagents, commands) still runs: you are resumed when it finishes, and then report one of the statuses above.
-- \`summary\` is posted to Linear: what you did, or what is in the way.
+- \`summary\` is posted to {{tracker.name}}: what you did, or what is in the way.
 
 {{#followUps}}
 ## Follow-up Work
-If you find work in this project that this story needs but is outside its scope (bugs elsewhere, missing pieces, problems a validation turns up), don't create Linear issues yourself and don't leave it as a note. Add one entry per item to \`followUps\`, and the orchestrator files each as a new story (a sub-issue of {{epic.identifier}}): a short imperative \`title\`, and a \`description\` of what is wrong, where, and what done looks like (acceptance criteria as \`- [ ]\` checkboxes).
+If you find work in this project that this story needs but is outside its scope (bugs elsewhere, missing pieces, problems a validation turns up), don't create {{tracker.name}} issues yourself and don't leave it as a note. Add one entry per item to \`followUps\`, and the orchestrator files each as a new story (a sub-issue of {{epic.identifier}}): a short imperative \`title\`, and a \`description\` of what is wrong, where, and what done looks like (acceptance criteria as \`- [ ]\` checkboxes).
 - \`followUps\` are only for work outside this story's acceptance criteria: never use them to defer part of this story. If you can't finish it, report it \`incomplete\` or \`blocked\`.
 - If {{story.id}} can't be completed until they are fixed, report it \`blocked\`, not complete. They will block {{story.id}}, be worked first, and then {{story.id}} runs again. Each such round (a review loop filing its fixes, say) doesn't use up an attempt, but rounds are capped.
 - If {{story.id}} measures its progress across rounds (e.g. a critique score it must raise to a bar), report this round's value as \`metric\`: a \`name\`, the \`value\`, its \`direction\` (\`higher\` or \`lower\` is better) and, if it has one, the \`target\`. Use the same name and direction every round: a loop whose best value hasn't improved for a few rounds is set aside. Otherwise leave \`metric\` out.
@@ -173,7 +173,7 @@ export const IMPLEMENT_STORY_PLAYBOOK: PlaybookInput = {
   id: "builtin:implement-story",
   name: "Implement a story",
   description:
-    "Works one story of an epic delegated in Linear in the run's branch worktree; Omniralph runs the quality gates, commits and pushes.",
+    "Works one story of an epic delegated in the tracker in the run's branch worktree; Omniralph runs the quality gates, commits and pushes.",
   role: "story",
   ...ENGINEER_PERSONA,
   promptTemplate: STORY_TEMPLATE,

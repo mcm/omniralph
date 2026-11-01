@@ -102,7 +102,7 @@ describe("formatAttachments", () => {
     );
     expect(formatAttachments([])).toBeUndefined();
     expect(failedAttachmentsNote([files[1]!], 2)).toBe(
-      "I couldn't download 1 of 2 attachment(s) from Linear, so I can't see them:\n\n- attachment (Linear thread, ENG-2): HTTP 401",
+      "I couldn't download 1 of 2 attachment(s) from the tracker, so I can't see them:\n\n- attachment (Linear thread, ENG-2): HTTP 401",
     );
     expect(failedAttachmentsNote([], 2)).toBeUndefined();
   });

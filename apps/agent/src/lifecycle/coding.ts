@@ -56,6 +56,7 @@ export function storyRunPrompt(
 ): string {
   const { epic, story } = promptEpic(payload);
   const context = storyTemplateContext({
+    trackerName: payload.trackerName,
     epic,
     story,
     progressFile: prepared.progressFile,
@@ -95,6 +96,7 @@ export function requestRunPrompt(
   setup: Record<string, string> = {},
 ): string {
   const context = requestTemplateContext({
+    trackerName: payload.trackerName,
     epic: requestEpic(payload),
     requests: payload.requests.map((r) => r.text),
     source: payload.source,

@@ -52,7 +52,7 @@ export const StoryAgentOutput = z.object({
   summary: z
     .string()
     .describe(
-      "Posted to Linear: what you did, or precisely what is in the way and what would unblock it.",
+      "Posted to the tracker: what you did, or precisely what is in the way and what would unblock it.",
     ),
   commit: z
     .object({
@@ -208,7 +208,7 @@ export const RequestAgentOutput = z.object({
   summary: z
     .string()
     .describe(
-      "Posted to the Linear thread: what you did, with links (e.g. the pull/merge request URL).",
+      "Posted to the tracker thread: what you did, with links (e.g. the pull/merge request URL).",
     ),
   pullRequest: z
     .object({
@@ -314,9 +314,9 @@ export function readRequestResult(
 export const TRIAGE_OUTPUT_SIZES = ["XS", "S", "M", "L", "XL"] as const;
 const EPIC_SIZES = new Set<string>(["L", "XL"]);
 
-const LinearPriority = z
+const TrackerPriority = z
   .literal([1, 2, 3, 4])
-  .describe("Linear priority: 1 Urgent, 2 High, 3 Medium, 4 Low.");
+  .describe("Priority: 1 Urgent, 2 High, 3 Medium, 4 Low.");
 
 /** The structured result a triage session ends with (the shared `TriageOutcome` plus a summary). */
 export const TriageAgentOutput = z.object({
@@ -346,7 +346,7 @@ export const TriageAgentOutput = z.object({
           .describe(
             "User story sentence, optional context, then a `## Acceptance Criteria` checklist. No IDs or metadata.",
           ),
-        priority: LinearPriority,
+        priority: TrackerPriority,
         dependsOn: z
           .array(z.number())
           .describe("0-based indexes, in `stories`, of the stories this one is blocked by."),
@@ -364,7 +364,7 @@ export const TriageAgentOutput = z.object({
         body: z
           .string()
           .describe("The story body, ending with a `## Acceptance Criteria` checklist."),
-        priority: LinearPriority,
+        priority: TrackerPriority,
         blockedBy: z.array(z.string()).describe("Ids of the sibling sub-issues it is blocked by."),
       }),
     )
@@ -374,7 +374,7 @@ export const TriageAgentOutput = z.object({
   summary: z
     .string()
     .describe(
-      "Posted to the Linear session: the outcome, size and why, the structure, and how many open questions remain.",
+      "Posted to the tracker thread: the outcome, size and why, the structure, and how many open questions remain.",
     ),
 });
 export type TriageAgentOutput = z.infer<typeof TriageAgentOutput>;
@@ -382,7 +382,7 @@ export type TriageAgentOutput = z.infer<typeof TriageAgentOutput>;
 /** `outputFormat` schema of a triage session. */
 export const TRIAGE_OUTPUT_SCHEMA = jsonSchema(TriageAgentOutput);
 
-/** Longest issue title kept (Linear's limit). */
+/** Longest issue title kept (the tracker's limit). */
 export const MAX_TRIAGE_TITLE = 255;
 
 function oneLine(title: string): string {

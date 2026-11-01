@@ -1,7 +1,7 @@
 /**
  * Inputs of today's coding prompt builders (`@omniralph/ralph`) for the
  * built-in coding task tests: a PRD epic and a single issue (story runs),
- * Linear and chat requests, `/ship` with stashes, `historyRewrite: never` and `always`,
+ * tracker (Linear) and chat requests, `/ship` with stashes, `historyRewrite: never` and `always`,
  * and PR descriptions.
  */
 import type {
@@ -107,6 +107,7 @@ const SINGLE_ISSUE: Epic = {
 
 export const STORY_FIXTURES: Record<string, PromptContext> = {
   "prd-epic": {
+    trackerName: "Linear",
     epic: PRD_EPIC,
     story: CURRENT,
     progressFile: "/tmp/omniralph-progress-x/progress.md",
@@ -129,6 +130,7 @@ export const STORY_FIXTURES: Record<string, PromptContext> = {
     now: NOW,
   },
   "single-issue": {
+    trackerName: "Linear",
     epic: SINGLE_ISSUE,
     story: SINGLE_ISSUE.stories[0]!,
     progressFile: "/tmp/omniralph-progress-y/progress.md",
@@ -143,6 +145,7 @@ export const STORY_FIXTURES: Record<string, PromptContext> = {
 };
 
 const REQUEST_BASE = {
+  trackerName: "Linear",
   branch: "eng-10-widget-exports",
   baseBranch: "main",
   progressFile: "/tmp/omniralph-progress-z/progress.md",
@@ -162,7 +165,7 @@ const CHAT_EPIC: Epic = {
 };
 
 export const REQUEST_FIXTURES: Record<string, RequestPromptContext> = {
-  "linear-request": {
+  "tracker-request": {
     ...REQUEST_BASE,
     epic: PRD_EPIC,
     requests: ["Please rebase onto main.", "  Also rename the button:\n> Export CSV  "],

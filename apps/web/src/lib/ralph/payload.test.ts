@@ -63,6 +63,7 @@ const run = (kind: RalphRun["kind"] = "children") =>
     id: randomUUID(),
     kind,
     origin: "tracker",
+    trackerProvider: "linear",
     progress: "",
     guidance: [],
   }) as unknown as RalphRun;
@@ -230,6 +231,8 @@ describe("story quality gates", () => {
       });
     expect(request("tracker").source).toBe("tracker");
     expect(request("tracker").trackerProvider).toBe("linear");
+    // Prompts name the tracker by this (`tracker.name`).
+    expect(request("tracker").trackerName).toBe("Linear");
     expect(request("chat").source).toBe("chat");
   });
 });
@@ -261,5 +264,13 @@ describe("job settings", () => {
       allowedTools: null,
       disallowedTools: null,
     });
+  });
+});
+
+describe("the tracker's name", () => {
+  it("is filled from a Linear run's provider for the story prompt (`tracker.name`)", () => {
+    const payload = payloadFor("children", {});
+    expect(payload.trackerProvider).toBe("linear");
+    expect(payload.trackerName).toBe("Linear");
   });
 });

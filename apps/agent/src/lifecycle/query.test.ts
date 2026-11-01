@@ -656,6 +656,7 @@ describe("runQueryTask", () => {
           context: {
             triageRunId: randomUUID(),
             ...triageTemplateContext({
+              tracker: { name: "Linear", conventionsFile: "LINEAR.md" },
               issue: {
                 identifier: "ENG-1",
                 title: "last() is broken",

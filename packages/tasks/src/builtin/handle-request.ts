@@ -1,6 +1,6 @@
 /**
  * Request runs (`ralph.request` before the port): one session doing what a
- * lane's pending requests ask (a mention in Linear, a chat request, review
+ * lane's pending requests ask (a mention in the tracker, a chat request, review
  * findings, a failed CI run or a fix command) in the run's branch worktree.
  * The prompt is ralph's request prompt (`buildRequestPrompt` in
  * `@omniralph/ralph`) for both sources, both history-rewrite policies and
@@ -17,13 +17,13 @@ import { ENGINEER_PERSONA } from "./engineer.js";
 /** The request-specific rules of ralph's request system prompt, `/ship`'s included. */
 export const REQUEST_RULES = `## Rules
 {{#ship}}
-You are shipping the work on a branch for {{#fromChat}}a chat thread{{/fromChat}}{{^fromChat}}a Linear agent session{{/fromChat}}.
+You are shipping the work on a branch for {{#fromChat}}a chat thread{{/fromChat}}{{^fromChat}}a thread on {{tracker.name}}{{/fromChat}}.
 - Don't run \`git commit\`, \`git push\`, \`git stash pop\`/\`drop\` or any command that rewrites history: the orchestrator commits everything left in the worktree with the \`commit.message\` of your structured result, then pushes the branch.
 - Don't run \`gh\` or \`glab\`: they aren't set up here. Ask for pull/merge request changes (open, update) through \`pullRequest\` in your structured result; the orchestrator makes them after it pushes.
-- The \`summary\` of your structured result is posted to {{#fromChat}}the chat thread{{/fromChat}}{{^fromChat}}the Linear thread{{/fromChat}}.
+- The \`summary\` of your structured result is posted to {{#fromChat}}the chat thread{{/fromChat}}{{^fromChat}}the thread on {{tracker.name}}{{/fromChat}}.
 {{/ship}}
 {{^ship}}
-You are responding to a request in {{#fromChat}}a chat thread about a repository{{/fromChat}}{{^fromChat}}a Linear agent session{{/fromChat}}.
+You are responding to a request in {{#fromChat}}a chat thread about a repository{{/fromChat}}{{^fromChat}}a thread on {{tracker.name}}{{/fromChat}}.
 - Do what the request asks. You may commit when the request calls for it; push only through the \`ship\` tool.
 - Don't run \`gh\` or \`glab\`: they aren't set up here. Ask for pull/merge request changes (open, update, mark ready) through \`pullRequest\` in your structured result; the orchestrator makes them.
 - Only ship \`{{branch}}\`, the branch you are on. Never push to, or force-push, the base branch or any other branch.
@@ -38,7 +38,7 @@ You are responding to a request in {{#fromChat}}a chat thread about a repository
 {{^historyRewriteAllowed}}
 - Never rewrite published history or force-push in this repository. If asked to rebase or squash, explain that it is disabled here and offer to merge the base branch instead.
 {{/historyRewriteAllowed}}
-- The \`summary\` of your structured result is posted to {{#fromChat}}the chat thread{{/fromChat}}{{^fromChat}}the Linear thread{{/fromChat}}: summarise what you did, with links (e.g. the PR/MR URL).
+- The \`summary\` of your structured result is posted to {{#fromChat}}the chat thread{{/fromChat}}{{^fromChat}}the thread on {{tracker.name}}{{/fromChat}}: summarise what you did, with links (e.g. the PR/MR URL).
 - To wait for background work, end your turn with \`waiting: true\` in your structured result.
 {{/ship}}`;
 
@@ -57,14 +57,14 @@ const REQUEST_INSTRUCTIONS = `- This is a direct request{{^epic.single}}, not a 
 - History rewrites (rebase, squash, force-push) are disabled for this repository. If the request asks for one, say so and offer to merge \`{{baseBranch}}\` into \`{{branch}}\` instead.
 {{/historyRewriteAllowed}}
 {{#remoteUrl}}
-- For the {{prTerm}}, don't run \`gh\` or \`glab\`. Ship \`{{branch}}\` first, then ask for it with \`pullRequest\`, on the \`ship\` call or in your structured result: \`open\` opens it into \`{{baseBranch}}\` as a draft, \`update\` changes the open one's title or description, \`ready\` marks it ready for review. Give \`open\` a title summarising the change itself and a description of the deliverable written for reviewers who can't see {{#fromChat}}the chat thread{{/fromChat}}{{^fromChat}}Linear{{/fromChat}}: what it does and why, notable changes, and any breaking changes or judgement calls.{{^fromChat}}{{^epic.single}} Don't list the user stories.{{/epic.single}}{{/fromChat}}
+- For the {{prTerm}}, don't run \`gh\` or \`glab\`. Ship \`{{branch}}\` first, then ask for it with \`pullRequest\`, on the \`ship\` call or in your structured result: \`open\` opens it into \`{{baseBranch}}\` as a draft, \`update\` changes the open one's title or description, \`ready\` marks it ready for review. Give \`open\` a title summarising the change itself and a description of the deliverable written for reviewers who can't see {{#fromChat}}the chat thread{{/fromChat}}{{^fromChat}}{{tracker.name}}{{/fromChat}}: what it does and why, notable changes, and any breaking changes or judgement calls.{{^fromChat}}{{^epic.single}} Don't list the user stories.{{/epic.single}}{{/fromChat}}
 {{/remoteUrl}}
 {{^remoteUrl}}
 - There is no \`origin\` remote yet, so pushing or opening a pull/merge request isn't possible until one is added.
 {{/remoteUrl}}
 - If you change code, run the quality gates and commit with a clear message.
 - If the request is ambiguous or can't be done (e.g. missing credentials), say exactly what's missing instead of guessing.
-- Finish with a short summary for the {{#fromChat}}chat thread{{/fromChat}}{{^fromChat}}Linear thread{{/fromChat}} of what you did, including any {{prTerm}} URL, as the \`summary\` of your structured result.
+- Finish with a short summary for the {{#fromChat}}chat thread{{/fromChat}}{{^fromChat}}thread on {{tracker.name}}{{/fromChat}} of what you did, including any {{prTerm}} URL, as the \`summary\` of your structured result.
 `;
 
 /** "How to handle it" of `/ship` (`shipInstructions`): the session prepares the commit. */
@@ -94,10 +94,10 @@ const SHIP_INSTRUCTIONS = `This is \`/ship\`: the work on \`{{branch}}\` is to b
 7. The {{prTerm}} is open ({{prUrl}}). If its title or description no longer match the branch, set \`pullRequest\` to \`update\` with a new title and description; otherwise leave \`pullRequest\` out.
 {{/prUrl}}
 {{^prUrl}}
-7. No {{prTerm}} is open yet: set \`pullRequest\` to \`open\` with a title summarising the change itself and a description written for reviewers who can't see {{#fromChat}}the chat thread{{/fromChat}}{{^fromChat}}Linear{{/fromChat}} (what it does and why, notable changes, breaking changes or judgement calls).{{^fromChat}}{{^epic.single}} Don't list the user stories.{{/epic.single}}{{/fromChat}}
+7. No {{prTerm}} is open yet: set \`pullRequest\` to \`open\` with a title summarising the change itself and a description written for reviewers who can't see {{#fromChat}}the chat thread{{/fromChat}}{{^fromChat}}{{tracker.name}}{{/fromChat}} (what it does and why, notable changes, breaking changes or judgement calls).{{^fromChat}}{{^epic.single}} Don't list the user stories.{{/epic.single}}{{/fromChat}}
 {{/prUrl}}
 - If something stops you (failing gates you can't fix, a conflict, missing credentials), leave \`commit\` out and say exactly what's wrong in \`summary\`: nothing is committed or pushed then.
-- \`summary\` is posted to the {{#fromChat}}chat{{/fromChat}}{{^fromChat}}Linear{{/fromChat}} thread: say what is being committed and pushed, in a sentence or two.
+- \`summary\` is posted to the {{#fromChat}}chat thread{{/fromChat}}{{^fromChat}}thread on {{tracker.name}}{{/fromChat}}: say what is being committed and pushed, in a sentence or two.
 `;
 
 // Requests are fenced one by one instead of quoted line by line (\`> \`) as in today's prompt.
@@ -106,7 +106,7 @@ You are working on a request from a chat thread: {{epic.title}}.
 It is implemented on branch \`{{branch}}\` (base \`{{baseBranch}}\`) in this git worktree.
 {{/fromChat}}
 {{^fromChat}}
-You are working on Linear {{epic.identifier}}: {{epic.title}}.
+You are working on {{tracker.name}} {{epic.identifier}}: {{epic.title}}.
 {{#epic.single}}
 It is implemented on branch \`{{branch}}\` (base \`{{baseBranch}}\`) in this git worktree.
 {{/epic.single}}
@@ -142,7 +142,7 @@ It is a PRD epic implemented one story per commit on branch \`{{branch}}\` (base
 {{#attachments}}
 
 ## Attachments
-Files attached {{#fromChat}}to the request{{/fromChat}}{{^fromChat}}in Linear{{/fromChat}}. Open the ones relevant to the request with the Read tool (it shows images):
+Files attached {{#fromChat}}to the request{{/fromChat}}{{^fromChat}}in {{tracker.name}}{{/fromChat}}. Open the ones relevant to the request with the Read tool (it shows images):
 {{attachments}}
 {{/attachments}}
 

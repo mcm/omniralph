@@ -32,6 +32,7 @@ import {
   type RalphStoryListItem,
 } from "@omniralph/shared";
 import { jobRepository } from "@/lib/scm/adapters";
+import { trackerName } from "@/lib/tracker/adapters";
 import type { CodingSettings } from "./coding";
 
 /** Guidance replies passed to a story (the latest ones), as cyralph does. */
@@ -146,6 +147,7 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
     baseBranch: lane.baseBranch,
     settings: jobSettings(repository, input.coding),
     trackerProvider: run.trackerProvider,
+    trackerName: trackerName(run.trackerProvider),
     storyId: row.id,
     attempt: row.attempts + 1,
     epic: {
@@ -319,6 +321,7 @@ export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPay
     settings: jobSettings(repository, input.coding),
     source: run.origin === "chat" ? "chat" : "tracker",
     trackerProvider: run.trackerProvider,
+    trackerName: trackerName(run.trackerProvider),
     epic: {
       identifier: epic.identifier,
       title: epic.title.slice(0, 1000),

@@ -30,7 +30,7 @@ const norm = (s: string) =>
 
 /**
  * Matches a reply to a pending cleanup question (`pending` oldest first),
- * like a repository selection: the option's value (what Linear sends for a
+ * like a repository selection: the option's value (what the tracker sends for a
  * picked option), its 1-based number when only one question is open, or a
  * short reply with a word that only one open option has ("drop", "delete",
  * "push"). Newer questions win. Undefined: not an answer.

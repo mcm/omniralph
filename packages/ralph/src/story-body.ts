@@ -1,5 +1,5 @@
 /**
- * Story issue bodies. Everything ralph needs to order and track a story lives in Linear's own
+ * Story issue bodies. Everything ralph needs to order and track a story lives in the tracker's own
  * fields (identifier, priority, sub-issue order, state, labels, "blocks" relations); the body is
  * just the work itself:
  *
@@ -10,10 +10,10 @@
  *
  * Issues created by ralph-tui (or by older cyralph versions) also carry a `## Ralph Metadata`
  * section with a story id and priority. It is stripped from the story text; its priority is read
- * only as a fallback for issues that have no Linear priority set (see `legacyRalphPriority`).
+ * only as a fallback for issues that have no tracker priority set (see `legacyRalphPriority`).
  */
 
-/** Sort rank of a story with no priority: after every prioritized story, like Linear's own priority sort. */
+/** Sort rank of a story with no priority: after every prioritized story, like the tracker's own priority sort. */
 export const NO_PRIORITY_RANK = 5;
 
 export interface StoryBody {
@@ -101,14 +101,14 @@ export function parseStoryBody(body: string | undefined | null): StoryBody {
 }
 
 /**
- * A story's sort rank (lower = sooner) from its Linear priority (1 Urgent … 4 Low, 0 No priority).
- * Stories with no Linear priority fall back to a legacy `Ralph Priority`, else sort last.
+ * A story's sort rank (lower = sooner) from its tracker priority (1 Urgent … 4 Low, 0 No priority).
+ * Stories with no tracker priority fall back to a legacy `Ralph Priority`, else sort last.
  */
 export function storyRank(
-  linearPriority: number | undefined,
+  trackerPriority: number | undefined,
   legacyRalphPriority?: number,
 ): number {
-  if (linearPriority && linearPriority > 0) return linearPriority;
+  if (trackerPriority && trackerPriority > 0) return trackerPriority;
   return legacyRalphPriority ?? NO_PRIORITY_RANK;
 }
 

@@ -183,7 +183,7 @@ export function failedAttachmentsNote(
   total: number,
 ): string | undefined {
   if (failed.length === 0) return undefined;
-  return `I couldn't download ${failed.length} of ${total} attachment(s) from Linear, so I can't see them:\n\n${failed
+  return `I couldn't download ${failed.length} of ${total} attachment(s) from the tracker, so I can't see them:\n\n${failed
     .map(
       (e) =>
         `- ${e.title ?? "attachment"} (${e.sources.join(", ")}): ${e.error ?? "unknown error"}`,

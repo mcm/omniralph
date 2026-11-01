@@ -311,6 +311,7 @@ describe("TRIAGE_OUTPUT_SCHEMA", () => {
 });
 
 const input: TriagePromptInput = {
+  tracker: { name: "Linear", conventionsFile: "LINEAR.md" },
   issue: {
     identifier: "TOOL-200",
     title: "Task priorities",
@@ -360,7 +361,10 @@ describe("buildTriagePrompt", () => {
   });
 
   it("says when there is no repository, comment or sub-issue", () => {
-    const prompt = buildTriagePrompt({ issue: { ...input.issue, creator: null, url: null } });
+    const prompt = buildTriagePrompt({
+      tracker: input.tracker,
+      issue: { ...input.issue, creator: null, url: null },
+    });
     expect(prompt).toContain("No repository is routed to this issue");
     expect(prompt).toContain("## Comments\nNone.");
     expect(prompt).toContain("## Sub-issues\nNone.");

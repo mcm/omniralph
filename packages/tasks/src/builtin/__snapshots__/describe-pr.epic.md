@@ -15,7 +15,7 @@ pnpm export --all
 ````
 </issue-background>
 
-The stories the branch implements, one commit each (Linear identifier, title, commit):
+The stories the branch implements, one commit each (identifier, title, commit):
 - ENG-11: Widgets table (`dddddddddd`)
 - ENG-12: Export widgets as CSV
 
