@@ -89,3 +89,16 @@ export type {
 } from "./work-item/parse.js";
 export { OPEN_QUESTIONS_SECTION, isOutcomeCriterion, lintWorkItem } from "./work-item/lint.js";
 export type { LintCode, LintOptions, LintProblem } from "./work-item/lint.js";
+
+export {
+  GENERATED_NOTICE,
+  PLUGIN_CONTEXT,
+  PLUGIN_DIR,
+  PLUGIN_NAME,
+  renderCommon,
+  renderPluginFiles,
+  renderSkill,
+} from "./plugin/render.js";
+export type { PluginFile } from "./plugin/render.js";
+export { PLUGIN_MODES } from "./plugin/modes.js";
+export type { PluginMode } from "./plugin/modes.js";
