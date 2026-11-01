@@ -22,6 +22,7 @@ import {
   type ValueEditorProps,
 } from "react-querybuilder";
 import { MAX_ROUTING_DEPTH } from "@omniralph/shared";
+import { trackerLabel } from "@/lib/api/trackers";
 import {
   coerceValue,
   defaultValue,
@@ -51,9 +52,9 @@ interface BuilderContext {
 }
 
 /** A value that isn't in the connected workspace any more: what it says under the control. */
-export function staleMessage(values: readonly string[]): string {
+export function staleMessage(values: readonly string[], trackerName: string): string {
   const names = values.map((value) => `“${value}”`).join(", ");
-  return `${names} ${values.length === 1 ? "is" : "are"} not available. It isn't in your Linear workspace any more (renamed or deleted). It's kept, and still saves.`;
+  return `${names} ${values.length === 1 ? "is" : "are"} not available. It isn't in your ${trackerName} workspace any more (renamed or deleted). It's kept, and still saves.`;
 }
 
 function useBuilder(context: unknown): BuilderContext {
@@ -73,9 +74,9 @@ function NodeError({ message }: { message: string | undefined }) {
   );
 }
 
-function StaleNote({ values }: { values: readonly string[] }) {
+function StaleNote({ values, trackerName }: { values: readonly string[]; trackerName: string }) {
   if (values.length === 0) return null;
-  return <p className="or-routing-builder__stale">{staleMessage(values)}</p>;
+  return <p className="or-routing-builder__stale">{staleMessage(values, trackerName)}</p>;
 }
 
 // ── Selectors ─────────────────────────────────────────────────────────────────
@@ -89,7 +90,11 @@ function fieldGroups(fields: ReadonlyMap<string, RoutingFieldData>) {
     group.push(field);
     groups.set(prefix, group);
   }
-  const label: Record<string, string> = { "": "This issue", parent: "Parent", source: "Source" };
+  const label: Record<string, string> = {
+    "": "This work item",
+    parent: "Parent",
+    source: "Source",
+  };
   return [...groups].map(([prefix, list]) => ({ label: label[prefix] ?? prefix, fields: list }));
 }
 
@@ -264,10 +269,13 @@ const parseNumber = (text: string) => (text.trim() === "" ? null : Number(text))
 function OneOfValue({
   value,
   options,
+  trackerName,
   onChange,
   disabled,
 }: {
   value: string;
+  /** The tracker the options come from, as people read it. */
+  trackerName: string;
   options: readonly ValueOption[];
   onChange: (value: string) => void;
   disabled?: boolean;
@@ -291,7 +299,7 @@ function OneOfValue({
           </option>
         ))}
       </Select>
-      <StaleNote values={stale ? [value] : []} />
+      <StaleNote values={stale ? [value] : []} trackerName={trackerName} />
     </span>
   );
 }
@@ -299,10 +307,13 @@ function OneOfValue({
 function ManyOfValue({
   values,
   options,
+  trackerName,
   onChange,
   disabled,
 }: {
   values: string[];
+  /** The tracker the options come from, as people read it. */
+  trackerName: string;
   options: readonly ValueOption[] | null;
   onChange: (values: string[]) => void;
   disabled?: boolean;
@@ -330,7 +341,7 @@ function ManyOfValue({
           ))}
         </datalist>
       ) : null}
-      <StaleNote values={stale} />
+      <StaleNote values={stale} trackerName={trackerName} />
     </span>
   );
 }
@@ -411,6 +422,7 @@ function ValueEditor({
         <OneOfValue
           value={current as string}
           options={options}
+          trackerName={trackerLabel(tracker.provider)}
           onChange={handleOnChange}
           disabled={disabled}
         />
@@ -422,6 +434,7 @@ function ValueEditor({
         <ManyOfValue
           values={current as string[]}
           options={options}
+          trackerName={trackerLabel(tracker.provider)}
           onChange={handleOnChange}
           disabled={disabled}
         />

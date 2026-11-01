@@ -11,6 +11,7 @@ import {
   TokenInput,
   type DataTableColumn,
 } from "@omniralph/ui";
+import type { TrackerProvider } from "@omniralph/tracker";
 import * as React from "react";
 import { useCurrentUser } from "@/components/current-user";
 import { api, ApiError } from "@/lib/api/client";
@@ -97,14 +98,15 @@ function AlreadyRouted({ run }: { run: RoutingTestResult["run"] }) {
   );
 }
 
-const COLUMNS: readonly DataTableColumn<RoutingTestRow>[] = [
+/** The results' columns, the work items carrying the tracker's mark. */
+const columns = (tracker: TrackerProvider): readonly DataTableColumn<RoutingTestRow>[] => [
   {
     id: "work-item",
     header: "Work item",
     card: "title",
     cell: ({ identifier, result }) => (
       <span className="or-routing-test__item">
-        <IssueBadge tracker="linear" id={result?.issue.identifier ?? identifier} />
+        <IssueBadge tracker={tracker} id={result?.issue.identifier ?? identifier} />
         {result ? <span className="or-routing-test__title">{result.issue.title}</span> : null}
       </span>
     ),
@@ -139,20 +141,23 @@ interface Tested {
 }
 
 /**
- * "Test where an issue would go" (Design rule 14: only here, beside the routing rules): a
+ * "Test where a work item would go" (Design rule 14: only here, beside the routing rules): a
  * `TokenInput` of work item identifiers (`ENG-123`, up to 50) and Test. With no unsaved
  * change it previews the saved rules for every identifier in one request; with `staged` (the
  * card's unsaved list) it tests each identifier against it, at most 10 at once. Each result
  * shows the work item, where it goes, what decided it, why in a sentence and the run it
- * already has. Rate limits and a missing Linear connection answer with an alert.
+ * already has. Rate limits and a missing tracker connection answer with an alert.
  */
 export function RoutingTestCard({
   staged,
   fields,
+  tracker,
 }: {
   /** The unsaved rules, or null when nothing is staged. */
   staged: readonly DraftRule[] | null;
   fields: readonly RoutingFieldData[];
+  /** The organization's tracker, whose work items it tests. */
+  tracker: TrackerProvider;
 }) {
   const { organization } = useCurrentUser();
   const [identifiers, setIdentifiers] = React.useState<string[]>([]);
@@ -197,7 +202,7 @@ export function RoutingTestCard({
   };
 
   return (
-    <Card title="Test where an issue would go" titleId="routing-test">
+    <Card title="Test where a work item would go" titleId="routing-test">
       <form className="or-routing-test__form" onSubmit={(event) => void test(event)}>
         <Field
           label="Work items"
@@ -236,7 +241,7 @@ export function RoutingTestCard({
             caption="Where each work item would go"
             rows={tested.rows}
             getRowId={(row) => row.identifier}
-            columns={COLUMNS}
+            columns={columns(tracker)}
             className="or-routing-test__results"
           />
         </>

@@ -7,7 +7,7 @@ import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { AskActivityLine } from "./activity-line";
 import { AskMessage } from "./ask-message";
-import { linearIssueDraft, omMessage, REPOSITORY, requestDraft } from "./test-fixtures";
+import { workItemDraft, omMessage, REPOSITORY, requestDraft } from "./test-fixtures";
 
 const DIR = __dirname;
 const THIS_FILE = path.basename(__filename);
@@ -42,10 +42,10 @@ function everything() {
     { kind: "request_draft" as const, draft: outcome("added", "Added to the backlog") },
     { kind: "request_draft" as const, draft: outcome("dismissed", "Not now") },
     { kind: "request_draft" as const, draft: outcome("expired", "This draft expired") },
-    { kind: "tracker_issue_draft" as const, draft: linearIssueDraft() },
+    { kind: "tracker_issue_draft" as const, draft: workItemDraft() },
     {
       kind: "tracker_issue_draft" as const,
-      draft: linearIssueDraft({
+      draft: workItemDraft({
         status: "created",
         actions: [],
         issue: { identifier: "TOOL-2", url: null },
@@ -53,7 +53,7 @@ function everything() {
     },
     {
       kind: "tracker_issue_draft" as const,
-      draft: linearIssueDraft({ status: "cancelled", actions: [] }),
+      draft: workItemDraft({ status: "cancelled", actions: [] }),
     },
     {
       kind: "generic" as const,

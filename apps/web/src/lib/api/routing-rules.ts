@@ -2,7 +2,7 @@ import type { RoutingQuery } from "@omniralph/shared";
 import { z } from "zod";
 import { isoDate, trackerSettingsOptionsSchema } from "./schemas";
 import { settingsHistoryEntrySchema } from "./settings-history";
-import type { WorkItemMatchInput } from "./work-item-matches";
+import { WORK_ITEM_TRACKERS, type WorkItemMatchInput } from "./work-item-matches";
 
 /** Settings › Advanced › Routing rules (`/api/ui/routing-rules`: members read, admins save). */
 
@@ -45,9 +45,13 @@ export const routingFieldSchema = z.object({
 
 /** The connected tracker's values the value pickers offer, or why there are none. */
 export const routingTrackerSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("connected"), options: trackerSettingsOptionsSchema }),
-  z.object({ status: z.literal("disconnected") }),
-  z.object({ status: z.literal("unavailable") }),
+  z.object({
+    status: z.literal("connected"),
+    provider: z.enum(WORK_ITEM_TRACKERS),
+    options: trackerSettingsOptionsSchema,
+  }),
+  z.object({ status: z.literal("disconnected"), provider: z.enum(WORK_ITEM_TRACKERS) }),
+  z.object({ status: z.literal("unavailable"), provider: z.enum(WORK_ITEM_TRACKERS) }),
 ]);
 
 /** `GET /api/ui/routing-rules`. */

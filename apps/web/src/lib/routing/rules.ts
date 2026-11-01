@@ -13,6 +13,7 @@ import { ApiRouteError } from "@/lib/api/handler";
 import type { ScopedOrganization } from "@/lib/api/scope";
 import type { RoutingRuleRow, RoutingRules, SavedRoutingRules } from "@/lib/api/routing-rules";
 import { ROUTING_FIELDS } from "@/lib/routing/fields";
+import { DEFAULT_TRACKER_PROVIDER } from "@/lib/tracker/client";
 import { getTrackerSettingsOptions } from "@/lib/tracker/settings-options";
 import { loadSettingsHistory } from "@/lib/settings-history/history";
 import { trackedRoutingRules } from "@/lib/settings-history/sections";
@@ -31,12 +32,15 @@ function toRow(rule: RoutingRule): RoutingRuleRow {
 }
 
 async function loadTracker(organizationId: string): Promise<RoutingRules["tracker"]> {
+  const provider = DEFAULT_TRACKER_PROVIDER;
   try {
     const options = await getTrackerSettingsOptions(organizationId);
-    return options ? { status: "connected", options } : { status: "disconnected" };
+    return options
+      ? { status: "connected", provider, options }
+      : { status: "disconnected", provider };
   } catch (error) {
     console.error("Loading the tracker settings options failed", error);
-    return { status: "unavailable" };
+    return { status: "unavailable", provider };
   }
 }
 

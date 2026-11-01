@@ -21,6 +21,7 @@ import { useStagedSave, useUnsavedCard } from "@/components/staged-card";
 import { ChangeHistoryPopover } from "@/components/change-history-popover";
 import { useCurrentUser } from "@/components/current-user";
 import { api } from "@/lib/api/client";
+import { trackerLabel } from "@/lib/api/trackers";
 import {
   savedRoutingRulesSchema,
   type RoutingRules,
@@ -107,15 +108,22 @@ interface RuleSheetProps {
   onClose: () => void;
 }
 
+/** Why values can't be suggested, naming the tracker; null while they can. */
+export function trackerNote(tracker: RoutingTracker): string | null {
+  const name = trackerLabel(tracker.provider);
+  switch (tracker.status) {
+    case "connected":
+      return null;
+    case "disconnected":
+      return `${name} isn't connected, so values can't be suggested from your workspace's teams, projects, labels and people. Type them instead.`;
+    case "unavailable":
+      return `Your ${name} workspace's values couldn't be loaded, so they can't be suggested. Type values instead, or reload the page to try again.`;
+  }
+}
+
 function TrackerNote({ tracker }: { tracker: RoutingTracker }) {
-  if (tracker.status === "connected") return null;
-  return (
-    <p className="or-routing__note">
-      {tracker.status === "disconnected"
-        ? "Linear isn't connected, so values can't be suggested from your workspace's teams, projects, labels and people. Type them instead."
-        : "Your Linear workspace's values couldn't be loaded, so they can't be suggested. Type values instead, or reload the page to try again."}
-    </p>
-  );
+  const note = trackerNote(tracker);
+  return note === null ? null : <p className="or-routing__note">{note}</p>;
 }
 
 /**
@@ -329,7 +337,7 @@ function RuleRow({
  * reorder and delete rules; every change is staged in the card's `SaveBar` and saved in one
  * `PUT /api/ui/routing-rules`, whose answer is written into the cache. Another admin's save
  * arrives through the live query; under staged changes the bar says so and offers Discard
- * or Keep editing instead of overwriting it silently. Below it, "Test where an issue would go"
+ * or Keep editing instead of overwriting it silently. Below it, "Test where a work item would go"
  * routes work items by the saved rules, or by the staged ones while there are changes.
  */
 export function RoutingRulesCard({ data, isAdmin }: { data: RoutingRules; isAdmin: boolean }) {
@@ -550,7 +558,11 @@ export function RoutingRulesCard({ data, isAdmin }: { data: RoutingRules; isAdmi
           />
         ) : null}
       </Card>
-      <RoutingTestCard staged={card.dirty ? rules : null} fields={data.fields} />
+      <RoutingTestCard
+        staged={card.dirty ? rules : null}
+        fields={data.fields}
+        tracker={data.tracker.provider}
+      />
     </>
   );
 }

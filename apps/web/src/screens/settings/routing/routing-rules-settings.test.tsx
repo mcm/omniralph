@@ -24,6 +24,8 @@ import { UnsavedChangesProvider } from "@/components/unsaved-changes";
 import type { RoutingRuleRow, RoutingRules } from "@/lib/api/routing-rules";
 import type { SettingsHistoryEntry } from "@/lib/api/settings-history";
 import { ROUTING_FIELDS } from "@/lib/routing/fields";
+import { staleMessage } from "./condition-builder";
+import { trackerNote } from "./routing-rules-settings";
 import {
   DEFAULT_RULES,
   ROUTING_RULES_CONFLICT,
@@ -95,6 +97,7 @@ function routing(rules: RoutingRuleRow[]): RoutingRules {
     fields,
     tracker: {
       status: "connected",
+      provider: "linear",
       options: {
         teams: [{ key: "ENG", name: "Engineering" }],
         labels: ["Backend", "Frontend"],
@@ -620,9 +623,9 @@ describe("live updates", () => {
   });
 });
 
-describe("Test where an issue would go", () => {
+describe("Test where a work item would go", () => {
   const RUN = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-  const testCard = () => screen.getByRole("region", { name: "Test where an issue would go" });
+  const testCard = () => screen.getByRole("region", { name: "Test where a work item would go" });
   const input = () => within(testCard()).getByRole("textbox", { name: "Work items" });
   const enter = async (...identifiers: string[]) => {
     await userEvent.type(input(), `${identifiers.join(",")},`);
@@ -873,5 +876,37 @@ describe("Test where an issue would go", () => {
     // Nothing here overrides it.
     const own = readFileSync(path.resolve(__dirname, "routing.css"), "utf8");
     expect(own).not.toMatch(/\.or-(tblwrap|cards)\b/);
+  });
+});
+
+describe("the tracker notes", () => {
+  it("name the organization's tracker when values can't be suggested", () => {
+    expect(trackerNote({ status: "disconnected", provider: "linear" })).toBe(
+      "Linear isn't connected, so values can't be suggested from your workspace's teams, projects, labels and people. Type them instead.",
+    );
+    expect(trackerNote({ status: "unavailable", provider: "linear" })).toBe(
+      "Your Linear workspace's values couldn't be loaded, so they can't be suggested. Type values instead, or reload the page to try again.",
+    );
+    expect(
+      trackerNote({
+        status: "connected",
+        provider: "linear",
+        options: {
+          teams: [],
+          labels: [],
+          projects: [],
+          states: [],
+          projectMilestones: [],
+          cycles: [],
+          users: [],
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("name the tracker a stale value is gone from", () => {
+    expect(staleMessage(["Legacy", "Old"], "Linear")).toBe(
+      "“Legacy”, “Old” are not available. It isn't in your Linear workspace any more (renamed or deleted). It's kept, and still saves.",
+    );
   });
 });

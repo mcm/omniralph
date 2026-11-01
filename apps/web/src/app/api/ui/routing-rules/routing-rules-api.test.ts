@@ -170,7 +170,11 @@ describe.skipIf(!databaseAvailable)("/api/ui/routing-rules", () => {
         [1, web, labels("frontend")],
       ]);
       expect(result.fields).toEqual(JSON.parse(JSON.stringify(ROUTING_FIELDS)));
-      expect(result.tracker).toEqual({ status: "connected", options: workspace });
+      expect(result.tracker).toEqual({
+        status: "connected",
+        provider: "linear",
+        options: workspace,
+      });
       expect(result.repositories).toEqual([
         { id: api, provider: "github", fullPath: "acme/api", codingEnabled: false },
         { id: web, provider: "github", fullPath: "acme/web", codingEnabled: true },
@@ -191,10 +195,10 @@ describe.skipIf(!databaseAvailable)("/api/ui/routing-rules", () => {
 
     it("says when Linear isn't connected or can't be read", async () => {
       state.linear = null;
-      expect((await get()).body.tracker).toEqual({ status: "disconnected" });
+      expect((await get()).body.tracker).toEqual({ status: "disconnected", provider: "linear" });
       state.linear = new Error("Linear is down");
       vi.spyOn(console, "error").mockImplementation(() => {});
-      expect((await get()).body.tracker).toEqual({ status: "unavailable" });
+      expect((await get()).body.tracker).toEqual({ status: "unavailable", provider: "linear" });
     });
   });
 

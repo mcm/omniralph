@@ -1,7 +1,7 @@
 import { ROUTING_PREVIEW_MAX, type RoutingTestResult } from "@/lib/api/routing-rules";
 
 /**
- * "Test where an issue would go": the identifiers it takes, what decided each result and the
+ * "Test where a work item would go": the identifiers it takes, what decided each result and the
  * route's chain (`routed_by`) in words. Pure, so the card and its tests share them.
  */
 
@@ -15,7 +15,7 @@ export const STAGED_LIMIT_MESSAGE = `Save your changes to test more than ${ROUTI
 
 export const TOO_MANY_MESSAGE = `Test at most ${ROUTING_TEST_MAX} work items at once.`;
 
-/** A Linear work item identifier: a team key, a dash and a number (`ENG-123`). */
+/** A work item identifier: a team key, a dash and a number (`ENG-123`). */
 const IDENTIFIER = /^[A-Z][A-Z0-9_]*-[1-9]\d*$/;
 
 /** A typed identifier as it's sent: trimmed and upper-cased (team keys are). */

@@ -264,7 +264,7 @@ person: a delegation or mention gets "This routes to `x` (rule N), which has cod
 for a person." and nothing is built, created or moved in Linear. Triage still reads that
 repository.
 
-**Test where an issue would go.** Below the rules in Settings › Advanced › Routing rules, enter
+**Test where a work item would go.** Below the rules in Settings › Advanced › Routing rules, enter
 one or more work item identifiers (`ENG-12`, up to 50) and **Test**. Each result shows the work
 item, where it goes (the repo, "Manual" when coding is off on it, or "Asks which repo"), what
 decided it ("Rule 2", "Work item match" or a default rule), the chain in a sentence and, when Om

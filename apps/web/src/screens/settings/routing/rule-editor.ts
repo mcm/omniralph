@@ -324,7 +324,7 @@ export interface ValueOption {
  * The values a field's picker offers: its fixed set, or the connected workspace's list (teams
  * by key, cycles and users by ID, the rest by name). Null when the value is typed in: a
  * field without options (text, numbers, dates, the parent's identifier), or a workspace
- * field while Linear isn't connected.
+ * field while the tracker isn't connected.
  */
 export function valueOptions(
   field: RoutingFieldData | undefined,

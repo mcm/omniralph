@@ -1,4 +1,4 @@
-/* Ask's cards: a drafted request, a Linear issue draft, any other card. Only `--or-` tokens. */
+/* Ask's cards: a drafted request, a work item draft, any other card. Only `--or-` tokens. */
 .or-ask-card {
   display: flex;
   flex-direction: column;

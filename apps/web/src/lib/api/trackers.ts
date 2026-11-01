@@ -1,6 +1,8 @@
+import type { TrackerProvider } from "@omniralph/tracker";
 import { z } from "zod";
 import { READINESS_STATE_TYPES, stateMappingSchema } from "@/lib/work-items/readiness";
 import type { TrackerWorkflowState, WorkItemStateCategory } from "@/lib/work-items/tracker";
+import { CONNECTION_PROVIDER_LABELS } from "./connections";
 import { organizationRefSchema } from "./runs";
 
 /** Wire formats of a work item tracker's readiness state mapping: `/api/ui/trackers/{id}/state-mapping`. */
@@ -70,3 +72,11 @@ export const trackerLabelsSchema = z.strictObject({
   blockedLabels: labelListSchema("Blocked labels"),
 });
 export type TrackerLabelsView = z.infer<typeof trackerLabelsSchema>;
+
+/**
+ * A tracker provider's name as people read it ("Linear"), for general surfaces that name the
+ * tracker a work item comes from.
+ */
+export function trackerLabel(provider: TrackerProvider): string {
+  return CONNECTION_PROVIDER_LABELS[provider];
+}

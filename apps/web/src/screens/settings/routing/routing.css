@@ -204,7 +204,7 @@
   font-size: 12px;
 }
 
-/* "Test where an issue would go": the identifiers and Test, then the results (a DataTable,
+/* "Test where a work item would go": the identifiers and Test, then the results (a DataTable,
    stacked cards at 768 px and narrower). */
 .or-routing-test__form {
   display: flex;

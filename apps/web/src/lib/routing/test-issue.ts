@@ -18,7 +18,7 @@ import { describeQuery } from "./describe";
 import { createRouter, type RouteDeps, type RouteWorkItemMatch } from "./resolve";
 
 /**
- * Most "Test where an issue would go" and routing preview requests one user may make a minute
+ * Most "Test where a work item would go" and routing preview requests one user may make a minute
  * (shared).
  */
 export const ROUTING_TEST_LIMIT = 30;
@@ -151,7 +151,7 @@ export async function routeIssues(
 }
 
 /**
- * Settings › Advanced › Routing rules' "Test where an issue would go": where `identifier` routes
+ * Settings › Advanced › Routing rules' "Test where a work item would go": where `identifier` routes
  * under `rules` (the unsaved list, already validated; undefined: the saved rules) and the work
  * item matches, with `unsaved` applied when given, by `routeIssues`. An issue the tracker doesn't know answers 404.
  */
@@ -222,7 +222,7 @@ function dedupedRoutingFields(tracker: RouteDeps["tracker"]): RoutingRead {
 }
 
 /**
- * Counts a "Test where an issue would go" or preview request; 429 past `ROUTING_TEST_LIMIT` a
+ * Counts a "Test where a work item would go" or preview request; 429 past `ROUTING_TEST_LIMIT` a
  * minute per user.
  */
 export async function hitRoutingTestLimit(db: Database, userId: string): Promise<void> {

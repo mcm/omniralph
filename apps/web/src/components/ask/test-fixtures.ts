@@ -1,4 +1,4 @@
-import type { AskLinearIssueDraft, AskMessageView, RequestDraftView } from "@/lib/api/ask";
+import type { AskWorkItemDraft, AskMessageView, RequestDraftView } from "@/lib/api/ask";
 
 export const DRAFT_ID = "6f1c5c55-9a51-4c49-9d61-0d1e2f0a7b11";
 export const REPOSITORY = {
@@ -41,11 +41,10 @@ export function requestDraft(overrides: Partial<RequestDraftView> = {}): Request
   };
 }
 
-export function linearIssueDraft(
-  overrides: Partial<AskLinearIssueDraft> = {},
-): AskLinearIssueDraft {
+export function workItemDraft(overrides: Partial<AskWorkItemDraft> = {}): AskWorkItemDraft {
   return {
     id: DRAFT_ID,
+    tracker: "linear",
     status: "pending",
     title: "Login form forgets the email",
     team: "TOOL",

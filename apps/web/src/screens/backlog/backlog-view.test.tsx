@@ -398,7 +398,7 @@ describe("empty states", () => {
     ["no_work_item_match", "No repo picks up work items yet", "Open Repos", "/repos"],
     [
       "no_tracker",
-      "Connect Linear to see its work items",
+      "Connect a tracker to see its work items",
       "Open Settings",
       "/settings/integrations",
     ],

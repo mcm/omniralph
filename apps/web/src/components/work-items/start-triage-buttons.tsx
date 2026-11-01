@@ -35,7 +35,7 @@ export interface StartEpicIconButtonProps {
 /**
  * Start epic as an icon button (`play`), through `useStartWorkItem` (the detail's hook). On
  * a blocked item its tooltip says what it waits for, and a click asks to confirm first: the
- * run still starts, and waits for its blockers as a delegation in Linear does.
+ * run still starts, and waits for its blockers as a delegation in the tracker does.
  */
 export function StartEpicIconButton({ item }: StartEpicIconButtonProps) {
   const start = useStartWorkItem();

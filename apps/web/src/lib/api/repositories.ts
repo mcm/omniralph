@@ -360,7 +360,7 @@ export type ReviewDepthOption = z.infer<typeof reviewDepthOptionSchema>;
 export const repositoryTrackerSchema = z.object({
   tracker: z.enum(WORK_ITEM_TRACKERS),
   id: z.string(),
-  /** The tracker's workspace (Linear workspace name). */
+  /** The tracker's workspace name. */
   workspaceName: z.string(),
 });
 export type RepositoryTracker = z.infer<typeof repositoryTrackerSchema>;

@@ -238,11 +238,11 @@ describe("the New work item sheet", () => {
     expect(triageBox(sheet).checked).toBe(true);
     expect(within(sheet).getByText(TRIAGE_NOW_DESCRIPTION)).toBeTruthy();
     expect(
-      within(sheet).getByText("Creates a Linear issue in the SOC team, Portal project."),
+      within(sheet).getByText("Creates a Linear work item in the SOC team, Portal project."),
     ).toBeTruthy();
 
     await userEvent.selectOptions(repo, REPO_WEB);
-    expect(within(sheet).getByText("Creates a Linear issue in the WEB team.")).toBeTruthy();
+    expect(within(sheet).getByText("Creates a Linear work item in the WEB team.")).toBeTruthy();
     expect(within(sheet).queryByText(/Portal project/)).toBeNull();
 
     // Create waits for a title; it's a solid neutral button.
@@ -254,11 +254,11 @@ describe("the New work item sheet", () => {
   });
 
   it("says where each kind of match creates the item", () => {
-    expect(createsIn({ team: "Tooling", project: "Omniralph" })).toBe(
-      "Creates a Linear issue in the Tooling team, Omniralph project.",
+    expect(createsIn({ tracker: "linear", team: "Tooling", project: "Omniralph" })).toBe(
+      "Creates a Linear work item in the Tooling team, Omniralph project.",
     );
-    expect(createsIn({ team: "SOC", project: null })).toBe(
-      "Creates a Linear issue in the SOC team.",
+    expect(createsIn({ tracker: "linear", team: "SOC", project: null })).toBe(
+      "Creates a Linear work item in the SOC team.",
     );
   });
 
@@ -286,7 +286,7 @@ describe("the New work item sheet", () => {
     ]);
     expect(requests("GET", "/api/ui/work-items/targets")[0]?.query.get("organization")).toBe("all");
     await userEvent.selectOptions(repo, REPO_BETA);
-    expect(within(sheet).getByText("Creates a Linear issue in the API team.")).toBeTruthy();
+    expect(within(sheet).getByText("Creates a Linear work item in the API team.")).toBeTruthy();
   });
 
   it("creates: inserts the returned row into its group, selects it and closes, without a list request", async () => {

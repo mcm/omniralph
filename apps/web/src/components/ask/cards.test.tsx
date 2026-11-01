@@ -9,9 +9,9 @@ import { parseRequestDraftValue, requestDraftAddValue } from "@/lib/api/ask";
 import { runHref } from "@/lib/runs/hrefs";
 import { AskCard } from "./ask-card";
 import { GenericCard } from "./generic-card";
-import { LinearIssueDraftCard } from "./linear-issue-draft-card";
+import { WorkItemDraftCard } from "./work-item-draft-card";
 import { RequestDraftCard } from "./request-draft-card";
-import { DRAFT_ID, linearIssueDraft, requestDraft } from "./test-fixtures";
+import { DRAFT_ID, workItemDraft, requestDraft } from "./test-fixtures";
 
 function RouterLink(props: LinkProps) {
   return <a data-router="yes" {...props} />;
@@ -225,7 +225,7 @@ describe("RequestDraftCard", () => {
             ],
           })}
         />
-        <LinearIssueDraftCard draft={linearIssueDraft()} />
+        <WorkItemDraftCard draft={workItemDraft()} />
         <GenericCard
           card={{
             kind: "generic",
@@ -241,11 +241,12 @@ describe("RequestDraftCard", () => {
   });
 });
 
-describe("LinearIssueDraftCard", () => {
-  it("shows the title, team, labels, details and description preview", () => {
-    const { container } = renderUi(<LinearIssueDraftCard draft={linearIssueDraft()} />);
+describe("WorkItemDraftCard", () => {
+  it("shows the title, the tracker, team, labels, details and description preview", () => {
+    const { container } = renderUi(<WorkItemDraftCard draft={workItemDraft()} />);
     const card = screen.getByRole("region", { name: "Login form forgets the email" });
     const meta = card.querySelector(".or-ask-card__meta")!.textContent;
+    expect(meta).toContain("Linear work item");
     expect(meta).toContain("TOOL");
     expect(meta).toContain("bug");
     expect(meta).toContain("frontend");
@@ -264,7 +265,7 @@ describe("LinearIssueDraftCard", () => {
   it("offers Create, Create and delegate and Cancel, and sends them", async () => {
     const user = userEvent.setup();
     const onAction = vi.fn();
-    renderUi(<LinearIssueDraftCard draft={linearIssueDraft()} onAction={onAction} />);
+    renderUi(<WorkItemDraftCard draft={workItemDraft()} onAction={onAction} />);
     expect(buttons().map((b) => [b.textContent, variantOf(b)])).toEqual([
       ["Create", "solid"],
       ["Create and delegate", "outline"],
@@ -279,8 +280,8 @@ describe("LinearIssueDraftCard", () => {
 
   it("shows the created work item's badge in place of the buttons", () => {
     renderUi(
-      <LinearIssueDraftCard
-        draft={linearIssueDraft({
+      <WorkItemDraftCard
+        draft={workItemDraft({
           status: "created",
           actions: [],
           issue: { identifier: "TOOL-88", url: "https://linear.app/t/88" },
@@ -288,7 +289,7 @@ describe("LinearIssueDraftCard", () => {
       />,
     );
     expect(buttons()).toEqual([]);
-    expect(screen.getByText("Created")).toBeTruthy();
+    expect(screen.getByText("Created in Linear")).toBeTruthy();
     expect(
       screen
         .getByRole("link", { name: "Linear TOOL-88 (opens in a new tab)" })
@@ -299,17 +300,17 @@ describe("LinearIssueDraftCard", () => {
   it.each([
     ["cancelled", "Cancelled"],
     ["expired", "This draft expired"],
-    ["creating", "Creating the work item"],
+    ["creating", "Creating the work item in Linear"],
   ] as const)("shows %s", (status, text) => {
     const { container } = renderUi(
-      <LinearIssueDraftCard draft={linearIssueDraft({ status, actions: [] })} />,
+      <WorkItemDraftCard draft={workItemDraft({ status, actions: [] })} />,
     );
     expect(buttons()).toEqual([]);
     expect(container.querySelector(".or-ask-card__outcome")!.textContent).toBe(text);
   });
 
   it("shows a click's error in an alert", () => {
-    renderUi(<LinearIssueDraftCard draft={linearIssueDraft()} actionError="It failed." />);
+    renderUi(<WorkItemDraftCard draft={workItemDraft()} actionError="It failed." />);
     expect(screen.getByRole("alert").textContent).toBe("It failed.");
   });
 });
@@ -351,7 +352,7 @@ describe("AskCard", () => {
     expect(screen.getByRole("button", { name: "Start request" })).toBeTruthy();
     rerender(
       <UiProvider linkComponent={RouterLink}>
-        <AskCard card={{ kind: "tracker_issue_draft", draft: linearIssueDraft() }} />
+        <AskCard card={{ kind: "tracker_issue_draft", draft: workItemDraft() }} />
       </UiProvider>,
     );
     expect(screen.getByRole("button", { name: "Create and delegate" })).toBeTruthy();
