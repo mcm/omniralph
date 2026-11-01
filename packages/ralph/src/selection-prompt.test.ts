@@ -662,6 +662,14 @@ describe("structured results", () => {
         { title: " Fix B ", description: "B", manual: false },
         { title: " ", description: "no title", manual: false },
         { title: "Grant access", description: "Add the bot to the org.", manual: true },
+        {
+          title: "Drop the shim",
+          description: "Remove it.",
+          manual: false,
+          after: "epic",
+          reason: " The shim stays until this epic ships. ",
+        },
+        { title: "Tidy up", description: "Later.", manual: false, after: "epic", reason: " " },
       ],
     });
     expect(read).toEqual({
@@ -672,6 +680,13 @@ describe("structured results", () => {
           { title: "Fix A", description: "A is broken.\n- [ ] A works" },
           { title: "Fix B", description: "B" },
           { title: "Grant access", description: "Add the bot to the org.", manual: true },
+          {
+            title: "Drop the shim",
+            description: "Remove it.",
+            after: "epic",
+            reason: "The shim stays until this epic ships.",
+          },
+          { title: "Tidy up", description: "Later.", after: "epic" },
         ],
       },
     });

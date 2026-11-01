@@ -709,7 +709,7 @@ describe("runQueryTask", () => {
         preset: "claude_code",
         append: TRIAGE_SYSTEM_APPEND,
       });
-      expect(call?.prompt).toMatch(/^Triage the Linear issue ENG-1 into a PRD/);
+      expect(call?.prompt).toMatch(/^Triage the Linear issue ENG-1 into an epic, a story or a fix/);
       expect(call?.prompt).toContain("<issue-title>\nlast() is broken\n</issue-title>");
       expect(call?.prompt).toContain(
         "The issue routes to `acme/app`, checked out read-only at its default branch `main`",

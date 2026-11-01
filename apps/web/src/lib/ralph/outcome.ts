@@ -169,7 +169,8 @@ async function applyStoryResult(
       const entry = wipProgressEntry(story, wipSha, result.summary, ctx.now ?? new Date());
       run = (await updateRun(tx, run.id, { progress: appendProgress(base, entry) })) ?? run;
     }
-    if (blocked && result.followUps.length > 0) {
+    // Follow-ups that follow the epic never hold the story, so they don't make a round.
+    if (blocked && result.followUps.some((f) => !followsEpic(f))) {
       // A round of a review loop: it runs again once its follow-ups are done.
       await recordRound({ ...ctx, run }, story, resultFeedback(result), {
         metric: result.metric,
@@ -328,6 +329,11 @@ export async function recordRound(
   }
 }
 
+/** A follow-up that can only happen once the epic ships (`after: "epic"`). */
+function followsEpic(followUp: RalphFollowUp): boolean {
+  return followUp.after === "epic";
+}
+
 /**
  * Files the follow-ups a story turned up as sub-issues of the epic, with the
  * story's team, project, milestone, cycle, priority and labels (manual ones also
@@ -337,8 +343,10 @@ export async function recordRound(
  * they block the story's open dependents (the stories it blocks, such as the
  * epic's validation story) so those still wait for the follow-up work. A
  * follow-up with the title of an open sub-issue reuses it, so a retry that
- * reports the same work again doesn't file it twice. Single-issue and chat runs have
- * no epic to file them in.
+ * reports the same work again doesn't file it twice. A follow-up that follows
+ * the epic (`after: "epic"`) is filed as a standalone task in the epic's team
+ * and project instead, blocked by the epic and blocking nothing
+ * (`fileEpicFollowers`). Single-issue and chat runs have no epic to file them in.
  */
 export async function fileFollowUps(
   ctx: OutcomeContext,
@@ -380,7 +388,16 @@ export async function fileFollowUps(
   const filed: string[] = [];
   const forPerson: string[] = [];
   const failed: string[] = [];
-  for (const followUp of followUps) {
+  const following = await fileEpicFollowers(
+    ctx,
+    story,
+    parent,
+    target,
+    followUps.filter(followsEpic),
+  );
+  forPerson.push(...following.forPerson);
+  failed.push(...following.failed);
+  for (const followUp of followUps.filter((f) => !followsEpic(f))) {
     const labels = labelsFor(target, followUp.manual);
     try {
       const issue =
@@ -425,6 +442,14 @@ export async function fileFollowUps(
         `${blocked.length > 0 ? `, blocking ${blocked.map((id) => `**${id}**`).join(", ")}` : ""}.`,
     );
   }
+  if (following.filed.length > 0) {
+    const tasks = following.filed;
+    lines.push(
+      `Filed ${tasks.join(", ")} as ${tasks.length === 1 ? "a task" : "tasks"} that ${tasks.length === 1 ? "follows" : "follow"} **${run.trackerIdentifier}**` +
+        (target.repository ? ` in \`${target.repository}\`` : "") +
+        `, blocked by it: ${tasks.length === 1 ? "it needs" : "they need"} the epic to ship first, so ${tasks.length === 1 ? "it doesn't" : "they don't"} hold up its stories.`,
+    );
+  }
   if (forPerson.length > 0) {
     lines.push(
       `${forPerson.join(", ")} ${forPerson.length === 1 ? "is a manual step" : "are manual steps"} for a person ` +
@@ -440,6 +465,80 @@ export async function fileFollowUps(
       body: lines.join(" "),
     });
   }
+}
+
+/**
+ * Files the follow-ups that can only happen once the epic ships as standalone
+ * tasks: in the epic's team and project (none of the story's milestone or
+ * cycle), with the story's priority and labels, blocked by the epic. They
+ * never block the story or any other task. An open standalone task with the
+ * same title that the epic already blocks is reused, so a retry doesn't file
+ * it twice.
+ */
+async function fileEpicFollowers(
+  ctx: OutcomeContext,
+  story: RalphStory,
+  epic: IssueSummary,
+  target: FollowUpTarget,
+  followUps: readonly RalphFollowUp[],
+): Promise<{ filed: string[]; forPerson: string[]; failed: string[] }> {
+  const { tracker, run } = ctx;
+  const filed: string[] = [];
+  const forPerson: string[] = [];
+  const failed: string[] = [];
+  for (const followUp of followUps) {
+    const labels = labelsFor(target, followUp.manual);
+    const reason = followUp.reason?.trim();
+    try {
+      const issue =
+        (await existingEpicFollower(ctx, epic, followUp.title)) ??
+        (await tracker.createIssue({
+          teamId: epic.teamId,
+          title: followUp.title,
+          description: [
+            followUp.description,
+            reason ? `It follows ${epic.identifier}: ${reason}` : `It follows ${epic.identifier}.`,
+            `_${FOLLOW_UP_MARK} ${story.identifier}._`,
+          ]
+            .filter((part) => part.trim())
+            .join("\n\n"),
+          priority: target.priority,
+          ...(epic.projectId && { projectId: epic.projectId }),
+          ...(epic.projectName && { projectName: epic.projectName }),
+          ...(labels.length > 0 && { labels }),
+        }));
+      await recordFollowUpSource(ctx.tx, run.organizationId, issue.id, story.trackerIssueId);
+      const blockers = await tracker.getBlockers(issue.id);
+      if (!blockers.some((b) => b.id === epic.id)) {
+        await tracker.createBlocksRelation(epic.id, issue.id);
+      }
+      filed.push(`**${issue.identifier}**`);
+      if (followUp.manual) forPerson.push(`**${issue.identifier}**`);
+    } catch (error) {
+      console.warn(`${run.trackerIdentifier}: could not file follow-up "${followUp.title}"`, error);
+      failed.push(`"${followUp.title}"`);
+    }
+  }
+  return { filed, forPerson, failed };
+}
+
+/** An open standalone task titled `title` that `epic` blocks (a follow-up filed before). */
+async function existingEpicFollower(
+  ctx: OutcomeContext,
+  epic: IssueSummary,
+  title: string,
+): Promise<IssueSummary | undefined> {
+  const matches = await ctx.tracker.searchIssues(title, { first: 20 }).catch((error: unknown) => {
+    console.warn(`${ctx.run.trackerIdentifier}: could not search for "${title}"`, error);
+    return [];
+  });
+  for (const issue of matches) {
+    if (issue.title.toLowerCase() !== title.toLowerCase()) continue;
+    if (issue.parentId || isDoneStateType(issue.stateType)) continue;
+    const blockers = await ctx.tracker.getBlockers(issue.id);
+    if (blockers.some((b) => b.id === epic.id)) return issue;
+  }
+  return undefined;
 }
 
 /**

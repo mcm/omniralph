@@ -2140,6 +2140,140 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(await getRun(db, run.id)).toMatchObject({ status: "completed" });
   });
 
+  it("files a follow-up that follows the epic as a standalone task the epic blocks", async () => {
+    const epic = tracker.add({
+      identifier: "ENG-60",
+      title: "Epic",
+      teamId: "team-epics",
+      projectName: "Epics",
+    });
+    const first = tracker.add({
+      identifier: "ENG-61",
+      title: "First",
+      parentId: epic.id,
+      projectName: "Platform",
+      labels: ["backend"],
+    });
+    const validate = tracker.add({
+      identifier: "ENG-62",
+      title: "Validate the epic",
+      parentId: epic.id,
+      priority: 1,
+    });
+    await tracker.createBlocksRelation(first.id, validate.id);
+    const run = await delegate(epic.id);
+
+    const followsEpic = {
+      title: "Drop the legacy parser",
+      description: "Remove it.\n\n- [ ] The legacy parser is gone",
+      manual: false,
+      after: "epic" as const,
+      reason: "Legacy epics keep parsing until this epic ships.",
+    };
+    await work(run.id, {
+      followUps: [
+        followsEpic,
+        { title: "Add an index", description: "Queries are slow.", manual: false },
+      ],
+    });
+    const index = [...tracker.issues.values()].find((i) => i.title === "Add an index")!;
+    const legacy = [...tracker.issues.values()].find((i) => i.title === "Drop the legacy parser")!;
+    // The other follow-up is filed as before: a sub-issue blocking the story's dependents.
+    expect(index.parentId).toBe(epic.id);
+    expect(tracker.blocks.get(validate.id)).toEqual([first.id, index.id]);
+    // The one that follows the epic: standalone, in the epic's team and project, blocked by it.
+    expect(tracker.created.find((c) => c.title === "Drop the legacy parser")).toMatchObject({
+      teamId: "team-epics",
+      projectName: "Epics",
+      labels: ["backend"],
+    });
+    expect(legacy.parentId).toBeUndefined();
+    expect(legacy.description).toContain("It follows ENG-60: Legacy epics keep parsing");
+    expect(legacy.description).toContain(`${FOLLOW_UP_MARK} ENG-61.`);
+    expect(tracker.blocks.get(legacy.id)).toEqual([epic.id]);
+    expect([...tracker.blocks.values()].filter((blockers) => blockers.includes(legacy.id))).toEqual(
+      [],
+    );
+    expect(await getFollowUpSource(db, orgId, legacy.id)).toBe(first.id);
+    expect(await relationViolations(tracker, epic.id)).toEqual([]);
+    const thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
+    expect(thoughts).toContain(
+      `Filed **${index.identifier}** as a new story of **ENG-60**, blocking **ENG-62**.`,
+    );
+    expect(thoughts).toContain(
+      `Filed **${legacy.identifier}** as a task that follows **ENG-60**, blocked by it`,
+    );
+
+    // It doesn't join the run, and reporting it again (from the index story) reuses it.
+    const again = await work(run.id, { followUps: [followsEpic] });
+    expect(again.story.identifier).toBe(index.identifier);
+    expect(
+      [...tracker.issues.values()].filter((i) => i.title === "Drop the legacy parser"),
+    ).toHaveLength(1);
+    expect(tracker.blocks.get(legacy.id)).toEqual([epic.id]);
+    expect((await work(run.id)).story.identifier).toBe("ENG-62");
+    expect(await getRun(db, run.id)).toMatchObject({ status: "completed" });
+  });
+
+  it("never holds a blocked story on a follow-up that follows the epic", async () => {
+    const epic = tracker.add({ identifier: "ENG-65", title: "Epic" });
+    const story = tracker.add({ identifier: "ENG-66", title: "Validate", parentId: epic.id });
+    const run = await delegate(epic.id);
+
+    // Only work that follows the epic: blocked as usual, set aside without a round.
+    await work(run.id, {
+      status: "blocked",
+      summary: "Needs a decision.",
+      followUps: [
+        {
+          title: "Retire the old flag",
+          description: "Remove it.",
+          manual: true,
+          after: "epic",
+          reason: "The flag stays until the epic is merged.",
+        },
+      ],
+    });
+    const flag = [...tracker.issues.values()].find((i) => i.title === "Retire the old flag")!;
+    expect(flag.parentId).toBeUndefined();
+    expect(flag.labels).toEqual(["manual"]);
+    expect(tracker.blocks.get(story.id)).toBeUndefined();
+    expect(tracker.blocks.get(flag.id)).toEqual([epic.id]);
+    expect(await storyRounds(run.id, "ENG-66")).toMatchObject({ status: "exhausted", rounds: 0 });
+    const thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
+    expect(thoughts).toContain("**ENG-66** is blocked");
+    expect(thoughts).toContain(
+      `Filed **${flag.identifier}** as a task that follows **ENG-65**, blocked by it`,
+    );
+    expect(thoughts).not.toContain(`blocking **ENG-66**`);
+  });
+
+  it("counts a blocked result as a round when one of its follow-ups doesn't follow the epic", async () => {
+    const epic = tracker.add({ identifier: "ENG-67", title: "Epic" });
+    const story = tracker.add({ identifier: "ENG-68", title: "Validate", parentId: epic.id });
+    const run = await delegate(epic.id);
+
+    await work(run.id, {
+      ...reviewRound(1),
+      followUps: [
+        { title: "Fix round 1", description: "Fix it.", manual: false },
+        { title: "Clean up after", description: "Later.", manual: false, after: "epic" },
+      ],
+    });
+    const fix = [...tracker.issues.values()].find((i) => i.title === "Fix round 1")!;
+    const later = [...tracker.issues.values()].find((i) => i.title === "Clean up after")!;
+    expect(await storyRounds(run.id, "ENG-68")).toEqual({
+      status: "pending",
+      attempts: 0,
+      rounds: 1,
+    });
+    expect(tracker.blocks.get(story.id)).toEqual([fix.id]);
+    expect(later.parentId).toBeUndefined();
+    expect(later.description).toContain("It follows ENG-67.");
+    expect(tracker.blocks.get(later.id)).toEqual([epic.id]);
+    expect(await relationViolations(tracker, epic.id)).toEqual([]);
+  });
+
   it("counts a blocked result with follow-ups as a round, not an attempt, until its metric stalls", async () => {
     const epic = tracker.add({ identifier: "ENG-300", title: "Epic" });
     tracker.add({ identifier: "ENG-301", title: "Validate", parentId: epic.id });
