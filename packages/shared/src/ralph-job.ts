@@ -229,6 +229,13 @@ export const RalphFollowUp = z.object({
   description: z.string().max(20_000),
   /** Only a person can do it (access, outside settings, a decision). */
   manual: z.boolean(),
+  /**
+   * `epic`: it depends on the epic being merged, so it is filed as a standalone task blocked by the
+   * epic instead of a sub-issue (older agents never send it).
+   */
+  after: z.literal("epic").optional(),
+  /** Why it has to wait for the epic (with `after: "epic"`). */
+  reason: z.string().max(2000).optional(),
 });
 export type RalphFollowUp = z.infer<typeof RalphFollowUp>;
 

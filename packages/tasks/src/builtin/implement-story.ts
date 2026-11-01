@@ -223,6 +223,7 @@ If you find work in this project that this story needs but is outside its scope 
 - If {{story.id}} measures its progress across rounds (e.g. a critique score it must raise to a bar), report this round's value as \`metric\`: a \`name\`, the \`value\`, its \`direction\` (\`higher\` or \`lower\` is better) and, if it has one, the \`target\`. Use the same name and direction every round: a loop whose best value hasn't improved for a few rounds is set aside. Otherwise leave \`metric\` out.
 - If {{story.id}} is complete anyway, report it complete, and they join the epic as new stories.
 - If an item is work only a person can do (granting access, changing settings in an outside service, a decision), set \`manual: true\`. It is filed for a person and never attempted by an agent; stories it blocks wait until a person marks it done.
+- If an item depends on this epic being merged, so it can't be part of this epic (e.g. removing a fallback once everything this epic changes has shipped), set \`after: "epic"\` and say why in \`reason\`. It is filed as a task of its own that follows {{epic.identifier}}, blocked by it, and never blocks {{story.id}} or any other story: it doesn't make {{story.id}} blocked.
 {{/followUps}}
 {{^followUps}}
 - Leave \`followUps\` empty.

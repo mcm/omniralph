@@ -22,6 +22,13 @@ export interface FollowUp {
   description: string;
   /** Work for a person: filed with the manual label so no agent attempts it. */
   manual?: boolean;
+  /**
+   * `epic`: the work depends on the epic being merged, so it can't be part of the epic. Filed as a
+   * standalone task blocked by the epic, never blocking a story.
+   */
+  after?: "epic";
+  /** Why it has to wait for the epic (with `after: "epic"`). */
+  reason?: string;
 }
 
 /** At most this many recommendations are kept from one story session (`MAX_RALPH_RESULT_RECOMMENDATIONS` in `@omniralph/shared`). */
@@ -83,6 +90,16 @@ export const StoryAgentOutput = z.object({
         manual: z
           .boolean()
           .describe("True for work only a person can do (access, outside settings, a decision)."),
+        after: z
+          .enum(["epic"])
+          .optional()
+          .describe(
+            "`epic` when the work depends on this epic being merged, so it can't be part of the epic: it is filed as a standalone task that follows the epic instead of blocking anything. Leave it out otherwise.",
+          ),
+        reason: z
+          .string()
+          .optional()
+          .describe('With `after: "epic"`: why the work can only happen once the epic ships.'),
       }),
     )
     .describe(
@@ -147,7 +164,13 @@ export function readStoryOutcome(
   for (const f of parsed.data.followUps) {
     const title = f.title.replace(/\s+/g, " ").trim();
     if (!title || followUps.some((x) => x.title.toLowerCase() === title.toLowerCase())) continue;
-    followUps.push({ title, description: f.description.trim(), ...(f.manual && { manual: true }) });
+    const reason = f.reason?.trim();
+    followUps.push({
+      title,
+      description: f.description.trim(),
+      ...(f.manual && { manual: true }),
+      ...(f.after === "epic" && { after: "epic" as const, ...(reason && { reason }) }),
+    });
   }
   const recommendations: Recommendation[] = [];
   for (const r of parsed.data.recommendations ?? []) {

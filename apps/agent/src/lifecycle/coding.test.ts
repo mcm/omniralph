@@ -544,7 +544,16 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
         status: "blocked",
         summary: "I need an API key for the payment sandbox.",
         commit: { summary: "Add the payment client" },
-        followUps: [{ title: "Get a sandbox key", description: "We need one.", manual: true }],
+        followUps: [
+          { title: "Get a sandbox key", description: "We need one.", manual: true },
+          {
+            title: "Drop the old client",
+            description: "Remove it.",
+            manual: false,
+            after: "epic",
+            reason: "It stays until this epic ships.",
+          },
+        ],
         recommendations: [{ title: "Fix it upstream", description: "In acme/sdk: drop our shim." }],
         metric: { name: "critique score", value: 26, direction: "higher" },
       });
@@ -560,6 +569,13 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     expect(out.feedback).toContain("reported it was blocked");
     expect(out.followUps).toEqual([
       { title: "Get a sandbox key", description: "We need one.", manual: true },
+      {
+        title: "Drop the old client",
+        description: "Remove it.",
+        manual: false,
+        after: "epic",
+        reason: "It stays until this epic ships.",
+      },
     ]);
     expect(out.recommendations).toEqual([
       { title: "Fix it upstream", description: "In acme/sdk: drop our shim." },

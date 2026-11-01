@@ -156,6 +156,10 @@ function followUpsOf(outcome: StoryOutcome | undefined): RalphFollowUp[] {
     title: clip(f.title, 255),
     description: clip(f.description),
     manual: f.manual === true,
+    ...(f.after === "epic" && {
+      after: "epic" as const,
+      ...(f.reason && { reason: clip(f.reason, 2000) }),
+    }),
   }));
 }
 
