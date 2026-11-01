@@ -11,6 +11,7 @@ import {
   RowList,
   rowListProps,
   SplitView,
+  Switch,
   useSplitWide,
   type FilterOption,
 } from "@omniralph/ui";
@@ -32,8 +33,8 @@ import { useBacklog } from "./queries";
 import {
   backlogHref,
   backlogItemHref,
+  clearBacklogFilters,
   hasBacklogFilters,
-  NO_BACKLOG_FILTERS,
   parseBacklogFilters,
   type BacklogFilters,
 } from "./url";
@@ -49,11 +50,34 @@ export const CONNECT_TRACKER = "Connect a tracker to see its work items";
 /** Where an admin connects a tracker (Settings → Integrations). */
 const INTEGRATIONS_PATH = "/settings/integrations";
 
-/** The groups, in list order, with their headers. */
+/**
+ * The groups, in list order, with their headers. Up next (blocked items) and Manual (manual
+ * tasks) show only while their toggle (`shownBy`) is on, their rows muted (`rowClassName`).
+ */
 const GROUPS = [
   { key: "readyToStart", label: "Ready to start" },
   { key: "needsRefining", label: "Needs refining" },
-] as const;
+  {
+    key: "upNext",
+    label: "Up next",
+    shownBy: "blocked",
+    rowClassName: "or-backlog__row--blocked",
+  },
+  { key: "manual", label: "Manual", shownBy: "manual", rowClassName: "or-backlog__row--manual" },
+] as const satisfies readonly {
+  key: keyof Backlog["groups"];
+  label: string;
+  shownBy?: "blocked" | "manual";
+  rowClassName?: string;
+}[];
+
+export const SHOW_BLOCKED = "Show blocked";
+export const SHOW_MANUAL = "Show manual";
+
+/** A toggle's label, with how many items it would show when there are any: "Show blocked · 3". */
+function toggleLabel(label: string, count: number): string {
+  return count > 0 ? `${label} · ${count}` : label;
+}
 
 export { joinNames };
 export { BacklogRowBadges };
@@ -125,8 +149,11 @@ const defaultDetail = (workItemId: string, context: BacklogDetailContext) => (
 /**
  * The Backlog screen (Design board Backlog): the list pane of a `SplitView` with "Backlog",
  * the + (New work item), the Source and Repo filters (`?source=&repo=`, kept when an item
- * opens) and the Ready to start and Needs refining groups, beside the open item's detail (on
- * `/backlog`, the first listed item's, when both panes fit). The list is a live query; the
+ * opens), the Show blocked and Show manual toggles (`?blocked=show&manual=show`, kept likewise)
+ * and the Ready to start and Needs refining groups, then (while their toggle is on) the muted
+ * Up next (blocked items) and Manual groups, beside the open item's detail (on `/backlog`, the
+ * first listed item's, when both panes fit). Next/Previous item and "select next" cover only
+ * the shown groups. The list is a live query; the
  * pane has no live indicator of its own (the shell's `LiveNotice` covers stopped updates).
  * The + and the New work item shortcut (`n`) open the New work item sheet over the list.
  */
@@ -148,9 +175,14 @@ export function BacklogView({
   const backlog = useBacklog(filters);
   const data = backlog.data;
   const groups = data
-    ? GROUPS.map((group) => ({ ...group, rows: data.groups[group.key] })).filter(
-        (group) => group.rows.length > 0,
-      )
+    ? GROUPS.filter((group) => !("shownBy" in group) || filters[group.shownBy])
+        .map((group) => ({
+          key: group.key,
+          label: group.label,
+          rowClassName: "rowClassName" in group ? group.rowClassName : undefined,
+          rows: data.groups[group.key],
+        }))
+        .filter((group) => group.rows.length > 0)
     : [];
   const firstRow = groups[0]?.rows[0];
   const rows = groups.flatMap((group) => group.rows);
@@ -195,7 +227,7 @@ export function BacklogView({
           headingLevel={2}
           title={NO_MATCHING_WORK_ITEMS}
           action={
-            <Button variant="outline" onClick={() => setFilters(NO_BACKLOG_FILTERS)}>
+            <Button variant="outline" onClick={() => setFilters(clearBacklogFilters(filters))}>
               Clear filters
             </Button>
           }
@@ -270,6 +302,18 @@ export function BacklogView({
             selected={filters.repo ? [filters.repo] : []}
             onChange={([repo]) => setFilters({ ...filters, repo: repo ?? null })}
           />
+          <Switch
+            className="or-backlog__toggle"
+            label={toggleLabel(SHOW_BLOCKED, data?.groups.upNext.length ?? 0)}
+            checked={filters.blocked}
+            onCheckedChange={(blocked) => setFilters({ ...filters, blocked })}
+          />
+          <Switch
+            className="or-backlog__toggle"
+            label={toggleLabel(SHOW_MANUAL, data?.groups.manual.length ?? 0)}
+            checked={filters.manual}
+            onCheckedChange={(manual) => setFilters({ ...filters, manual })}
+          />
         </div>
       </div>
       <div className="or-backlog__list">
@@ -308,7 +352,7 @@ export function BacklogView({
         ) : groups.length === 0 ? (
           empty()
         ) : (
-          // One list for Next and Previous item, across both groups.
+          // One list for Next and Previous item, across the shown groups.
           <div
             {...rowListProps}
             className={backlog.isPlaceholderData ? "or-backlog--stale" : undefined}
@@ -331,6 +375,7 @@ export function BacklogView({
                       title={row.title}
                       meta={<BacklogRowBadges row={row} showOrganization={showOrganization} />}
                       selected={row.id === shownId}
+                      className={group.rowClassName}
                     />
                   ))}
                 </RowList>

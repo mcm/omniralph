@@ -1,6 +1,6 @@
 /*
  * The Backlog screen (Design board Backlog): the list pane with "Backlog" and the +, the
- * Source and Repo filters and the groups, beside the open work item. The panes and their
+ * Source and Repo filters, the Show blocked and Show manual toggles and the groups, beside the open work item. The panes and their
  * widths are SplitView's. Only `--or-` tokens.
  */
 .or-backlog {
@@ -33,9 +33,36 @@
 .or-backlog__filters {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   padding: 0 20px 12px;
   border-bottom: 1px solid var(--or-line);
+}
+
+/* The toggles sit after the filters, their labels sized and toned like the filter buttons. */
+.or-backlog__filters .or-switch-field {
+  margin-left: 6px;
+}
+
+.or-backlog__filters .or-switch-field__label {
+  color: var(--or-sec);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/*
+ * Up next (blocked) and Manual rows: muted, so they read as not actionable. The title takes
+ * the secondary text tone and the mark the tertiary one, in both themes.
+ */
+.or-backlog__row--blocked .or-row__title,
+.or-backlog__row--manual .or-row__title {
+  color: var(--or-sec);
+  font-weight: 400;
+}
+
+.or-backlog__row--blocked .or-row__avatar,
+.or-backlog__row--manual .or-row__avatar {
+  opacity: 0.6;
 }
 
 .or-backlog__list {

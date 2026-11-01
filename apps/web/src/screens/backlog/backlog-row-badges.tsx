@@ -1,14 +1,15 @@
 "use client";
 
 import { IssueBadge, OrgBadge, RepoBadge, SizeBadge } from "@omniralph/ui";
-import { BlockedBadge } from "@/components/work-items/blocked";
+import { BlockedBadge, ManualBadge } from "@/components/work-items/blocked";
 import { KindBadge } from "@/components/work-items/kind";
 import type { WorkItemRow } from "@/lib/api/work-items";
 
 /**
  * A Backlog row's badges, in order (Design rules 1, 2 and 13): the organization (only under
  * "All organizations"), the identifier, the kind (a task's Fix or Story), the repo, the size
- * (when known) and "Blocked" (when blocked). Plain badges: the row link covers the row.
+ * (when known) and "Manual" (a manual task) or else "Blocked" (when blocked): a manual
+ * task is listed as manual whatever blocks it. Plain badges: the row link covers the row.
  */
 export function BacklogRowBadges({
   row,
@@ -26,7 +27,7 @@ export function BacklogRowBadges({
         <RepoBadge host={row.repository.provider} name={row.repository.fullPath} />
       ) : null}
       {row.size ? <SizeBadge size={row.size} /> : null}
-      {row.blocked ? <BlockedBadge /> : null}
+      {row.manual ? <ManualBadge /> : row.blocked ? <BlockedBadge /> : null}
     </>
   );
 }
