@@ -21,7 +21,12 @@ import type { Backlog } from "@/lib/api/backlog";
 import { backlogKeys } from "@/lib/api/keys";
 import { SHORTCUTS } from "@/lib/shortcuts";
 import { LOADING_BACKLOG } from "./backlog-skeletons";
-import { BacklogView } from "./backlog-view";
+import {
+  BacklogView,
+  NO_MATCHING_WORK_ITEMS,
+  NOTHING_IN_BACKLOG,
+  type BacklogViewProps,
+} from "./backlog-view";
 import { useBacklogCounts } from "./queries";
 import {
   backlogOf,
@@ -121,6 +126,7 @@ function renderBacklog(
     live?: ReturnType<typeof fakeAbly>;
     workItemId?: string | null;
     renderNewWorkItem?: (close: () => void) => React.ReactNode;
+    renderDetail?: BacklogViewProps["renderDetail"];
   } = {},
 ) {
   nav.search = new URLSearchParams(options.search ?? "");
@@ -130,7 +136,7 @@ function renderBacklog(
   const view = () => (
     <BacklogView
       workItemId={workItemId}
-      renderDetail={(id) => <p data-testid="detail">Detail of {id}</p>}
+      renderDetail={options.renderDetail ?? ((id) => <p data-testid="detail">Detail of {id}</p>)}
       renderNewWorkItem={options.renderNewWorkItem}
     />
   );
@@ -351,6 +357,156 @@ describe("the filters", () => {
     const source = await openFilter("Source: SOC team");
     await source.user.click(within(source.menu).getByRole("menuitemcheckbox", { name: "All" }));
     expect(nav.router.push).toHaveBeenLastCalledWith("/backlog", { scroll: false });
+  });
+});
+
+describe("Show blocked and Show manual", () => {
+  /** Ready, Needs refining, two blocked (relations; a label), one manual and one both. */
+  const heldBacklog = () =>
+    backlogOf([
+      workItemRow(),
+      blockedRow(),
+      labelBlockedRow(),
+      manualRow(),
+      {
+        ...refineRow(),
+        id: "linear-issue-421",
+        identifier: "SOC-421",
+        manual: true,
+        blocked: true,
+      },
+      refineRow(),
+    ]);
+  const toggle = (name: string | RegExp) => screen.getByRole("switch", { name });
+  const headings = () =>
+    screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent);
+
+  it("are off by default, hiding Up next and Manual, and count what they'd show", async () => {
+    backlog = heldBacklog();
+    renderBacklog();
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    expect(headings()).toEqual(["Ready to start 1", "Needs refining 1"]);
+    expect(toggle("Show blocked · 2").getAttribute("aria-checked")).toBe("false");
+    expect(toggle("Show manual · 2").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("name no count when their group is empty", async () => {
+    renderBacklog();
+    await waitFor(() => expect(rows()).toHaveLength(3));
+    expect(toggle("Show blocked")).toBeTruthy();
+    expect(toggle("Show manual")).toBeTruthy();
+  });
+
+  it("put ?blocked=show and ?manual=show in the URL, keeping the filters and the open item, and take them out", async () => {
+    backlog = heldBacklog();
+    const user = userEvent.setup();
+    const { navigate } = renderBacklog({ search: `repo=${REPO_WEB}` });
+    await waitFor(() => expect(rows().length).toBeGreaterThan(0));
+    await user.click(toggle(/^Show blocked/));
+    expect(nav.router.push).toHaveBeenLastCalledWith(`/backlog?repo=${REPO_WEB}&blocked=show`, {
+      scroll: false,
+    });
+    navigate({ workItemId: "linear-issue-412", search: `repo=${REPO_WEB}&blocked=show` });
+    expect(toggle(/^Show blocked/).getAttribute("aria-checked")).toBe("true");
+    await user.click(toggle(/^Show manual/));
+    expect(nav.router.push).toHaveBeenLastCalledWith(
+      `/backlog/linear-issue-412?repo=${REPO_WEB}&blocked=show&manual=show`,
+      { scroll: false },
+    );
+    navigate({ search: "blocked=show&manual=show" });
+    await user.click(toggle(/^Show blocked/));
+    expect(nav.router.push).toHaveBeenLastCalledWith("/backlog/linear-issue-412?manual=show", {
+      scroll: false,
+    });
+  });
+
+  it("show Up next after Needs refining and Manual last, Ready rows first, muted with their badge", async () => {
+    backlog = heldBacklog();
+    renderBacklog({ search: "blocked=show&manual=show" });
+    await waitFor(() => expect(rows()).toHaveLength(6));
+    expect(headings()).toEqual(["Ready to start 1", "Needs refining 1", "Up next 2", "Manual 2"]);
+    const upNext = within(screen.getByRole("list", { name: "Up next" })).getAllByRole("listitem");
+    const manual = within(screen.getByRole("list", { name: "Manual" })).getAllByRole("listitem");
+    expect(upNext.map((row) => row.querySelector(".or-row__title")!.textContent)).toEqual([
+      "Send invoice reminders",
+      "Archive old invoices",
+    ]);
+    expect(manual.map((row) => row.querySelector(".or-row__title")!.textContent)).toEqual([
+      "Call the bank about the CSV format",
+      "Rough idea: dunning emails",
+    ]);
+    for (const row of upNext) {
+      expect(row.classList.contains("or-backlog__row--blocked")).toBe(true);
+      expect(badges(row)).toContain("Blocked");
+    }
+    // A manual item is listed as manual even when it's blocked too.
+    for (const row of manual) {
+      expect(row.classList.contains("or-backlog__row--manual")).toBe(true);
+      expect(badges(row)).toContain("Manual");
+      expect(badges(row)).not.toContain("Blocked");
+    }
+    const [ready, refine] = rows() as [HTMLElement, HTMLElement];
+    for (const row of [ready, refine]) {
+      expect(row.classList.contains("or-backlog__row--blocked")).toBe(false);
+      expect(row.classList.contains("or-backlog__row--manual")).toBe(false);
+    }
+    // Row links keep the toggles; one list request serves every toggle state.
+    expect(within(upNext[0]!).getByRole("link").getAttribute("href")).toBe(
+      "/backlog/linear-issue-413?blocked=show&manual=show",
+    );
+    expect(requests("/api/ui/backlog").at(-1)!.query.get("blocked")).toBeNull();
+  });
+
+  it("show only the group whose toggle is on", async () => {
+    backlog = heldBacklog();
+    renderBacklog({ search: "manual=show" });
+    await waitFor(() => expect(rows()).toHaveLength(4));
+    expect(headings()).toEqual(["Ready to start 1", "Needs refining 1", "Manual 2"]);
+  });
+
+  it("leave the empty state at Nothing in the backlog when every item is hidden", async () => {
+    backlog = backlogOf([blockedRow(), manualRow()]);
+    renderBacklog();
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(NOTHING_IN_BACKLOG),
+    );
+    expect(toggle("Show blocked · 1")).toBeTruthy();
+    expect(toggle("Show manual · 1")).toBeTruthy();
+  });
+
+  it("aren't cleared by Clear filters", async () => {
+    backlog = backlogOf([], { filters: backlogOf([workItemRow()]).filters });
+    renderBacklog({ search: `repo=${REPO_WEB}&blocked=show&manual=show` });
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(NO_MATCHING_WORK_ITEMS),
+    );
+    await userEvent.setup().click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(nav.router.push).toHaveBeenLastCalledWith("/backlog?blocked=show&manual=show", {
+      scroll: false,
+    });
+  });
+
+  it.each([
+    ["hidden, skips them", "", "/backlog/linear-issue-412"],
+    [
+      "shown, selects the next one in them",
+      "blocked=show",
+      "/backlog/linear-issue-413?blocked=show",
+    ],
+  ])("with Up next %s when an action takes the item out", async (_name, search, next) => {
+    backlog = backlogOf([workItemRow(), refineRow(), blockedRow()]);
+    renderBacklog({
+      search,
+      workItemId: "linear-issue-420",
+      renderDetail: (_id, context) => (
+        <button type="button" onClick={context.onLeave}>
+          Leave
+        </button>
+      ),
+    });
+    await waitFor(() => expect(rows().length).toBeGreaterThan(0));
+    await userEvent.setup().click(screen.getByRole("button", { name: "Leave" }));
+    expect(nav.router.replace).toHaveBeenLastCalledWith(next, { scroll: false });
   });
 });
 

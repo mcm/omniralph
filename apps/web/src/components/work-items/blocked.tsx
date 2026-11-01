@@ -17,6 +17,18 @@ export function BlockedBadge() {
   );
 }
 
+/**
+ * A manual task's status badge (one of the organization's manual labels: a person's job, not
+ * Om's): "Manual" in the neutral status tone, named "Manual", drawn like `BlockedBadge`.
+ */
+export function ManualBadge() {
+  return (
+    <span className="or-wi-blocked" role="img" aria-label="Manual">
+      <StatusText tone="neutral">Manual</StatusText>
+    </span>
+  );
+}
+
 /** Where a blocker leads: its Backlog detail when the Backlog lists it, else its tracker page. */
 export function blockerHref(blocker: WorkItemBlocker): string | undefined {
   if (blocker.backlogId) return `/backlog/${encodeURIComponent(blocker.backlogId)}`;

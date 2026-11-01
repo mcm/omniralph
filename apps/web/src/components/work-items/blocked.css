@@ -1,5 +1,6 @@
 /*
- * The blocked badge and the "Blocked by" line of work items (BlockedBadge, BlockedByLine).
+ * The blocked and manual badges and the "Blocked by" line of work items (BlockedBadge,
+ * ManualBadge, BlockedByLine).
  * Only `--or-` tokens.
  */
 .or-wi-blocked {
