@@ -48,6 +48,8 @@ const PARAM_OF_TAB: Record<InboxTab, InboxTabParam> = {
 const ACTIONS: Record<InboxCandidate["facts"]["kind"], InboxAction[]> = {
   manual_story: ["done", "skip", "snooze"],
   blocked_epic: ["start_anyway", "done", "snooze"],
+  // Fixed in the tracker: "Start anyway" doesn't get past them.
+  broken_relations: ["done", "snooze"],
   question: ["answer", "done", "snooze"],
   stopped_epic: ["resume", "done", "snooze"],
   prd_ready: ["done", "snooze"],
@@ -172,6 +174,11 @@ function itemFields(
           kind: "blocked_epic",
           blockers: facts.blockers.map((b) => b.identifier),
         }),
+      };
+    case "broken_relations":
+      return {
+        ...base,
+        reason: runReason({ kind: "broken_relations", relations: facts.relations }),
       };
     case "question": {
       const { question } = facts;

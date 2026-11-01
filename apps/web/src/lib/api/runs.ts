@@ -351,7 +351,12 @@ export const runDetailsSchema = z.object({
   error: z.string().nullable(),
   /** What a waiting epic waits for. */
   waitingOn: z
-    .object({ blockers: z.array(workItemRefSchema), manual: z.array(workItemRefSchema) })
+    .object({
+      blockers: z.array(workItemRefSchema),
+      manual: z.array(workItemRefSchema),
+      /** Each relation that breaks the dependency rules (its message), while the epic waits on them. */
+      relations: z.array(z.string()),
+    })
     .nullable(),
   /** The open question a person can answer (the most urgent, when there are several). */
   question: runQuestionSchema.nullable(),

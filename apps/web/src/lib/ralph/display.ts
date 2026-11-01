@@ -209,10 +209,12 @@ export interface RalphRunDetailView extends Omit<RalphRunRow, "stories"> {
   baseBranch: string | null;
   /** The main lane first. */
   lanes: RalphLaneView[];
-  /** What a waiting run waits on (outside blockers and manual stories). */
+  /** What a waiting run waits on (outside blockers, manual stories, relations to fix). */
   waitingOn: {
     blockers: { identifier: string; title: string }[];
     manual: { identifier: string; title: string }[];
+    /** Each relation that breaks the dependency rules, as its message says it. */
+    relations: string[];
   } | null;
   /** Oldest first. */
   guidance: { text: string; at: string }[];

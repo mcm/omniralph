@@ -1219,6 +1219,26 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       "Waiting on OPS-3, which is outside the epic.",
     );
 
+    const relation =
+      "ENG-51 is blocked by OPS-4: OPS-4 is a task in another epic, OPS-3. Block ENG-51 on OPS-3 instead.";
+    const relations = await newRun();
+    await updateRun(db, relations.id, {
+      status: "waiting",
+      waitingOn: { blockers: [], manual: [], relations: [relation] },
+    });
+    const view = await detailPage(relations.id);
+    expect(view.reason).toBe(
+      `Om paused the epic: this relation breaks the dependency rules. ${relation} ` +
+        "Fix it in the tracker and Om goes on.",
+    );
+    expect(view.details.waitingOn).toEqual({ blockers: [], manual: [], relations: [relation] });
+    // Once it goes on, it no longer waits on them.
+    await updateRun(db, relations.id, { status: "running" });
+    expect(await detailPage(relations.id)).toMatchObject({
+      reason: null,
+      details: { waitingOn: null },
+    });
+
     const stopped = await newRun();
     await updateRun(db, stopped.id, { status: "stopped", error: "Stopped by Ada Admin." });
     expect((await detailPage(stopped.id)).reason).toBe(

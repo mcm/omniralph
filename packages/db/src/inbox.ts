@@ -15,6 +15,7 @@ import {
   WORKTREE_CLEANUP_JOB_TYPE,
   type TriageSize,
 } from "@omniralph/shared";
+import { createHash } from "node:crypto";
 import { and, eq, gt, inArray, lt, or, sql, type SQL } from "drizzle-orm";
 import type { IntegrationProvider } from "./integrations.js";
 import { recordChange } from "./changes.js";
@@ -45,6 +46,7 @@ export const INBOX_ITEM_KINDS = {
   needs_you: [
     "manual_story",
     "blocked_epic",
+    "broken_relations",
     "question",
     "stopped_epic",
     "prd_ready",
@@ -105,6 +107,8 @@ export type InboxFacts =
       elsewhere: string | null;
     }
   | { kind: "blocked_epic"; blockers: RalphIssueRef[] }
+  /** An epic waits until a person fixes its relations that break the dependency rules. */
+  | { kind: "broken_relations"; relations: string[] }
   | {
       kind: "question";
       question: {
@@ -258,7 +262,7 @@ interface RalphQuestionRow extends Record<string, unknown> {
   status: string;
   ignore_blockers: boolean;
   repository_id: string | null;
-  waiting_on: { blockers?: RalphIssueRef[] } | null;
+  waiting_on: { blockers?: RalphIssueRef[]; relations?: string[] } | null;
   pending_elicitation: { kind?: string; repositoryIds?: string[] } | null;
   preparation: {
     request?: {
@@ -284,7 +288,7 @@ interface RalphQuestionRow extends Record<string, unknown> {
 }
 
 /**
- * Blocked and stopped epics, and runs' open repository, preparation and permission
+ * Blocked and stopped epics, epics with relations to fix, and runs' open repository, preparation and permission
  * questions: one query over the ralph runs that may have one.
  */
 async function ralphRunItems(db: Queryable, scope: Scope): Promise<InboxCandidate[]> {
@@ -320,6 +324,22 @@ async function ralphRunItems(db: Queryable, scope: Scope): Promise<InboxCandidat
         key: `blocked:${row.id}:${ids.join(",")}`,
         since: new Date(row.updated_at),
         facts: { kind: "blocked_epic", blockers },
+      });
+    }
+    // "Start anyway" doesn't get past bad relations, so `ignore_blockers` doesn't hide them.
+    const relations = row.waiting_on?.relations ?? [];
+    if (
+      row.mode === "epic" &&
+      row.status === "waiting" &&
+      relations.length > 0 &&
+      recent(row.updated_at)
+    ) {
+      const digest = createHash("sha256").update(JSON.stringify(relations)).digest("hex");
+      items.push({
+        ...base,
+        key: `relations:${row.id}:${digest.slice(0, 16)}`,
+        since: new Date(row.updated_at),
+        facts: { kind: "broken_relations", relations },
       });
     }
     if (row.status === "stopped" && recent(row.updated_at)) {
@@ -911,6 +931,7 @@ export async function listInboxItems(db: Queryable, query: InboxQuery): Promise<
 const TAB_OF_KEY_PREFIX: Record<string, InboxTab> = {
   manual_story: "needs_you",
   blocked: "needs_you",
+  relations: "needs_you",
   question: "needs_you",
   stopped: "needs_you",
   prd_ready: "needs_you",

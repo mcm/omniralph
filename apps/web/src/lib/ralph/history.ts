@@ -107,7 +107,11 @@ export async function ralphRunDetailView(
     error: run.error,
     waitingOn:
       run.status === "waiting" && run.waitingOn
-        ? { blockers: run.waitingOn.blockers.map(ref), manual: run.waitingOn.manual.map(ref) }
+        ? {
+            blockers: run.waitingOn.blockers.map(ref),
+            manual: run.waitingOn.manual.map(ref),
+            relations: run.waitingOn.relations ?? [],
+          }
         : null,
     guidance: run.guidance.map(({ text, at }) => ({ text, at })),
     progress: run.progress,

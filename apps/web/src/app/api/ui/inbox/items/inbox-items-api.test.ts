@@ -537,6 +537,50 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
     expect(await queuedJobs(run.id)).toEqual([]);
   });
 
+  it("shows an epic waiting on its relations as an item saying to fix them, without Start anyway", async () => {
+    const run = await newRun({ trackerIdentifier: "ENG-74" });
+    const relations = [
+      "ENG-75 is blocked by OPS-4: OPS-4 is a task in another epic, OPS-3. Block ENG-75 on OPS-3 instead.",
+      "ENG-74 is blocked by OPS-6: OPS-6 is a task in another epic, OPS-5. Block ENG-74 on OPS-5 instead.",
+    ];
+    // "Start anyway" was used on earlier blockers: it doesn't get past bad relations.
+    await updateRun(db, run.id, {
+      status: "waiting",
+      ignoreBlockers: true,
+      waitingOn: { blockers: [], manual: [], relations },
+    });
+    const item = (await feed()).items.find((i) => i.run?.id === run.id);
+    expect(item).toMatchObject({
+      kind: "broken_relations",
+      key: expect.stringMatching(new RegExp(`^relations:${run.id}:`)),
+      reason:
+        "Om paused the epic: these relations break the dependency rules. " +
+        `${relations[0]} ${relations[1]} Fix them in the tracker and Om goes on.`,
+      actions: ["done", "snooze"],
+    });
+    expect(await act(item!.key, { action: "start_anyway" })).toMatchObject({ status: 400 });
+    expect(await getRun(db, run.id)).toMatchObject({ status: "waiting" });
+
+    // A different set of bad relations is a new item, even after the first was dismissed.
+    expect(await act(item!.key, { action: "done" })).toMatchObject({ status: 200 });
+    expect(await keys()).not.toContain(item!.key);
+    await updateRun(db, run.id, {
+      waitingOn: { blockers: [], manual: [], relations: relations.slice(0, 1) },
+    });
+    const next = (await feed()).items.find((i) => i.run?.id === run.id);
+    expect(next).toMatchObject({
+      kind: "broken_relations",
+      reason:
+        "Om paused the epic: this relation breaks the dependency rules. " +
+        `${relations[0]} Fix it in the tracker and Om goes on.`,
+    });
+    expect(next!.key).not.toBe(item!.key);
+
+    // Fixed: the run goes on and the item goes away.
+    await updateRun(db, run.id, { status: "running", waitingOn: null });
+    expect((await feed()).items.some((i) => i.run?.id === run.id)).toBe(false);
+  });
+
   it("Resume retries a stopped epic", async () => {
     const { run, key } = await stoppedEpic();
     let result!: Awaited<ReturnType<typeof act>>;

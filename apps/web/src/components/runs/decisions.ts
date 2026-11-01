@@ -54,6 +54,7 @@ type Slot = InboxAction | InboxStep;
 const SLOTS: Record<Kind, readonly Slot[]> = {
   manual_story: ["done", "skip", "view_prd", "snooze"],
   blocked_epic: ["start_anyway", "view_prd", "done", "snooze"],
+  broken_relations: ["open_run", "view_prd", "done", "snooze"],
   question: ["answer", "view_prd", "done", "snooze"],
   stopped_epic: ["resume", "open_run", "view_prd", "done", "snooze"],
   prd_ready: ["view_prd", "open_work_item", "done", "snooze"],
@@ -67,6 +68,7 @@ const SLOTS: Record<Kind, readonly Slot[]> = {
 
 /** The step that is what's next for the kind (primary); others lead with a decision. */
 const LEAD_STEP: Partial<Record<Kind, InboxStep>> = {
+  broken_relations: "open_run",
   prd_ready: "view_prd",
   pr_waiting: "open_pr",
   agent_offline: "open_agent",

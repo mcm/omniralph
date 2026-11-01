@@ -834,6 +834,10 @@ another epic's side is caught when that epic starts.
   messages) with an elicitation naming each bad relation. It checks again whenever it next
   advances (a reply, `/continue`, an `Issue` webhook or the reconcile cron) and goes on once the
   relations are fixed.
+  While it waits, the run page's reason lists each message (the run detail's
+  `details.waitingOn.relations` too), and the Inbox shows a "Relations to fix" item under Needs
+  you saying to fix them in the tracker, with Open run but no Start anyway. A new set of bad
+  relations is a new item, even after the last one was dismissed.
 
 Om keeps the relations it writes itself within the rules:
 

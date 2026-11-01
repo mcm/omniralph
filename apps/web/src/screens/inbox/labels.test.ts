@@ -83,6 +83,14 @@ describe("inboxItemLabel", () => {
     ],
     ["blocked_epic", { kind: "blocked_epic" }, "Blocked", "Epic, waiting on you", "need", WAITING],
     [
+      "broken_relations",
+      { kind: "broken_relations" },
+      "Relations to fix",
+      "Epic, waiting on you",
+      "need",
+      WAITING,
+    ],
+    [
       "question",
       { kind: "question", run: run("request") },
       "Question",
@@ -202,6 +210,7 @@ describe("inboxItemLabel", () => {
       [
         "manual_story",
         "blocked_epic",
+        "broken_relations",
         "question",
         "stopped_epic",
         "prd_ready",
