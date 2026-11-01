@@ -19,7 +19,7 @@ import {
 } from "@omniralph/db";
 import type { ScmAdapter } from "@omniralph/scm";
 import type { TriageTemplateContext } from "@omniralph/ralph";
-import { QUERY_TASKS_MIN_AGENT_VERSION, RunSpecJobPayload } from "@omniralph/shared";
+import { RunSpecJobPayload, TRACKER_PROTOCOL_MIN_AGENT_VERSION } from "@omniralph/shared";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -196,7 +196,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       type: "triage.run",
       taskType: "query",
       taskId: "builtin:triage",
-      minAgentVersion: QUERY_TASKS_MIN_AGENT_VERSION,
+      minAgentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
       repositoryId: repoId,
       organizationId: orgId,
       status: "queued",
@@ -211,6 +211,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
     expect(payload.requireCheckout).toBeUndefined();
     expect(context).toMatchObject({
       triageRunId: run!.id,
+      trackerProvider: "linear",
       issue: {
         identifier: "ENG-1",
         title: "Priorities",

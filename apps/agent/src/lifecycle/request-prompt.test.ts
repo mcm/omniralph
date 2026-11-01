@@ -27,6 +27,7 @@ const PR_URL = "https://github.com/acme/widgets/pull/42";
 
 /** A single delegated issue's run: the issue is its only (in-progress) item. */
 const SINGLE_ISSUE = {
+  source: "tracker",
   epic: {
     identifier: "ENG-7",
     title: "Fix the date picker",
@@ -39,11 +40,12 @@ const SINGLE_ISSUE = {
 
 /** A run started by an @mention on an issue: also a single issue. */
 const MENTIONED_ISSUE = {
+  source: "tracker",
   epic: { identifier: "ENG-8", title: "Tidy the settings page", kind: "single", prd: "" },
   stories: [{ identifier: "ENG-8", title: "Tidy the settings page", status: "in_progress" }],
 } as const;
 
-/** A chat run (`chatRequestEpic`): no Linear issue, no item list. */
+/** A chat run (`chatRequestEpic`): no work item, no item list. */
 const CHAT_THREAD = {
   source: "chat",
   epic: { identifier: "chat-3f2a", title: "Bump the Node version", kind: "single", prd: "" },
@@ -225,6 +227,7 @@ describe("builtin:handle-request outside an epic", () => {
       name: "a request on a PRD epic's run",
       trigger: "linear.mention",
       payload: {
+        source: "tracker",
         epic: {
           identifier: "ENG-10",
           title: "Widget exports",

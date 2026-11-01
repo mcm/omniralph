@@ -42,7 +42,7 @@ export interface JobScopeInput {
 /**
  * The scopes of a legacy job's or a system RPC's single token. Legacy
  * `ralph.*` jobs push their commits, relay session activities and download
- * Linear attachments; `worktree.cleanup` pushes leftover stashes and kept
+ * tracker attachments; `worktree.cleanup` pushes leftover stashes and kept
  * branches, the only system RPC that may push; every other job may only read
  * its repository.
  */
@@ -61,12 +61,12 @@ export function jobScopes(job: Pick<JobScopeInput, "type" | "taskType">): JobTok
 /**
  * The scopes of a run-spec job's token. The `session` token (the Claude
  * session's) may read the repository, post activities, download attachments
- * and read Linear, but never push, whatever the task type. The `lifecycle`
+ * and read the tracker, but never push, whatever the task type. The `lifecycle`
  * token (the agent's own) reads the repository, and pushes only for `coding`.
  */
 export function runTokenScopes(kind: RunTokenKind, taskType: JobTaskType): JobTokenScope[] {
   if (kind === "session") {
-    return ["credentials:read", "run:activity", "run:attachments", "linear:read"];
+    return ["credentials:read", "run:activity", "run:attachments", "tracker:read"];
   }
   return taskType === "coding" ? ["credentials:read", "credentials:write"] : ["credentials:read"];
 }

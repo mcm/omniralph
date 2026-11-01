@@ -30,7 +30,7 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import {
-  CODING_TASKS_MIN_AGENT_VERSION,
+  TRACKER_PROTOCOL_MIN_AGENT_VERSION,
   MAX_JOB_DELIVERIES,
   type RalphStoryResult,
 } from "@omniralph/shared";
@@ -220,7 +220,7 @@ describe.skipIf(!testDatabaseAvailable())(
       );
 
       // Story completion: each story is completed and commented on, the plan follows.
-      await finish(run.id, storyResult(sha(1), "Alpha done."), CODING_TASKS_MIN_AGENT_VERSION);
+      await finish(run.id, storyResult(sha(1), "Alpha done."), TRACKER_PROTOCOL_MIN_AGENT_VERSION);
       expect(tracker.issues.get(alpha.id)?.stateType).toBe("completed");
       expect(commentsOn(alpha.id)).toEqual([
         `✅ Completed by Omniralph in \`${sha(1).slice(0, 10)}\` on \`feat/epic\`.\n\nAlpha done.`,
@@ -228,7 +228,7 @@ describe.skipIf(!testDatabaseAvailable())(
       expect(latestPlan(epic.id)).toBe(
         [PLAN_COMMENT_HEADING, "", "- [x] ENG-2: Alpha", "- [ ] ⏳ ENG-3: Beta"].join("\n"),
       );
-      await finish(run.id, storyResult(sha(2), "Beta done."), CODING_TASKS_MIN_AGENT_VERSION);
+      await finish(run.id, storyResult(sha(2), "Beta done."), TRACKER_PROTOCOL_MIN_AGENT_VERSION);
       expect(tracker.issues.get(beta.id)?.stateType).toBe("completed");
 
       // Finish: the PR is described and opened, linked to the epic, and the run's summary commented.

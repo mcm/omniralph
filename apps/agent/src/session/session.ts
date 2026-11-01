@@ -37,7 +37,7 @@ const RATE_LIMIT_TEXT = /rate[_ ]limit|usage limit|\b429\b|too many requests/i;
 
 /** Tells a session denied a tool call that a person had to approve. */
 export const PERMISSION_DENIED_TEXT =
-  "A person had to approve this in Linear (the repository's Claude Code settings ask about it) and denied it or didn't answer in time. Don't retry it: carry on without it, or report what it blocks.";
+  "A person had to approve this in the tracker (the repository's Claude Code settings ask about it) and denied it or didn't answer in time. Don't retry it: carry on without it, or report what it blocks.";
 
 /** A tool call the repository's settings `ask` about. */
 export interface PermissionCall {
@@ -50,7 +50,7 @@ export interface PermissionCall {
 /** Asks a person whether a call may run (false: deny it). */
 export type PermissionAsker = (call: PermissionCall, signal: AbortSignal) => Promise<boolean>;
 
-/** What a session shows while it runs (relayed to the Linear agent session). */
+/** What a session shows while it runs (relayed to the tracker session). */
 export type SessionEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; input: unknown };

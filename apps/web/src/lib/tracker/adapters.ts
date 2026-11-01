@@ -4,7 +4,7 @@
  * specifics only through `trackerAdapter` and `trackerExtras`.
  */
 import "server-only";
-import type { TrackerGateway, TrackerProvider } from "@omniralph/tracker";
+import type { TrackerCapability, TrackerGateway, TrackerProvider } from "@omniralph/tracker";
 import type { TrackerExtras, TrackerWebAdapter } from "./adapter";
 import { linearWebAdapter } from "./linear/adapter";
 
@@ -30,4 +30,11 @@ export function trackerExtras(gateway: TrackerGateway): TrackerExtras | null {
 /** The provider's name as people read it ("Linear"; "the tracker" for an unknown one). */
 export function trackerName(provider: TrackerProvider): string {
   return knownProvider(provider) ? ADAPTERS[provider].name : "the tracker";
+}
+
+/** The optional capabilities the provider's gateways have (none for an unknown one). */
+export function trackerProviderCapabilities(
+  provider: TrackerProvider,
+): readonly TrackerCapability[] {
+  return knownProvider(provider) ? ADAPTERS[provider].capabilities : [];
 }

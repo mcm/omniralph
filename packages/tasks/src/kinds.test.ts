@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AGENT_TOOLS,
   AGENT_TOOLS_BY_TASK_TYPE,
-  LINEAR_TOOLS,
+  TRACKER_TOOLS,
   SINK_KINDS,
   TASK_TYPES,
   TRIGGER_KINDS,
@@ -14,11 +14,11 @@ describe("vocabularies", () => {
     expect(TRIGGER_KINDS).toHaveLength(13);
     expect(SINK_KINDS).toContain("learned-rule");
     expect(AGENT_TOOLS).toEqual(["post_activity", "ask_permission", "get_attachment", "ship"]);
-    expect(LINEAR_TOOLS).toEqual([
-      "linear_get_issue",
-      "linear_list_comments",
-      "linear_search_issues",
-      "linear_get_document",
+    expect(TRACKER_TOOLS).toEqual([
+      "tracker_get_issue",
+      "tracker_list_comments",
+      "tracker_search_issues",
+      "tracker_get_document",
     ]);
   });
 

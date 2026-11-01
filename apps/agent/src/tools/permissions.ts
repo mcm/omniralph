@@ -6,7 +6,7 @@ import type { Logger } from "../logger.js";
 import { toolParameter } from "./activities.js";
 import type { PermissionCall } from "../session/session.js";
 
-/** How long a session waits for a person to answer in Linear before the call is denied. */
+/** How long a session waits for a person to answer in the tracker before the call is denied. */
 export const PERMISSION_TIMEOUT_MS = 30 * 60_000;
 
 /** How often the answer is polled for. */
@@ -55,7 +55,7 @@ export interface PermissionQuestion {
 export type PermissionDecision = "allowed" | "denied" | "expired";
 
 /**
- * Asks a person in the run's Linear session to approve a tool call that the
+ * Asks a person in the run's tracker session to approve a tool call that the
  * repository's Claude Code settings `ask` about (request sessions bypass
  * everything else): `POST /api/agent/jobs/{id}/permissions`, then polls
  * `GET …/permissions/{requestId}` until someone answers. With no answer
@@ -123,7 +123,7 @@ export class PermissionRelay {
       log.warn({ err: error }, "asking for a tool permission failed; denying the call");
       throw error;
     }
-    log.info({ requestId }, "asked for a tool permission in Linear");
+    log.info({ requestId }, "asked for a tool permission in the tracker");
 
     const deadline = Date.now() + timeoutMs;
     const interval = this.options.pollIntervalMs ?? PERMISSION_POLL_INTERVAL_MS;

@@ -68,8 +68,8 @@ export interface PlaybookDraft {
   fallbackModel: string | null;
   /** "No limit", or a cap typed as text. */
   tokenLimit: { limited: boolean; tokens: string };
-  tools: { builtin: string[]; agent: string[]; linear: string[]; mcpServers: string[] };
-  toolSettings: { shell: boolean; linearRead: boolean; network: boolean };
+  tools: { builtin: string[]; agent: string[]; tracker: string[]; mcpServers: string[] };
+  toolSettings: { shell: boolean; trackerRead: boolean; network: boolean };
   requires: { installables: string[]; hostTools: string[] };
   setupCommands: CommandDraft[];
   teardownCommands: CommandDraft[];
@@ -144,7 +144,7 @@ export function draftFromPlaybook(playbook: Playbook): PlaybookDraft {
     tools: {
       builtin: [...playbook.tools.builtin],
       agent: [...playbook.tools.agent],
-      linear: [...playbook.tools.linear],
+      tracker: [...playbook.tools.tracker],
       mcpServers: [...playbook.tools.mcpServers],
     },
     toolSettings: { ...playbook.toolSettings },
@@ -172,8 +172,8 @@ export function newDraft(role: PlaybookRole): PlaybookDraft {
     model: null,
     fallbackModel: null,
     tokenLimit: { limited: false, tokens: "" },
-    tools: { builtin: [], agent: [], linear: [], mcpServers: [] },
-    toolSettings: { shell: false, linearRead: false, network: false },
+    tools: { builtin: [], agent: [], tracker: [], mcpServers: [] },
+    toolSettings: { shell: false, trackerRead: false, network: false },
     requires: { installables: [], hostTools: [] },
     setupCommands: [],
     teardownCommands: [],
@@ -305,7 +305,7 @@ export function shownFields(role: PlaybookRole): string[] {
     ...(isReviewRole(role) ? [] : ["tokenBudget"]),
     "tools.builtin",
     "tools.agent",
-    "tools.linear",
+    "tools.tracker",
     "tools.mcpServers",
     "toolSettings",
     "requires.installables",

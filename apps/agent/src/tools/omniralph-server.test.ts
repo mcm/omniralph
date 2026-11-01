@@ -2,13 +2,13 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { SdkMcpToolDefinition } from "@anthropic-ai/claude-agent-sdk";
-import type { AgentTool, LinearTool, TaskType } from "@omniralph/tasks";
+import type { AgentTool, TrackerTool, TaskType } from "@omniralph/tasks";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FetchFn } from "../api.js";
 import { silentLogger } from "../logger.js";
 import {
   createOmniralphServer,
-  offeredLinearTools,
+  offeredTrackerTools,
   omniralphTools,
   type OmniralphServerOptions,
 } from "./omniralph-server.js";
@@ -356,7 +356,7 @@ describe("omniralph server", () => {
   });
 
   describe("Linear tools", () => {
-    const LINEAR = `${SERVER}/api/agent/runs/${JOB}/linear`;
+    const TRACKER = `${SERVER}/api/agent/runs/${JOB}/tracker`;
     const issue = {
       id: "i1",
       identifier: "ENG-7",
@@ -370,13 +370,13 @@ describe("omniralph server", () => {
       labels: ["bug"],
     };
 
-    function linearOptions(fetch: FetchFn, linearTools: LinearTool[]): OmniralphServerOptions {
-      return { ...options(fetch, []), linearTools };
+    function linearOptions(fetch: FetchFn, trackerTools: TrackerTool[]): OmniralphServerOptions {
+      return { ...options(fetch, []), trackerTools };
     }
 
     async function callLinear(
       fetch: FetchFn,
-      name: LinearTool,
+      name: TrackerTool,
       args: Record<string, unknown>,
     ): Promise<Result> {
       const definition = omniralphTools(linearOptions(fetch, [name])).find((t) => t.name === name);
@@ -384,19 +384,19 @@ describe("omniralph server", () => {
       return definition.handler(args as never, undefined);
     }
 
-    it("offers the agent's Linear tools only when the task turns on linearRead", () => {
-      const tools = { linear: ["linear_get_issue", "linear_get_issue"] as LinearTool[] };
-      expect(offeredLinearTools(tools, { linearRead: true })).toEqual(["linear_get_issue"]);
-      expect(offeredLinearTools(tools, { linearRead: false })).toEqual([]);
+    it("offers the agent's Linear tools only when the task turns on trackerRead", () => {
+      const tools = { tracker: ["tracker_get_issue", "tracker_get_issue"] as TrackerTool[] };
+      expect(offeredTrackerTools(tools, { trackerRead: true })).toEqual(["tracker_get_issue"]);
+      expect(offeredTrackerTools(tools, { trackerRead: false })).toEqual([]);
     });
 
     it("serves them as mcp__omniralph__<tool>, even without agent tools", () => {
       const server = createOmniralphServer(
-        linearOptions(fakeFetch(() => json({})).fn, ["linear_get_issue", "linear_get_document"]),
+        linearOptions(fakeFetch(() => json({})).fn, ["tracker_get_issue", "tracker_get_document"]),
       );
       expect(server?.allowedTools).toEqual([
-        "mcp__omniralph__linear_get_issue",
-        "mcp__omniralph__linear_get_document",
+        "mcp__omniralph__tracker_get_issue",
+        "mcp__omniralph__tracker_get_document",
       ]);
       expect(createOmniralphServer(linearOptions(fakeFetch(() => json({})).fn, []))).toBeNull();
     });
@@ -417,52 +417,52 @@ describe("omniralph server", () => {
             ? json({ document })
             : json({ issue }),
       );
-      const got = await callLinear(fn, "linear_get_issue", { issueId: "ENG-7" });
+      const got = await callLinear(fn, "tracker_get_issue", { issueId: "ENG-7" });
       expect(got.isError).toBeFalsy();
       expect(JSON.parse(resultText(got))).toEqual({ issue });
       expect(
-        JSON.parse(resultText(await callLinear(fn, "linear_list_comments", { issueId: "ENG-7" }))),
+        JSON.parse(resultText(await callLinear(fn, "tracker_list_comments", { issueId: "ENG-7" }))),
       ).toEqual(comments);
       expect(
         JSON.parse(
-          resultText(await callLinear(fn, "linear_get_document", { documentId: "prd-d1" })),
+          resultText(await callLinear(fn, "tracker_get_document", { documentId: "prd-d1" })),
         ),
       ).toEqual({ document });
       expect(calls.map((c) => [c.method, c.url])).toEqual([
-        ["GET", `${LINEAR}/issues/ENG-7`],
-        ["GET", `${LINEAR}/issues/ENG-7/comments`],
-        ["GET", `${LINEAR}/documents/prd-d1`],
+        ["GET", `${TRACKER}/issues/ENG-7`],
+        ["GET", `${TRACKER}/issues/ENG-7/comments`],
+        ["GET", `${TRACKER}/documents/prd-d1`],
       ]);
       expectSessionToken(calls);
     });
 
     it("searches issues with the query and result count in the URL", async () => {
       const { fn, calls } = fakeFetch(() => json({ issues: [issue] }));
-      const result = await callLinear(fn, "linear_search_issues", { query: "login & auth" });
+      const result = await callLinear(fn, "tracker_search_issues", { query: "login & auth" });
       expect(JSON.parse(resultText(result))).toEqual({ issues: [issue] });
-      await callLinear(fn, "linear_search_issues", { query: "x", first: 3 });
+      await callLinear(fn, "tracker_search_issues", { query: "x", first: 3 });
       expect(calls.map((c) => c.url)).toEqual([
-        `${LINEAR}/issues?query=login+%26+auth`,
-        `${LINEAR}/issues?query=x&first=3`,
+        `${TRACKER}/issues?query=login+%26+auth`,
+        `${TRACKER}/issues?query=x&first=3`,
       ]);
       expectSessionToken(calls);
     });
 
     it("returns a tool error on an error status, an invalid body or a network failure", async () => {
-      const refused = fakeFetch(() => json({ error: "linear_tool_not_allowed" }, 403));
-      const denied = await callLinear(refused.fn, "linear_get_issue", { issueId: "ENG-7" });
+      const refused = fakeFetch(() => json({ error: "tracker_tool_not_allowed" }, 403));
+      const denied = await callLinear(refused.fn, "tracker_get_issue", { issueId: "ENG-7" });
       expect(denied.isError).toBe(true);
-      expect(resultText(denied)).toContain("linear_tool_not_allowed");
+      expect(resultText(denied)).toContain("tracker_tool_not_allowed");
 
       const invalid = fakeFetch(() => json({ nope: true }));
-      const bad = await callLinear(invalid.fn, "linear_get_issue", { issueId: "ENG-7" });
+      const bad = await callLinear(invalid.fn, "tracker_get_issue", { issueId: "ENG-7" });
       expect(bad.isError).toBe(true);
       expect(resultText(bad)).toContain("invalid body");
 
       const down = fakeFetch(() => {
         throw new TypeError("fetch failed");
       });
-      const failed = await callLinear(down.fn, "linear_search_issues", { query: "x" });
+      const failed = await callLinear(down.fn, "tracker_search_issues", { query: "x" });
       expect(failed.isError).toBe(true);
       expect(resultText(failed)).toContain("fetch failed");
     });

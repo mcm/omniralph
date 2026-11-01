@@ -60,7 +60,7 @@ describe("runTokenScopes", () => {
         "credentials:read",
         "run:activity",
         "run:attachments",
-        "linear:read",
+        "tracker:read",
       ]);
     }
   });

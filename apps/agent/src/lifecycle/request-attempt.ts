@@ -161,7 +161,7 @@ function sessionError(session: SessionResult): string {
  * session may ship through `prepared.ship` (the `ship` agent tool), which
  * commits and pushes with `args.gitEnv`; `/ship` requests are committed and
  * pushed after the session the same way. What the session leaves uncommitted
- * is stashed and reported. Replies from the Linear thread reach the live
+ * is stashed and reported. Replies from the tracker thread reach the live
  * session. A Claude rate limit throws `RetryableJobError`; a canceled job
  * stashes its work and rejects. Run by coding runs of request tasks
  * (`runCodingTask`).
@@ -208,7 +208,7 @@ export async function runRequestAttempt(args: RequestAttemptArgs): Promise<Ralph
             ephemeral: false,
           });
         }
-        // Files attached in Linear, downloaded through the control panel (which holds the token).
+        // Files attached in the tracker, downloaded through the control panel (which holds the token).
         const attachments = await jobAttachments({
           attachments: payload.attachments,
           epicIdentifier: payload.epic.identifier,
@@ -271,7 +271,7 @@ export async function runRequestAttempt(args: RequestAttemptArgs): Promise<Ralph
             ],
             signal: ctx.signal,
             onEvent: (event) => relay.event(event),
-            // Replies from the Linear thread reach the live session (see `jobMessages`).
+            // Replies from the tracker thread reach the live session (see `jobMessages`).
             onInjector: (inject) => ctx.setMessageInjector?.(inject),
             // Follow-ups continue this conversation, like Cyrus resuming its Claude session.
             persistSession: true,

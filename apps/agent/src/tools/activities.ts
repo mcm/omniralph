@@ -8,7 +8,7 @@ const MAX_BODY = 10_000;
 /** The server accepts parameters up to 10,000 characters (`RalphActivity` in @omniralph/shared). */
 const MAX_PARAMETER = 10_000;
 
-/** Tool calls that aren't worth showing (the plan in Linear already tracks progress). */
+/** Tool calls that aren't worth showing (the plan in the tracker already tracks progress). */
 const SKIPPED_TOOLS = new Set(["TodoWrite"]);
 
 /** Input fields that say best what a tool call does, in order of preference. */
@@ -42,7 +42,7 @@ export function toolParameter(input: unknown): string {
 }
 
 /**
- * The activity a session event becomes in the Linear agent session: Claude's
+ * The activity a session event becomes in the tracker session: Claude's
  * text a thought, a tool call an ephemeral action (`TodoWrite` none).
  */
 export function activityFor(event: SessionEvent): RalphActivity | undefined {

@@ -232,8 +232,8 @@ function ToolsCard({ playbook }: { playbook: Playbook }) {
         <Fact term="Agent">
           <NameBadges label="Agent tools" names={tools.agent} />
         </Fact>
-        <Fact term="Linear">
-          <NameBadges label="Linear tools" names={tools.linear} />
+        <Fact term="Tracker">
+          <NameBadges label="Tracker tools" names={tools.tracker} />
         </Fact>
         <Fact term="MCP servers">
           <NameBadges label="MCP servers" names={tools.mcpServers} />

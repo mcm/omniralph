@@ -32,7 +32,12 @@ import {
   type MaterializationPlan,
   type TriageAgentOutput,
 } from "@omniralph/ralph";
-import { QueryRunResult, RunSpecJobPayload, TriageRunResult } from "@omniralph/shared";
+import {
+  QueryRunResult,
+  RunSpecJobPayload,
+  TriageJobContext,
+  TriageRunResult,
+} from "@omniralph/shared";
 import { z } from "zod";
 import { getTrackerGateway } from "@/lib/tracker/client";
 import { toIssuePriority, type IssueSummary, type TrackerGateway } from "@omniralph/tracker";
@@ -111,11 +116,8 @@ export const VALIDATION_STORY_BODY = [
 ].join("\n");
 
 /** What the sink needs from the trigger context `enqueueTriage` stores. */
-export const TriageRunContext = z.object({
-  /** The `triage_runs` row. */
-  triageRunId: z.uuid(),
-});
-export type TriageRunContext = z.infer<typeof TriageRunContext>;
+export const TriageRunContext = TriageJobContext;
+export type TriageRunContext = TriageJobContext;
 
 /** The triage run (`triage_runs.id`) a `builtin:triage` job belongs to; null for another job. */
 export function triageRunIdOf(job: Pick<Job, "payload">): string | null {

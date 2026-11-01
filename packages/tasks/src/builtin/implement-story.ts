@@ -177,7 +177,7 @@ export const IMPLEMENT_STORY_PLAYBOOK: PlaybookInput = {
   role: "story",
   ...ENGINEER_PERSONA,
   promptTemplate: STORY_TEMPLATE,
-  toolSettings: { shell: true, linearRead: false, network: true },
+  toolSettings: { shell: true, trackerRead: false, network: true },
   // Its runs go back to the ralph run (the role's `ralph-run` sink), which records the attempt.
   // Ralph's story model (`DEFAULT_STORY_MODEL`). Its coding settings are `CODING_DEFAULTS`.
   model: "opus",

@@ -34,7 +34,7 @@ const SESSION_SCOPES: JobTokenScope[] = [
   "credentials:read",
   "run:activity",
   "run:attachments",
-  "linear:read",
+  "tracker:read",
 ];
 
 vi.mock("server-only", () => ({}));

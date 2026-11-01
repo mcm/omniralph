@@ -11,6 +11,7 @@ import type {
   IssueWithRouting,
   ListIssuesFilter,
   RoutingIssue,
+  TrackerCapability,
   TrackerEvent,
   TrackerGateway,
   TrackerProvider,
@@ -80,6 +81,8 @@ export interface TrackerWebAdapter {
   readonly provider: TrackerProvider;
   /** The provider's name as people read it ("Linear"). */
   readonly name: string;
+  /** The optional capabilities its gateways have, known without connecting (e.g. to offer tools). */
+  readonly capabilities: readonly TrackerCapability[];
   /** The connected tracker's gateway; throws `TrackerNotConnectedError` without one. */
   getGateway(options: TrackerConnectionOptions): Promise<TrackerGateway>;
   /** A gateway whose every call fails with `TrackerNotConnectedError`. */

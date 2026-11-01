@@ -16,7 +16,7 @@ const SESSION_SCOPES: JobTokenScope[] = [
   "credentials:read",
   "run:activity",
   "run:attachments",
-  "linear:read",
+  "tracker:read",
 ];
 
 vi.mock("server-only", () => ({}));
@@ -45,26 +45,26 @@ vi.mock("@omniralph/tasks", async (importOriginal) => {
   const tasks = await importOriginal<typeof Tasks>();
   const playbook = (
     id: string,
-    linearRead: boolean,
-    linear: Tasks.LinearTool[] = [
-      "linear_get_issue",
-      "linear_list_comments",
-      "linear_search_issues",
+    trackerRead: boolean,
+    tracker: Tasks.TrackerTool[] = [
+      "tracker_get_issue",
+      "tracker_list_comments",
+      "tracker_search_issues",
     ],
   ) =>
     tasks.Playbook.parse({
       id,
       name: id,
       role: "chat-ask",
-      systemPrompt: "You read Linear.",
+      systemPrompt: "You read the tracker.",
       promptTemplate: "{{question}}",
-      tools: { linear },
-      toolSettings: { linearRead },
+      tools: { tracker },
+      toolSettings: { trackerRead },
     });
   const defined = [
-    playbook("builtin:linear-reader", true),
-    playbook("builtin:no-linear", false),
-    playbook("builtin:document-reader", true, ["linear_get_document"]),
+    playbook("builtin:tracker-reader", true),
+    playbook("builtin:no-tracker", false),
+    playbook("builtin:document-reader", true, ["tracker_get_document"]),
   ];
   const getBuiltinPlaybook = (id: string) => defined.find((p) => p.id === id) ?? null;
   const getBuiltinRunSpec = (id: string) => {
@@ -87,10 +87,10 @@ process.env.LOCAL_AGENT_SIGNING_KEY = signingKey
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 
 const { getTokenSigner } = await import("@/lib/agent-auth/signer");
-const { GET: searchIssues } = await import("./runs/[id]/linear/issues/route");
-const { GET: getIssue } = await import("./runs/[id]/linear/issues/[issueId]/route");
-const { GET: listComments } = await import("./runs/[id]/linear/issues/[issueId]/comments/route");
-const { GET: getDocument } = await import("./runs/[id]/linear/documents/[documentId]/route");
+const { GET: searchIssues } = await import("./runs/[id]/tracker/issues/route");
+const { GET: getIssue } = await import("./runs/[id]/tracker/issues/[issueId]/route");
+const { GET: listComments } = await import("./runs/[id]/tracker/issues/[issueId]/comments/route");
+const { GET: getDocument } = await import("./runs/[id]/tracker/documents/[documentId]/route");
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -107,24 +107,24 @@ function request(path: string, token: string | undefined): Request {
 
 const call = {
   issue: (jobId: string, issueId: string, token?: string) =>
-    getIssue(request(`/api/agent/runs/${jobId}/linear/issues/${issueId}`, token), {
+    getIssue(request(`/api/agent/runs/${jobId}/tracker/issues/${issueId}`, token), {
       params: Promise.resolve({ id: jobId, issueId }),
     }),
   comments: (jobId: string, issueId: string, token?: string) =>
-    listComments(request(`/api/agent/runs/${jobId}/linear/issues/${issueId}/comments`, token), {
+    listComments(request(`/api/agent/runs/${jobId}/tracker/issues/${issueId}/comments`, token), {
       params: Promise.resolve({ id: jobId, issueId }),
     }),
   search: (jobId: string, query: string, token?: string) =>
-    searchIssues(request(`/api/agent/runs/${jobId}/linear/issues?${query}`, token), {
+    searchIssues(request(`/api/agent/runs/${jobId}/tracker/issues?${query}`, token), {
       params: Promise.resolve({ id: jobId }),
     }),
   document: (jobId: string, documentId: string, token?: string) =>
-    getDocument(request(`/api/agent/runs/${jobId}/linear/documents/${documentId}`, token), {
+    getDocument(request(`/api/agent/runs/${jobId}/tracker/documents/${documentId}`, token), {
       params: Promise.resolve({ id: jobId, documentId }),
     }),
 };
 
-describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/linear/*", () => {
+describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/tracker/*", () => {
   let testDb: TestDatabase;
   let db: Database;
   let orgId: string;
@@ -157,7 +157,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/linear/*", () => {
 
   /** A running query job of `taskId`, and its session token. */
   async function newRun(
-    taskId: string | null = "builtin:linear-reader",
+    taskId: string | null = "builtin:tracker-reader",
     values: Partial<typeof jobs.$inferInsert> = {},
   ) {
     const [job] = await db
@@ -263,7 +263,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/linear/*", () => {
     expect(state.linear.searches).toHaveLength(2);
   });
 
-  it("refuses tools the run's agent doesn't list, and tasks without linearRead", async () => {
+  it("refuses tools the run's agent doesn't list, and tasks without trackerRead", async () => {
     state.linear.documentsById.set("doc-1", {
       id: "doc-1",
       title: "D",
@@ -273,12 +273,12 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/linear/*", () => {
     });
     state.linear.add({ title: "T", identifier: "ENG-1" });
     const { jobId, session } = await newRun();
-    // The agent doesn't list linear_get_document.
+    // The agent doesn't list tracker_get_document.
     const res = await call.document(jobId, "doc-1", session);
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "linear_tool_not_allowed" });
+    expect(await res.json()).toEqual({ error: "tracker_tool_not_allowed" });
 
-    const off = await newRun("builtin:no-linear");
+    const off = await newRun("builtin:no-tracker");
     expect((await call.issue(off.jobId, "ENG-1", off.session)).status).toBe(403);
     const unknown = await newRun("builtin:unknown");
     expect((await call.issue(unknown.jobId, "ENG-1", unknown.session)).status).toBe(403);
@@ -287,7 +287,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/linear/*", () => {
     expect(state.gatewayOrgs).toEqual([]);
   });
 
-  it("requires the running job's own token with linear:read", async () => {
+  it("requires the running job's own token with tracker:read", async () => {
     state.linear.add({ title: "T", identifier: "ENG-1" });
     const { jobId } = await newRun();
     expect((await call.issue(jobId, "ENG-1")).status).toBe(401);
@@ -298,7 +298,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/linear/*", () => {
       scopes: ["credentials:read"],
     });
     expect((await call.issue(jobId, "ENG-1", lifecycle)).status).toBe(401);
-    const done = await newRun("builtin:linear-reader", { status: "completed" });
+    const done = await newRun("builtin:tracker-reader", { status: "completed" });
     expect((await call.issue(done.jobId, "ENG-1", done.session)).status).toBe(401);
     const other = await newRun();
     const res = await call.issue(jobId, "ENG-1", other.session);
@@ -337,12 +337,12 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/linear/*", () => {
     const reader = await newRun();
     let res = await call.issue(reader.jobId, "ENG-404", reader.session);
     expect(res.status).toBe(404);
-    expect(await res.json()).toMatchObject({ error: "linear_not_found" });
+    expect(await res.json()).toMatchObject({ error: "tracker_not_found" });
 
     const documents = await newRun("builtin:document-reader");
     res = await call.document(documents.jobId, "doc-404", documents.session);
     expect(res.status).toBe(404);
-    expect(await res.json()).toMatchObject({ error: "linear_not_found" });
+    expect(await res.json()).toMatchObject({ error: "tracker_not_found" });
   });
 
   it("reads only through the run's own organization's integration", async () => {
@@ -370,7 +370,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/linear/*", () => {
         organizationId: other!.id,
         type: "chat.ask",
         taskType: "query",
-        taskId: "builtin:linear-reader",
+        taskId: "builtin:tracker-reader",
         status: "running",
         agentId: otherAgent!.id,
         payload: { trigger: { kind: "chat.request", context: { question: "Why?" } } },
@@ -394,18 +394,18 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/linear/*", () => {
     state.notConnected = true;
     let res = await call.issue(jobId, "ENG-1", session);
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error: "linear_not_connected" });
+    expect(await res.json()).toMatchObject({ error: "tracker_not_connected" });
 
     state.notConnected = false;
     state.linear.failures.set("getIssue", new TrackerInvalidInputError("Entity not found"));
     res = await call.issue(jobId, "ENG-1", session);
     expect(res.status).toBe(404);
-    expect(await res.json()).toMatchObject({ error: "linear_not_found" });
+    expect(await res.json()).toMatchObject({ error: "tracker_not_found" });
 
     state.linear.failures.set("getIssue", new Error("rate limited"));
     vi.spyOn(console, "error").mockImplementationOnce(() => {});
     res = await call.issue(jobId, "ENG-1", session);
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: "linear_failed", message: "rate limited" });
+    expect(await res.json()).toEqual({ error: "tracker_failed", message: "rate limited" });
   });
 });

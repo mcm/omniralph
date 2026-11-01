@@ -12,12 +12,12 @@ The control panel is the only thing that talks to Linear. It holds the app's tok
 Linear's webhooks and posts the agent session's plan, thoughts, actions and responses. Agents relay
 their activities through the control panel (`POST /api/agent/jobs/{id}/activities`), download
 [Linear attachments](#attachments) through it (`GET /api/agent/jobs/{id}/attachments/{attachmentId}`)
-and never see a Linear token. Sessions of run-spec tasks with `toolSettings.linearRead` read Linear
-the same way: the `linear_get_issue`, `linear_list_comments`, `linear_search_issues` and
-`linear_get_document` tools of the agent's `omniralph` MCP server call
-`GET /api/agent/runs/{id}/linear/…` (`issues?query=`, `issues/{issueId}`,
+and never see a Linear token. Sessions of run-spec tasks with `toolSettings.trackerRead` read Linear
+the same way: the `tracker_get_issue`, `tracker_list_comments`, `tracker_search_issues` and
+`tracker_get_document` tools of the agent's `omniralph` MCP server call
+`GET /api/agent/runs/{id}/tracker/…` (`issues?query=`, `issues/{issueId}`,
 `issues/{issueId}/comments`, `documents/{documentId}`) with the run's session token (scope
-`linear:read`); the control panel reads the run's organization's workspace, only for the tools the
+`tracker:read`); the control panel reads the run's organization's workspace, only for the tools the
 task's agent lists. They are read-only: every Linear write goes through a sink.
 
 Runs can also start from a Slack or Discord thread: a linked member asks the chat bot and it hands
@@ -689,8 +689,8 @@ The session is read-only, like a review: only `Read`, `Grep` and `Glob` inside t
 shell, no writes, no network, no project settings or hooks, and no Linear token (the agent
 returns a typed result; the control panel makes every change in Linear). It sees the issue, its
 comments, its sub-issues (with their states and priorities) and blockers, and can read related
-Linear issues, comments and documents with the read-only Linear tools (`linear_get_issue`,
-`linear_list_comments`, `linear_search_issues`, `linear_get_document`), which the control panel
+Linear issues, comments and documents with the read-only Linear tools (`tracker_get_issue`,
+`tracker_list_comments`, `tracker_search_issues`, `tracker_get_document`), which the control panel
 serves for the run's organization. When the routed repository's default branch doesn't exist yet,
 it runs as if no repository were routed.
 

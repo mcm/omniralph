@@ -17,17 +17,17 @@
       "Glob"
     ],
     "agent": [],
-    "linear": [
-      "linear_get_issue",
-      "linear_list_comments",
-      "linear_search_issues",
-      "linear_get_document"
+    "tracker": [
+      "tracker_get_issue",
+      "tracker_list_comments",
+      "tracker_search_issues",
+      "tracker_get_document"
     ],
     "mcpServers": []
   },
   "toolSettings": {
     "shell": false,
-    "linearRead": true,
+    "trackerRead": true,
     "network": false
   },
   "model": "opus",

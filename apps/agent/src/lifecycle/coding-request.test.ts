@@ -161,7 +161,8 @@ function requestPayload(
 ): RalphRequestPayload {
   return {
     runId,
-    source: "linear",
+    source: "tracker",
+    trackerProvider: "linear",
     repositoryId: randomUUID(),
     repository: repo,
     branch,
@@ -196,13 +197,14 @@ function storyPayload(repo: JobRepository, runId: string, branch: string): Ralph
     branch,
     baseBranch: "main",
     settings: requestPayload(repo, runId, branch).settings,
+    trackerProvider: "linear",
     storyId: randomUUID(),
     attempt: 1,
     epic: { identifier: "TOOL-32", title: "Ralph core", kind: "children", url: null, prd: "" },
     story: {
       identifier: "TOOL-91",
       title: "Run a story",
-      linearIssueId: "issue-91",
+      trackerIssueId: "issue-91",
       url: null,
       description: "Run it.",
     },

@@ -1,19 +1,19 @@
 import { requireCapability } from "@omniralph/tracker";
-import { LinearEntityId } from "@omniralph/shared";
+import { TrackerEntityId } from "@omniralph/shared";
 import { notFound } from "@/lib/agent-api/jobs";
-import { runLinearDocument, serveRunLinearTool } from "@/lib/runs/linear";
+import { runTrackerDocument, serveRunTrackerTool } from "@/lib/runs/tracker";
 import { liveRoute } from "@/lib/live/request";
 
 interface DocumentRouteContext {
   params: Promise<{ id: string; documentId: string }>;
 }
 
-/** `linear_get_document`: a document (by ID or slug ID) of the run's organization's Linear workspace. */
+/** `tracker_get_document`: a document (by ID or slug ID) of the run's organization's tracker. */
 async function get(req: Request, ctx: DocumentRouteContext): Promise<Response> {
-  const documentId = LinearEntityId.safeParse((await ctx.params).documentId);
+  const documentId = TrackerEntityId.safeParse((await ctx.params).documentId);
   if (!documentId.success) return notFound();
-  return serveRunLinearTool(req, ctx, "linear_get_document", async (tracker) => ({
-    document: runLinearDocument(
+  return serveRunTrackerTool(req, ctx, "tracker_get_document", async (tracker) => ({
+    document: runTrackerDocument(
       await requireCapability(tracker, "documents").getDocument(documentId.data),
     ),
   }));

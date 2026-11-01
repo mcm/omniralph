@@ -5,6 +5,7 @@ import {
   QUERY_TASKS_MIN_AGENT_VERSION,
   REVIEW_TASKS_MIN_AGENT_VERSION,
   SETUP_COMMANDS_MIN_AGENT_VERSION,
+  TRACKER_PROTOCOL_MIN_AGENT_VERSION,
   reviewProfileConfigForDepth,
   type JobToken,
   type ReviewDepth,
@@ -142,6 +143,32 @@ describe("resolveRunSpec", () => {
       tools: { allowedTools: [], disallowedTools: [] },
       fallbackModel: "sonnet",
       tokens,
+    });
+  });
+
+  describe("tracker tools", () => {
+    const reader = {
+      tools: {
+        ...Playbook.parse(playbookInput).tools,
+        tracker: ["tracker_get_issue", "tracker_get_document"],
+      },
+      toolSettings: { ...Playbook.parse(playbookInput).toolSettings, trackerRead: true },
+    } satisfies Partial<Playbook>;
+
+    it("offers the document tool when the tracker has documents", async () => {
+      const spec = await resolveRunSpec(db, job(), tokens, playbooks(reader), ["documents"]);
+      expect(spec.agent.tools.tracker).toEqual(["tracker_get_issue", "tracker_get_document"]);
+    });
+
+    it("leaves the document tool out when the tracker has no documents", async () => {
+      const spec = await resolveRunSpec(db, job(), tokens, playbooks(reader), ["sessions"]);
+      expect(spec.agent.tools.tracker).toEqual(["tracker_get_issue"]);
+      expect(spec.task.toolSettings.trackerRead).toBe(true);
+    });
+
+    it("offers Linear's document tool by default", async () => {
+      const spec = await resolveRunSpec(db, job(), tokens, playbooks(reader));
+      expect(spec.agent.tools.tracker).toContain("tracker_get_document");
     });
   });
 
@@ -485,21 +512,40 @@ describe("runSpecJobInput", () => {
     expect(runSpecJobInput(task, payload).minAgentVersion).toBe(REVIEW_TASKS_MIN_AGENT_VERSION);
   });
 
-  it("requires an agent with the coding lifecycle for coding tasks", () => {
+  it("requires an agent with the coding lifecycle and the tracker protocol for coding tasks", () => {
+    // Coding runs' ralph payloads carry `trackerIssueId` and `trackerProvider`.
     const task = TaskDefinition.parse({ ...taskInput, taskType: "coding" });
-    expect(runSpecJobInput(task, payload).minAgentVersion).toBe(CODING_TASKS_MIN_AGENT_VERSION);
-    // Coding runs run a coding task's setup commands too: the higher minimum wins.
+    expect(runSpecJobInput(task, payload).minAgentVersion).toBe(TRACKER_PROTOCOL_MIN_AGENT_VERSION);
     expect(
-      agentVersionAtLeast(CODING_TASKS_MIN_AGENT_VERSION, SETUP_COMMANDS_MIN_AGENT_VERSION),
+      agentVersionAtLeast(TRACKER_PROTOCOL_MIN_AGENT_VERSION, CODING_TASKS_MIN_AGENT_VERSION),
     ).toBe(true);
+    // Coding runs run a coding task's setup commands too: the higher minimum wins.
     const withSetup = TaskDefinition.parse({
       ...taskInput,
       taskType: "coding",
       setupCommands: [{ name: "deps", command: "pnpm install" }],
     });
     expect(runSpecJobInput(withSetup, payload).minAgentVersion).toBe(
-      CODING_TASKS_MIN_AGENT_VERSION,
+      TRACKER_PROTOCOL_MIN_AGENT_VERSION,
     );
+  });
+
+  it("requires an agent with the tracker protocol when the task turns on the tracker tools", () => {
+    const reader = TaskDefinition.parse({ ...taskInput, toolSettings: { trackerRead: true } });
+    expect(runSpecJobInput(reader, payload).minAgentVersion).toBe(
+      TRACKER_PROTOCOL_MIN_AGENT_VERSION,
+    );
+    // Without them a query run still goes to any agent with the query lifecycle.
+    const task = TaskDefinition.parse(taskInput);
+    expect(runSpecJobInput(task, payload).minAgentVersion).toBe(QUERY_TASKS_MIN_AGENT_VERSION);
+    // A custom playbook's stored minimum below it doesn't lower it.
+    expect(runSpecJobInput(reader, payload, { minAgentVersion: "2.0.0" }).minAgentVersion).toBe(
+      TRACKER_PROTOCOL_MIN_AGENT_VERSION,
+    );
+  });
+
+  it("keeps older agents (before the tracker protocol) off tracker runs", () => {
+    expect(agentVersionAtLeast("2.0.2", TRACKER_PROTOCOL_MIN_AGENT_VERSION)).toBe(false);
   });
 
   it("requires coding runs to wait for an agent release after 0.10.0", () => {

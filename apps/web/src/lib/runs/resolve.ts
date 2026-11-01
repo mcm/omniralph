@@ -16,8 +16,11 @@ import {
   type TaskDefinition,
   type TaskType,
 } from "@omniralph/tasks";
+import type { TrackerCapability } from "@omniralph/tracker";
 import { organizationPlaybooks, type PlaybookSource } from "@/lib/playbooks";
 import { jobRepository } from "@/lib/scm/adapters";
+import { trackerProviderCapabilities } from "@/lib/tracker/adapters";
+import { DEFAULT_TRACKER_PROVIDER } from "@/lib/tracker/client";
 
 /**
  * A run spec that can't be resolved however often it is tried (unknown task,
@@ -37,7 +40,9 @@ export class RunSpecError extends Error {
  * organization's own, `organizationPlaybooks`) as the run spec's agent and
  * task (`playbookRunSpec`), the trigger (which must be one the playbook's role
  * allows), the repository, the model, the token budget and the job's
- * `tokens`. The playbook's tools are its runs' tools.
+ * `tokens`. The playbook's tools are its runs' tools, but for the tracker
+ * tools the organization's tracker can't serve (`tracker_get_document`
+ * without the documents capability, among `trackerCapabilities`).
  *
  * Model and budget come from one place per kind of run:
  * - a review run: its depth preset (from its trigger context: the
@@ -54,6 +59,9 @@ export async function resolveRunSpec(
   job: Pick<Job, "id" | "organizationId" | "taskType" | "taskId" | "repositoryId" | "payload">,
   tokens: { lifecycle: JobToken; session: JobToken },
   playbooks: PlaybookSource = organizationPlaybooks(db, job.organizationId),
+  trackerCapabilities: readonly TrackerCapability[] = trackerProviderCapabilities(
+    DEFAULT_TRACKER_PROVIDER,
+  ),
 ): Promise<RunSpec> {
   if (job.taskId === null) throw new RunSpecError("Not a run-spec job (no playbook)");
   const playbook = await playbooks.getPlaybook(job.taskId);
@@ -85,7 +93,7 @@ export async function resolveRunSpec(
     jobId: job.id,
     taskType: task.taskType,
     pool,
-    agent: withLegacyTaskTypes(agent, task.taskType),
+    agent: withTrackerToolsFor(withLegacyTaskTypes(agent, task.taskType), trackerCapabilities),
     task: withLegacyPool(task, pool),
     trigger: payload.trigger,
     repository,
@@ -107,6 +115,19 @@ export async function resolveRunSpec(
     throw new RunSpecError(`Review run of playbook ${task.id} has no valid review configuration`);
   }
   return narrowByReviewDepth(spec, reviewConfig.data.profile);
+}
+
+/**
+ * `agent` without the tracker tools a tracker with only `capabilities`
+ * can't serve: `tracker_get_document` needs documents.
+ */
+export function withTrackerToolsFor(
+  agent: RunSpecAgent,
+  capabilities: readonly TrackerCapability[],
+): RunSpecAgent {
+  if (capabilities.includes("documents")) return agent;
+  const tracker = agent.tools.tracker.filter((tool) => tool !== "tracker_get_document");
+  return { ...agent, tools: { ...agent.tools, tracker } };
 }
 
 /**

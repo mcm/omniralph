@@ -44,11 +44,11 @@ describe("builtin:triage", () => {
       tools: {
         builtin: ["Read", "Grep", "Glob"],
         agent: [],
-        linear: [
-          "linear_get_issue",
-          "linear_list_comments",
-          "linear_search_issues",
-          "linear_get_document",
+        tracker: [
+          "tracker_get_issue",
+          "tracker_list_comments",
+          "tracker_search_issues",
+          "tracker_get_document",
         ],
         mcpServers: [],
       },
@@ -62,7 +62,7 @@ describe("builtin:triage", () => {
       model: "opus",
       tokenBudget: null,
       idleTimeoutMs: 300_000,
-      toolSettings: { shell: false, linearRead: true, network: false },
+      toolSettings: { shell: false, trackerRead: true, network: false },
     });
     expect(
       validateTemplate(task.promptTemplate, availableVariables("query", task.triggers)),

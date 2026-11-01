@@ -104,7 +104,7 @@ export const playbookFormOptionsSchema = z.object({
   tools: z.object({
     builtin: z.array(z.string()),
     agent: z.array(z.string()),
-    linear: z.array(z.string()),
+    tracker: z.array(z.string()),
   }),
   mcpServers: z.array(z.string()),
   prDescriptionPlaybooks: z.array(

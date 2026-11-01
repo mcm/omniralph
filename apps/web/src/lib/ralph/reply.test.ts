@@ -31,7 +31,7 @@ import {
 import { projectIs, setRoutingRules, teamIs } from "@/lib/routing/testing";
 import { preparationHash } from "@omniralph/ralph";
 import {
-  CODING_TASKS_MIN_AGENT_VERSION,
+  TRACKER_PROTOCOL_MIN_AGENT_VERSION,
   MAX_JOB_DELIVERIES,
   RalphRequestPayload,
   RalphStoryPayload,
@@ -181,7 +181,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+      agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -339,7 +339,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       agentId: agentA,
       acceptedTaskTypes: ["coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+      agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -427,7 +427,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       expect((await activeJob(run.id)).targetAgentId).toBe(agentA);
       const payload = await work(run.id);
       expect(payload).toMatchObject({ attempt: 1, guidance: ["Use the v2 API."], branch });
-      expect(payload.story.linearIssueId).toBe(alpha.id);
+      expect(payload.story.trackerIssueId).toBe(alpha.id);
       expect((await getRun(db, run.id))?.status).toBe("running");
 
       // Stopped again: cleaned up again.

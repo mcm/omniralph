@@ -5,8 +5,9 @@ import {
   REVIEW_TASKS_MIN_AGENT_VERSION,
   RunSpecJobPayload,
   SETUP_COMMANDS_MIN_AGENT_VERSION,
+  TRACKER_PROTOCOL_MIN_AGENT_VERSION,
 } from "@omniralph/shared";
-import type { TaskDefinition, TaskRequirements } from "@omniralph/tasks";
+import { usesTrackerProtocol, type TaskDefinition, type TaskRequirements } from "@omniralph/tasks";
 
 /**
  * The routing and payload of a run-spec job for `task` (spread into
@@ -17,7 +18,9 @@ import type { TaskDefinition, TaskRequirements } from "@omniralph/tasks";
  * (`QUERY_TASKS_MIN_AGENT_VERSION`, `REVIEW_TASKS_MIN_AGENT_VERSION`,
  * `CODING_TASKS_MIN_AGENT_VERSION`),
  * tasks with setup or teardown commands one that runs them
- * (`SETUP_COMMANDS_MIN_AGENT_VERSION`), and a custom task the
+ * (`SETUP_COMMANDS_MIN_AGENT_VERSION`), tasks that use the tracker protocol
+ * (coding tasks, and tasks with the tracker tools turned on) one that speaks it
+ * (`TRACKER_PROTOCOL_MIN_AGENT_VERSION`), and a custom task the
  * `minAgentVersion` of the `requirements` stored with it: the highest that
  * applies. Only agents with every installable and host tool in
  * `requirements` (`deriveAgentRequirements` of the task and its agent)
@@ -25,7 +28,7 @@ import type { TaskDefinition, TaskRequirements } from "@omniralph/tasks";
  */
 export function runSpecJobInput(
   task: Pick<TaskDefinition, "id" | "taskType"> &
-    Partial<Pick<TaskDefinition, "setupCommands" | "teardownCommands">>,
+    Partial<Pick<TaskDefinition, "setupCommands" | "teardownCommands" | "toolSettings">>,
   payload: RunSpecJobPayload,
   requirements?: Partial<TaskRequirements> | null,
 ): {
@@ -52,7 +55,7 @@ export function runSpecJobInput(
 /** The `min_agent_version` of a run of `task` (see `runSpecJobInput`); `stored` is a custom task's. */
 export function runSpecMinAgentVersion(
   task: Pick<TaskDefinition, "taskType"> &
-    Partial<Pick<TaskDefinition, "setupCommands" | "teardownCommands">>,
+    Partial<Pick<TaskDefinition, "setupCommands" | "teardownCommands" | "toolSettings">>,
   stored: string | null,
 ): string | null {
   const commands =
@@ -62,6 +65,7 @@ export function runSpecMinAgentVersion(
     task.taskType === "review" ? REVIEW_TASKS_MIN_AGENT_VERSION : null,
     task.taskType === "coding" ? CODING_TASKS_MIN_AGENT_VERSION : null,
     commands ? SETUP_COMMANDS_MIN_AGENT_VERSION : null,
+    usesTrackerProtocol(task) ? TRACKER_PROTOCOL_MIN_AGENT_VERSION : null,
     stored,
   ].filter((version) => version !== null);
   return needed.reduce<string | null>(

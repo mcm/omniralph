@@ -7,6 +7,7 @@
 import {
   AGENT_VERSION_BY_TASK_TYPE,
   AGENT_VERSION_FOR_COMMANDS,
+  AGENT_VERSION_FOR_TRACKER,
   RunSpecAgent,
   TaskDefinition,
   TaskTypeSchema,
@@ -44,6 +45,14 @@ export const REVIEW_TASKS_MIN_AGENT_VERSION = AGENT_VERSION_BY_TASK_TYPE.review;
  * as an unsupported task type) leave them queued.
  */
 export const CODING_TASKS_MIN_AGENT_VERSION = AGENT_VERSION_BY_TASK_TYPE.coding;
+
+/**
+ * The first agent release with the tracker-neutral protocol (`tracker_*`
+ * tools, the `tracker:read` scope, `trackerIssueId` and `trackerProvider` in
+ * ralph payloads); runs that use it carry it as their `min_agent_version`
+ * (`usesTrackerProtocol` in `@omniralph/tasks`), so older agents leave them queued.
+ */
+export const TRACKER_PROTOCOL_MIN_AGENT_VERSION = AGENT_VERSION_FOR_TRACKER;
 
 /** The event that started a run, with the values its prompt template renders. */
 export const RunTrigger = z.object({

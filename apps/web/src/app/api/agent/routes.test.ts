@@ -25,10 +25,10 @@ describe("agent API routes", () => {
       "/api/agent/jobs/[id]/permissions",
       "/api/agent/jobs/[id]/permissions/[requestId]",
       "/api/agent/jobs/[id]/result",
-      "/api/agent/runs/[id]/linear/documents/[documentId]",
-      "/api/agent/runs/[id]/linear/issues",
-      "/api/agent/runs/[id]/linear/issues/[issueId]",
-      "/api/agent/runs/[id]/linear/issues/[issueId]/comments",
+      "/api/agent/runs/[id]/tracker/documents/[documentId]",
+      "/api/agent/runs/[id]/tracker/issues",
+      "/api/agent/runs/[id]/tracker/issues/[issueId]",
+      "/api/agent/runs/[id]/tracker/issues/[issueId]/comments",
       "/api/agent/token",
     ]);
   });

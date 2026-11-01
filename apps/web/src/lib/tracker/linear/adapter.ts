@@ -2,7 +2,7 @@
 import "server-only";
 import { classifyWebhook, type LinearGateway } from "@omniralph/tracker/linear";
 import { fixtureLinearEnabled, fixtureLinearGateway } from "@omniralph/tracker/linear/testing";
-import type { TrackerGateway } from "@omniralph/tracker";
+import { TRACKER_CAPABILITIES, type TrackerGateway } from "@omniralph/tracker";
 import type { TrackerExtras, TrackerWebAdapter } from "../adapter";
 import {
   disconnectedLinearGateway,
@@ -53,6 +53,7 @@ export function linearExtras(gateway: LinearGateway): TrackerExtras {
 export const linearWebAdapter: TrackerWebAdapter = {
   provider: "linear",
   name: "Linear",
+  capabilities: TRACKER_CAPABILITIES,
   getGateway({ db, organizationId, fixtures, refreshTimeoutMs }) {
     const options: LinearGatewayOptions = {
       db,

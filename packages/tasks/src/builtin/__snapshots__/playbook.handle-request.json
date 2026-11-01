@@ -22,12 +22,12 @@
       "get_attachment",
       "ship"
     ],
-    "linear": [],
+    "tracker": [],
     "mcpServers": []
   },
   "toolSettings": {
     "shell": true,
-    "linearRead": false,
+    "trackerRead": false,
     "network": true
   },
   "model": "opus",

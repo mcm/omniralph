@@ -16,16 +16,16 @@ export const JOB_TOKEN_TTL_SECONDS = 900;
 
 /**
  * Scopes a job token can carry: read (`credentials:read`) or push
- * (`credentials:write`) the job's repository, relay Linear session activities
- * and permission requests (`run:activity`), download the Linear attachments
- * listed in the payload (`run:attachments`) and read Linear (`linear:read`).
+ * (`credentials:write`) the job's repository, relay tracker session activities
+ * and permission requests (`run:activity`), download the tracker attachments
+ * listed in the payload (`run:attachments`) and read the tracker (`tracker:read`).
  */
 export const JOB_TOKEN_SCOPES = [
   "credentials:read",
   "credentials:write",
   "run:activity",
   "run:attachments",
-  "linear:read",
+  "tracker:read",
 ] as const;
 export const JobTokenScope = z.enum(JOB_TOKEN_SCOPES);
 export type JobTokenScope = z.infer<typeof JobTokenScope>;

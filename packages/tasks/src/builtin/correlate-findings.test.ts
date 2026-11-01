@@ -52,14 +52,14 @@ describe("builtin:correlate-findings", () => {
   it("runs with the correlator persona as a query task invoked by a run, with no tools", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "replace",
-      tools: { builtin: [], agent: [], linear: [], mcpServers: [] },
+      tools: { builtin: [], agent: [], tracker: [], mcpServers: [] },
     });
     expect(task).toMatchObject({
       taskType: "query",
       agentId: "builtin:correlate-findings",
       triggers: ["run.invoked"],
       sink: "run-result",
-      toolSettings: { shell: false, linearRead: false, network: false },
+      toolSettings: { shell: false, trackerRead: false, network: false },
       setupCommands: [],
       model: "claude-sonnet-5-5",
       tokenBudget: { tokens: 100_000 },

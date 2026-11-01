@@ -98,7 +98,7 @@ describe("HttpControlPanelApi.claim", () => {
     expect(parsed.runSpec?.agent.tools).toEqual({
       builtin: [],
       agent: [],
-      linear: [],
+      tracker: [],
       mcpServers: [],
     });
 

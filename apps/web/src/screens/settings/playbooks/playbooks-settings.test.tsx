@@ -83,10 +83,10 @@ const storyInput: PlaybookInput = {
   tools: {
     builtin: ["Read"],
     agent: ["post_activity", "ship"],
-    linear: [],
+    tracker: [],
     mcpServers: ["@omniralph/code-graph:graph"],
   },
-  toolSettings: { shell: true, linearRead: false, network: true },
+  toolSettings: { shell: true, trackerRead: false, network: true },
   setupCommands: [
     { name: "deps", command: "pnpm install" },
     { name: "env", command: "cp .env.example .env" },
@@ -404,7 +404,7 @@ describe("a playbook's page", () => {
         .map((item) => item.textContent);
     expect(items("Agent tools")).toEqual(["post_activity", "ship"]);
     expect(items("MCP servers")).toEqual(["@omniralph/code-graph:graph"]);
-    expect(facts("Tools")).toContainEqual(["Linear", "None"]);
+    expect(facts("Tools")).toContainEqual(["Tracker", "None"]);
     expect(facts("Tools")).toContainEqual(["Shell access", "On"]);
     expect(items("Packages")).toEqual(["@omniralph/code-graph"]);
     expect(items("Host tools")).toEqual(["semgrep"]);

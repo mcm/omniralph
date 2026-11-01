@@ -19,12 +19,12 @@
       "Glob"
     ],
     "agent": [],
-    "linear": [],
+    "tracker": [],
     "mcpServers": []
   },
   "toolSettings": {
     "shell": false,
-    "linearRead": false,
+    "trackerRead": false,
     "network": false
   },
   "model": null,

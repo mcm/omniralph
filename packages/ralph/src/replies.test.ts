@@ -184,7 +184,7 @@ describe("/ship", () => {
     expect(prompt).toContain("a".repeat(40));
     expect(prompt).toContain("set `pullRequest` to `open`");
     expect(prompt).not.toContain("You may commit");
-    expect(requestSystemAppend("when-asked", "linear", { ship: true })).toContain(
+    expect(requestSystemAppend("when-asked", "tracker", { ship: true })).toContain(
       "Don't run `git commit`",
     );
     expect(requestSystemAppend("when-asked")).toContain("You may use git (commit, push)");

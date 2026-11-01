@@ -18,7 +18,7 @@ ${GOOD_NEIGHBOR_RULE}`,
   tools: {
     builtin: [],
     agent: ["post_activity", "ask_permission", "get_attachment", "ship"],
-    linear: [],
+    tracker: [],
     mcpServers: [],
   },
 } satisfies PlaybookPersona;
