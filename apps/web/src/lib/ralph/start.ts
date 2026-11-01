@@ -453,7 +453,7 @@ async function askForRepositoryFirst(
 }
 
 /**
- * The chat thread that delegated the issue (`delegate_linear_issue`, or the
+ * The chat thread that delegated the issue (`delegate_tracker_issue`, or the
  * issue card's **Create and delegate**) within the last hour, taken so only
  * this run is tied to it. Null for a mention, or a delegation made in Linear.
  */

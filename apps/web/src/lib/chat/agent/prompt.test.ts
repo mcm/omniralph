@@ -44,9 +44,24 @@ describe("systemPrompt", () => {
         "When the answer to a question is a code change (a fix, a missing feature, a refactor the code needs), draft the request with draft_request",
       );
       expect(prompt).toContain(
-        "Use start_work instead when a member explicitly asks you to make a change, and draft_linear_issue when they ask to file an issue.",
+        "Use start_work instead when a member explicitly asks you to make a change, and draft_tracker_issue when they ask to file an issue.",
       );
       expect(prompt).toContain("I drafted the request from this conversation:");
     }
+  });
+
+  it("names the connected tracker from data, and a generic tracker without one", () => {
+    const named = systemPrompt({ ...base, tracker: "Acme Tracker" });
+    expect(named).toContain("coding tasks that work through work items and epics in Acme Tracker");
+    expect(named).toContain("Filing work items in Acme Tracker (draft_tracker_issue):");
+    expect(named).toContain("Omniralph then reports on the work item in Acme Tracker;");
+    expect(named).not.toContain("Linear");
+
+    const unnamed = systemPrompt({ ...base, tracker: null });
+    expect(unnamed).toContain(
+      "coding tasks that work through work items and epics in the organization's work item tracker",
+    );
+    expect(unnamed).toContain("Filing work items in the work item tracker (draft_tracker_issue):");
+    expect(unnamed).not.toContain("Linear");
   });
 });

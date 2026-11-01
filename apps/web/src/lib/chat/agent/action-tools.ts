@@ -48,6 +48,7 @@ import {
   defineChatTool,
   LINK_REQUIRED_RESULT,
   type ChatToolContext,
+  trackerLabel,
   type ChatToolRegistry,
 } from "./tools";
 
@@ -363,10 +364,14 @@ export const answerRunCleanup = defineChatTool({
 
 export const sendRalphGuidance = defineChatTool({
   tier: "action",
-  description:
-    "Sends guidance to any unfinished coding task of the organization, also one started from Linear (look it up with list_ralph_runs / get_ralph_run first): it applies it from its next story attempt (epic runs) or handles it as its next request, once the job it is running finishes. A Linear run's session shows it too. For the coding task of this thread, prefer reply_to_run, which reaches a working session right away.",
+  description: (tracker) =>
+    `Sends guidance to any unfinished coding task of the organization, also one started from ${tracker} (look it up with list_ralph_runs / get_ralph_run first): it applies it from its next story attempt (epic runs) or handles it as its next request, once the job it is running finishes. A run started from ${tracker} shows it on its work item too. For the coding task of this thread, prefer reply_to_run, which reaches a working session right away.`,
   inputSchema: z.object({
-    run: z.string().min(1).max(100).describe("Run id or Linear issue identifier (e.g. `ENG-42`)."),
+    run: z
+      .string()
+      .min(1)
+      .max(100)
+      .describe("Run id or its work item's identifier (e.g. `ENG-42`)."),
     text: z
       .string()
       .min(1)
@@ -393,7 +398,7 @@ export const sendRalphGuidance = defineChatTool({
       case "finished":
         return {
           error: "run_finished",
-          message: `That run is ${outcome.run.status}, so it takes no more guidance. A Linear run starts again when its issue is delegated to Omniralph again; for a change in a repository, start new work with start_work.`,
+          message: `That run is ${outcome.run.status}, so it takes no more guidance. A run started from ${trackerLabel(context)} starts again when its work item is delegated to Omniralph again; for a change in a repository, start new work with start_work.`,
           run: { id: outcome.run.id, status: outcome.run.status, url: runUrl(appUrl, outcome.run) },
         };
       case "applied":
@@ -420,6 +425,9 @@ function workItemTracker(context: ChatToolContext): Promise<WorkItemTracker> {
     getWorkItemTracker({ db: context.db, organizationId: context.organizationId })
   );
 }
+
+/** `text` with its first letter capitalized ("the tracker" starting a sentence). */
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -451,20 +459,29 @@ function issueScreenshots(
   return { attachments };
 }
 
-export const draftLinearIssue = defineChatTool({
+export const draftTrackerIssue = defineChatTool({
   tier: "action",
-  description:
-    "Drafts a Linear issue in the organization's Linear workspace from the conversation: posts a preview card in the thread with Create and Cancel buttons. Nothing is created until the user who asked clicks Create (within 24 hours); then the card shows the issue's identifier and link. Use it when a user asks you to file, open or create an issue/ticket. Write a self-contained title and description (the problem, context and acceptance criteria from the thread, in Markdown). Ask which team when the user hasn't said and the workspace has several. Pass the refs of relevant screenshots attached in the thread as `attachments`: the card lists them, and they are uploaded and embedded in the issue on Create.",
+  description: (tracker) =>
+    `Drafts a work item in ${tracker}, the organization's tracker, from the conversation: posts a preview card in the thread with Create and Cancel buttons. Nothing is created until the user who asked clicks Create (within 24 hours); then the card shows the work item's identifier and link. Use it when a user asks you to file, open or create an issue/ticket. Write a self-contained title and description (the problem, context and acceptance criteria from the thread, in Markdown). Ask which team when the user hasn't said and the tracker has several. Pass the refs of relevant screenshots attached in the thread as \`attachments\`: the card lists them, and they are uploaded and embedded in the work item on Create.`,
   inputSchema: z.object({
-    team: z.string().min(1).max(200).describe("The Linear team: its key (e.g. `ENG`), name or ID."),
-    title: z.string().min(1).max(255).describe("A short, specific issue title."),
+    team: z
+      .string()
+      .min(1)
+      .max(200)
+      .describe("The tracker's team: its key (e.g. `ENG`), name or ID."),
+    title: z.string().min(1).max(255).describe("A short, specific work item title."),
     description: z
       .string()
       .max(20_000)
       .describe(
-        "The issue description in Markdown, self-contained (Linear readers don't see the thread).",
+        "The work item's description in Markdown, self-contained (its readers in the tracker don't see the thread).",
       ),
-    project: z.string().min(1).max(200).optional().describe("A Linear project name to add it to."),
+    project: z
+      .string()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe("The name of a project in the tracker to add it to."),
     labels: z
       .array(z.string().min(1).max(80))
       .max(10)
@@ -476,13 +493,13 @@ export const draftLinearIssue = defineChatTool({
       .min(0)
       .max(4)
       .optional()
-      .describe("Linear priority: 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low."),
+      .describe("Priority: 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low."),
     attachments: z
       .array(z.string().min(1).max(40))
       .max(MAX_ISSUE_SCREENSHOTS)
       .optional()
       .describe(
-        "Refs of images attached in the thread (`[attachment <ref>: …]`), e.g. screenshots of the bug, to upload to Linear and embed in the description. Only when they are relevant.",
+        "Refs of images attached in the thread (`[attachment <ref>: …]`), e.g. screenshots of the bug, to upload to the tracker and embed in the description. Only when they are relevant.",
       ),
   }),
   async execute(input, context: ChatToolContext) {
@@ -497,7 +514,7 @@ export const draftLinearIssue = defineChatTool({
       if (error instanceof TrackerNotConnectedError) return TRACKER_NOT_CONNECTED_RESULT;
       return {
         error: "tracker_error",
-        message: `The tracker couldn't list its teams: ${errorText(error)}. Tell the user to try again later.`,
+        message: `${capitalize(trackerLabel(context))} couldn't list its teams: ${errorText(error)}. Tell the user to try again later.`,
       };
     }
     const team = findTeam(teams, input.team);
@@ -506,8 +523,8 @@ export const draftLinearIssue = defineChatTool({
         error: "unknown_team",
         message:
           teams.length > 0
-            ? `The Linear workspace has no team "${input.team}". Ask the user which of these they mean: ${teams.map((t) => `${t.key} (${t.name})`).join(", ")}.`
-            : "The Linear workspace has no teams.",
+            ? `${capitalize(trackerLabel(context))} has no team "${input.team}". Ask the user which of these they mean: ${teams.map((t) => `${t.key} (${t.name})`).join(", ")}.`
+            : `${capitalize(trackerLabel(context))} has no teams.`,
         teams: teams.map((t) => ({ key: t.key, name: t.name })),
       };
     }
@@ -542,16 +559,12 @@ export const draftLinearIssue = defineChatTool({
   },
 });
 
-export const delegateLinearIssue = defineChatTool({
+export const delegateTrackerIssue = defineChatTool({
   tier: "action",
-  description:
-    "Delegates an existing Linear issue to the Omniralph app, so Omniralph builds it (an epic with a PRD and stories, or a single issue) the way it does when someone delegates it in Linear. Omniralph works in the issue's Linear agent session; this thread gets a message when the run starts, when it opens its pull/merge request, and when it finishes or fails. Use it when a user asks to have Omniralph build, work on or take an existing issue. For a new issue, draft it with draft_linear_issue instead: its card has a Create and delegate button.",
+  description: (tracker) =>
+    `Delegates an existing work item in ${tracker} to the Omniralph app, so Omniralph builds it (an epic with a PRD and stories, or a single work item) the way it does when someone delegates it in ${tracker}. Omniralph reports on the work item in ${tracker}; this thread gets a message when the run starts, when it opens its pull/merge request, and when it finishes or fails. Use it when a user asks to have Omniralph build, work on or take an existing issue. For a new one, draft it with draft_tracker_issue instead: its card has a Create and delegate button.`,
   inputSchema: z.object({
-    issue: z
-      .string()
-      .min(1)
-      .max(100)
-      .describe("The Linear issue identifier (e.g. `ENG-42`) or ID."),
+    issue: z.string().min(1).max(100).describe("The work item's identifier (e.g. `ENG-42`) or ID."),
   }),
   async execute(input, context: ChatToolContext) {
     const { db, actor, chatThread, organizationId } = context;
@@ -566,7 +579,7 @@ export const delegateLinearIssue = defineChatTool({
         if (error instanceof TrackerNotConnectedError) throw error;
         return {
           error: "unknown_issue",
-          message: `The tracker couldn't find the issue "${ref}" (${errorText(error)}). Ask the user for the issue's identifier, e.g. ENG-42.`,
+          message: `${capitalize(trackerLabel(context))} couldn't find the work item "${ref}" (${errorText(error)}). Ask the user for its identifier, e.g. ENG-42.`,
         };
       }
       await delegateToRalph(db, tracker, {
@@ -579,13 +592,12 @@ export const delegateLinearIssue = defineChatTool({
       if (error instanceof TrackerCapabilityError) {
         return {
           error: "delegation_unsupported",
-          message:
-            "The organization's tracker can't delegate work items to Omniralph. Tell the user Omniralph can't take this issue through a delegation.",
+          message: `${capitalize(trackerLabel(context))} can't delegate work items to Omniralph. Tell the user Omniralph can't take this work item through a delegation.`,
         };
       }
       return {
         error: "tracker_error",
-        message: `The tracker didn't delegate the issue: ${errorText(error)}. Tell the user to try again later, or to delegate it to Omniralph in the tracker.`,
+        message: `${capitalize(trackerLabel(context))} didn't delegate the work item: ${errorText(error)}. Tell the user to try again later, or to delegate it to Omniralph in ${trackerLabel(context)}.`,
       };
     }
     return {
@@ -600,7 +612,7 @@ export const delegateLinearIssue = defineChatTool({
 export const draftRequest = defineChatTool({
   tier: "action",
   description:
-    'Drafts a request from the conversation when your answer to a question is a code change: posts a card after your reply with Start request (starts a coding run on the request), Add to backlog (files it as a work item) and Not now. Nothing starts until the user who asked clicks (within 24 hours). Use it instead of only describing the change; when a member explicitly asks you to make a change, use start_work, and when they ask to file an issue, draft_linear_issue. Introduce the card in one short line (e.g. "I drafted the request from this conversation:") and don\'t repeat its content.',
+    'Drafts a request from the conversation when your answer to a question is a code change: posts a card after your reply with Start request (starts a coding run on the request), Add to backlog (files it as a work item) and Not now. Nothing starts until the user who asked clicks (within 24 hours). Use it instead of only describing the change; when a member explicitly asks you to make a change, use start_work, and when they ask to file an issue, draft_tracker_issue. Introduce the card in one short line (e.g. "I drafted the request from this conversation:") and don\'t repeat its content.',
   inputSchema: z.object({
     repository: z
       .string()
@@ -686,6 +698,6 @@ export const actionTools: ChatToolRegistry = {
   answer_run_cleanup: answerRunCleanup,
   send_ralph_guidance: sendRalphGuidance,
   draft_request: draftRequest,
-  draft_linear_issue: draftLinearIssue,
-  delegate_linear_issue: delegateLinearIssue,
+  draft_tracker_issue: draftTrackerIssue,
+  delegate_tracker_issue: delegateTrackerIssue,
 };

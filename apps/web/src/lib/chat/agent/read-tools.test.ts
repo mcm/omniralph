@@ -257,8 +257,8 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
       "answer_run_cleanup",
       "send_ralph_guidance",
       "draft_request",
-      "draft_linear_issue",
-      "delegate_linear_issue",
+      "draft_tracker_issue",
+      "delegate_tracker_issue",
     ]);
     expect(Object.values(readTools).every((t) => t.tier === "read")).toBe(true);
     expect(chatTools.start_work?.tier).toBe("action");
@@ -272,8 +272,8 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
     ]) {
       expect(chatTools[name]?.tier).toBe("action");
     }
-    expect(chatTools.draft_linear_issue?.tier).toBe("action");
-    expect(chatTools.delegate_linear_issue?.tier).toBe("action");
+    expect(chatTools.draft_tracker_issue?.tier).toBe("action");
+    expect(chatTools.delegate_tracker_issue?.tier).toBe("action");
   });
 
   it("list_ralph_runs returns only the organization's runs, filtered, with URLs", async () => {

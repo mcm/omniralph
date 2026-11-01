@@ -37,6 +37,7 @@ import {
 } from "./config";
 import { historyMessages, systemPrompt, type WebChatScope } from "./prompt";
 import { chatTools } from "./registry";
+import { connectedTrackerName } from "./tracker-name";
 import { toolStatus } from "./tool-status";
 import { toAiTools, type ChatToolRegistry } from "./tools";
 import { sendWebEvent } from "../web-stream";
@@ -287,6 +288,11 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
           deps.attachmentLimits ?? CHAT_ATTACHMENT_LIMITS,
         );
         const threadRun = await getRunByChatThread(db, chatThread.id);
+        const tracker = await connectedTrackerName(
+          db,
+          organizationId,
+          trackerFor && (() => trackerFor(organizationId)),
+        );
         const tools = toAiTools(
           registry,
           {
@@ -301,6 +307,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
             turnMessages,
             ralph: () => ralphDeps(organizationId),
             ...(trackerFor && { tracker: () => trackerFor(organizationId) }),
+            trackerName: tracker,
             attachments,
             getPlaybook: deps.getPlaybook,
             handedOff: () => {
@@ -328,6 +335,7 @@ export function createChatAgentHandler(deps: ChatAgentDeps): ChatConversationHan
               status: threadRun.status,
               working: !!(await chatRunSession(db, chatThread.id)),
             },
+            tracker,
             webChat: await webChatScope(db, connection, chatThread),
           }),
           messages: historyMessages(history, {

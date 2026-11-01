@@ -335,7 +335,7 @@ buttons:
 
 Only the member who asked can click them (anyone else is told so privately), each choice counts
 once, and after 24 hours the card says **This draft expired**. Om still uses `start_work` when a
-member asks it outright to make a change, and `draft_linear_issue` when they ask to file an issue.
+member asks it outright to make a change, and `draft_tracker_issue` when they ask to file an issue.
 
 ### What the thread sees while a run works
 
@@ -410,7 +410,7 @@ The tools and their [tiers](#access-levels):
 | ----------------------------------------------------------------------------------------------------------------- | -------- |
 | `ask_about_code` (start a [code question](#code-questions)), `get_run_status`, `get_ralph_run`, `list_ralph_runs` | `read`   |
 | `start_work`, `reply_to_run`, `answer_run_permission`, `answer_run_cleanup`, `send_ralph_guidance`                | `action` |
-| `draft_linear_issue`, `delegate_linear_issue` ([Linear issues](#linear-issues-from-chat))                         | `action` |
+| `draft_tracker_issue`, `delegate_tracker_issue` ([Linear issues](#linear-issues-from-chat))                       | `action` |
 | `draft_request` ([drafted requests](#drafted-requests))                                                           | `action` |
 
 Only [linked members](#access-levels) can use `action` tools. Slack users admitted by email
@@ -424,11 +424,16 @@ Linked members can turn a conversation into a Linear issue, and have Om build it
 organization needs a connected Linear workspace ([linear.md](linear.md#3-connect-from-settings--connections));
 without one the bot says an admin can connect it under **Settings › Connections › Add connection**.
 
+Om's prompt and its tracker tools (`draft_tracker_issue`, `delegate_tracker_issue`) are
+tracker-neutral: they name the organization's connected tracker from its connection
+(`connectedTrackerName` in `lib/chat/agent/tracker-name.ts`), or "the tracker" when none is
+connected. Linear is the only tracker today.
+
 ### Filing an issue
 
 > @Omniralph file an issue in ENG for the login timeout we just discussed
 
-Om drafts the issue from the thread with its `draft_linear_issue` tool: a
+Om drafts the issue from the thread with its `draft_tracker_issue` tool: a
 title, a self-contained Markdown description (Linear readers don't see the thread), the team and,
 if asked, a project, labels and a priority. The team is matched by key, name or id; if it's
 unknown (or the workspace has several and you didn't say), the bot asks which one.
@@ -450,13 +455,13 @@ labels, priority, title and a preview of the description) and three buttons:
 - In Slack, the buttons need **interactivity** on the app (see
   [step 1](#1-create-the-slack-app)); an app created from an older manifest must turn it on.
 - Screenshots attached in the thread can go into the issue: when they're relevant, the agent
-  passes them to `draft_linear_issue` and the card lists them under **Screenshots**. On **Create**
+  passes them to `draft_tracker_issue` and the card lists them under **Screenshots**. On **Create**
   they're fetched from the chat platform again, uploaded to the tracker and embedded at the end of
   the description (`## Screenshots`). One that can't be fetched or uploaded is left out, and the
   card says so.
 - The chat creates and delegates work items only through the tracker-neutral `WorkItemTracker`
   (`apps/web/src/lib/work-items/tracker.ts`): **Create** calls its `create`, **Create and
-  delegate** and `delegate_linear_issue` its `delegateToOmniralph`, and the team comes from its
+  delegate** and `delegate_tracker_issue` its `delegateToOmniralph`, and the team comes from its
   `teams()`. Nothing under `lib/chat`, `lib/ask` or `components/ask` imports the Linear modules (a
   test checks). With no tracker connected, the tools and the card say "Connect a tracker to file
   work items."
@@ -466,7 +471,7 @@ labels, priority, title and a preview of the description) and three buttons:
 > @Omniralph file an issue for X and have Om build it
 
 For a new issue, click **Create and delegate** on the card. For an existing one, ask the bot to
-delegate it by identifier ("have Om build ENG-42"): its `delegate_linear_issue` tool sets the
+delegate it by identifier ("have Om build ENG-42"): its `delegate_tracker_issue` tool sets the
 issue's delegate to the Omniralph app. Either way it's the same as delegating in Linear: Linear
 starts an agent session and Om builds the issue as described in
 [linear.md › Delegate an issue](linear.md#5-delegate-an-issue) (the issue's team must be routed to
