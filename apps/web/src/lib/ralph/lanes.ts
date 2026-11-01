@@ -45,7 +45,7 @@ export async function storyLane(
   return (story.laneId ? await getLane(db, story.laneId) : null) ?? getMainLane(db, run);
 }
 
-/** Where each story runs, by its Linear issue ID: its lane, or why it's manual. */
+/** Where each story runs, by its tracker issue ID: its lane, or why it's manual. */
 export type StoryLanes = Map<string, { laneId: string | null; elsewhere: string | null }>;
 
 /**

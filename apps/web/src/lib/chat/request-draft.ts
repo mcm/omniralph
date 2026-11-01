@@ -16,6 +16,7 @@ import {
   type CardChild,
   type CardElement,
 } from "chat";
+import { isTrackerProvider } from "@omniralph/tracker";
 import type { RequestDraftView } from "@/lib/api/ask";
 import { sanitizeTitle } from "@/lib/review/sanitize";
 import { runHref } from "@/lib/runs/links";
@@ -110,8 +111,12 @@ function outcomeOf(
           : ADDED_TO_BACKLOG_TEXT,
         run: null,
         workItem:
-          draft.workItemTracker === "linear" && draft.workItemIdentifier && draft.workItemUrl
-            ? { tracker: "linear", identifier: draft.workItemIdentifier, url: draft.workItemUrl }
+          isTrackerProvider(draft.workItemTracker) && draft.workItemIdentifier && draft.workItemUrl
+            ? {
+                tracker: draft.workItemTracker,
+                identifier: draft.workItemIdentifier,
+                url: draft.workItemUrl,
+              }
             : null,
       };
     case "dismissed":

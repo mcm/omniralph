@@ -1,7 +1,7 @@
 /**
  * Sanitizes the agent-written title and body of a ralph run's PR/MR before
  * the control panel posts them. The text comes from a Claude session that
- * read the repository and the Linear epic (untrusted input), so it goes
+ * read the repository and the tracker epic (untrusted input), so it goes
  * through the review sanitizer: markdown and links to the repository's code
  * host are kept; other links, raw HTML and images are neutralized; and
  * `@mentions` are kept only for users of the repository, so a description

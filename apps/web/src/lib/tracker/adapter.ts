@@ -85,6 +85,11 @@ export interface TrackerWebAdapter {
   readonly conventionsFile: string;
   /** The optional capabilities its gateways have, known without connecting (e.g. to offer tools). */
   readonly capabilities: readonly TrackerCapability[];
+  /**
+   * The URL of another issue of the same workspace, derived from one issue's URL (no read);
+   * null when it can't be derived.
+   */
+  siblingIssueUrl(issueUrl: string, identifier: string): string | null;
   /** The connected tracker's gateway; throws `TrackerNotConnectedError` without one. */
   getGateway(options: TrackerConnectionOptions): Promise<TrackerGateway>;
   /** A gateway whose every call fails with `TrackerNotConnectedError`. */

@@ -15,7 +15,8 @@ import { ROUTING_FIELDS } from "@/lib/routing/fields";
 import { readRoutingIssue, type RoutingRead } from "@/lib/tracker/routing-issue";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { describeQuery } from "./describe";
-import { createRouter, type RouteDeps, type RouteWorkItemMatch } from "./resolve";
+import { trackerName } from "@/lib/tracker/adapters";
+import { createRouter, routeProvider, type RouteDeps, type RouteWorkItemMatch } from "./resolve";
 
 /**
  * Most "Test where a work item would go" and routing preview requests one user may make a minute
@@ -23,8 +24,8 @@ import { createRouter, type RouteDeps, type RouteWorkItemMatch } from "./resolve
  */
 export const ROUTING_TEST_LIMIT = 30;
 
-export const unknownIssueMessage = (identifier: string) =>
-  `There's no issue ${identifier} in your Linear workspace, or Omniralph can't read it.`;
+export const unknownIssueMessage = (identifier: string, tracker: string) =>
+  `There's no issue ${identifier} in your ${tracker} workspace, or Omniralph can't read it.`;
 
 type Rules = readonly Pick<RoutingRule, "repositoryId" | "query">[];
 
@@ -86,7 +87,11 @@ export async function routeIssues(
     identifiers.map(async (identifier): Promise<RoutingPreviewItem> => {
       const found = loaded.get(identifier);
       if (!found) {
-        return { identifier, outcome: "not_found", message: unknownIssueMessage(identifier) };
+        return {
+          identifier,
+          outcome: "not_found",
+          message: unknownIssueMessage(identifier, trackerName(routeProvider(deps))),
+        };
       }
       const { issue } = found;
       const route = await router.resolve(issue.id);
@@ -168,7 +173,11 @@ export async function testRoutingRules(
     unsaved,
   );
   if (!result || result.outcome === "not_found") {
-    throw new ApiRouteError(404, unknownIssueMessage(identifier), "not_found");
+    throw new ApiRouteError(
+      404,
+      unknownIssueMessage(identifier, trackerName(routeProvider(deps))),
+      "not_found",
+    );
   }
   const { issue, outcome, repository, matched, rule, by, run } = result;
   return {

@@ -262,7 +262,7 @@ export type PullRequestCommentRequest =
 
 /**
  * A person's `@bot fix` / `@bot` request on a ralph PR/MR becomes a request
- * on its lane (a stopped or finished run resumes, as a Linear reply would
+ * on its lane (a stopped or finished run resumes, as a tracker reply would
  * resume it), with a note in the run's session.
  */
 export async function addPullRequestCommentRequest(

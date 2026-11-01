@@ -2,7 +2,7 @@
  * Replies in a run's agent session (ported from cyralph's
  * `SessionManager.onPrompted`), handled in this order (FR-15):
  *
- * 1. Stop (Linear's Stop signal, or "stop"): the run is stopped, its job canceled.
+ * 1. Stop (the tracker's Stop signal, or "stop"): the run is stopped, its job canceled.
  * 1'. "Allow"/"Deny" while a live session waits for a person to approve a tool
  *     call (`permissions.ts`): the agent reads the answer.
  * 1a. An answer to an open question about a merged PR/MR's leftovers
@@ -168,7 +168,11 @@ export async function handleReply(
       console.error(`Checking open questions of ${issueId} failed`, error);
       await postActivity(conversationFor(run, deps), {
         type: "error",
-        body: openQuestionsCheckFailedMessage(error, "Reply `/coding` again to retry."),
+        body: openQuestionsCheckFailedMessage(
+          error,
+          "Reply `/coding` again to retry.",
+          run.trackerProvider,
+        ),
       });
       return { kind: "open_questions" };
     }
@@ -355,7 +359,7 @@ export interface RunQuestionAnswer extends ReplyResult {
  * merged PR/MR's leftovers (`answerCleanup`), the repository question
  * (`answerRepositorySelection`) or the preparation question (`answerPreparation`). The answer's
  * note goes to the run's conversation and the run advances as after a reply. Null when the run
- * has no open question of that kind the text answers. Doesn't depend on Linear: a chat run's
+ * has no open question of that kind the text answers. Doesn't depend on the tracker: a chat run's
  * questions are answered the same way.
  */
 export async function answerRunQuestion(
@@ -458,7 +462,7 @@ export type StopRunResult =
   | { status: "gone" };
 
 /**
- * Stop (the Linear stop reply, and the Ralph run page's Stop button): the run
+ * Stop (the tracker's stop reply, and the Ralph run page's Stop button): the run
  * becomes `stopped`, its queued or running jobs are canceled
  * (`JobDispatcher.cancel`; a running job through its heartbeat), its running
  * stories go back to pending and the open preparation question is dropped.

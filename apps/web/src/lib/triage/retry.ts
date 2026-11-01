@@ -32,7 +32,7 @@ async function attemptReply(deps: TriageDeps, jobId: string | null): Promise<str
 /**
  * Queues triage run `runId` again and enqueues its next attempt. `lastAttemptId` is the
  * attempt being retried (its reply is given again). The session gets a note naming who
- * retried it; when triage can't start (the issue is in progress or done, Linear fails…) the
+ * retried it; when triage can't start (the issue is in progress or done, the tracker fails…) the
  * run ends as `prepareTriage` decides and the session says why.
  */
 export async function retryTriageRun(

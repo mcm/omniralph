@@ -16,7 +16,7 @@
  * - `@bot help` (or a bare mention): lists the commands.
  * - Anything else is a question; in a finding's thread the agent answers it.
  *   Outside finding threads on a ralph PR/MR it is a request for ralph, and
- *   so it is in a finding's thread when the ralph run has a Linear agent
+ *   so it is in a finding's thread when the ralph run has a tracker
  *   session (with the finding and its review as context).
  *
  * Commands are case-insensitive. Mentions inside code (fenced blocks or

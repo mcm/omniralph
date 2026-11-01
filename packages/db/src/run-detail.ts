@@ -6,6 +6,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { RunIndexEntry } from "./run-index.js";
+import type { IntegrationProvider } from "./integrations.js";
 import type { JobWaitingReason, RalphWaitingOn } from "./schema.js";
 
 type Queryable = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -186,6 +187,8 @@ export interface RalphRunDetailFacts {
   routedBy: string | null;
   error: string | null;
   waitingOn: RalphWaitingOn | null;
+  /** The run's tracker. */
+  trackerProvider: IntegrationProvider;
   trackerIssueUrl: string | null;
   /**
    * In execution order: the stories that have run by their first attempt, then the rest in
@@ -204,8 +207,9 @@ export async function getRalphRunDetailFacts(
       routed_by: string | null;
       error: string | null;
       waiting_on: RalphWaitingOn | null;
+      tracker_provider: IntegrationProvider;
       tracker_url: string | null;
-    }>(sql`select r.routed_by, r.error, r.waiting_on, r.tracker_url from ralph_runs r
+    }>(sql`select r.routed_by, r.error, r.waiting_on, r.tracker_provider, r.tracker_url from ralph_runs r
       where r.id = ${runId}::uuid`),
     db.execute<{
       id: string;
@@ -260,6 +264,7 @@ export async function getRalphRunDetailFacts(
     routedBy: run.routed_by,
     error: run.error,
     waitingOn: run.waiting_on,
+    trackerProvider: run.tracker_provider,
     trackerIssueUrl: run.tracker_url,
     stories: stories.rows.map((s) => ({
       id: s.id,

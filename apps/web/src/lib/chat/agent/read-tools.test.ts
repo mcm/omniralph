@@ -286,7 +286,7 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
       expect(runs.map((r) => r.id)).toEqual([org.activeRunId, org.doneRunId]);
       expect(runs[0]).toMatchObject({
         url: `${APP_URL}/runs/${org.activeRunId}`,
-        linearIssue: "ENG-1",
+        trackerIssue: "ENG-1",
         status: "running",
         repository: org.fullPath,
         stories: { total: 2, completed: 0 },

@@ -3,8 +3,8 @@
  * `SessionManager.cleanupMerged`, `answerCleanup` and
  * `expireCleanupRequests`, `session-manager.ts:177-375`).
  *
- * - A merge also resolves the run's Linear issue (`resolveMergedIssue`).
- * - Triggers: the PR/MR's merge webhook, the Linear issue moving to completed,
+ * - A merge also resolves the run's tracker issue (`resolveMergedIssue`).
+ * - Triggers: the PR/MR's merge webhook, the tracker issue moving to completed,
  *   any follow-up check that finds it merged (`recordClosedPullRequest`), and
  *   the reconcile cron's daily full pass (`reconcileCleanup`) as the fallback.
  * - The reconcile cron checks a lane again only when it's due (`ralph:due`,
@@ -151,7 +151,7 @@ const now = () => new Date().toISOString();
 
 /**
  * Posts a cleanup message in the run's session: a thought while the run is
- * active (pending, running or waiting), otherwise a response, so Linear
+ * active (pending, running or waiting), otherwise a response, so the tracker
  * sees a finished session complete again (in chat, always a new message).
  */
 async function notify(
@@ -381,9 +381,9 @@ export async function recordClosedPullRequest(
 }
 
 /**
- * A lane's PR/MR merged: the run's Linear issue (the epic, or the single
+ * A lane's PR/MR merged: the run's tracker issue (the epic, or the single
  * issue) moves to the team's first completed state, whether or not the code
- * host's Linear integration does it too. Not while another lane's work isn't
+ * host's tracker integration does it too. Not while another lane's work isn't
  * merged yet (its PR/MR is open, or not opened yet), nor when the issue is already completed or canceled; a chat run
  * has no issue. A failure is logged.
  */
@@ -398,7 +398,7 @@ async function resolveMergedIssue(deps: RalphDeps, lane: RalphLane): Promise<voi
     await deps.tracker.setIssueState(run.trackerIssueId, { type: "completed" });
   } catch (error) {
     console.error(
-      `Resolving the Linear issue of ralph lane ${lane.id} after its merge failed`,
+      `Resolving the tracker issue of ralph lane ${lane.id} after its merge failed`,
       error,
     );
   }
@@ -435,7 +435,7 @@ export async function cleanupClosedPullRequest(
 }
 
 /**
- * The Linear issue of a run moved to completed (cyralph's `issue_state`
+ * The tracker issue of a run moved to completed (cyralph's `issue_state`
  * trigger): the newest run's PRs/MRs are checked, and merged ones cleaned
  * up. One still open is left alone. Failures are logged.
  */

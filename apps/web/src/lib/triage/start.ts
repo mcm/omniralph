@@ -1,12 +1,12 @@
 /**
- * Starts triage for a new Linear agent session (`@omniralph /triage`): loads
- * the issue, its comments, sub-issues and blockers from Linear, refuses
- * (without touching Linear) when the issue or one of its sub-issues is in
+ * Starts triage for a new tracker session (`@omniralph /triage`): loads
+ * the issue, its comments, sub-issues and blockers from the tracker, refuses
+ * (without touching the tracker) when the issue or one of its sub-issues is in
  * progress or done, routes it to a repository the way ralph does (none is
  * fine: triage then runs without a checkout), records a `triage_runs` row and
  * enqueues a run of the built-in query task `builtin:triage` (job type
  * `triage.run`) any of the organization's agents may claim. Its `triage`
- * sink (`lib/sinks/triage.ts`) applies the outcome to Linear when it finishes.
+ * sink (`lib/sinks/triage.ts`) applies the outcome to the tracker when it finishes.
  */
 import {
   createTriageRun,
@@ -195,7 +195,7 @@ export function needsRefiningMessage(identifier: string): string {
   return `${identifier} needs refining, so Om is triaging it first.`;
 }
 
-/** What triage reads from Linear and the repository before a job. */
+/** What triage reads from the tracker and the repository before a job. */
 export interface TriageContext {
   issue: IssueSummary;
   children: IssueSummary[];

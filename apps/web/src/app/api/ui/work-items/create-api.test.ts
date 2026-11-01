@@ -71,11 +71,11 @@ const createRoute = await import("./route");
 const targetsRoute = await import("./targets/route");
 const backlogRoute = await import("../backlog/route");
 const {
-  CREATE_FAILED_MESSAGE,
+  createFailedMessage,
   TITLE_REQUIRED_MESSAGE,
   TITLE_TOO_LONG_MESSAGE,
-  TRACKER_NOT_CONNECTED_MESSAGE,
-  TRIAGE_FAILED_MESSAGE,
+  trackerNotConnectedMessage,
+  triageFailedMessage,
   createWorkItem,
 } = await import("@/lib/work-items/create");
 const { hasCachedBacklog, resetBacklogCache } = await import("@/lib/work-items/backlog-cache");
@@ -340,7 +340,7 @@ describe.skipIf(!databaseAvailable)("creating work items", () => {
         ok: true,
         item: { id: workItemUrlId("linear", issue!.id), title: "Export invoices as CSV" },
         triage: "failed",
-        triageError: TRIAGE_FAILED_MESSAGE,
+        triageError: triageFailedMessage("linear"),
       });
       expect((await events(issue!.id)).map((event) => event.kind)).toEqual(["created"]);
     });
@@ -391,7 +391,7 @@ describe.skipIf(!databaseAvailable)("creating work items", () => {
       ).toEqual({
         ok: false,
         code: "tracker_not_connected",
-        message: TRACKER_NOT_CONNECTED_MESSAGE,
+        message: trackerNotConnectedMessage("linear"),
       });
     });
 
@@ -400,7 +400,7 @@ describe.skipIf(!databaseAvailable)("creating work items", () => {
       expect(await createWorkItem({ db }, input(repos.api!, { triageNow: true }))).toEqual({
         ok: false,
         code: "tracker_failed",
-        message: CREATE_FAILED_MESSAGE,
+        message: createFailedMessage("linear"),
       });
       expect(acme.issues.size).toBe(0);
     });
@@ -498,7 +498,7 @@ describe.skipIf(!databaseAvailable)("creating work items", () => {
       acme.failures.set("createIssue", new Error("Linear is down"));
       expect(await post({ repositoryId: repos.api, title: "A" })).toMatchObject({
         status: 502,
-        body: { code: "tracker_failed", error: CREATE_FAILED_MESSAGE },
+        body: { code: "tracker_failed", error: createFailedMessage("linear") },
       });
       expect(await post({ title: "No repo" })).toMatchObject({ status: 400 });
     });

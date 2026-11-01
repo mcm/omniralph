@@ -17,6 +17,7 @@ import {
   type RalphRun,
   type RalphTransaction,
 } from "@omniralph/db";
+import { trackerName } from "@/lib/tracker/adapters";
 import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
 import { conversationFor } from "./conversation";
 import { errorMessage, postActivity } from "./notify";
@@ -110,7 +111,7 @@ export async function finishManualStory(
     console.error(`Setting the state of ${story.identifier} failed`, error);
     return {
       status: "failed",
-      message: `Couldn't ${outcome === "done" ? "complete" : "cancel"} ${story.identifier} in Linear: ${errorMessage(error)}`,
+      message: `Couldn't ${outcome === "done" ? "complete" : "cancel"} ${story.identifier} in ${trackerName(run.trackerProvider)}: ${errorMessage(error)}`,
     };
   }
   await postActivity(conversationFor(run, deps), {

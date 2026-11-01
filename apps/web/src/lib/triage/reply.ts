@@ -2,7 +2,7 @@
  * Replies in a triage session (a session with a `triage_runs` row; ralph's
  * `handleReply` takes every other session):
  *
- * 1. Stop (Linear's Stop signal, or "stop"): the queued or running job is
+ * 1. Stop (the tracker's Stop signal, or "stop"): the queued or running job is
  *    canceled and the run ends `stopped`; its pending replies are dropped.
  * 2. Anything else, while a job is queued or running, is stored and starts
  *    the next job once that one is over (`continueTriageAfterJob`).

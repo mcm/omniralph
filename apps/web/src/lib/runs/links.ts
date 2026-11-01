@@ -1,6 +1,6 @@
 /**
  * Client-safe links to the Runs screen: `/runs` (the unified run list) and `/runs/{id}`
- * (one run of any kind, optionally on a step, attempt and tab). Chat replies, Linear
+ * (one run of any kind, optionally on a step, attempt and tab). Chat replies, tracker
  * messages, rules' source findings and every other link to a run point here.
  */
 import type { RunKind, RunStatus } from "@omniralph/db";

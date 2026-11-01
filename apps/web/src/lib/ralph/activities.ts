@@ -5,7 +5,7 @@ import type { ActivityContent, TrackerGateway } from "@omniralph/tracker";
 import { conversationFor, type ChatSource } from "./conversation";
 import { FINISHED_RUN_STATUSES } from "./run";
 
-/** The Linear activity content of an activity an agent relays. */
+/** The tracker activity content of an activity an agent relays. */
 export function activityContent(activity: RalphActivity): ActivityContent {
   return activity.type === "thought"
     ? { type: "thought", body: activity.body }

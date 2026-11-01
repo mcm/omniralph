@@ -5,10 +5,16 @@
  * item, the most specific one wins (`specificity`); a tie asks.
  */
 import type { WorkItemMatchFields } from "@omniralph/db";
-import type { RoutingIssueFields } from "@omniralph/tracker";
+import type { RoutingIssueFields, TrackerProvider } from "@omniralph/tracker";
+import { trackerLabel } from "@/lib/api/trackers";
 
-/** A work item's fields a match tests: the team's key, the project's name and label names. */
-export type WorkItemValues = Pick<RoutingIssueFields, "team" | "project" | "labels">;
+/**
+ * A work item's fields a match tests: its tracker, the team's key, the project's name and
+ * label names.
+ */
+export type WorkItemValues = Pick<RoutingIssueFields, "team" | "project" | "labels"> & {
+  tracker: TrackerProvider;
+};
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
@@ -16,7 +22,7 @@ const normalized = (labels: readonly string[]) => new Set(labels.map((l) => l.to
 
 /** Whether `values` (a work item's) satisfy `match` (a match on its tracker). */
 export function matchesWorkItem(match: WorkItemMatchFields, values: WorkItemValues): boolean {
-  if (match.tracker !== "linear") return false;
+  if (match.tracker !== values.tracker) return false;
   if (!values.team || !same(match.team, values.team)) return false;
   if (match.withoutProject) {
     if (values.project) return false;
@@ -50,14 +56,13 @@ export function describeMatch(match: WorkItemMatchFields): string {
   return parts.join(", ");
 }
 
-const TRACKER_NAMES: Record<WorkItemMatchFields["tracker"], string> = { linear: "Linear" };
-
 /**
- * A match as the Coding card's sentence reads it: `Linear team SOC, label product:portal`,
- * `Linear team MOD, no project`, `Linear team ENG, project Portal, label ui or web`.
+ * A match as the Coding card's sentence reads it, the tracker named from the match
+ * (`<tracker> team SOC, label product:portal`, `<tracker> team MOD, no project`,
+ * `<tracker> team ENG, project Portal, label ui or web`).
  */
 export function matchSentence(match: WorkItemMatchFields): string {
-  const parts = [`${TRACKER_NAMES[match.tracker]} team ${match.team}`];
+  const parts = [`${trackerLabel(match.tracker)} team ${match.team}`];
   if (match.withoutProject) parts.push("no project");
   else if (match.project !== null) parts.push(`project ${match.project}`);
   if (match.labels.length > 0) parts.push(`label ${match.labels.join(" or ")}`);

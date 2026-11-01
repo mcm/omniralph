@@ -32,6 +32,7 @@ import {
   type RalphTransaction,
 } from "@omniralph/db";
 import { RalphRequestPayload } from "@omniralph/shared";
+import { trackerName } from "@/lib/tracker/adapters";
 import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
 import { dropKeepBranchCleanups } from "./cleanup";
 import { ralphJobPayload } from "./coding";
@@ -135,7 +136,7 @@ export async function retryRalphRun(
     type: "thought",
     body: `Retried${what} from Omniralph${by}.`,
   });
-  // The retry is committed: a failure to advance now (Linear down…) is left to the reconcile cron.
+  // The retry is committed: a failure to advance now (the tracker down…) is left to the reconcile cron.
   let advanced: AdvanceResult | null = null;
   try {
     advanced = await advanceRun(runId, deps);
@@ -150,7 +151,7 @@ type RetriedRun = { status: "retried"; run: RalphRun; story: RalphStory | null }
 /**
  * One story's retry (inside `lockRun`): refused when its lane's PR/MR is merged or closed.
  * A completed (or canceled) story goes back to `pending` and its work item is reopened
- * (Linear's done state would complete it again); every story's attempts start over. The
+ * (the tracker's done state would complete it again); every story's attempts start over. The
  * story becomes the run's focus, and the run resumes with a fresh iteration cap.
  */
 async function retryStory(
@@ -172,7 +173,7 @@ async function retryStory(
     };
   }
   if (story.status === "completed" || story.status === "canceled") {
-    // Reopened first (Linear's done state would complete it again): a failure changes nothing.
+    // Reopened first (the tracker's done state would complete it again): a failure changes nothing.
     try {
       const tracker = await workItemTrackerFor({
         db: deps.db,
@@ -187,7 +188,7 @@ async function retryStory(
       console.error(`Reopening ${story.identifier} failed`, error);
       return {
         status: "failed",
-        message: `Couldn't reopen ${story.identifier} in Linear: ${errorMessage(error)}`,
+        message: `Couldn't reopen ${story.identifier} in ${trackerName(run.trackerProvider)}: ${errorMessage(error)}`,
       };
     }
   }

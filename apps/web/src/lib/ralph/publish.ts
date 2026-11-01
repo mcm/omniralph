@@ -31,6 +31,7 @@ import {
 import type { Epic } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
 import { epicCompletedTarget, RALPH_PUSH_JOB_TYPE } from "@omniralph/shared";
+import { trackerName } from "@/lib/tracker/adapters";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { notifyRunThread } from "./chat-notify";
@@ -62,29 +63,39 @@ export function changeRequestLabel(provider: Provider, number: number): string {
   return provider === "gitlab" ? `Merge request !${number}` : `Pull request #${number}`;
 }
 
-/** The Linear epic a PR/MR links back to. */
-export interface LinearLink {
+/** The tracker epic a PR/MR links back to. */
+export interface TrackerLink {
   identifier: string;
   title: string;
   url?: string | null;
-  /** A chat run's (`identifier` is the run's reference, not a Linear issue). */
+  /** The tracker's name as people read it, which the footer names ("Work item" without one). */
+  trackerName?: string;
+  /** A chat run's (`identifier` is the run's reference, not a tracker issue). */
   fromChat?: boolean;
 }
 
+/** The link to `run`'s epic: its tracker issue, or a chat run's reference. */
+export function trackerLink(
+  run: Pick<RalphRun, "trackerProvider">,
+  epic: { identifier: string; title: string; url?: string | null },
+): TrackerLink {
+  return { ...epic, trackerName: trackerName(run.trackerProvider) };
+}
+
 /**
- * Appended to every PR/MR body after sanitizing (so the Linear link, which
+ * Appended to every PR/MR body after sanitizing (so the tracker link, which
  * isn't on the code host, stays a link). Readers of a public repository may
  * not be able to open it, so it's only a footnote.
  */
-export function pullRequestFooter(epic: LinearLink): string {
+export function pullRequestFooter(epic: TrackerLink): string {
   if (epic.fromChat) return ["---", "_Requested in chat. Opened by Omniralph._"].join("\n");
-  const tracker = epic.url ? `[${epic.identifier}](${epic.url})` : epic.identifier;
-  return ["---", `Linear: ${tracker} · _Opened by Omniralph._`].join("\n");
+  const link = epic.url ? `[${epic.identifier}](${epic.url})` : epic.identifier;
+  return ["---", `${epic.trackerName ?? "Work item"}: ${link} · _Opened by Omniralph._`].join("\n");
 }
 
 /** The title and body of an early (draft) PR/MR, before the describe job rewrites them. */
 export function templatedPullRequest(
-  epic: LinearLink,
+  epic: TrackerLink,
   stories: readonly Pick<RalphStory, "identifier" | "title" | "status">[],
   provider: Provider,
 ): PullRequestText {
@@ -146,11 +157,11 @@ export async function laneRepository(deps: RalphDeps, lane: RalphLane): Promise<
   };
 }
 
-/** Agent- or Linear-written text, sanitized for the code host, with the Linear footer. */
+/** Agent- or tracker-written text, sanitized for the code host, with the tracker footer. */
 export async function postableText(
   target: LaneRepository,
   text: PullRequestText,
-  epic: LinearLink,
+  epic: TrackerLink,
 ): Promise<PullRequestText> {
   const { adapter, repo, repository, connection } = target;
   const webUrl = repositoryWebUrl(repository.provider, connection.baseUrl, repository.fullPath);
@@ -176,7 +187,7 @@ export async function publishPullRequest(
   deps: RalphDeps,
   lane: RalphLane,
   text: PullRequestText,
-  epic: LinearLink,
+  epic: TrackerLink,
 ): Promise<PublishedPullRequest> {
   const target = await laneRepository(deps, lane);
   const { adapter, repo } = target;
@@ -242,8 +253,8 @@ export async function sessionLinkLabel(
 }
 
 /**
- * Links a lane's PR/MR to the run's Linear issue (the epic, or the single
- * issue) as an attachment, whether or not the code host's Linear integration
+ * Links a lane's PR/MR to the run's tracker issue (the epic, or the single
+ * issue) as an attachment, whether or not the code host's tracker integration
  * links it too. A chat run has no issue. A failure is logged, never fails the run.
  */
 export async function linkPullRequestToIssue(
@@ -298,7 +309,11 @@ async function openEarlyLanePullRequest(
   const provider = found.repository.provider;
   const term = changeRequestTerm(provider);
   const where = input.main ? "" : ` in \`${found.repository.fullPath}\``;
-  const epic = { identifier: input.epic.identifier, title: input.epic.title, url: input.epic.url };
+  const epic = trackerLink(run, {
+    identifier: input.epic.identifier,
+    title: input.epic.title,
+    url: input.epic.url,
+  });
   let pr: PublishedPullRequest;
   try {
     const target = await laneRepository(deps, lane);
@@ -483,11 +498,11 @@ export async function applyPullRequestJob(
     return { busy: false };
   }
 
-  const epic: LinearLink = {
+  const epic = trackerLink(run, {
     identifier: payload.epic.identifier,
     title: payload.epic.title,
     url: payload.epic.url,
-  };
+  });
   let pr: PublishedPullRequest;
   try {
     pr = await publishPullRequest(deps, lane, text, epic);
@@ -568,7 +583,7 @@ export async function finishPublishing(
   deps: RalphDeps,
   tx: RalphTransaction,
   run: RalphRun,
-  input: { epic: LinearLink; rows: readonly RalphStory[]; lanes: readonly PublishedLane[] },
+  input: { epic: TrackerLink; rows: readonly RalphStory[]; lanes: readonly PublishedLane[] },
 ): Promise<RalphRun> {
   const { lanes } = input;
   const many = lanes.length > 1;
@@ -642,7 +657,7 @@ export async function finishPublishing(
 /** The final response: every lane's PR/MR and every story with its commit. */
 function finalResponse(
   run: RalphRun,
-  epic: LinearLink,
+  epic: TrackerLink,
   stories: readonly RalphStory[],
   lanes: readonly PublishedLane[],
 ): string {

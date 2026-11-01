@@ -173,7 +173,7 @@ export const listRalphRunsTool = defineChatTool({
         return {
           id: run.id,
           url: `${appUrl}${runHref(run.id)}`,
-          linearIssue: run.trackerIdentifier,
+          trackerIssue: run.trackerIdentifier,
           title: run.trackerTitle,
           trackerUrl: run.trackerUrl,
           status: run.status,
@@ -220,7 +220,7 @@ async function ralphRunState(
   return {
     id: run.id,
     url: `${appUrl}${runHref(run.id)}`,
-    linearIssue: run.trackerIdentifier,
+    trackerIssue: run.trackerIdentifier,
     title: run.trackerTitle,
     trackerUrl: run.trackerUrl,
     kind: run.kind,

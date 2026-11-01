@@ -1,6 +1,10 @@
 /** The Linear tracker's web adapter (`TrackerWebAdapter`), registered in `../adapters.ts`. */
 import "server-only";
-import { classifyWebhook, type LinearGateway } from "@omniralph/tracker/linear";
+import {
+  classifyWebhook,
+  linearSiblingIssueUrl,
+  type LinearGateway,
+} from "@omniralph/tracker/linear";
 import { fixtureLinearEnabled, fixtureLinearGateway } from "@omniralph/tracker/linear/testing";
 import { TRACKER_CAPABILITIES, type TrackerGateway } from "@omniralph/tracker";
 import type { TrackerExtras, TrackerWebAdapter } from "../adapter";
@@ -55,6 +59,7 @@ export const linearWebAdapter: TrackerWebAdapter = {
   name: "Linear",
   conventionsFile: "LINEAR.md",
   capabilities: TRACKER_CAPABILITIES,
+  siblingIssueUrl: linearSiblingIssueUrl,
   getGateway({ db, organizationId, fixtures, refreshTimeoutMs }) {
     const options: LinearGatewayOptions = {
       db,

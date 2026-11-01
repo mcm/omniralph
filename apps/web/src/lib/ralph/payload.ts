@@ -256,7 +256,7 @@ export interface PreparePayloadInput {
   lane: Pick<RalphLane, "branch" | "baseBranch">;
   repository: Repository;
   connection: ScmConnection;
-  /** The manual story, as just re-read from Linear (its commands as they are now). */
+  /** The manual story, as just re-read from the tracker (its commands as they are now). */
   story: Story;
   /** The approval: the commands hash and branch HEAD that were shown. */
   approved: { commandsHash: string; headSha: string | null };
@@ -298,7 +298,7 @@ export interface RequestPayloadInput {
   requests: readonly (Pick<RalphMessage, "id" | "text"> & Partial<Pick<RalphMessage, "ship">>)[];
   /** The lane's last request conversation, when the job goes to the agent holding it. */
   resumeSessionId: string | null;
-  /** Every Linear attachment of the run (`payloadAttachments`). */
+  /** Every tracker attachment of the run (`payloadAttachments`). */
   attachments?: readonly RalphAttachment[];
   /** The run's hidden ref, when the lane's story commits may only be there (`pushTiming: end`). */
   hiddenRef?: string;

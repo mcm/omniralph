@@ -162,8 +162,8 @@ export const FINISHED_RUN_STATUSES: ReadonlySet<RalphRunStatus> = new Set([
 ]);
 
 /**
- * The stored status of a story after re-reading it from Linear: done or
- * canceled in Linear wins; a manual label makes a waiting story manual (and
+ * The stored status of a story after re-reading it from the tracker: done or
+ * canceled in the tracker wins; a manual label makes a waiting story manual (and
  * removing it makes it pending again). Running, completed and exhausted
  * stories keep their status: the orchestrator owns those.
  */
@@ -178,7 +178,7 @@ export function syncedStoryStatus(current: RalphStoryStatus, story: Story): Ralp
 
 /**
  * Stores the epic's stories (new ones are added, known ones refreshed, with
- * their lane from `routeStories`) and syncs their status with Linear. Returns
+ * their lane from `routeStories`) and syncs their status with the tracker. Returns
  * the run's stories in order.
  */
 export async function syncStories(
@@ -260,7 +260,7 @@ export type AdvanceResult =
  * job's live session never got are settled (`settleStrandedMessages`), the outcome of every
  * story job that finished is applied (completed, retried or exhausted), and
  * that of the describe job (the PR/MR is opened and the run completes). Then,
- * under the lock again, the stories are re-read from Linear (new sub-issues,
+ * under the lock again, the stories are re-read from the tracker (new sub-issues,
  * relations and states), synced and the plan posted, and the run either
  * enqueues the next ready story as a `ralph.story` job, enqueues the
  * `ralph.describe-pr` job (every story done) or waits (on blockers, manual stories or a person). Nothing is enqueued
@@ -276,7 +276,7 @@ export async function advanceRun(runId: string, deps: RalphDeps): Promise<Advanc
 }
 
 async function advance(runId: string, deps: RalphDeps): Promise<AdvanceResult> {
-  // Outcomes commit on their own, so a Linear failure while selecting can't undo them.
+  // Outcomes commit on their own, so a tracker failure while selecting can't undo them.
   const applied = await lockRun(deps.db, runId, async (tx, run) => {
     if (FINISHED_RUN_STATUSES.has(run.status)) return { busy: false };
     // Replies the ended job's session never got become guidance (or pending requests) first.
@@ -305,7 +305,7 @@ function storiesWithRunState(
   const byIssue = new Map(rows.map((r) => [r.trackerIssueId, r]));
   const stories = epic.stories.map((story): Story => {
     const row = byIssue.get(story.issueId ?? story.key);
-    // Completed here wins over Linear (marking it done there may have failed; a single issue stays open).
+    // Completed here wins over the tracker (marking it done there may have failed; a single issue stays open).
     if (row?.status === "completed") return { ...story, status: "completed" };
     if (row?.status === "exhausted") return { ...story, exhausted: true };
     return story;
@@ -322,7 +322,7 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
     if ("failed" in asked) return failRun(deps, tx, run, asked.failed);
     return { action: "waiting", run: asked, waitingOn: { blockers: [], manual: [] } };
   }
-  // A chat run has no Linear issue: only its requests run, as in request mode.
+  // A chat run has no tracker issue: only its requests run, as in request mode.
   if (!isTrackerRun(run)) {
     const epic = await chatRequestEpic(tx, run);
     const [next] = await pendingRequestLanes(tx, run);
@@ -335,7 +335,7 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   // Stories routed to another repository get a lane there; those belonging nowhere here are manual.
   const rows = await syncStories(tx, run.id, epic, await routeStories(deps, tx, run, epic));
   const stories = storiesWithRunState(epic, rows, run.ignoreBlockers);
-  // A mention: only its requests run (no story loop, no Linear state changes, no blockers).
+  // A mention: only its requests run (no story loop, no tracker state changes, no blockers).
   if (run.mode === "request") {
     const [next] = await pendingRequestLanes(tx, run);
     if (next) return enqueueRequest(deps, tx, run, { epic, stories, ...next });
@@ -405,7 +405,7 @@ export function chatRunBranch(run: RalphRun): string {
 const MAX_CHAT_TITLE_CHARS = 120;
 
 /**
- * What a chat run's request jobs work on in place of a Linear issue: the run
+ * What a chat run's request jobs work on in place of a tracker issue: the run
  * (`chat-<id>`), titled with the first line of its first request.
  */
 async function chatRequestEpic(tx: RalphTransaction, run: RalphRun): Promise<Epic> {
@@ -606,7 +606,7 @@ async function enqueueStory(
   // New work on the lane's branch: it is published again at the finish.
   if (found.lane.publish) await updateLane(tx, found.lane.id, { publish: null });
   if (run.kind !== "single" && story.status === "open") {
-    await quietly(`Starting ${row.identifier} in Linear`, () =>
+    await quietly(`Starting ${row.identifier} in the tracker`, () =>
       deps.tracker.setIssueState(row.trackerIssueId, { type: "started" }),
     );
   }
@@ -916,7 +916,7 @@ async function enqueueRequest(
     lane.requestClaudeSessionId && targetAgentId && lane.requestAgentId === targetAgentId
       ? lane.requestClaudeSessionId
       : null;
-  // Attachments are Linear's; a chat run has none.
+  // Attachments are the tracker's; a chat run has none.
   const attachments = isTrackerRun(run)
     ? await gatherRunAttachments(deps.tracker, tx, run, input.epic)
     : [];
@@ -1048,7 +1048,7 @@ function stuckDependencies(stories: readonly Story[], story: Story): string[] {
 const bold = (issues: readonly WaitingIssue[]) =>
   issues.map((i) => `**${i.identifier}**`).join(", ");
 
-/** The issue refs stored in `waiting_on` (with titles, read from Linear for outside issues). */
+/** The issue refs stored in `waiting_on` (with titles, read from the tracker for outside issues). */
 async function waitingRefs(
   tracker: TrackerGateway,
   issues: readonly WaitingIssue[],

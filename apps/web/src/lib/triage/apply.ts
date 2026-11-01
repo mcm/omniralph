@@ -1,14 +1,14 @@
 /**
- * Applies a finished `triage.run` job to Linear (agents hold no Linear token):
+ * Applies a finished `triage.run` job to the tracker (agents hold no tracker token):
  * the issue's title and description become the PRD (with its open questions
  * at the end), a new epic gets its story sub-issues, a reformatted epic's
  * Backlog/Todo sub-issues are rewritten (with their missing relations and a
  * validation sub-issue), and the issue moves through the tracker's readiness state
  * mapping: to its first Ready-to-start state when nothing is left to answer, else to its
  * first Needs-refining state. Triage never starts the epic itself. The outcome is
- * reported in the run's Linear agent session.
+ * reported in the run's tracker session.
  *
- * Nothing in Linear changes for a result that isn't valid, or when the issue
+ * Nothing in the tracker changes for a result that isn't valid, or when the issue
  * or one of its sub-issues went in progress or done while triage ran, except
  * that the triage label is removed whenever a triage job ends, so
  * adding it again triages again.
@@ -68,11 +68,11 @@ export type TriageJobDeps = TriageApplyDeps &
 export type ApplyTriageOutcome =
   /** Not this run's current job, or its outcome was applied already. */
   | { status: "ignored" }
-  /** The result was an error or didn't validate: nothing changed in Linear. */
+  /** The result was an error or didn't validate: nothing changed in the tracker. */
   | { status: "invalid"; problem: string }
   /** The issue or one of its sub-issues is in progress or done: nothing changed. */
   | { status: "in_progress"; issues: string[] }
-  /** A Linear read or write failed part way. */
+  /** A tracker read or write failed part way. */
   | { status: "failed"; error: string }
   | {
       status: "applied";
@@ -353,8 +353,8 @@ export async function reformatSubIssues(
 }
 
 /**
- * Applies a completed triage job's result to Linear. Idempotent: the run is
- * claimed (finished) before any Linear write, so a replayed result is ignored.
+ * Applies a completed triage job's result to the tracker. Idempotent: the run is
+ * claimed (finished) before any tracker write, so a replayed result is ignored.
  */
 export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<ApplyTriageOutcome> {
   const { db, tracker: gateway } = deps;
@@ -478,7 +478,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
       gateway.addComment(issue.id, openQuestionsComment(issue, triage.openQuestions)),
     );
   }
-  // Before the final response: a later delegation to Om must be a change Linear acts on.
+  // Before the final response: a later delegation to Om must be a change the tracker acts on.
   await releaseTriageDelegation(
     { db, organizationId: run.organizationId, tracker: gateway },
     issue.id,

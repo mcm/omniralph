@@ -16,7 +16,7 @@ export type WorkItemState = (typeof WORK_ITEM_STATES)[number];
 
 /**
  * The category of a work item's state: a `WorkItemState`, or `triage` for an item a tracker
- * holds in triage (Linear's Triage). Nothing sets an item to `triage`.
+ * holds in triage (the tracker's triage state). Nothing sets an item to `triage`.
  */
 export type WorkItemStateCategory = WorkItemState | "triage";
 
@@ -252,7 +252,7 @@ export interface TrackerTeam {
 export interface TrackerWorkflowState {
   id: string;
   name: string;
-  /** The tracker's state type (Linear: `triage`, `backlog`, `unstarted`, `started`, `completed`, `canceled`). */
+  /** The tracker's state type (`triage`, `backlog`, `unstarted`, `started`, `completed`, `canceled`). */
   type: string;
   category: WorkItemStateCategory;
 }

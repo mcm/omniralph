@@ -58,8 +58,8 @@ export async function onRalphJobStarted(
 
 /**
  * The orchestrator's dependencies for an organization's runs: its connected
- * Linear workspace (a disconnected gateway without one, so its chat runs
- * still move; loaded on its first call, so chat runs never touch Linear),
+ * tracker workspace (a disconnected gateway without one, so its chat runs
+ * still move; loaded on its first call, so chat runs never touch the tracker),
  * the dispatcher and the SCM adapters.
  */
 export async function defaultDeps(db: Database, organizationId: string): Promise<RalphDeps> {
@@ -95,7 +95,7 @@ export async function catchUpRun(deps: RalphDeps, runId: string): Promise<void> 
 /**
  * The job completed, failed for good or was canceled: apply its outcome, move
  * the run on and catch up its CI and pending cleanups (`catchUpRun`). Errors
- * (e.g. Linear being down) are logged, not thrown: the job's own state is
+ * (e.g. the tracker being down) are logged, not thrown: the job's own state is
  * already recorded and the reconcile cron retries the run.
  */
 export async function onRalphJobFinished(db: Database, job: Job, deps?: RalphDeps): Promise<void> {

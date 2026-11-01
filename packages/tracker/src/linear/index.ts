@@ -19,6 +19,7 @@ export type {
   User,
 } from "./gateway.js";
 export { findLinearUploads, isLinearUploadUrl } from "./uploads.js";
+export { linearSiblingIssueUrl } from "./urls.js";
 export {
   AGENT_SESSION_MARKER,
   classifyWebhook,

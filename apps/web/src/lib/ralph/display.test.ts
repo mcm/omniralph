@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   chatChannelLabel,
-  trackerIssueUrl,
   ralphMessageState,
   ralphRunFailure,
   roundsLabel,
@@ -13,15 +12,7 @@ import {
 } from "./display";
 
 describe("formatting", () => {
-  it("derives other issues' Linear URLs from the run's", () => {
-    expect(trackerIssueUrl("https://linear.app/acme/issue/ENG-1/epic-title", "OPS-2")).toBe(
-      "https://linear.app/acme/issue/OPS-2",
-    );
-    expect(trackerIssueUrl(null, "OPS-2")).toBeNull();
-    expect(trackerIssueUrl("https://example.com/ENG-1", "OPS-2")).toBeNull();
-  });
-
-  it("names a run by its Linear issue, or its chat platform and channel", () => {
+  it("names a run by its tracker issue, or its chat platform and channel", () => {
     const tracker = { origin: "tracker" as const, trackerIdentifier: "ENG-1", chatThread: null };
     expect(runSourceLabel(tracker)).toBe("ENG-1");
     const chat = { origin: "chat" as const, trackerIdentifier: null };
@@ -108,7 +99,7 @@ describe("ralphRunFailure", () => {
   };
 
   it("names the story that ran out of attempts and links its last job", () => {
-    const failure = ralphRunFailure(base);
+    const failure = ralphRunFailure(base, "Linear");
     expect(failure.title).toBe("FIX-131 ran out of attempts (3/3)");
     expect(failure.job?.id).toBe("job-2");
     expect(failure.resume).toContain("delegate FIX-130 to Omniralph again in Linear");
@@ -125,7 +116,7 @@ describe("ralphRunFailure", () => {
   });
 
   it("says how to retry a waiting run's PR/MR step", () => {
-    const failure = ralphRunFailure({ ...base, status: "waiting", stories: [] });
+    const failure = ralphRunFailure({ ...base, status: "waiting", stories: [] }, "Linear");
     expect(failure.title).toBe("The MR step failed");
     expect(failure.resume).toContain("reply in the Linear agent session to retry the MR step");
   });

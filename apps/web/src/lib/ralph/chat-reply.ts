@@ -1,6 +1,6 @@
 /**
  * Messages from a chat thread to its ralph run (the chat counterpart of a
- * Linear `session_prompted` reply, `reply.ts` step 5 and 6): while one of the
+ * tracker `session_prompted` reply, `reply.ts` step 5 and 6): while one of the
  * run's live-session jobs runs, the message is stored for it and the agent
  * gets it in its next heartbeat (`queueLiveReply`); otherwise it becomes a
  * pending request (`addInstruction`) and the run is advanced, so it runs as
@@ -138,11 +138,11 @@ export type GuidanceOutcome =
   | { status: "applied"; run: RalphRun; busy: boolean };
 
 /**
- * Guidance from chat for any unfinished run of the organization, Linear or
- * chat (`send_ralph_guidance`): applied like a Linear reply's instruction
+ * Guidance from chat for any unfinished run of the organization, tracker or
+ * chat (`send_ralph_guidance`): applied like a tracker reply's instruction
  * (`addInstruction` under `lockRun`, then the run advances), with `author`
- * noting that it came from chat. A Linear run's session also shows it, so
- * Linear watchers see who steered it.
+ * noting that it came from chat. A tracker run's session also shows it, so
+ * the tracker's watchers see who steered it.
  */
 export async function sendGuidance(
   deps: RalphDeps,

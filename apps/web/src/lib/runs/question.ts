@@ -4,7 +4,7 @@ import "server-only";
  * item's) and its answer from Omniralph (`POST /api/ui/runs/{id}/answer`). The questions are
  * the Inbox's (`listRunQuestions` in `@omniralph/db`, same keys); each option maps to the
  * reply text the question's matcher takes, so an answer here runs the same code as a reply
- * in the run's Linear session or chat thread (`answerRunQuestion`).
+ * in the run's tracker session or chat thread (`answerRunQuestion`).
  */
 import {
   answerRunPermissionRequest,
@@ -190,7 +190,7 @@ const answeredNote = (answeredBy: string, option: QuestionOption): ActivityConte
  * `answerRunQuestion`; a tool permission's answer is also recorded on the job's stored request
  * (`run_permission_requests`), which the agent polls. Another run's tool permission is answered
  * on its stored request alone. Once the answer is taken, a note "{name} answered from
- * Omniralph: {option}" goes to the run's conversation (a triage run's Linear session); a
+ * Omniralph: {option}" goes to the run's conversation (a triage run's tracker session); a
  * refused answer leaves none.
  */
 export async function answerQuestion(
@@ -257,7 +257,7 @@ export async function answerQuestion(
   throwUnlessAnswered(result);
 }
 
-/** Notes a stored request's answer in its run's conversation: a triage run's Linear session. */
+/** Notes a stored request's answer in its run's conversation: a triage run's tracker session. */
 async function noteStoredAnswer(
   db: Database,
   run: RunIndexEntry,

@@ -16,6 +16,7 @@ import {
   type TriageSize,
 } from "@omniralph/shared";
 import { and, eq, gt, inArray, lt, or, sql, type SQL } from "drizzle-orm";
+import type { IntegrationProvider } from "./integrations.js";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import { latestAttemptWaitingReasonSql, type FindingSeverityCounts } from "./run-detail.js";
@@ -93,7 +94,13 @@ export type InboxReviewState =
 export type InboxFacts =
   | {
       kind: "manual_story";
-      story: { id: string; trackerIssueId: string; identifier: string; title: string };
+      story: {
+        id: string;
+        trackerProvider: IntegrationProvider;
+        trackerIssueId: string;
+        identifier: string;
+        title: string;
+      };
       /** Why it is manual although it isn't labelled so (it routes to a repo with coding off). */
       elsewhere: string | null;
     }
@@ -212,13 +219,14 @@ async function manualStories(db: Queryable, scope: Scope): Promise<InboxCandidat
     run_id: string;
     organization_id: string;
     story_id: string;
+    tracker_provider: IntegrationProvider;
     tracker_issue_id: string;
     identifier: string;
     title: string;
     elsewhere: string | null;
     since: string;
   }>(sql`
-    select r.id as run_id, r.organization_id, s.id as story_id, s.tracker_issue_id,
+    select r.id as run_id, r.organization_id, s.id as story_id, s.tracker_provider, s.tracker_issue_id,
       s.identifier, s.title, s.elsewhere, ${iso("s.updated_at")} as since
     from ralph_stories s join ralph_runs r on r.id = s.run_id
     where r.organization_id in (${scope.orgs}) and r.mode = 'epic' and r.status = 'waiting'
@@ -233,6 +241,7 @@ async function manualStories(db: Queryable, scope: Scope): Promise<InboxCandidat
       kind: "manual_story",
       story: {
         id: row.story_id,
+        trackerProvider: row.tracker_provider,
         trackerIssueId: row.tracker_issue_id,
         identifier: row.identifier,
         title: row.title,
