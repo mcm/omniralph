@@ -1,9 +1,17 @@
 import type { InboxAction, InboxItem } from "@/lib/api/inbox";
 import { agentHref, runHref } from "@/lib/runs/hrefs";
+import { START_EPIC } from "@/components/work-items/start-triage-buttons";
+import type { WorkItemActionTarget } from "@/components/work-items/use-work-item-actions";
 import { workItemHref } from "@/components/work-items/work-item-links";
 
-/** A step that leads somewhere rather than deciding: a link, or the PRD sheet. */
-export type InboxStep = "open_pr" | "view_prd" | "open_work_item" | "open_run" | "open_agent";
+/** A step that leads somewhere rather than deciding: a link, the PRD sheet, or Start epic. */
+export type InboxStep =
+  | "start_epic"
+  | "open_pr"
+  | "view_prd"
+  | "open_work_item"
+  | "open_run"
+  | "open_agent";
 
 /**
  * `primary` (lavender) for the one thing to do next, `outline` for the other ways forward,
@@ -22,7 +30,7 @@ export interface InboxDecision {
 /** A link from the item: its PR/MR (a new tab), work item, run or agent. */
 export interface InboxLink {
   type: "link";
-  step: Exclude<InboxStep, "view_prd">;
+  step: Exclude<InboxStep, "view_prd" | "start_epic">;
   label: string;
   href: string;
   /** Opens in a new tab (the code host). */
@@ -40,8 +48,18 @@ export interface InboxPrd {
   variant: InboxCtaVariant;
 }
 
+/** Start epic: starts the work item's run, as the Backlog's Start epic does. */
+export interface InboxStart {
+  type: "start";
+  step: "start_epic";
+  label: string;
+  /** The work item to start: Ready to start, as triage left it without open questions. */
+  workItem: WorkItemActionTarget;
+  variant: InboxCtaVariant;
+}
+
 /** What an Inbox item offers, in order: the next thing to do first. */
-export type InboxCta = InboxDecision | InboxLink | InboxPrd;
+export type InboxCta = InboxDecision | InboxLink | InboxPrd | InboxStart;
 
 type Kind = InboxItem["kind"];
 type Slot = InboxAction | InboxStep;
@@ -57,7 +75,7 @@ const SLOTS: Record<Kind, readonly Slot[]> = {
   broken_relations: ["open_run", "view_prd", "done", "snooze"],
   question: ["answer", "view_prd", "done", "snooze"],
   stopped_epic: ["resume", "open_run", "view_prd", "done", "snooze"],
-  prd_ready: ["view_prd", "open_work_item", "done", "snooze"],
+  prd_ready: ["start_epic", "view_prd", "open_work_item", "done", "snooze"],
   pr_waiting: ["open_pr", "view_prd", "done", "snooze"],
   failed_run: ["retry", "open_run", "view_prd", "done", "snooze"],
   failed_system: ["retry", "done", "snooze"],
@@ -69,7 +87,7 @@ const SLOTS: Record<Kind, readonly Slot[]> = {
 /** The step that is what's next for the kind (primary); others lead with a decision. */
 const LEAD_STEP: Partial<Record<Kind, InboxStep>> = {
   broken_relations: "open_run",
-  prd_ready: "view_prd",
+  prd_ready: "start_epic",
   pr_waiting: "open_pr",
   agent_offline: "open_agent",
   agent_update_failed: "open_agent",
@@ -122,6 +140,21 @@ function ctaOf(item: InboxItem, slot: Slot): Unstyled<InboxCta> | null {
         external: true,
       };
     }
+    case "start_epic":
+      // A PRD with open questions isn't ready to start: Review PRD is what's next.
+      return item.workItem && item.openQuestions === 0
+        ? {
+            type: "start",
+            step: slot,
+            label: START_EPIC,
+            workItem: {
+              id: item.workItem.id,
+              identifier: item.workItem.identifier,
+              group: "ready",
+              organization: { id: item.organization.id },
+            },
+          }
+        : null;
     case "view_prd": {
       const workItem = prdWorkItem(item);
       if (!workItem || !item.run) return null;
@@ -185,7 +218,11 @@ export function inboxCtas(item: InboxItem): InboxCta[] {
     return cta ? [cta] : [];
   });
   const lead = LEAD_STEP[item.kind];
-  const leadIndex = ctas.findIndex((cta) => cta.type !== "decision" && cta.step === lead);
+  let leadIndex = ctas.findIndex((cta) => cta.type !== "decision" && cta.step === lead);
+  // A ready PRD that can't start yet (open questions) leads with Review PRD.
+  if (leadIndex < 0 && item.kind === "prd_ready") {
+    leadIndex = ctas.findIndex((cta) => cta.type === "prd");
+  }
   const chosen =
     leadIndex >= 0 || NO_PRIMARY.has(item.kind)
       ? leadIndex

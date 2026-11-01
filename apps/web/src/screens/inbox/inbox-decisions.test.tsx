@@ -192,7 +192,7 @@ const KINDS: { item: InboxItem; controls: string[]; posts: Record<string, string
       epic: null,
       actions: ["done", "snooze"],
     }),
-    controls: ["Review PRD", "Open work item", "Dismiss", "Snooze"],
+    controls: ["Start epic", "Review PRD", "Open work item", "Dismiss", "Snooze"],
     posts: { Dismiss: "done" },
   },
   {
@@ -246,6 +246,7 @@ const CONTROL_KEYS: Record<string, string | null> = {
   Snooze: "z",
   "View PRD": "v",
   "Review PRD": "v",
+  "Start epic": null,
   "Open MR": "p",
   "Open run": null,
   "Open agent": null,
@@ -432,6 +433,63 @@ describe("decisions in the Inbox detail", () => {
         until: snoozeUntil(choice, new Date(NOW)).toISOString(),
       });
     }
+  });
+});
+
+describe("Start epic on a ready PRD", () => {
+  const readyPrd = (overrides: Partial<InboxItem> = {}) =>
+    inboxItem({
+      key: "prd_ready:t1",
+      kind: "prd_ready",
+      epic: null,
+      actions: ["done", "snooze"],
+      ...overrides,
+    });
+  const startPath = "/api/ui/work-items/linear-story-42/start";
+
+  /** Serves the feed with `item`, plus Start epic answering with `start`. */
+  function serveWithStart(item: InboxItem, start: () => Response | Promise<Response>) {
+    feeds = { "needs-you": [item], problems: [], running: [] };
+    seen = mockFetch({
+      "GET /api/ui/inbox": (request) =>
+        jsonResponse({ items: feeds[request.query.get("tab") ?? "needs-you"] ?? [] }),
+      "GET /api/ui/inbox/counts": () => jsonResponse(counts),
+      [`POST ${startPath}`]: start,
+    });
+  }
+
+  it("starts the work item's epic and takes the item out of the Inbox at once", async () => {
+    const held = deferred();
+    serveWithStart(readyPrd(), () => held.promise);
+    renderInbox();
+    await user().click(
+      within(await waitFor(decisions)).getByRole("button", { name: "Start epic" }),
+    );
+    await waitFor(() => expect(screen.queryAllByRole("listitem")).toHaveLength(0));
+    expect(posts().map((request) => request.path)).toEqual([startPath]);
+    expect(posts()[0]!.query.get("organization")).toBe(testUser.organization.id);
+    held.resolve(jsonResponse({ ok: true }));
+  });
+
+  it("puts the item back with the server's message when the start is refused", async () => {
+    serveWithStart(readyPrd(), () => jsonResponse({ error: "TOOL-42 already has a run." }, 409));
+    renderInbox();
+    await user().click(
+      within(await waitFor(decisions)).getByRole("button", { name: "Start epic" }),
+    );
+    await waitFor(() =>
+      expect(ui.toast).toHaveBeenCalledWith("TOOL-42 already has a run.", { variant: "danger" }),
+    );
+    expect(rows()).toHaveLength(1);
+  });
+
+  it("isn't offered while the PRD has open questions: Review PRD leads", async () => {
+    serveWithStart(readyPrd({ openQuestions: 1 }), () => jsonResponse({ ok: true }));
+    renderInbox();
+    const group = await waitFor(decisions);
+    expect(within(group).queryByRole("button", { name: "Start epic" })).toBeNull();
+    expect(controlsOf(group)[0]!.textContent).toBe("Review PRD");
+    expect(controlsOf(group)[0]!.classList.contains("or-btn--primary")).toBe(true);
   });
 });
 

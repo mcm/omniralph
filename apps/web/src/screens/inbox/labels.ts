@@ -111,7 +111,7 @@ export function inboxItemLabel(item: InboxItem, now: number): InboxItemLabel {
     case "stopped_epic":
       return { ...waiting("Stopped"), statusLabel: `${kind}, stopped`, tone: "warn" };
     case "prd_ready":
-      return waiting("PRD ready", "Triage");
+      return waiting(item.openQuestions > 0 ? "Needs answers" : "PRD ready", "Triage");
     case "pr_waiting":
       return waiting(isGitLab(item) ? "MR ready for your review" : "PR ready for your review");
     case "failed_run":

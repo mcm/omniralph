@@ -115,6 +115,14 @@ describe("inboxItemLabel", () => {
       WAITING,
     ],
     [
+      "prd_ready (open questions)",
+      { kind: "prd_ready", run: run("triage"), openQuestions: 2 },
+      "Needs answers",
+      "Triage, waiting on you",
+      "need",
+      WAITING,
+    ],
+    [
       "pr_waiting (GitLab)",
       {
         kind: "pr_waiting",

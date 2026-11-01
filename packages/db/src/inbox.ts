@@ -130,6 +130,8 @@ export type InboxFacts =
       outcome: "prd" | "reformat";
       /** The work item's size from its triage's last result; null when it has none. */
       size: TriageSize | null;
+      /** How many open questions the PRD has left (`## Open Questions`); 0 when it's ready to start. */
+      openQuestions: number;
     }
   | {
       kind: "pr_waiting";
@@ -534,8 +536,8 @@ async function permissionRequests(db: Queryable, scope: Scope): Promise<InboxCan
 }
 
 /**
- * Triage runs that wrote (or reformatted) a PRD with no open questions (triage left the
- * item Ready to start) that nobody has started a run of since.
+ * Triage runs that wrote (or reformatted) a PRD that nobody has started a run of since:
+ * with no open questions it is Ready to start; with some, a person reviews it first.
  */
 async function readyPrds(db: Queryable, scope: Scope): Promise<InboxCandidate[]> {
   const result = await db.execute<{
@@ -544,10 +546,13 @@ async function readyPrds(db: Queryable, scope: Scope): Promise<InboxCandidate[]>
     tracker_issue_id: string;
     job_id: string | null;
     outcome: "prd" | "reformat";
+    open_questions: number;
     since: string;
   }>(sql`
     select t.id, t.organization_id, t.tracker_issue_id, tj.id as job_id,
       t.last_result -> 'outcome' ->> 'outcome' as outcome,
+      coalesce(jsonb_array_length(t.last_result -> 'outcome' -> 'openQuestions'), 0)::int
+        as open_questions,
       ${iso("coalesce(tj.finished_at, t.updated_at)")} as since
     from triage_runs t
     left join lateral (
@@ -556,7 +561,6 @@ async function readyPrds(db: Queryable, scope: Scope): Promise<InboxCandidate[]>
     ) tj on true
     where t.organization_id in (${scope.orgs}) and t.status = 'completed'
       and t.last_result -> 'outcome' ->> 'outcome' in ('prd', 'reformat')
-      and coalesce(jsonb_array_length(t.last_result -> 'outcome' -> 'openQuestions'), 0) = 0
       and coalesce(tj.finished_at, t.updated_at) >= ${scope.cutoff}::timestamptz
       and not exists (
         select 1 from ralph_runs r
@@ -577,6 +581,7 @@ async function readyPrds(db: Queryable, scope: Scope): Promise<InboxCandidate[]>
       kind: "prd_ready",
       jobId: row.job_id ?? row.id,
       outcome: row.outcome,
+      openQuestions: Number(row.open_questions),
       size:
         sizes.get(
           triageIssueKey({
