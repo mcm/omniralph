@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
-import { ChatConversation, conversationFor, LinearConversation } from "./conversation";
+import { FakeTrackerGateway, NO_CAPABILITIES } from "@omniralph/tracker/testing";
+import {
+  ChatConversation,
+  conversationFor,
+  TrackerConversation,
+  trackerConversation,
+} from "./conversation";
 import { postActivity } from "./notify";
 
 vi.mock("server-only", () => ({}));
@@ -34,8 +40,8 @@ describe("conversationFor", () => {
   it("writes a Linear run's activities, plan and links to its agent session", async () => {
     const linear = new FakeLinearGateway();
     const conversation = conversationFor(linearRun, { linear });
-    expect(conversation).toBeInstanceOf(LinearConversation);
-    expect(conversation.name).toBe("Linear session session-1");
+    expect(conversation).toBeInstanceOf(TrackerConversation);
+    expect(conversation.name).toBe("tracker session session-1");
 
     await conversation.post({ type: "thought", body: "hi" }, { ephemeral: true });
     await conversation.updatePlan([{ content: "ENG-2", status: "pending" }]);
@@ -81,6 +87,80 @@ describe("conversationFor", () => {
   });
 });
 
+describe("conversationFor on a tracker without sessions", () => {
+  const sessionless = () => {
+    const tracker = new FakeTrackerGateway({ capabilities: NO_CAPABILITIES });
+    tracker.add({ id: "issue-1", identifier: "ENG-1", title: "Epic" });
+    return tracker;
+  };
+
+  it("comments a run's activities on its work item, leaving ephemeral ones out", async () => {
+    const tracker = sessionless();
+    const conversation = conversationFor(linearRun, { linear: tracker });
+
+    await conversation.post({ type: "thought", body: "Working on it" }, { ephemeral: true });
+    await conversation.post({ type: "thought", body: "Starting ENG-2" });
+    await conversation.post({ type: "error", body: "CI failed" });
+    await conversation.post(
+      { type: "elicitation", body: "Which repo?" },
+      { signal: "select", signalMetadata: { options: [{ value: "acme/app" }, { value: "" }] } },
+    );
+
+    expect(tracker.comments).toEqual([
+      { issueId: "issue-1", body: "Starting ENG-2" },
+      { issueId: "issue-1", body: "⚠️ CI failed" },
+      { issueId: "issue-1", body: "Which repo?\n\nReply with one of:\n- `acme/app`" },
+    ]);
+  });
+
+  it("comments the plan as a checklist, only when it changed", async () => {
+    const tracker = sessionless();
+    const conversation = conversationFor(linearRun, { linear: tracker });
+    const plan = [
+      { content: "ENG-2 Add the API", status: "completed" as const },
+      { content: "ENG-3 Add the UI", status: "inProgress" as const },
+      { content: "ENG-4 Docs", status: "pending" as const },
+      { content: "ENG-5 Old idea", status: "canceled" as const },
+    ];
+
+    await conversation.updatePlan(plan);
+    await conversation.post({ type: "thought", body: "Still going" });
+    await conversation.updatePlan(plan);
+    await conversation.updatePlan([{ ...plan[0]! }, { ...plan[1]!, status: "completed" }]);
+
+    expect(tracker.comments.map((c) => c.body)).toEqual([
+      [
+        "**Plan**",
+        "",
+        "- [x] ENG-2 Add the API",
+        "- [ ] ⏳ ENG-3 Add the UI",
+        "- [ ] ENG-4 Docs",
+        "- [x] ~~ENG-5 Old idea~~",
+      ].join("\n"),
+      "Still going",
+      ["**Plan**", "", "- [x] ENG-2 Add the API", "- [x] ENG-3 Add the UI"].join("\n"),
+    ]);
+  });
+
+  it("links a run's PR/MR to its work item", async () => {
+    const tracker = sessionless();
+    await conversationFor(linearRun, { linear: tracker }).addLink(
+      "Pull request",
+      "https://github.com/acme/app/pull/1",
+    );
+    expect(tracker.links).toEqual([
+      { issueId: "issue-1", url: "https://github.com/acme/app/pull/1", title: "Pull request" },
+    ]);
+  });
+
+  it("fails a write of a session with no work item to comment on", async () => {
+    const conversation = trackerConversation(sessionless(), "session-1");
+    await expect(conversation.post({ type: "response", body: "done" })).rejects.toThrow(
+      "has no work item to comment on",
+    );
+  });
+});
+
 describe("postActivity", () => {
   it("logs a failed post instead of throwing", async () => {
     const linear = new FakeLinearGateway();
@@ -92,7 +172,7 @@ describe("postActivity", () => {
     });
     expect(posted).toBe(false);
     expect(warn).toHaveBeenCalledWith(
-      "Posting an activity (error) to Linear session session-1 failed: Linear is down",
+      "Posting an activity (error) to tracker session session-1 failed: Linear is down",
     );
     warn.mockRestore();
   });

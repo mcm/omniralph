@@ -15,6 +15,8 @@ import {
 } from "@/lib/tracker/linear/client";
 import { fixtureLinearEnabled, fixtureLinearGateway } from "@omniralph/tracker/linear/testing";
 import type { LinearGateway } from "@omniralph/tracker/linear";
+import type { TrackerGateway } from "@omniralph/tracker";
+import { isLinearGateway } from "@/lib/tracker/linear/placement";
 import { LinearWorkItemTracker } from "./linear";
 import { TrackerNotConnectedError, type WorkItemTracker } from "./tracker";
 
@@ -73,7 +75,7 @@ export async function getWorkItemTracker(
 }
 
 /**
- * The tracker over a Linear gateway the caller already holds (a Linear webhook's or a
+ * The tracker over a gateway the caller already holds (a Linear webhook's or a
  * triage job's), with the organization's saved state mapping. When the integration row is
  * missing (gone since the gateway was made), the default mapping applies and saving a
  * mapping throws `TrackerNotConnectedError`.
@@ -81,9 +83,13 @@ export async function getWorkItemTracker(
 export async function workItemTrackerFor(options: {
   db: Database;
   organizationId: string;
-  gateway: LinearGateway;
+  gateway: TrackerGateway;
 }): Promise<WorkItemTracker> {
   const { db, organizationId, gateway } = options;
+  // Only Linear has a work item tracker so far.
+  if (!isLinearGateway(gateway)) {
+    throw new Error(`There is no work item tracker for the ${gateway.provider} tracker gateway`);
+  }
   const integration = await getIntegration(db, organizationId, "linear");
   return new LinearWorkItemTracker({
     gateway,

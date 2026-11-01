@@ -12,7 +12,7 @@ import {
 } from "@omniralph/db";
 import { skipJobAndClearDue } from "@/lib/dispatch/due";
 import { getDispatcher } from "@/lib/dispatch";
-import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/tracker/linear/client";
+import { lazyTrackerGateway } from "@/lib/tracker/client";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { checkRunCi } from "./ci";
 import { applyCleanupJob, startPendingCleanups } from "./cleanup";
@@ -66,7 +66,7 @@ export async function defaultDeps(db: Database, organizationId: string): Promise
   return {
     db,
     organizationId,
-    linear: lazyLinearGateway(() => getLinearGatewayOrDisconnected({ db, organizationId })),
+    linear: lazyTrackerGateway({ db, organizationId }),
     dispatcher: getDispatcher(),
     adapterFor: scmAdapterFor,
   };

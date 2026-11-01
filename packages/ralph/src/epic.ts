@@ -1,42 +1,42 @@
 /**
- * Turn Linear issues into a ralph epic (the pure part of cyralph's epic loader; the caller
+ * Turn tracker work items into a ralph epic (the pure part of cyralph's epic loader; the caller
  * fetches the issues). Detection order:
  *
- *  1. Issue has sub-issues             -> "children" epic: each sub-issue is a story (`childrenEpic`).
+ *  1. Issue has child issues           -> "children" epic: each child is a story (`childrenEpic`).
  *  2. Description contains a PRD       -> "prd" epic (`prdEpic`), or materialized into sub-issues
  *     (markdown user stories or prd.json)  (`materializationPlan`) and then loaded as a children epic.
  *  3. Otherwise                        -> "single" epic: the issue itself is the only story.
  *
- * A delegated *story* issue (sub-issue of an epic) yields that epic, focused on the one story.
+ * A delegated *story* issue (child of an epic) yields that epic, focused on the one story.
  *
- * Stories are described by Linear's own fields only: identifier, title, priority, sub-issue order,
+ * Stories are described by the tracker's own fields only: identifier, title, priority, child order,
  * state, labels and "blocks" relations. Title prefixes (`US-001: …`) and body metadata are not parsed.
  */
 import { type ParsedPrd, parseBranchLine, parsePrd, prdQualityGates } from "./prd.js";
 import {
   buildStoryIssueBody,
-  linearPriorityFor,
+  trackerPriorityFor,
   parseStoryBody,
   storyRank,
   stripLegacyMetadata,
 } from "./story-body.js";
 import { EXTERNAL_DEP_PREFIX, type Epic, type Story, type StoryStatus } from "./types.js";
 
-/** The fields of a Linear issue an epic is built from. */
+/** The fields of a tracker work item an epic is built from. */
 export interface EpicIssue {
   id: string;
   identifier: string;
   title: string;
   description: string;
   url?: string;
-  /** Linear's suggested branch name. */
+  /** The tracker's suggested branch name. */
   branchName: string;
   teamId?: string;
   teamKey?: string;
   /** Workflow state type: `backlog`, `unstarted`, `started`, `completed`, `canceled`, … */
   stateType: string;
   labels: string[];
-  /** Linear priority: 0 No priority, 1 Urgent … 4 Low. */
+  /** Tracker priority: 0 No priority, 1 Urgent … 4 Low. */
   priority?: number;
   /** Manual position among its parent's sub-issues. */
   subIssueSortOrder?: number;
@@ -56,7 +56,7 @@ export const DEFAULT_MANUAL_LABELS = ["manual"];
 
 const DONE_TYPES = new Set(["completed", "canceled"]);
 
-/** Whether a Linear workflow state type counts as done (completed or canceled). */
+/** Whether a workflow state type counts as done (completed or canceled). */
 export function isDoneStateType(stateType: string): boolean {
   return DONE_TYPES.has(stateType);
 }
@@ -115,8 +115,8 @@ export function parsePrepareBlocks(text: string): string[] {
   return commands;
 }
 
-/** The fields of a story that come straight from its Linear issue. */
-function linearStory(issue: EpicIssue, body = parseStoryBody(issue.description)) {
+/** The fields of a story that come straight from its work item. */
+function issueStory(issue: EpicIssue, body = parseStoryBody(issue.description)) {
   return {
     key: issue.id,
     storyId: issue.identifier,
@@ -167,7 +167,7 @@ function storyFromIssue(
     }
   }
   return withManualOptions(
-    { ...linearStory(issue), dependsOn, status: statusFromStateType(issue.stateType) },
+    { ...issueStory(issue), dependsOn, status: statusFromStateType(issue.stateType) },
     opts,
   );
 }
@@ -193,7 +193,7 @@ export function withManualOptions<S extends Story>(story: S, opts: EpicOptions):
   } as S;
 }
 
-/** The branch an epic builds on: the PRD's branch name, else a `Branch:` line, else Linear's suggestion. */
+/** The branch an epic builds on: the PRD's branch name, else a `Branch:` line, else the tracker's suggestion. */
 export function epicBranchName(
   issue: Pick<EpicIssue, "description" | "branchName">,
   prd: ParsedPrd | null = parsePrd(issue.description),
@@ -261,17 +261,17 @@ export function singleIssueEpic(issue: EpicIssue): Epic {
     ...epicBase(issue, null),
     kind: "single",
     // The delegated issue is the work item; never treat it as already done.
-    stories: [{ ...linearStory(issue), dependsOn: [], status: "open" }],
+    stories: [{ ...issueStory(issue), dependsOn: [], status: "open" }],
   };
 }
 
 /** A sub-issue to create for a PRD story. */
 export interface PlannedStoryIssue {
-  /** The PRD story id (e.g. `US-001`); not written to Linear. */
+  /** The PRD story id (e.g. `US-001`); not written to the tracker. */
   storyId: string;
   title: string;
   description: string;
-  /** Linear priority (1 Urgent … 4 Low). */
+  /** Tracker priority (1 Urgent … 4 Low). */
   priority: number;
   subIssueSortOrder: number;
   /** The story already passes (prd.json `passes`): create it completed. */
@@ -287,8 +287,8 @@ export interface MaterializationPlan {
 }
 
 /**
- * The sub-issues to create for a PRD's stories. Its ids, priorities and order become Linear
- * metadata: priority, sub-issue order and "blocks" relations. Titles and bodies carry no ralph markers.
+ * The child work items to create for a PRD's stories. Its ids, priorities and order become
+ * tracker metadata: priority, sub-issue order and "blocks" relations. Titles and bodies carry no ralph markers.
  */
 export function materializationPlan(prd: ParsedPrd): MaterializationPlan {
   const ids = new Set(prd.stories.map((s) => s.id));
@@ -300,7 +300,7 @@ export function materializationPlan(prd: ParsedPrd): MaterializationPlan {
         description: s.description,
         acceptanceCriteria: s.acceptanceCriteria,
       }),
-      priority: linearPriorityFor(s.priority),
+      priority: trackerPriorityFor(s.priority),
       subIssueSortOrder: i,
       completed: s.passes,
       manual: s.manual === true,

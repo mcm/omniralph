@@ -1,8 +1,9 @@
 /**
  * Where a ralph run talks to people: every write to a run's session (its
  * activities, plan and PR/MR links) goes through a `RunConversation`, so a run
- * from Linear posts to its agent session and a run from chat records run
- * events of its thread.
+ * from a tracker posts to its agent session (or, on a tracker without
+ * sessions, comments on its work item) and a run from chat records run events
+ * of its thread.
  * `conversationFor` picks the run's channel.
  */
 import { randomUUID } from "node:crypto";
@@ -10,15 +11,20 @@ import type { SlackAdapter } from "@chat-adapter/slack";
 import {
   getChatThreadWithConnection,
   getRepositoryWithConnection,
-  linearSessionOf,
+  isLinearRun,
   type ChatPlatform,
   type ChatThread,
   type Database,
   type RalphRun,
 } from "@omniralph/db";
 import type { Adapter, StateAdapter } from "chat";
-import type { ActivityContent, ActivityOptions, PlanStep } from "@omniralph/tracker";
-import type { LinearGateway } from "@omniralph/tracker/linear";
+import {
+  hasCapability,
+  type ActivityContent,
+  type ActivityOptions,
+  type PlanStep,
+  type TrackerGateway,
+} from "@omniralph/tracker";
 import { recordChatRunEvent, type ChatRunEventKind } from "@/lib/chat/run-events";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { inlineCode } from "@/lib/review/sanitize";
@@ -27,7 +33,7 @@ import { inlineCode } from "@/lib/review/sanitize";
 export interface PostOptions extends ActivityOptions {
   /**
    * News from outside the session's steps (a PR/MR follow-up: a review, CI
-   * failure, `@bot fix` or cleanup): Linear posts it as usual, while chat
+   * failure, `@bot fix` or cleanup): a tracker posts it as usual, while chat
    * posts even a thought as a new message, since the status message it would
    * edit may be far up the thread.
    */
@@ -36,13 +42,13 @@ export interface PostOptions extends ActivityOptions {
    * The run event a chat run records for it (`lib/chat/run-events.ts`): its
    * kind (default: by the activity's type), its key within the run, so it is
    * recorded once (default: a new one), and structured details for the
-   * responder. Linear ignores it.
+   * responder. A tracker ignores it.
    */
   event?: { kind?: ChatRunEventKind; key?: string; details?: Record<string, unknown> };
 }
 
 export interface RunConversation {
-  /** Names the conversation in logs (e.g. `Linear session <id>`). */
+  /** Names the conversation in logs (e.g. `tracker session <id>`). */
   readonly name: string;
   /** Posts an activity (a thought, action, response, elicitation or error). Throws on failure. */
   post(content: ActivityContent, options?: PostOptions): Promise<void>;
@@ -71,48 +77,121 @@ export function runFailedEvent(run: Pick<RalphRun, "updatedAt">): PostOptions["e
   return { kind: "failure", key: endKey("failed", run), details: { status: "failed" } };
 }
 
-/** A Linear gateway, or a way to get one only when a write needs it. */
-export type LinearSource = LinearGateway | (() => Promise<LinearGateway>);
+/** A tracker gateway, or a way to get one only when a write needs it. */
+export type TrackerSource = TrackerGateway | (() => Promise<TrackerGateway>);
 
 export interface ConversationDeps {
-  linear: LinearSource;
+  linear: TrackerSource;
   /** Where a chat run's thread is posted through (default: the deployment's chat bot). */
   chat?: ChatSource;
 }
 
-/** A run's Linear agent session. */
-export class LinearConversation implements RunConversation {
+/** The heading of a plan posted as a work item comment. */
+export const PLAN_COMMENT_HEADING = "**Plan**";
+
+const PLAN_MARKS: Record<PlanStep["status"], string> = {
+  pending: "- [ ]",
+  inProgress: "- [ ] ⏳",
+  completed: "- [x]",
+  canceled: "- [x] ~~",
+};
+
+/** A plan as a work item comment: a checklist of its steps. */
+export function planComment(plan: readonly PlanStep[]): string {
+  const steps = plan.map((step) =>
+    step.status === "canceled"
+      ? `${PLAN_MARKS.canceled}${step.content}~~`
+      : `${PLAN_MARKS[step.status]} ${step.content}`,
+  );
+  return [PLAN_COMMENT_HEADING, "", ...(steps.length > 0 ? steps : ["_No steps._"])].join("\n");
+}
+
+/** An activity as a work item comment (an elicitation lists the options it offers). */
+export function activityComment(content: ActivityContent, options?: ActivityOptions): string {
+  const text = messageText(content);
+  const choices = options?.signal === "select" ? selectOptions(options.signalMetadata) : [];
+  if (choices.length === 0) return text;
+  return [text, "", "Reply with one of:", ...choices.map((c) => `- ${inlineCode(c)}`)].join("\n");
+}
+
+/** The values a `select` elicitation offers (`signalMetadata: { options: [{ value }] }`). */
+function selectOptions(metadata: Record<string, unknown> | undefined): string[] {
+  const options = metadata?.options;
+  if (!Array.isArray(options)) return [];
+  return options.flatMap((option: unknown) => {
+    const value = (option as { value?: unknown } | null)?.value;
+    return typeof value === "string" && value.trim() ? [value] : [];
+  });
+}
+
+/**
+ * A run's conversation in its tracker: its agent session when the tracker
+ * has the sessions capability. On a tracker without it, activities and plans
+ * become comments on the work item (`issueId`; ephemeral activities and an
+ * unchanged plan are skipped) and links are linked to it.
+ */
+export class TrackerConversation implements RunConversation {
   readonly name: string;
 
   constructor(
-    private readonly linear: LinearSource,
+    private readonly tracker: TrackerSource,
     readonly sessionId: string,
+    readonly issueId?: string,
   ) {
-    this.name = `Linear session ${sessionId}`;
+    this.name = `tracker session ${sessionId}`;
   }
 
-  private async client(): Promise<LinearGateway> {
-    return typeof this.linear === "function" ? this.linear() : this.linear;
+  private async client(): Promise<TrackerGateway> {
+    return typeof this.tracker === "function" ? this.tracker() : this.tracker;
   }
 
-  async post(content: ActivityContent, options?: PostOptions): Promise<void> {
-    // A notice is an ordinary activity in Linear.
-    const { notice: _notice, event: _event, ...activity } = options ?? {};
-    await (
-      await this.client()
-    ).sessions.createActivity(
-      this.sessionId,
-      content,
-      Object.keys(activity).length > 0 ? activity : undefined,
+  /** The work item comments go to, on a tracker without sessions. */
+  private commentTarget(tracker: TrackerGateway): string {
+    if (this.issueId) return this.issueId;
+    throw new Error(
+      `The ${tracker.provider} tracker has no sessions, and ${this.name} has no work item to comment on`,
     );
   }
 
+  async post(content: ActivityContent, options?: PostOptions): Promise<void> {
+    // A notice is an ordinary activity in a tracker.
+    const { notice: _notice, event: _event, ...activity } = options ?? {};
+    const tracker = await this.client();
+    if (hasCapability(tracker, "sessions")) {
+      await tracker.sessions.createActivity(
+        this.sessionId,
+        content,
+        Object.keys(activity).length > 0 ? activity : undefined,
+      );
+      return;
+    }
+    // The next activity would replace it in a session; a comment stays, so it's left out.
+    if (activity.ephemeral) return;
+    await tracker.addComment(this.commentTarget(tracker), activityComment(content, activity));
+  }
+
   async updatePlan(plan: PlanStep[]): Promise<void> {
-    await (await this.client()).sessions.updatePlan(this.sessionId, plan);
+    const tracker = await this.client();
+    if (hasCapability(tracker, "sessions")) {
+      await tracker.sessions.updatePlan(this.sessionId, plan);
+      return;
+    }
+    const issueId = this.commentTarget(tracker);
+    const body = planComment(plan);
+    // The plan is posted again on every update: only a changed one is worth a comment.
+    const comments = await tracker.getComments(issueId);
+    const lastPlan = comments.findLast((c) => c.body.startsWith(PLAN_COMMENT_HEADING));
+    if (lastPlan?.body === body) return;
+    await tracker.addComment(issueId, body);
   }
 
   async addLink(label: string, url: string): Promise<void> {
-    await (await this.client()).sessions.addExternalUrl(this.sessionId, label, url);
+    const tracker = await this.client();
+    if (hasCapability(tracker, "sessions")) {
+      await tracker.sessions.addExternalUrl(this.sessionId, label, url);
+      return;
+    }
+    await tracker.linkUrl(this.commentTarget(tracker), url, label);
   }
 }
 
@@ -307,12 +386,19 @@ export class ChatConversation implements RunConversation {
   }
 }
 
-/** The Linear agent session of a Linear session ID (e.g. a new session before its run exists). */
-export function linearConversation(linear: LinearSource, sessionId: string): LinearConversation {
-  return new LinearConversation(linear, sessionId);
+/**
+ * The conversation of a tracker session ID (e.g. a new session before its run
+ * exists), on its work item `issueId` (where a tracker without sessions comments).
+ */
+export function trackerConversation(
+  tracker: TrackerSource,
+  sessionId: string,
+  issueId?: string,
+): TrackerConversation {
+  return new TrackerConversation(tracker, sessionId, issueId);
 }
 
-/** The conversation a run posts to: its Linear agent session, or its chat thread. */
+/** The conversation a run posts to: its tracker session (or work item), or its chat thread. */
 export function conversationFor(
   run: Pick<
     RalphRun,
@@ -327,7 +413,8 @@ export function conversationFor(
   >,
   deps: ConversationDeps,
 ): RunConversation {
-  const sessionId = linearSessionOf(run);
-  if (sessionId !== null) return new LinearConversation(deps.linear, sessionId);
+  if (isLinearRun(run)) {
+    return new TrackerConversation(deps.linear, run.linearAgentSessionId, run.linearIssueId);
+  }
   return new ChatConversation(run, deps.chat);
 }

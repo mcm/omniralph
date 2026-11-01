@@ -363,12 +363,7 @@ export function findTeam<T extends TrackerTeam>(teams: readonly T[], ref: string
   );
 }
 
-export class TrackerNotConnectedError extends Error {
-  constructor() {
-    super("This organization has no work item tracker connected (Settings › Connections).");
-    this.name = "TrackerNotConnectedError";
-  }
-}
+export { TrackerNotConnectedError } from "@/lib/tracker/errors";
 
 /** A state mapping `setStateMapping` refused, with a message per field path. */
 export class StateMappingError extends Error {

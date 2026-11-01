@@ -6,7 +6,7 @@
  */
 import { getJob, requeueTriageRunForRetry, setTriageRunStatus } from "@omniralph/db";
 import { RunSpecJobPayload } from "@omniralph/shared";
-import { linearConversation } from "@/lib/ralph/conversation";
+import { trackerConversation } from "@/lib/ralph/conversation";
 import { postActivity } from "@/lib/ralph/notify";
 import { previousOutcome } from "./reply";
 import { enqueueTriage, prepareTriage, type StartTriageOutcome, type TriageDeps } from "./start";
@@ -54,10 +54,13 @@ export async function retryTriageRun(
       break;
   }
   const { run } = taken;
-  await postActivity(linearConversation(deps.linear, run.linearAgentSessionId), {
-    type: "thought",
-    body: retriedBy ? `Retried from Omniralph by ${retriedBy}.` : "Retried from Omniralph.",
-  });
+  await postActivity(
+    trackerConversation(deps.linear, run.linearAgentSessionId, run.linearIssueId),
+    {
+      type: "thought",
+      body: retriedBy ? `Retried from Omniralph by ${retriedBy}.` : "Retried from Omniralph.",
+    },
+  );
   const prepared = await prepareTriage(
     deps,
     run.linearIssueId,

@@ -14,6 +14,7 @@ import { fixtureLinearEnabled, fixtureLinearGateway } from "@omniralph/tracker/l
 import { TrackerNotFoundError } from "@omniralph/tracker";
 import type { LinearGateway, RoutingIssue } from "@omniralph/tracker/linear";
 import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
+import { readRoutingIssue } from "@/lib/tracker/routing-issue";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { describeQuery } from "./describe";
 import { createRouter, type RouteDeps, type RouteWorkItemMatch } from "./resolve";
@@ -188,7 +189,7 @@ async function loadIssue(
   identifier: string,
 ): Promise<RoutingIssue | null> {
   try {
-    return await linear.getRoutingFields(identifier);
+    return await readRoutingIssue(linear, identifier);
   } catch (error) {
     if (error instanceof TrackerNotFoundError) return null;
     throw error;
@@ -196,13 +197,15 @@ async function loadIssue(
 }
 
 /** `getRoutingFields` asking Linear once per issue, by ID or identifier (failures are retried). */
-function dedupedRoutingFields(linear: RouteDeps["linear"]): RouteDeps["linear"] {
+function dedupedRoutingFields(
+  linear: RouteDeps["linear"],
+): Pick<LinearGateway, "getRoutingFields"> {
   const cache = new Map<string, Promise<RoutingIssue>>();
   return {
     getRoutingFields(idOrIdentifier) {
       let pending = cache.get(idOrIdentifier);
       if (!pending) {
-        pending = linear.getRoutingFields(idOrIdentifier);
+        pending = readRoutingIssue(linear, idOrIdentifier);
         cache.set(idOrIdentifier, pending);
         pending.then(
           (loaded) => {

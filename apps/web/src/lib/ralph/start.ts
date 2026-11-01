@@ -14,7 +14,7 @@ import {
   getRepositoryWithConnection,
   getRunByIssue,
   getRunBySession,
-  linearSessionOf,
+  isLinearRun,
   listActiveRunJobIds,
   listRalphRepositories,
   listStories,
@@ -43,7 +43,7 @@ import { organizationPlaybooks } from "@/lib/playbooks";
 import { createRouter, routedRepository, type Router } from "@/lib/routing/resolve";
 import { blockedLabelsMessage, blockingLabels, organizationBlockedLabels } from "./blocked-labels";
 import { notifyRunThread } from "./chat-notify";
-import { linearConversation } from "./conversation";
+import { trackerConversation } from "./conversation";
 import {
   loadEpic,
   organizationManualLabels,
@@ -97,9 +97,15 @@ export type StartOutcome =
   | { status: "failed"; error: string }
   | { status: "started"; run: RalphRun; created: boolean };
 
-/** Posts to a Linear agent session (a new one may not be its run's), logging a failure. */
-async function post(deps: RalphDeps, sessionId: string, content: ActivityContent): Promise<void> {
-  await postActivity(linearConversation(deps.linear, sessionId), content);
+/** Where `post` writes: a tracker session (a new one may not be its run's), on its work item. */
+interface SessionRef {
+  sessionId: string;
+  issueId: string;
+}
+
+/** Posts to a tracker session (comments on its work item without sessions), logging a failure. */
+async function post(deps: RalphDeps, session: SessionRef, content: ActivityContent): Promise<void> {
+  await postActivity(trackerConversation(deps.linear, session.sessionId, session.issueId), content);
 }
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -165,14 +171,14 @@ async function refuseOpenQuestions(
     found = await withOpenQuestions(deps, event.issueId);
   } catch (error) {
     console.error(`Checking open questions of ${event.issueId} failed`, error);
-    await post(deps, event.sessionId, {
+    await post(deps, event, {
       type: "error",
       body: openQuestionsCheckFailedMessage(error, "Delegate or mention me again to retry."),
     });
     return { status: "load_failed", error: message(error) };
   }
   if (!found) return null;
-  await post(deps, event.sessionId, {
+  await post(deps, event, {
     type: "response",
     body: openQuestionsMessage(found.issue, found.epic),
   });
@@ -204,7 +210,7 @@ async function refuseUnbuildable(
     await organizationBlockedLabels(deps.db, deps.organizationId),
   );
   if (labels.length === 0) return { candidates: [...repositories] };
-  await post(deps, event.sessionId, {
+  await post(deps, event, {
     type: "response",
     body: blockedLabelsMessage(issue, labels),
   });
@@ -217,7 +223,7 @@ async function refuseManual(
   event: SessionCreatedEvent,
   route: ManualRoute,
 ): Promise<StartOutcome> {
-  await post(deps, event.sessionId, { type: "response", body: manualRouteMessage(route) });
+  await post(deps, event, { type: "response", body: manualRouteMessage(route) });
   return { status: "manual", repository: route.manual.fullPath };
 }
 
@@ -348,12 +354,15 @@ async function supersede(deps: RalphDeps, previous: RalphRun, sessionId: string)
   }
   const prUrl = (await getMainLane(deps.db, previous))?.prUrl;
   const pr = prUrl ? ` The open draft stays where it is: ${prUrl}` : "";
-  const previousSessionId = linearSessionOf(previous);
-  if (previousSessionId === null) return;
-  await post(deps, previousSessionId, {
-    type: "response",
-    body: `This issue was delegated to me again, so I stopped here and continue in the new session.${pr}`,
-  });
+  if (!isLinearRun(previous)) return;
+  await post(
+    deps,
+    { sessionId: previous.linearAgentSessionId, issueId: previous.linearIssueId },
+    {
+      type: "response",
+      body: `This issue was delegated to me again, so I stopped here and continue in the new session.${pr}`,
+    },
+  );
 }
 
 /**
@@ -422,7 +431,7 @@ async function askForRepositoryFirst(
   if (!created) {
     if (run.linearAgentSessionId === event.sessionId) await advanceRun(run.id, deps);
     else {
-      await post(deps, event.sessionId, {
+      await post(deps, event, {
         type: "response",
         body: `**${root.identifier}** is already being built in another session.`,
       });
@@ -430,7 +439,10 @@ async function askForRepositoryFirst(
     }
     return { status: "started", run, created: false };
   }
-  await askForRepository(linearConversation(deps.linear, event.sessionId), repositories);
+  await askForRepository(
+    trackerConversation(deps.linear, event.sessionId, event.issueId),
+    repositories,
+  );
   await notifyRunThread(deps, run, { kind: "started" });
   // Waiting on a person: the safety check gives way to the hourly re-check.
   await scheduleRunByStatus(run);
@@ -513,7 +525,7 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
   const text = ship ? shipNotes || SHIP_REQUEST_TEXT : parsed.text;
   const author = event.creatorName ?? null;
   if (!text && !wantsLoop) {
-    await post(deps, event.sessionId, { type: "response", body: NOTHING_TO_DO });
+    await post(deps, event, { type: "response", body: NOTHING_TO_DO });
     return { status: "nothing" };
   }
   let root: IssueSummary;
@@ -521,7 +533,7 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
     // Only to find the issue's run: a mention never creates story issues here.
     root = (await loadEpic(deps.linear, event.issueId, { materialize: false })).root;
   } catch (error) {
-    await post(deps, event.sessionId, {
+    await post(deps, event, {
       type: "error",
       body: `I couldn't load the issue from Linear: ${message(error)}`,
     });
@@ -554,7 +566,7 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
     });
     if (handed) {
       if (handed.live) await bumpAgentHeartbeat(handed.agentId);
-      await post(deps, event.sessionId, {
+      await post(deps, event, {
         type: "response",
         body: handed.live
           ? PASSED_TO_RUNNING_JOB
@@ -598,7 +610,7 @@ async function startNewRun(
     if ("refused" in blocked) return blocked.refused;
     candidates = blocked.candidates;
   } catch (error) {
-    await post(deps, sessionId, {
+    await post(deps, event, {
       type: "error",
       body: `I couldn't load the issue from Linear: ${message(error)}`,
     });
@@ -624,7 +636,7 @@ async function startNewRun(
       materialize: epicMode,
     });
   } catch (error) {
-    await post(deps, sessionId, {
+    await post(deps, event, {
       type: "error",
       body: `I couldn't load the issue from Linear: ${message(error)}`,
     });
@@ -632,7 +644,7 @@ async function startNewRun(
   }
   const { epic, root } = loaded;
   if (repositories.length === 0) {
-    await post(deps, sessionId, { type: "error", body: unroutableMessage(epic) });
+    await post(deps, event, { type: "error", body: unroutableMessage(epic) });
     return { status: "unroutable" };
   }
 
@@ -641,7 +653,7 @@ async function startNewRun(
   if (previous && !FINISHED_RUN_STATUSES.has(previous.status)) {
     if (loaded.focusStoryId) {
       // A story of an epic that is being built already: its run covers the story.
-      await post(deps, sessionId, {
+      await post(deps, event, {
         type: "response",
         body: `**${root.identifier}** is already being built in another session, which covers this story.`,
       });
@@ -669,7 +681,7 @@ async function startNewRun(
     if (!found) throw new Error(`repository ${chosen.repository.fullPath} is gone`);
     baseBranch = await fetchDefaultBranch(deps, found.connection, found.repository);
   } catch (error) {
-    await post(deps, sessionId, {
+    await post(deps, event, {
       type: "error",
       body: `I couldn't read the default branch of \`${chosen.repository.fullPath}\`: ${message(error)}`,
     });
@@ -711,7 +723,7 @@ async function startNewRun(
     // Another delivery started this session's (or this issue's) run first.
     if (run.linearAgentSessionId === sessionId) await advanceRun(run.id, deps);
     else {
-      await post(deps, sessionId, {
+      await post(deps, event, {
         type: "response",
         body: `**${root.identifier}** is already being built in another session.`,
       });
@@ -722,7 +734,7 @@ async function startNewRun(
 
   const note = await leftBehind(deps, left);
   if (note) {
-    await post(deps, sessionId, {
+    await post(deps, event, {
       type: "thought",
       body: leftBehindNote(note, chosen.repository.fullPath),
     });
@@ -736,7 +748,7 @@ async function startNewRun(
     }
   }
   if (epicMode) {
-    await post(deps, sessionId, {
+    await post(deps, event, {
       type: "thought",
       body: describeRun(loaded, chosen, lane!, !!previous),
     });

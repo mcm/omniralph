@@ -26,8 +26,7 @@ import {
   type PermissionAnswer,
 } from "@omniralph/ralph";
 import type { RalphPermissionAnswer, RalphPermissionRequest } from "@omniralph/shared";
-import type { ActivityContent } from "@omniralph/tracker";
-import type { LinearGateway } from "@omniralph/tracker/linear";
+import type { ActivityContent, TrackerGateway } from "@omniralph/tracker";
 import { conversationFor, type ChatSource } from "./conversation";
 import { postActivity } from "./notify";
 import { FINISHED_RUN_STATUSES } from "./run";
@@ -35,7 +34,7 @@ import { FINISHED_RUN_STATUSES } from "./run";
 export interface PermissionDeps {
   db: Database;
   /** The gateway of an organization's Linear workspace. */
-  linear: (organizationId: string) => Promise<LinearGateway>;
+  linear: (organizationId: string) => Promise<TrackerGateway>;
   /** Posts chat runs (default: the deployment's chat bot). */
   chat?: ChatSource;
 }

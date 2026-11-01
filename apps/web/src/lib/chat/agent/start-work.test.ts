@@ -48,7 +48,7 @@ import type { Adapter, Logger, Message, Thread } from "chat";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { fakeRalphLinear } from "@/lib/ralph/testing";
+import { fakeRalphLinear } from "@/lib/testing/fake-linear";
 import type { ChatChannel } from "@/lib/ralph/conversation";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
