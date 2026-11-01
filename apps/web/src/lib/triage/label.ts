@@ -47,7 +47,7 @@ export type StartLabelTriageOutcome =
  */
 const PENDING_SESSION_PREFIX = "pending-label:";
 
-const isPending = (run: TriageRun) => run.linearAgentSessionId.startsWith(PENDING_SESSION_PREFIX);
+const isPending = (run: TriageRun) => run.trackerSessionId.startsWith(PENDING_SESSION_PREFIX);
 
 /**
  * Whether a created agent session is triage's own, which ralph must not start
@@ -119,8 +119,8 @@ export async function startLabelTriage(
   // mention) finds this run, and the session's `created` webhook is ours.
   const { run, created } = await createTriageRun(db, {
     organizationId,
-    linearIssueId: event.issueId,
-    linearAgentSessionId: `${PENDING_SESSION_PREFIX}${randomUUID()}`,
+    trackerIssueId: event.issueId,
+    trackerSessionId: `${PENDING_SESSION_PREFIX}${randomUUID()}`,
     trigger: "label",
   });
   // The label is removed when that run ends.
@@ -138,7 +138,7 @@ export async function startLabelTriage(
   }
   const withSession = (await setTriageRunSession(db, run.id, sessionId)) ?? {
     ...run,
-    linearAgentSessionId: sessionId,
+    trackerSessionId: sessionId,
   };
 
   const outcome = await startTriage(

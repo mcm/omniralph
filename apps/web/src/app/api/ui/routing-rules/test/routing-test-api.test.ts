@@ -181,11 +181,11 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
     const ui = linear.add({ identifier: "ENG-1", title: "UI", labels: ["Frontend"] });
     const { run } = await createRun(state.db, {
       organizationId: state.orgId,
-      linearIssueId: ui.id,
-      linearIdentifier: "ENG-1",
-      linearTitle: "UI",
-      linearUrl: null,
-      linearAgentSessionId: "session-run-answer",
+      trackerIssueId: ui.id,
+      trackerIdentifier: "ENG-1",
+      trackerTitle: "UI",
+      trackerUrl: null,
+      trackerSessionId: "session-run-answer",
       kind: "single",
       repositoryId: api,
       routedBy: "your selection",

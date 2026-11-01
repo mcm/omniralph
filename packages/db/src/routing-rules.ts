@@ -128,7 +128,7 @@ export interface IssueRepository {
 export async function getIssueRepository(
   db: Pick<Database, "select">,
   organizationId: string,
-  linearIssueId: string,
+  trackerIssueId: string,
 ): Promise<IssueRepository | null> {
   const [run] = await db
     .select({ repositoryId: ralphRuns.repositoryId, routedBy: ralphRuns.routedBy })
@@ -136,7 +136,7 @@ export async function getIssueRepository(
     .where(
       and(
         eq(ralphRuns.organizationId, organizationId),
-        eq(ralphRuns.linearIssueId, linearIssueId),
+        eq(ralphRuns.trackerIssueId, trackerIssueId),
         isNotNull(ralphRuns.repositoryId),
       ),
     )
@@ -150,7 +150,7 @@ export async function getIssueRepository(
       repositoryId: ralphLanes.repositoryId,
       runRepositoryId: ralphRuns.repositoryId,
       routedBy: ralphRuns.routedBy,
-      runIdentifier: ralphRuns.linearIdentifier,
+      runIdentifier: ralphRuns.trackerIdentifier,
     })
     .from(ralphStories)
     .innerJoin(ralphLanes, eq(ralphLanes.id, ralphStories.laneId))
@@ -158,7 +158,7 @@ export async function getIssueRepository(
     .where(
       and(
         eq(ralphRuns.organizationId, organizationId),
-        eq(ralphStories.linearIssueId, linearIssueId),
+        eq(ralphStories.trackerIssueId, trackerIssueId),
       ),
     )
     .orderBy(desc(ralphStories.createdAt), desc(ralphStories.id))
@@ -182,16 +182,16 @@ export interface IssueRun {
   repository: Pick<Repository, "id" | "fullPath" | "provider"> | null;
 }
 
-/** The latest run (by creation) of each of `linearIssueIds` that has one, by issue ID. */
+/** The latest run (by creation) of each of `trackerIssueIds` that has one, by issue ID. */
 export async function listLatestIssueRuns(
   db: Pick<Database, "select">,
   organizationId: string,
-  linearIssueIds: readonly string[],
+  trackerIssueIds: readonly string[],
 ): Promise<Map<string, IssueRun>> {
-  if (linearIssueIds.length === 0) return new Map();
+  if (trackerIssueIds.length === 0) return new Map();
   const rows = await db
     .select({
-      issueId: ralphRuns.linearIssueId,
+      issueId: ralphRuns.trackerIssueId,
       id: ralphRuns.id,
       routedBy: ralphRuns.routedBy,
       repositoryId: repositories.id,
@@ -203,7 +203,7 @@ export async function listLatestIssueRuns(
     .where(
       and(
         eq(ralphRuns.organizationId, organizationId),
-        inArray(ralphRuns.linearIssueId, [...linearIssueIds]),
+        inArray(ralphRuns.trackerIssueId, [...trackerIssueIds]),
       ),
     )
     .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id));

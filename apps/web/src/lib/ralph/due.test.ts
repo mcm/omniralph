@@ -282,9 +282,9 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile schedule
   ) {
     const { run } = await createRun(db, {
       organizationId: options.organizationId ?? organizationId,
-      linearIssueId: `issue-${randomUUID()}`,
-      linearIdentifier: "TOOL-1",
-      linearAgentSessionId: `session-${randomUUID()}`,
+      trackerIssueId: `issue-${randomUUID()}`,
+      trackerIdentifier: "TOOL-1",
+      trackerSessionId: `session-${randomUUID()}`,
       kind: "children",
       repositoryId: null,
       status,

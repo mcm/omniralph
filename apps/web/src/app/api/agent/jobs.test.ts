@@ -1354,9 +1354,9 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
         .insert(ralphRuns)
         .values({
           organizationId: orgId,
-          linearIssueId: `issue-${randomUUID()}`,
-          linearIdentifier: "ENG-1",
-          linearAgentSessionId: `session-${randomUUID()}`,
+          trackerIssueId: `issue-${randomUUID()}`,
+          trackerIdentifier: "ENG-1",
+          trackerSessionId: `session-${randomUUID()}`,
           kind: "prd",
           repositoryId,
           status: "running",
@@ -1523,8 +1523,8 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
         .insert(triageRuns)
         .values({
           organizationId,
-          linearIssueId: "triage-gh",
-          linearAgentSessionId: "triage-gh-session",
+          trackerIssueId: "triage-gh",
+          trackerSessionId: "triage-gh-session",
           trigger: "label",
           status: "queued",
         })

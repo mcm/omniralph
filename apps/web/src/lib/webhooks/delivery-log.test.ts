@@ -237,9 +237,9 @@ describe.skipIf(!databaseAvailable)("webhook delivery log", () => {
     counter += 1;
     const { run } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: `issue-${counter}`,
-      linearIdentifier: `ENG-${counter}`,
-      linearAgentSessionId: `session-${counter}`,
+      trackerIssueId: `issue-${counter}`,
+      trackerIdentifier: `ENG-${counter}`,
+      trackerSessionId: `session-${counter}`,
       kind: "children",
       repositoryId,
       branch: `om/eng-${counter}`,
@@ -622,9 +622,9 @@ describe.skipIf(!databaseAvailable)("webhook delivery log", () => {
         if (event.kind !== "issue_delegated") return;
         const { run } = await createRun(db, {
           organizationId: orgId,
-          linearIssueId: event.issueId,
-          linearIdentifier: "TOOL-1",
-          linearAgentSessionId: event.sessionId,
+          trackerIssueId: event.issueId,
+          trackerIdentifier: "TOOL-1",
+          trackerSessionId: event.sessionId,
           kind: "children",
           repositoryId: githubRepo,
           branch: "om/tool-1",
@@ -659,8 +659,8 @@ describe.skipIf(!databaseAvailable)("webhook delivery log", () => {
     it("links a reply to its triage run", async () => {
       const { run: triage } = await createTriageRun(db, {
         organizationId: orgId,
-        linearIssueId: "issue-t",
-        linearAgentSessionId: "s-triage",
+        trackerIssueId: "issue-t",
+        trackerSessionId: "s-triage",
         trigger: "mention",
       });
       await sendLinear(

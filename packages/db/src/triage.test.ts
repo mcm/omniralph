@@ -57,8 +57,8 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
     session += 1;
     return {
       organizationId: orgId,
-      linearIssueId: "issue-1",
-      linearAgentSessionId: `session-${session}`,
+      trackerIssueId: "issue-1",
+      trackerSessionId: `session-${session}`,
       trigger: "mention",
       ...overrides,
     };
@@ -92,7 +92,7 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
     const input = runInput();
     const { run } = await createTriageRun(db, input);
     await setTriageRunStatus(db, run.id, "completed");
-    const again = await createTriageRun(db, { ...input, linearIssueId: "issue-2" });
+    const again = await createTriageRun(db, { ...input, trackerIssueId: "issue-2" });
     expect(again.created).toBe(false);
     expect(again.run.id).toBe(run.id);
     expect(await db.select().from(triageRuns)).toHaveLength(1);
@@ -130,9 +130,9 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
 
   it("tells which of the organization's issues have an active run, in one query", async () => {
     const { run } = await createTriageRun(db, runInput());
-    const { run: done } = await createTriageRun(db, runInput({ linearIssueId: "issue-2" }));
+    const { run: done } = await createTriageRun(db, runInput({ trackerIssueId: "issue-2" }));
     await setTriageRunStatus(db, done.id, "completed");
-    await createTriageRun(db, runInput({ organizationId: otherOrgId, linearIssueId: "issue-3" }));
+    await createTriageRun(db, runInput({ organizationId: otherOrgId, trackerIssueId: "issue-3" }));
 
     const ids = ["issue-1", "issue-2", "issue-3", "issue-4"];
     expect(await listActiveTriageIssueIds(db, orgId, ids)).toEqual(new Set(["issue-1"]));
@@ -149,7 +149,7 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
     const { run: first } = await createTriageRun(db, runInput());
     await setTriageRunStatus(db, first.id, "completed");
     const { run: second } = await createTriageRun(db, runInput());
-    await createTriageRun(db, runInput({ linearIssueId: "issue-2" }));
+    await createTriageRun(db, runInput({ trackerIssueId: "issue-2" }));
     await createTriageRun(db, runInput({ organizationId: otherOrgId }));
     expect((await listIssueTriageRuns(db, orgId, "issue-1")).map((r) => r.id)).toEqual([
       second.id,
@@ -176,9 +176,9 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
   });
 
   it("sets the session of a run created before it", async () => {
-    const { run } = await createTriageRun(db, runInput({ linearAgentSessionId: "pending:1" }));
+    const { run } = await createTriageRun(db, runInput({ trackerSessionId: "pending:1" }));
     const updated = await setTriageRunSession(db, run.id, "session-real");
-    expect(updated?.linearAgentSessionId).toBe("session-real");
+    expect(updated?.trackerSessionId).toBe("session-real");
     expect((await getTriageRunBySession(db, "session-real"))?.id).toBe(run.id);
     expect(await getTriageRunBySession(db, "pending:1")).toBeNull();
     expect(await setTriageRunSession(db, crypto.randomUUID(), "x")).toBeNull();
@@ -339,8 +339,8 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
     ).job;
 
   it("lists an organization's runs newest first with their jobs", async () => {
-    const { run: first } = await createTriageRun(db, runInput({ linearIssueId: "issue-a" }));
-    const { run: second } = await createTriageRun(db, runInput({ linearIssueId: "issue-b" }));
+    const { run: first } = await createTriageRun(db, runInput({ trackerIssueId: "issue-a" }));
+    const { run: second } = await createTriageRun(db, runInput({ trackerIssueId: "issue-b" }));
     await setTriageRunStatus(db, second.id, "completed");
     await createTriageRun(db, runInput({ organizationId: otherOrgId }));
     const job1 = await runJob(first.id);

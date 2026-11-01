@@ -14,7 +14,7 @@ import {
   getActiveRunByChatThread,
   getActiveRunJob,
   getRun,
-  isLinearRun,
+  isTrackerRun,
   listActiveRunJobIds,
   lockRun,
   type Database,
@@ -167,7 +167,7 @@ export async function sendGuidance(
   });
   if (!handled) return { status: "not_found" };
   if (handled.status === "finished") return handled;
-  if (isLinearRun(run)) {
+  if (isTrackerRun(run)) {
     await postActivity(conversationFor(run, deps), {
       type: "thought",
       body: `Guidance from ${author}:\n\n${quote(text)}`,

@@ -337,9 +337,9 @@ describe.skipIf(!databaseAvailable)("settings changes", () => {
           organizationId: org,
           repositoryId,
           kind: "children",
-          linearIssueId: `issue-${++n}`,
-          linearIdentifier: `ENG-${n}`,
-          linearAgentSessionId: `session-${n}`,
+          trackerIssueId: `issue-${++n}`,
+          trackerIdentifier: `ENG-${n}`,
+          trackerSessionId: `session-${n}`,
           status: "completed",
           createdAt,
         });
@@ -351,8 +351,8 @@ describe.skipIf(!databaseAvailable)("settings changes", () => {
       await epic(repoA, after);
       await db.insert(triageRuns).values({
         organizationId: org,
-        linearIssueId: "issue-t",
-        linearAgentSessionId: "session-t",
+        trackerIssueId: "issue-t",
+        trackerSessionId: "session-t",
         trigger: "label",
         status: "completed",
         createdAt: after,

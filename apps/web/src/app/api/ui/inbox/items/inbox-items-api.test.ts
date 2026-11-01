@@ -19,7 +19,7 @@ import {
   upsertStories,
   users,
   type Database,
-  type NewLinearRalphRunInput,
+  type NewTrackerRalphRunInput,
 } from "@omniralph/db";
 import {
   createTestDatabase,
@@ -189,15 +189,15 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
     state.dispatcher = new PostgresDispatcher({ db });
   });
 
-  async function newRun(overrides: Partial<NewLinearRalphRunInput> = {}) {
+  async function newRun(overrides: Partial<NewTrackerRalphRunInput> = {}) {
     session += 1;
     const { run } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: `issue-${session}`,
-      linearIdentifier: `ENG-${session}`,
-      linearTitle: `Epic ${session}`,
-      linearUrl: `https://linear.app/acme/issue/ENG-${session}/epic`,
-      linearAgentSessionId: `items-session-${session}`,
+      trackerIssueId: `issue-${session}`,
+      trackerIdentifier: `ENG-${session}`,
+      trackerTitle: `Epic ${session}`,
+      trackerUrl: `https://linear.app/acme/issue/ENG-${session}/epic`,
+      trackerSessionId: `items-session-${session}`,
       kind: "children",
       repositoryId: repoId,
       branch: `eng-${session}`,
@@ -225,13 +225,13 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
     });
     await linear.createBlocksRelation(manual.id, next.id);
     const run = await newRun({
-      linearIssueId: epic.id,
-      linearIdentifier: "ENG-50",
-      linearUrl: "https://linear.app/acme/issue/ENG-50/epic",
+      trackerIssueId: epic.id,
+      trackerIdentifier: "ENG-50",
+      trackerUrl: "https://linear.app/acme/issue/ENG-50/epic",
     });
     const [manualRow, nextRow] = await upsertStories(db, run.id, [
-      { linearIssueId: manual.id, identifier: "ENG-51", title: "Point DNS at the new host" },
-      { linearIssueId: next.id, identifier: "ENG-52", title: "Use the new host" },
+      { trackerIssueId: manual.id, identifier: "ENG-51", title: "Point DNS at the new host" },
+      { trackerIssueId: next.id, identifier: "ENG-52", title: "Use the new host" },
     ]);
     await updateStory(db, manualRow!.id, { status: "manual" });
     await updateRun(db, run.id, {
@@ -249,12 +249,12 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
     const epic = linear.add({ identifier: "ENG-60", title: "Epic", description: "Build it." });
     const open = linear.add({ identifier: "ENG-61", title: "Open", parentId: epic.id });
     const run = await newRun({
-      linearIssueId: epic.id,
-      linearIdentifier: "ENG-60",
-      linearUrl: "https://linear.app/acme/issue/ENG-60/epic",
+      trackerIssueId: epic.id,
+      trackerIdentifier: "ENG-60",
+      trackerUrl: "https://linear.app/acme/issue/ENG-60/epic",
     });
     await upsertStories(db, run.id, [
-      { linearIssueId: open.id, identifier: "ENG-61", title: "Open" },
+      { trackerIssueId: open.id, identifier: "ENG-61", title: "Open" },
     ]);
     await updateRun(db, run.id, { status: "stopped" });
     const current = (await getRun(db, run.id))!;
@@ -314,7 +314,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
       expect(more).toEqual([]);
       expect(job).toMatchObject({ type: "ralph.story", ralphStoryId: nextRow.id });
       expect(await getRun(db, run.id)).toMatchObject({ status: "running", waitingOn: null });
-      expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+      expect(linear.bodies(run.trackerSessionId, "thought")).toContain(
         "**ENG-51** was marked done from Omniralph by Mo Member.",
       );
       // The run's changes go on the organization's channel; nothing on the user's.
@@ -350,7 +350,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
       expect(await queuedJobs(run.id)).toEqual([
         expect.objectContaining({ type: "ralph.story", ralphStoryId: nextRow.id }),
       ]);
-      expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+      expect(linear.bodies(run.trackerSessionId, "thought")).toContain(
         "**ENG-51** was skipped from Omniralph by Mo Member: it's done without work.",
       );
     });
@@ -462,12 +462,12 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
     const outside = linear.add({ identifier: "OPS-2", title: "Outside" });
     await linear.createBlocksRelation(outside.id, epic.id);
     const run = await newRun({
-      linearIssueId: epic.id,
-      linearIdentifier: "ENG-70",
-      linearUrl: "https://linear.app/acme/issue/ENG-70/epic",
+      trackerIssueId: epic.id,
+      trackerIdentifier: "ENG-70",
+      trackerUrl: "https://linear.app/acme/issue/ENG-70/epic",
     });
     const [storyRow] = await upsertStories(db, run.id, [
-      { linearIssueId: story.id, identifier: "ENG-71", title: "Story" },
+      { trackerIssueId: story.id, identifier: "ENG-71", title: "Story" },
     ]);
     await updateRun(db, run.id, {
       status: "waiting",
@@ -492,7 +492,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
     expect(await queuedJobs(run.id)).toEqual([
       expect.objectContaining({ type: "ralph.story", ralphStoryId: storyRow!.id }),
     ]);
-    expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+    expect(linear.bodies(run.trackerSessionId, "thought")).toContain(
       "Started anyway from Omniralph by Mo Member: OK, I'll ignore the open blockers and start anyway.",
     );
     expect(messages).toContainEqual({
@@ -514,7 +514,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
     });
     expectRunChange(messages, run.id);
     expect(await getRun(db, run.id)).toMatchObject({ status: "running" });
-    expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+    expect(linear.bodies(run.trackerSessionId, "thought")).toContain(
       "Retried from Omniralph by Mo Member.",
     );
     expect(await act(key, { action: "resume" })).toMatchObject({

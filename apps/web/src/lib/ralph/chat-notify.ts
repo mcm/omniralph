@@ -25,9 +25,9 @@ export type NotifiedRun = Pick<
   | "origin"
   | "chatThreadId"
   | "repositoryId"
-  | "linearIdentifier"
-  | "linearTitle"
-  | "linearUrl"
+  | "trackerIdentifier"
+  | "trackerTitle"
+  | "trackerUrl"
 >;
 
 /** How long a sent notification is remembered (so a repeat isn't posted again). */
@@ -37,14 +37,14 @@ const MAX_ERROR_CHARS = 1_000;
 
 /** Whether the run is a Linear run whose chat thread gets notifications. */
 export function notifiesThread(run: Pick<RalphRun, "origin" | "chatThreadId">): boolean {
-  return run.origin === "linear" && run.chatThreadId !== null;
+  return run.origin === "tracker" && run.chatThreadId !== null;
 }
 
 /** The issue as a Markdown link (just its identifier without a URL). */
 function issueLink(run: NotifiedRun): string {
-  const identifier = run.linearIdentifier ?? "the issue";
-  const title = run.linearTitle ? ` ${run.linearTitle}` : "";
-  return run.linearUrl ? `[${identifier}${title}](${run.linearUrl})` : `${identifier}${title}`;
+  const identifier = run.trackerIdentifier ?? "the issue";
+  const title = run.trackerTitle ? ` ${run.trackerTitle}` : "";
+  return run.trackerUrl ? `[${identifier}${title}](${run.trackerUrl})` : `${identifier}${title}`;
 }
 
 /** The message posted for a notice. */
@@ -91,7 +91,7 @@ export async function notifyRunThread(
     const key = noticeKey(run, notice);
     if (!(await state.setIfNotExists(key, true, NOTICE_TTL_MS))) return false;
     const allowedHosts = [...target.allowedHosts];
-    if (run.linearUrl) allowedHosts.push(new URL(run.linearUrl).hostname);
+    if (run.trackerUrl) allowedHosts.push(new URL(run.trackerUrl).hostname);
     const markdown = sanitizeCapped(noticeText(run, notice), { allowedHosts }, MAX_BODY_CHARS);
     try {
       await target.send(() =>

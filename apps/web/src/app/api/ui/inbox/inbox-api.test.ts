@@ -97,11 +97,11 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
     await db.insert(ralphRuns).values({
       id,
       organizationId: state.orgId,
-      linearIssueId: `issue-${name}`,
-      linearIdentifier: `ENG-${Object.keys(ids).length}`,
-      linearTitle: `Epic ${name}`,
-      linearUrl: `https://linear.app/acme/issue/ENG-${Object.keys(ids).length}/epic`,
-      linearAgentSessionId: `session-${name}`,
+      trackerIssueId: `issue-${name}`,
+      trackerIdentifier: `ENG-${Object.keys(ids).length}`,
+      trackerTitle: `Epic ${name}`,
+      trackerUrl: `https://linear.app/acme/issue/ENG-${Object.keys(ids).length}/epic`,
+      trackerSessionId: `session-${name}`,
       kind: "children",
       repositoryId: repoId,
       status: "completed",
@@ -142,7 +142,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       .insert(ralphStories)
       .values({
         runId: ids.waiting!,
-        linearIssueId: "story-1",
+        trackerIssueId: "story-1",
         identifier: "ENG-11",
         title: "Point DNS at the new host",
         status: "manual",
@@ -236,8 +236,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
     await run("running", { status: "running", mode: "request" });
     await db.insert(triageRuns).values({
       organizationId: state.orgId,
-      linearIssueId: "triage-1",
-      linearAgentSessionId: "triage-session-1",
+      trackerIssueId: "triage-1",
+      trackerSessionId: "triage-session-1",
       trigger: "label",
       status: "queued",
     });
@@ -246,8 +246,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       .insert(triageRuns)
       .values({
         organizationId: state.orgId,
-        linearIssueId: "triage-prd",
-        linearAgentSessionId: "triage-session-prd",
+        trackerIssueId: "triage-prd",
+        trackerSessionId: "triage-session-prd",
         trigger: "label",
         status: "completed",
         lastResult: {
@@ -499,8 +499,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       .insert(triageRuns)
       .values({
         organizationId: state.orgId,
-        linearIssueId: "triage-host-tools",
-        linearAgentSessionId: "triage-session-host-tools",
+        trackerIssueId: "triage-host-tools",
+        trackerSessionId: "triage-session-host-tools",
         trigger: "label",
         status: "queued",
       })

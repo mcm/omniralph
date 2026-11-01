@@ -20,7 +20,7 @@ import {
   type Database,
   type Job,
   organizations,
-  type LinearRun,
+  type TrackerRun,
   ralphLanes,
 } from "@omniralph/db";
 import { teamIs, setRoutingRules } from "@/lib/routing/testing";
@@ -233,7 +233,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
 
   /** A finished epic (ENG-1) whose PR #1 is open at `sha(1)`. */
   async function epicWithPullRequest(): Promise<{
-    run: LinearRun;
+    run: TrackerRun;
     branch: string;
     epicId: string;
   }> {
@@ -293,13 +293,13 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
       { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
     );
 
-  const reply = (run: LinearRun, body: string) =>
-    handleReply({ kind: "session_prompted", sessionId: run.linearAgentSessionId, body }, deps());
+  const reply = (run: TrackerRun, body: string) =>
+    handleReply({ kind: "session_prompted", sessionId: run.trackerSessionId, body }, deps());
 
-  const responses = (run: LinearRun) => tracker.bodies(run.linearAgentSessionId, "response");
-  const selects = (run: LinearRun) =>
+  const responses = (run: TrackerRun) => tracker.bodies(run.trackerSessionId, "response");
+  const selects = (run: TrackerRun) =>
     tracker.activities.filter(
-      (a) => a.sessionId === run.linearAgentSessionId && a.options?.signal === "select",
+      (a) => a.sessionId === run.trackerSessionId && a.options?.signal === "select",
     );
   const optionsOf = (a: ReturnType<typeof selects>[number] | undefined) =>
     (a?.options?.signalMetadata?.options as Array<{ value: string }> | undefined)?.map(
@@ -307,7 +307,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     );
   const bodyOf = (a: ReturnType<typeof selects>[number] | undefined) =>
     a && "body" in a.content ? a.content.body : "";
-  const lane = async (run: LinearRun) => (await getMainLane(db, run))!;
+  const lane = async (run: TrackerRun) => (await getMainLane(db, run))!;
 
   /** A merged epic whose cleanup job ran with `result`. */
   async function cleanedUp(result: Partial<RalphCleanupResult> = {}) {
@@ -341,7 +341,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     expect(actionOf(job!)).toEqual({ kind: "cleanup", mergedSha: sha(1), stashes: [] });
     expect(RalphCleanupPayload.parse(job!.payload)).toMatchObject({
       branch,
-      epic: { identifier: run.linearIdentifier },
+      epic: { identifier: run.trackerIdentifier },
     });
     expect(await lane(run)).toMatchObject({
       prClosed: true,
@@ -739,9 +739,9 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     ).toBe(true);
     const ask = selects(run).at(-1);
     expect(bodyOf(ask)).toContain(
-      `1 stashed change from ${run.linearIdentifier} was never applied`,
+      `1 stashed change from ${run.trackerIdentifier} was never applied`,
     );
-    const stashBranch = `ralph/stash/${run.linearIdentifier.toLowerCase()}`;
+    const stashBranch = `ralph/stash/${run.trackerIdentifier.toLowerCase()}`;
     expect(bodyOf(ask)).toContain(`\`${stashBranch}\``);
     expect(optionsOf(ask)).toEqual(["Push to a branch on origin", "Drop"]);
     expect((await lane(run)).cleanup?.questions).toMatchObject([
@@ -786,14 +786,14 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
       ],
     });
     expect(bodyOf(selects(run).at(-1))).toContain(
-      `2 stashed changes from ${run.linearIdentifier} were never applied`,
+      `2 stashed changes from ${run.trackerIdentifier} were never applied`,
     );
 
     await reply(run, "drop");
     const answer = (await cleanupJobs(run.id)).at(-1)!;
     expect(actionOf(answer)).toEqual({ kind: "stashes", push: false, shas: [stash, blocked] });
     await finish(await start(run.id, "worktree.cleanup"), cleanupResult({ handled: 2 }));
-    expect(responses(run).at(-1)).toBe(`Dropped 2 stashed changes from ${run.linearIdentifier}.`);
+    expect(responses(run).at(-1)).toBe(`Dropped 2 stashed changes from ${run.trackerIdentifier}.`);
   });
 
   it("removes the worktree of a branch with unmerged commits, keeps the branch, and pushes it when told to", async () => {
@@ -871,7 +871,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     expect(actionOf((await cleanupJobs(run.id)).at(-1)!)).toMatchObject({ kind: "stashes" });
     // While an answer is carried out, another one for the same branch waits.
     expect(await reply(run, "Push to origin")).toEqual({ kind: "cleanup_answer" });
-    expect(tracker.bodies(run.linearAgentSessionId, "response").at(-1)).toContain(
+    expect(tracker.bodies(run.trackerSessionId, "response").at(-1)).toContain(
       "still carrying out the previous answer",
     );
     await finish(await start(run.id, "worktree.cleanup"), cleanupResult({ handled: 1 }));

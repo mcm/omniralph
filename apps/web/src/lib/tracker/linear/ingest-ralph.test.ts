@@ -5,10 +5,10 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createMockAdapter, createMockState } from "@chat-adapter/tests";
 import {
-  chatLinearDelegations,
+  chatTrackerDelegations,
   closeDb,
   connectRepository,
-  createChatLinearDelegation,
+  createChatTrackerDelegation,
   createDb,
   ensureChatThread,
   getRunBySession,
@@ -220,10 +220,10 @@ describe.skipIf(!testDatabaseAvailable())("starting ralph runs through the Linea
       startedByExternalUserId: "D-ADA",
     }))!;
     const issue = linear.add({ identifier: "ENG-110", title: "From chat" });
-    await createChatLinearDelegation(db, {
+    await createChatTrackerDelegation(db, {
       organizationId: orgId,
       threadId: thread.id,
-      linearIssueId: issue.id,
+      trackerIssueId: issue.id,
     });
     const adapter = createMockAdapter("discord");
     const chat = {
@@ -263,12 +263,12 @@ describe.skipIf(!testDatabaseAvailable())("starting ralph runs through the Linea
     );
 
     expect(await getRunBySession(db, "session-from-chat")).toMatchObject({
-      origin: "linear",
-      linearIssueId: issue.id,
+      origin: "tracker",
+      trackerIssueId: issue.id,
       chatThreadId: thread.id,
       status: "running",
     });
-    expect(await db.select().from(chatLinearDelegations)).toEqual([]);
+    expect(await db.select().from(chatTrackerDelegations)).toEqual([]);
     expect(adapter.postMessage).toHaveBeenCalledOnce();
     expect(adapter.postMessage).toHaveBeenCalledWith("discord:G-webhook:CH1:TH1", {
       markdown: expect.stringContaining("🚀 Omniralph started building [ENG-110 From chat]"),

@@ -20,7 +20,7 @@ import {
   upsertScmConnection,
   upsertStories,
   type Database,
-  type NewLinearRalphRunInput,
+  type NewTrackerRalphRunInput,
 } from "@omniralph/db";
 import {
   createTestDatabase,
@@ -136,15 +136,15 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/runs/{id}/session", () => {
     state.orgId = orgId;
   });
 
-  async function newRun(overrides: Partial<NewLinearRalphRunInput> = {}) {
+  async function newRun(overrides: Partial<NewTrackerRalphRunInput> = {}) {
     session += 1;
     const { run } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: `issue-${session}`,
-      linearIdentifier: `ENG-${session}`,
-      linearTitle: `Epic ${session}`,
-      linearUrl: `https://linear.app/acme/issue/ENG-${session}/epic`,
-      linearAgentSessionId: `session-${session}`,
+      trackerIssueId: `issue-${session}`,
+      trackerIdentifier: `ENG-${session}`,
+      trackerTitle: `Epic ${session}`,
+      trackerUrl: `https://linear.app/acme/issue/ENG-${session}/epic`,
+      trackerSessionId: `session-${session}`,
       kind: "children",
       repositoryId: api,
       branch: `eng-${session}`,
@@ -188,7 +188,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/runs/{id}/session", () => {
       baseBranch: "main",
     });
     const [story] = await upsertStories(db, run.id, [
-      { linearIssueId: "s-1", identifier: "ENG-41", title: "Build the importer" },
+      { trackerIssueId: "s-1", identifier: "ENG-41", title: "Build the importer" },
     ]);
     await updateStory(db, story!.id, {
       recommendations: [

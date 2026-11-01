@@ -80,8 +80,8 @@ export async function continueRun(tx: RalphTransaction, run: RalphRun): Promise<
 }
 
 /** The note for a reply or retry on an old run while a newer one is under way. */
-export function newerRunMessage(run: Pick<RalphRun, "linearIdentifier" | "status">): string {
-  return `A newer run of **${run.linearIdentifier}** is under way, so this ${run.status} run stays ${run.status}. Reply in that run's session instead.`;
+export function newerRunMessage(run: Pick<RalphRun, "trackerIdentifier" | "status">): string {
+  return `A newer run of **${run.trackerIdentifier}** is under way, so this ${run.status} run stays ${run.status}. Reply in that run's session instead.`;
 }
 
 /** What to retry. */
@@ -179,9 +179,9 @@ async function retryStory(
         organizationId: run.organizationId,
         gateway: deps.tracker,
       });
-      const item = await tracker.get(story.linearIssueId);
+      const item = await tracker.get(story.trackerIssueId);
       if (item.state.category === "done" || item.state.category === "canceled") {
-        await tracker.setState(story.linearIssueId, "in_progress");
+        await tracker.setState(story.trackerIssueId, "in_progress");
       }
     } catch (error) {
       console.error(`Reopening ${story.identifier} failed`, error);
@@ -202,7 +202,7 @@ async function retryStory(
   const updated =
     (await updateRun(tx, run.id, {
       iterations: 0,
-      focusStoryId: story.linearIssueId,
+      focusStoryId: story.trackerIssueId,
       waitingOn: null,
       error: null,
     })) ?? resumed;

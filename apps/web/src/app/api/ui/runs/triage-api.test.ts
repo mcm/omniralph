@@ -123,8 +123,8 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/runs/{id}/triage", () => {
     session += 1;
     const { run } = await createTriageRun(db, {
       organizationId: orgId,
-      linearIssueId: `issue-${session}`,
-      linearAgentSessionId: `session-${session}`,
+      trackerIssueId: `issue-${session}`,
+      trackerSessionId: `session-${session}`,
       trigger: "label",
     });
     await db

@@ -238,8 +238,8 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
 
     const run = await withLane(await getRunBySession(db, event.sessionId));
     expect(run).toMatchObject({
-      linearIssueId: epic.id,
-      linearIdentifier: "ENG-1",
+      trackerIssueId: epic.id,
+      trackerIdentifier: "ENG-1",
       kind: "children",
       focusStoryId: null,
       repositoryId: repoId,
@@ -391,11 +391,11 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     const run = await withLane(await getRunBySession(db, event.sessionId));
     expect(run).toMatchObject({
       kind: "single",
-      linearIssueId: issue.id,
+      trackerIssueId: issue.id,
       branch: issue.branchName,
     });
     expect(
-      (await listStories(db, run!.id)).map((s) => [s.linearIssueId, s.identifier, s.status]),
+      (await listStories(db, run!.id)).map((s) => [s.trackerIssueId, s.identifier, s.status]),
     ).toEqual([[issue.id, "ENG-20", "running"]]);
     expect(tracker.issues.get(issue.id)?.stateType).toBe("started");
     expect(tracker.plan(event.sessionId)).toEqual([
@@ -415,9 +415,9 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     const event = created(issue.id);
     await startRun(event, deps());
     const run = await withLane(await getRunBySession(db, event.sessionId));
-    expect(run).toMatchObject({ kind: "single", linearIssueId: issue.id });
+    expect(run).toMatchObject({ kind: "single", trackerIssueId: issue.id });
     expect(
-      (await listStories(db, run!.id)).map((s) => [s.linearIssueId, s.identifier, s.status]),
+      (await listStories(db, run!.id)).map((s) => [s.trackerIssueId, s.identifier, s.status]),
     ).toEqual([[issue.id, "ENG-25", "running"]]);
     expect(tracker.issues.get(issue.id)?.stateType).toBe("started");
   });
@@ -434,7 +434,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     const event = created(epic.id);
     await startRun(event, deps());
     const run = await getRunBySession(db, event.sessionId);
-    expect(run).toMatchObject({ kind: "children", linearIssueId: epic.id });
+    expect(run).toMatchObject({ kind: "children", trackerIssueId: epic.id });
     expect((await listStories(db, run!.id)).map((s) => s.identifier)).toEqual(["ENG-36", "ENG-37"]);
   });
 
@@ -446,8 +446,8 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     await startRun(event, deps());
     const run = await getRunBySession(db, event.sessionId);
     expect(run).toMatchObject({
-      linearIssueId: epic.id,
-      linearIdentifier: "ENG-30",
+      trackerIssueId: epic.id,
+      trackerIdentifier: "ENG-30",
       kind: "children",
       focusStoryId: two.id,
     });

@@ -16,10 +16,10 @@ const linearRun = {
   organizationId: "org-1",
   repositoryId: null,
   requestJobId: null,
-  origin: "linear" as const,
-  linearIssueId: "issue-1",
-  linearIdentifier: "ENG-1",
-  linearAgentSessionId: "session-1",
+  origin: "tracker" as const,
+  trackerIssueId: "issue-1",
+  trackerIdentifier: "ENG-1",
+  trackerSessionId: "session-1",
   chatThreadId: null,
 };
 
@@ -30,9 +30,9 @@ const chatRun = {
   repositoryId: null,
   requestJobId: null,
   origin: "chat" as const,
-  linearIssueId: null,
-  linearIdentifier: null,
-  linearAgentSessionId: null,
+  trackerIssueId: null,
+  trackerIdentifier: null,
+  trackerSessionId: null,
   chatThreadId: null,
 };
 

@@ -8,9 +8,9 @@ import {
   chatWebMessages,
   closeDb,
   connectRepository,
-  createChatLinearIssueDraft,
+  createChatTrackerIssueDraft,
   createChatRequestDraft,
-  getChatLinearIssueDraft,
+  getChatTrackerIssueDraft,
   getChatRequestDraft,
   getJob,
   insertRunActivity,
@@ -641,7 +641,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/ask", () => {
 
     it("shows a Linear issue draft's card in its current state, and any other card as is", async () => {
       const thread = await chatOf("ada");
-      const draft = await createChatLinearIssueDraft(db, {
+      const draft = await createChatTrackerIssueDraft(db, {
         threadId: thread.id,
         requestedByUserId: "ada",
         requestedByExternalUserId: "ada",
@@ -661,7 +661,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/ask", () => {
         card,
         cardRef: webCardRef(card),
       }))!;
-      const expired = await createChatLinearIssueDraft(db, {
+      const expired = await createChatTrackerIssueDraft(db, {
         threadId: thread.id,
         requestedByUserId: "ada",
         requestedByExternalUserId: "ada",
@@ -696,7 +696,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/ask", () => {
       expect(messages[0]!.id).toBe(drafted.id);
       expect(messages.map((m) => m.card)).toEqual([
         {
-          kind: "linear_issue_draft",
+          kind: "tracker_issue_draft",
           draft: {
             id: draft.id,
             status: "pending",
@@ -716,7 +716,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/ask", () => {
           },
         },
         {
-          kind: "linear_issue_draft",
+          kind: "tracker_issue_draft",
           draft: expect.objectContaining({ id: expired.id, status: "expired", actions: [] }),
         },
         {
@@ -1064,7 +1064,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/ask", () => {
 
     /** A Linear issue draft of Ada's in `thread`, its card posted as the web adapter stores it. */
     async function linearCard(thread: ChatThread) {
-      const draft = await createChatLinearIssueDraft(db, {
+      const draft = await createChatTrackerIssueDraft(db, {
         threadId: thread.id,
         requestedByUserId: "ada",
         requestedByExternalUserId: "ada",
@@ -1162,7 +1162,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/ask", () => {
       const [issue] = [...linear.workspace.issues.values()];
       expect(issue).toMatchObject({ teamId: "team-1", title: "Fix the login bug" });
       expect(askCardActionResponseSchema.parse(response.body).message.card).toMatchObject({
-        kind: "linear_issue_draft",
+        kind: "tracker_issue_draft",
         draft: { status: "created", issue: { identifier: issue!.identifier }, actions: [] },
       });
 
@@ -1175,10 +1175,10 @@ describe.skipIf(!databaseAvailable)("/api/ui/ask", () => {
         }),
       );
       expect(askCardActionResponseSchema.parse(cancel.body).message.card).toMatchObject({
-        kind: "linear_issue_draft",
+        kind: "tracker_issue_draft",
         draft: { status: "cancelled", actions: [] },
       });
-      expect((await getChatLinearIssueDraft(db, cancelled.draft.id))!.status).toBe("cancelled");
+      expect((await getChatTrackerIssueDraft(db, cancelled.draft.id))!.status).toBe("cancelled");
       expect(linear.workspace.issues.size).toBe(1);
     });
 

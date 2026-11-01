@@ -64,41 +64,41 @@ export type RalphTransaction = Parameters<Parameters<Database["transaction"]>[0]
 /** The queries below run on the pool or inside a `lockRun` transaction. */
 type Executor = Database | RalphTransaction;
 
-/** A run's Linear fields, all set when it came from Linear (`ralph_runs_origin_check`). */
-type RunLinearFields = Pick<
+/** A run's tracker fields, all set when it came from a tracker (`ralph_runs_origin_check`). */
+type RunTrackerFields = Pick<
   RalphRun,
-  "origin" | "linearIssueId" | "linearIdentifier" | "linearAgentSessionId"
+  "origin" | "trackerIssueId" | "trackerIdentifier" | "trackerSessionId"
 >;
 
-/** A run that came from Linear, with its issue and agent session. */
-export type LinearRun<T extends RunLinearFields = RalphRun> = T & {
-  origin: "linear";
-  linearIssueId: string;
-  linearIdentifier: string;
-  linearAgentSessionId: string;
+/** A run that came from a tracker, with its issue and agent session. */
+export type TrackerRun<T extends RunTrackerFields = RalphRun> = T & {
+  origin: "tracker";
+  trackerIssueId: string;
+  trackerIdentifier: string;
+  trackerSessionId: string;
 };
 
-/** Whether a run came from Linear (and so has its issue and agent session). */
-export function isLinearRun<T extends RunLinearFields>(run: T): run is LinearRun<T> {
+/** Whether a run came from a tracker (and so has its issue and agent session). */
+export function isTrackerRun<T extends RunTrackerFields>(run: T): run is TrackerRun<T> {
   return (
-    run.origin === "linear" &&
-    run.linearIssueId !== null &&
-    run.linearIdentifier !== null &&
-    run.linearAgentSessionId !== null
+    run.origin === "tracker" &&
+    run.trackerIssueId !== null &&
+    run.trackerIdentifier !== null &&
+    run.trackerSessionId !== null
   );
 }
 
 /**
  * How a run is referred to in job payloads, branch names and messages: its
- * Linear issue's identifier, or `chat-` and the start of its ID for a chat run.
+ * tracker issue's identifier, or `chat-` and the start of its ID for a chat run.
  */
-export function runReference(run: RunLinearFields & Pick<RalphRun, "id">): string {
-  return isLinearRun(run) ? run.linearIdentifier : `chat-${run.id.slice(0, 8)}`;
+export function runReference(run: RunTrackerFields & Pick<RalphRun, "id">): string {
+  return isTrackerRun(run) ? run.trackerIdentifier : `chat-${run.id.slice(0, 8)}`;
 }
 
-/** The Linear agent session of a run that came from Linear; null for a chat run. */
-export function linearSessionOf(run: RunLinearFields): string | null {
-  return isLinearRun(run) ? run.linearAgentSessionId : null;
+/** The agent session of a run that came from a tracker; null for a chat run. */
+export function trackerSessionOf(run: RunTrackerFields): string | null {
+  return isTrackerRun(run) ? run.trackerSessionId : null;
 }
 
 /** Runs that haven't finished; at most one per delegated issue. */
@@ -210,14 +210,16 @@ interface NewRalphRunBase {
   pendingElicitation?: RalphPendingElicitation | null;
 }
 
-/** A run delegated or mentioned in Linear (`origin` defaults to `linear`). */
-export interface NewLinearRalphRunInput extends NewRalphRunBase {
-  origin?: "linear";
-  linearIssueId: string;
-  linearIdentifier: string;
-  linearTitle?: string | null;
-  linearUrl?: string | null;
-  linearAgentSessionId: string;
+/** A run delegated or mentioned in a tracker (`origin` defaults to `tracker`). */
+export interface NewTrackerRalphRunInput extends NewRalphRunBase {
+  origin?: "tracker";
+  /** The tracker of the issue (default `linear`). */
+  trackerProvider?: RalphRun["trackerProvider"];
+  trackerIssueId: string;
+  trackerIdentifier: string;
+  trackerTitle?: string | null;
+  trackerUrl?: string | null;
+  trackerSessionId: string;
   kind: RalphRunKind;
   /** `request` for a mention (default `epic`). */
   mode?: RalphRunMode;
@@ -234,7 +236,7 @@ export interface NewChatRalphRunInput extends NewRalphRunBase {
   codingTaskId?: string | null;
 }
 
-export type NewRalphRunInput = NewLinearRalphRunInput | NewChatRalphRunInput;
+export type NewRalphRunInput = NewTrackerRalphRunInput | NewChatRalphRunInput;
 
 /**
  * Creates a `pending` run (and, given a repository and branch, its main lane),
@@ -262,7 +264,7 @@ export async function createRun(
           pendingElicitation: input.pendingElicitation,
           codingTaskId: input.codingTaskId ?? null,
         }
-      : { ...input, origin: "linear", focusStoryId: input.focusStoryId ?? null };
+      : { ...input, origin: "tracker", focusStoryId: input.focusStoryId ?? null };
   // A conflicting run can finish between the insert and the lookup; then insert again.
   for (let attempt = 0; attempt < 3; attempt++) {
     const row = await db.transaction(async (tx) => {
@@ -286,11 +288,11 @@ export async function createRun(
       }
       recordRunChange(tx, row);
       // The issue leaves the Backlog: it has a run now.
-      if (row.linearIssueId) {
+      if (row.trackerIssueId) {
         recordWorkItemChange(tx, {
           organizationId: row.organizationId,
-          tracker: "linear",
-          externalIds: [row.linearIssueId],
+          tracker: row.trackerProvider,
+          externalIds: [row.trackerIssueId],
         });
       }
       return row;
@@ -300,8 +302,8 @@ export async function createRun(
     const existing =
       input.origin === "chat"
         ? await getActiveRunByChatThread(db, input.chatThreadId)
-        : ((await getRunBySession(db, input.linearAgentSessionId)) ??
-          (await getRunByIssue(db, input.organizationId, input.linearIssueId, {
+        : ((await getRunBySession(db, input.trackerSessionId)) ??
+          (await getRunByIssue(db, input.organizationId, input.trackerIssueId, {
             activeOnly: true,
           })));
     if (existing) return { run: existing, created: false };
@@ -309,7 +311,7 @@ export async function createRun(
   throw new Error(
     input.origin === "chat"
       ? `Failed to create a ralph run for chat thread ${input.chatThreadId}`
-      : `Failed to create a ralph run for ${input.linearIdentifier}`,
+      : `Failed to create a ralph run for ${input.trackerIdentifier}`,
   );
 }
 
@@ -321,12 +323,12 @@ export async function getRun(db: Executor, id: string): Promise<RalphRun | null>
 /** The run of a Linear agent session, or null. */
 export async function getRunBySession(
   db: Executor,
-  linearAgentSessionId: string,
+  trackerSessionId: string,
 ): Promise<RalphRun | null> {
   const [row] = await db
     .select()
     .from(ralphRuns)
-    .where(eq(ralphRuns.linearAgentSessionId, linearAgentSessionId))
+    .where(eq(ralphRuns.trackerSessionId, trackerSessionId))
     .limit(1);
   return row ?? null;
 }
@@ -338,7 +340,7 @@ export async function getRunBySession(
 export async function getRunByIssue(
   db: Executor,
   organizationId: string,
-  linearIssueId: string,
+  trackerIssueId: string,
   options: { activeOnly?: boolean } = {},
 ): Promise<RalphRun | null> {
   const [row] = await db
@@ -347,7 +349,7 @@ export async function getRunByIssue(
     .where(
       and(
         eq(ralphRuns.organizationId, organizationId),
-        eq(ralphRuns.linearIssueId, linearIssueId),
+        eq(ralphRuns.trackerIssueId, trackerIssueId),
         options.activeOnly ? inArray(ralphRuns.status, ACTIVE_RALPH_RUN_STATUSES) : undefined,
       ),
     )
@@ -396,10 +398,10 @@ export async function getActiveRunByChatThread(
  */
 export async function getActiveRunOfSameOrigin(
   db: Executor,
-  run: RunLinearFields & Pick<RalphRun, "organizationId" | "chatThreadId">,
+  run: RunTrackerFields & Pick<RalphRun, "organizationId" | "chatThreadId">,
 ): Promise<RalphRun | null> {
-  if (isLinearRun(run)) {
-    return getRunByIssue(db, run.organizationId, run.linearIssueId, { activeOnly: true });
+  if (isTrackerRun(run)) {
+    return getRunByIssue(db, run.organizationId, run.trackerIssueId, { activeOnly: true });
   }
   return run.chatThreadId === null ? null : getActiveRunByChatThread(db, run.chatThreadId);
 }
@@ -433,7 +435,7 @@ export async function lockRun<T>(
 export type RalphRunUpdate = Partial<
   Omit<
     typeof ralphRuns.$inferInsert,
-    "id" | "linearIssueId" | "linearIdentifier" | "linearAgentSessionId" | "createdAt" | "updatedAt"
+    "id" | "trackerIssueId" | "trackerIdentifier" | "trackerSessionId" | "createdAt" | "updatedAt"
   >
 >;
 
@@ -521,7 +523,7 @@ export interface RalphRunListFilter {
   status?: RalphRunStatus | readonly RalphRunStatus[];
   repositoryId?: string;
   /** Only runs of this Linear issue (e.g. `ENG-42`). */
-  linearIdentifier?: string;
+  trackerIdentifier?: string;
   /** 1-based. */
   page?: number;
   pageSize?: number;
@@ -538,10 +540,10 @@ export interface RalphRunListEntry {
   id: string;
   origin: RalphRunOrigin;
   /** Null for chat runs. */
-  linearIssueId: string | null;
-  linearIdentifier: string | null;
-  linearTitle: string | null;
-  linearUrl: string | null;
+  trackerIssueId: string | null;
+  trackerIdentifier: string | null;
+  trackerTitle: string | null;
+  trackerUrl: string | null;
   kind: RalphRunKind;
   status: RalphRunStatus;
   /** The main lane's branch and PR/MR (null while the run has no repository). */
@@ -584,8 +586,8 @@ export async function listRuns(
   const page = Math.max(1, Math.floor(filter.page ?? 1));
   const conditions: SQL[] = [eq(ralphRuns.organizationId, organizationId)];
   if (filter.repositoryId) conditions.push(eq(ralphRuns.repositoryId, filter.repositoryId));
-  if (filter.linearIdentifier) {
-    conditions.push(eq(ralphRuns.linearIdentifier, filter.linearIdentifier));
+  if (filter.trackerIdentifier) {
+    conditions.push(eq(ralphRuns.trackerIdentifier, filter.trackerIdentifier));
   }
   if (typeof filter.status === "string") conditions.push(eq(ralphRuns.status, filter.status));
   else if (filter.status) conditions.push(inArray(ralphRuns.status, [...filter.status]));
@@ -597,10 +599,10 @@ export async function listRuns(
       .select({
         id: ralphRuns.id,
         origin: ralphRuns.origin,
-        linearIssueId: ralphRuns.linearIssueId,
-        linearIdentifier: ralphRuns.linearIdentifier,
-        linearTitle: ralphRuns.linearTitle,
-        linearUrl: ralphRuns.linearUrl,
+        trackerIssueId: ralphRuns.trackerIssueId,
+        trackerIdentifier: ralphRuns.trackerIdentifier,
+        trackerTitle: ralphRuns.trackerTitle,
+        trackerUrl: ralphRuns.trackerUrl,
         kind: ralphRuns.kind,
         status: ralphRuns.status,
         branch: ralphLanes.branch,
@@ -853,16 +855,16 @@ export async function listActiveRunJobIds(db: Executor, runId: string): Promise<
 }
 
 /**
- * The organization's unfinished runs an `Issue` webhook for `linearIssueId`
+ * The organization's unfinished runs an `Issue` webhook for `trackerIssueId`
  * may move: waiting runs whose `waiting_on` lists it, and runs that have it as
  * a story. Oldest first.
  */
 export async function listRunsAffectedByIssue(
   db: Executor,
   organizationId: string,
-  linearIssueId: string,
+  trackerIssueId: string,
 ): Promise<RalphRun[]> {
-  const ref = JSON.stringify([{ id: linearIssueId }]);
+  const ref = JSON.stringify([{ id: trackerIssueId }]);
   return db
     .select()
     .from(ralphRuns)
@@ -885,7 +887,7 @@ export async function listRunsAffectedByIssue(
               .where(
                 and(
                   eq(ralphStories.runId, ralphRuns.id),
-                  eq(ralphStories.linearIssueId, linearIssueId),
+                  eq(ralphStories.trackerIssueId, trackerIssueId),
                 ),
               ),
           ),
@@ -1414,7 +1416,7 @@ export async function moveToRepository(
 // ── Stories ──────────────────────────────────────────────────────────────────
 
 export interface RalphStoryInput {
-  linearIssueId: string;
+  trackerIssueId: string;
   identifier: string;
   title: string;
   /** The lane the story runs in (null: none yet). */
@@ -1446,7 +1448,7 @@ export async function upsertStories(
         })),
       )
       .onConflictDoUpdate({
-        target: [ralphStories.runId, ralphStories.linearIssueId],
+        target: [ralphStories.runId, ralphStories.trackerIssueId],
         set: {
           identifier: sql`excluded.identifier`,
           title: sql`excluded.title`,

@@ -117,9 +117,9 @@ describe.skipIf(!databaseAvailable)("GET /api/cron/prune-hidden-refs", () => {
     seq += 1;
     const { run } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: `issue-${seq}`,
-      linearIdentifier: `ENG-${seq}`,
-      linearAgentSessionId: `session-${seq}`,
+      trackerIssueId: `issue-${seq}`,
+      trackerIdentifier: `ENG-${seq}`,
+      trackerSessionId: `session-${seq}`,
       kind: "children",
       repositoryId: repoId,
       branch: `feat/eng-${seq}`,

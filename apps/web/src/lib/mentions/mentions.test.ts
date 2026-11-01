@@ -812,10 +812,10 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       runSeq += 1;
       const created = await createRun(db, {
         organizationId: orgId,
-        linearIssueId: `issue-ralph-${runSeq}`,
-        linearIdentifier: "ENG-1",
-        linearUrl: "https://linear.app/acme/issue/ENG-1",
-        linearAgentSessionId: `session-ralph-${runSeq}`,
+        trackerIssueId: `issue-ralph-${runSeq}`,
+        trackerIdentifier: "ENG-1",
+        trackerUrl: "https://linear.app/acme/issue/ENG-1",
+        trackerSessionId: `session-ralph-${runSeq}`,
         kind: "children",
         repositoryId: repoId,
         branch: "eng-1-epic",
@@ -865,7 +865,7 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       expect(state.scm.calls.postComment[0]!.body).toContain(
         "On it, @maintainer: I passed this to the coding task of [ENG-1](<https://linear.app/acme/issue/ENG-1>), which will work on it once its current step finishes",
       );
-      expect(state.linear.bodies(run.linearAgentSessionId, "thought")).toEqual([
+      expect(state.linear.bodies(run.trackerSessionId, "thought")).toEqual([
         "@maintainer asked for changes on the pull request. I'll work through it as soon as the current step finishes.",
       ]);
     });
@@ -993,7 +993,7 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
       expect(state.scm.calls.replyToComment[0]!.body).toContain(
         "I passed this to the coding task of [ENG-1]",
       );
-      expect(state.linear.bodies(run.linearAgentSessionId, "thought")).toEqual([
+      expect(state.linear.bodies(run.trackerSessionId, "thought")).toEqual([
         "@maintainer asked for changes on the pull request. I'll work through it as soon as the current step finishes.",
       ]);
     });

@@ -490,9 +490,9 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
           repositoryId: values.repositoryId === undefined ? repoId : values.repositoryId,
           kind: values.mode === "request" ? "single" : "children",
           mode: values.mode ?? "epic",
-          linearIssueId: `runs-issue-${++n}`,
-          linearIdentifier: `RUN-${n}`,
-          linearAgentSessionId: `runs-session-${n}`,
+          trackerIssueId: `runs-issue-${++n}`,
+          trackerIdentifier: `RUN-${n}`,
+          trackerSessionId: `runs-session-${n}`,
           status: "completed",
           createdAt,
         });
@@ -510,8 +510,8 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
       const triage = (createdAt: Date) =>
         db.insert(triageRuns).values({
           organizationId: runsOrgId,
-          linearIssueId: `runs-triage-${++n}`,
-          linearAgentSessionId: `runs-triage-session-${n}`,
+          trackerIssueId: `runs-triage-${++n}`,
+          trackerSessionId: `runs-triage-session-${n}`,
           trigger: "mention",
           status: "completed",
           createdAt,

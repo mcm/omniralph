@@ -199,13 +199,13 @@ async function inNewSessionIfFinished(
     ralph?.organizationId === organizationId
       ? {
           active: (ACTIVE_RALPH_RUN_STATUSES as readonly string[]).includes(ralph.status),
-          issueId: ralph.linearIssueId,
-          identifier: ralph.linearIdentifier,
+          issueId: ralph.trackerIssueId,
+          identifier: ralph.trackerIdentifier,
         }
       : triage?.organizationId === organizationId
         ? {
             active: (ACTIVE_TRIAGE_RUN_STATUSES as readonly string[]).includes(triage.status),
-            issueId: triage.linearIssueId,
+            issueId: triage.trackerIssueId,
             identifier: null,
           }
         : null;

@@ -131,9 +131,9 @@ describe.skipIf(!databaseAvailable)("POST /api/agent/jobs/{id}/activities", () =
   async function newRun() {
     const { run } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: randomUUID(),
-      linearIdentifier: "TOOL-32",
-      linearAgentSessionId: `session-${randomUUID()}`,
+      trackerIssueId: randomUUID(),
+      trackerIdentifier: "TOOL-32",
+      trackerSessionId: `session-${randomUUID()}`,
       kind: "children",
       repositoryId,
       branch: "feat/tool-32",
@@ -189,12 +189,12 @@ describe.skipIf(!databaseAvailable)("POST /api/agent/jobs/{id}/activities", () =
 
     expect(state.linear.activities).toEqual([
       {
-        sessionId: run.linearAgentSessionId,
+        sessionId: run.trackerSessionId,
         content: { type: "thought", body: "Reading the PRD." },
         options: { ephemeral: false },
       },
       {
-        sessionId: run.linearAgentSessionId,
+        sessionId: run.trackerSessionId,
         content: { type: "action", action: "Bash", parameter: "pnpm test" },
         options: { ephemeral: true },
       },

@@ -113,7 +113,7 @@ export async function offerPreparation(
   const commands = next.preparation ?? [];
   // It's prepared in its lane's worktree: that lane's commits and last reported HEAD.
   const main = await getMainLane(tx, run);
-  const row = input.rows.find((r) => r.linearIssueId === storyIdOf(next));
+  const row = input.rows.find((r) => r.trackerIssueId === storyIdOf(next));
   const lane = (row?.laneId ? await getLane(tx, row.laneId) : null) ?? main;
   const laneId = lane && lane.id !== main?.id ? lane.id : null;
   const headSha = await knownBranchHead(

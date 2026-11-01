@@ -173,8 +173,8 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     const sessionId = `apply-session-${sessionSeq}`;
     const { run } = await createTriageRun(db, {
       organizationId: orgId,
-      linearIssueId: issue.id,
-      linearAgentSessionId: sessionId,
+      trackerIssueId: issue.id,
+      trackerSessionId: sessionId,
       trigger: "mention",
     });
     const payload: RunSpecJobPayload = {

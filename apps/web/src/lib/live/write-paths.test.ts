@@ -150,11 +150,11 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
     issue += 1;
     const { run } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: `issue-${issue}`,
-      linearIdentifier: `SOC-${issue}`,
-      linearTitle: "Epic",
-      linearUrl: null,
-      linearAgentSessionId: `session-${issue}`,
+      trackerIssueId: `issue-${issue}`,
+      trackerIdentifier: `SOC-${issue}`,
+      trackerTitle: "Epic",
+      trackerUrl: null,
+      trackerSessionId: `session-${issue}`,
       kind: "children",
       repositoryId: repoId,
       branch: `branch-${issue}`,
@@ -197,7 +197,7 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
       expect(
         await published(async () => {
           const [story] = await upsertStories(db, runId, [
-            { linearIssueId: "story-1", identifier: "SOC-100", title: "Story" },
+            { trackerIssueId: "story-1", identifier: "SOC-100", title: "Story" },
           ]);
           storyId = story!.id;
         }),
@@ -345,8 +345,8 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
           runId = (
             await createTriageRun(db, {
               organizationId: orgId,
-              linearIssueId: "triage-issue",
-              linearAgentSessionId: "triage-session",
+              trackerIssueId: "triage-issue",
+              trackerSessionId: "triage-session",
               trigger: "mention",
             })
           ).run.id;

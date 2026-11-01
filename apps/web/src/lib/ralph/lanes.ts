@@ -64,7 +64,7 @@ export type StoryLanes = Map<string, { laneId: string | null; elsewhere: string 
 export async function routeStories(
   deps: Pick<RalphDeps, "db" | "adapterFor" | "tracker">,
   tx: RalphTransaction,
-  run: Pick<RalphRun, "id" | "organizationId" | "repositoryId" | "linearIdentifier">,
+  run: Pick<RalphRun, "id" | "organizationId" | "repositoryId" | "trackerIdentifier">,
   epic: Epic,
 ): Promise<StoryLanes> {
   const main = await getMainLane(tx, run);
@@ -129,7 +129,7 @@ export async function routeStories(
 async function laneIn(
   deps: Pick<RalphDeps, "db" | "adapterFor">,
   tx: RalphTransaction,
-  run: Pick<RalphRun, "id" | "linearIdentifier">,
+  run: Pick<RalphRun, "id" | "trackerIdentifier">,
   main: RalphLane,
   repositoryId: string,
 ): Promise<RalphLane | null> {
@@ -142,7 +142,7 @@ async function laneIn(
     return await ensureLane(tx, { runId: run.id, repositoryId, branch: main.branch, baseBranch });
   } catch (error) {
     console.error(
-      `Adding a lane of ${run.linearIdentifier} in repository ${repositoryId} failed`,
+      `Adding a lane of ${run.trackerIdentifier} in repository ${repositoryId} failed`,
       error,
     );
     return null;

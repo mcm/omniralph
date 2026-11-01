@@ -1,16 +1,16 @@
 import "server-only";
 import {
   appendChatMessage,
-  cancelChatLinearIssueDraft,
+  cancelChatTrackerIssueDraft,
   chatThreads,
-  claimChatLinearIssueDraft,
-  completeChatLinearIssueDraft,
-  createChatLinearDelegation,
-  expireChatLinearIssueDraft,
-  getChatLinearIssueDraft,
-  releaseChatLinearIssueDraft,
+  claimChatTrackerIssueDraft,
+  completeChatTrackerIssueDraft,
+  createChatTrackerDelegation,
+  expireChatTrackerIssueDraft,
+  getChatTrackerIssueDraft,
+  releaseChatTrackerIssueDraft,
   type ChatConnection,
-  type ChatLinearIssueDraft,
+  type ChatTrackerIssueDraft,
   type Database,
 } from "@omniralph/db";
 import {
@@ -76,7 +76,7 @@ export const CONNECT_TRACKER_TEXT = "Connect a tracker to file work items.";
 export const TRACKER_NOT_CONNECTED_REPLY = `This organization has no work item tracker connected anymore, so I can't create the issue. ${CONNECT_TRACKER_TEXT} An admin can connect one under Settings › Connections › Add connection in the control panel.`;
 
 type Draft = Pick<
-  ChatLinearIssueDraft,
+  ChatTrackerIssueDraft,
   | "id"
   | "teamKey"
   | "title"
@@ -85,8 +85,8 @@ type Draft = Pick<
   | "labels"
   | "priority"
   | "attachments"
-  | "linearIssueIdentifier"
-  | "linearIssueUrl"
+  | "trackerIssueIdentifier"
+  | "trackerIssueUrl"
 >;
 
 /** The draft's title as shown in chat (it's the model's text). */
@@ -162,7 +162,7 @@ export function createdCard(
   delegated = false,
   failedScreenshots: readonly string[] = [],
 ): CardElement {
-  const identifier = draft.linearIssueIdentifier ?? "the issue";
+  const identifier = draft.trackerIssueIdentifier ?? "the issue";
   const children: CardChild[] = [CardText(`Created ${identifier}: ${shownTitle(draft)}`)];
   if (failedScreenshots.length > 0) {
     children.push(CardText(`Couldn't attach: ${failedScreenshots.join(", ")}`));
@@ -172,9 +172,9 @@ export function createdCard(
       CardText("Delegated to Omniralph: I'll post here when it starts and when it finishes."),
     );
   }
-  if (draft.linearIssueUrl) {
+  if (draft.trackerIssueUrl) {
     children.push(
-      Actions([LinkButton({ label: `Open ${identifier}`, url: draft.linearIssueUrl })]),
+      Actions([LinkButton({ label: `Open ${identifier}`, url: draft.trackerIssueUrl })]),
     );
   }
   return Card({ title: `Created ${identifier}`, children });
@@ -199,7 +199,7 @@ export function expiredCard(draft: Draft): CardElement {
 }
 
 /** The card for a draft's current state. */
-export function cardFor(draft: ChatLinearIssueDraft): CardElement {
+export function cardFor(draft: ChatTrackerIssueDraft): CardElement {
   switch (draft.status) {
     case "created":
       return createdCard(draft);
@@ -215,7 +215,7 @@ export function cardFor(draft: ChatLinearIssueDraft): CardElement {
 
 /** What `chat_messages` records once the issue is created. */
 export function createdMessage(draft: Draft, delegated = false): string {
-  const created = `Created work item ${draft.linearIssueIdentifier}: ${draft.title} (${draft.linearIssueUrl})`;
+  const created = `Created work item ${draft.trackerIssueIdentifier}: ${draft.title} (${draft.trackerIssueUrl})`;
   return delegated ? `${created}, and delegated it to Omniralph.` : created;
 }
 
@@ -228,14 +228,14 @@ export function createdMessage(draft: Draft, delegated = false): string {
 export async function delegateToRalph(
   db: Database,
   tracker: WorkItemTracker,
-  input: { organizationId: string; chatThreadId: string; linearIssueId: string },
+  input: { organizationId: string; chatThreadId: string; trackerIssueId: string },
 ): Promise<void> {
-  await createChatLinearDelegation(db, {
+  await createChatTrackerDelegation(db, {
     organizationId: input.organizationId,
     threadId: input.chatThreadId,
-    linearIssueId: input.linearIssueId,
+    trackerIssueId: input.trackerIssueId,
   });
-  await tracker.delegateToOmniralph(input.linearIssueId);
+  await tracker.delegateToOmniralph(input.trackerIssueId);
 }
 
 /**
@@ -245,7 +245,7 @@ export async function delegateToRalph(
  */
 export async function loadScreenshots(
   fetchData: FetchAttachment,
-  attachments: ChatLinearIssueDraft["attachments"],
+  attachments: ChatTrackerIssueDraft["attachments"],
   limits: ChatAttachmentLimits = CHAT_ATTACHMENT_LIMITS,
   logger: Pick<Logger, "warn"> = console,
 ): Promise<{ images: WorkItemImage[]; failed: string[] }> {
@@ -301,7 +301,7 @@ export async function handleIssueDraftAction(
   const now = deps.now?.() ?? new Date();
   const draftId = event.value;
   if (!draftId || !/^[0-9a-f-]{36}$/i.test(draftId)) return;
-  const draft = await getChatLinearIssueDraft(db, draftId);
+  const draft = await getChatTrackerIssueDraft(db, draftId);
   if (!draft) return;
   const [chatThread] = await db
     .select()
@@ -340,7 +340,7 @@ export async function handleIssueDraftAction(
   }
 
   if (draft.status === "pending" && draft.expiresAt <= now) {
-    const expired = await expireChatLinearIssueDraft(db, draft.id, now);
+    const expired = await expireChatTrackerIssueDraft(db, draft.id, now);
     await show(expiredCard(expired ?? draft));
     if (expired)
       await record(`The work item draft "${draft.title}" expired before it was created.`);
@@ -348,7 +348,7 @@ export async function handleIssueDraftAction(
   }
 
   if (event.actionId === CANCEL_ISSUE_ACTION) {
-    const cancelled = await cancelChatLinearIssueDraft(db, draft.id);
+    const cancelled = await cancelChatTrackerIssueDraft(db, draft.id);
     if (!cancelled) {
       // Already handled (e.g. a double click): show where it stands.
       await show(cardFor(draft));
@@ -361,12 +361,12 @@ export async function handleIssueDraftAction(
 
   const delegate = event.actionId === CREATE_AND_DELEGATE_ISSUE_ACTION;
   if (event.actionId !== CREATE_ISSUE_ACTION && !delegate) return;
-  const claimed = await claimChatLinearIssueDraft(db, draft.id, now);
+  const claimed = await claimChatTrackerIssueDraft(db, draft.id, now);
   if (!claimed) {
     if (draft.status !== "creating") await show(cardFor(draft));
     return;
   }
-  let created: ChatLinearIssueDraft | null;
+  let created: ChatTrackerIssueDraft | null;
   let tracker: WorkItemTracker;
   let failedScreenshots: string[] = [];
   try {
@@ -389,9 +389,9 @@ export async function handleIssueDraftAction(
       ...(screenshots.images.length > 0 && { images: screenshots.images }),
     });
     failedScreenshots = [...screenshots.failed, ...(item.failedImages ?? [])];
-    created = await completeChatLinearIssueDraft(db, claimed.id, item);
+    created = await completeChatTrackerIssueDraft(db, claimed.id, item);
   } catch (error) {
-    await releaseChatLinearIssueDraft(db, claimed.id);
+    await releaseChatTrackerIssueDraft(db, claimed.id);
     if (error instanceof TrackerNotConnectedError) {
       await tell(TRACKER_NOT_CONNECTED_REPLY);
       return;
@@ -402,12 +402,12 @@ export async function handleIssueDraftAction(
   }
   if (!created) return;
   let delegated = false;
-  if (delegate && created.linearIssueId) {
+  if (delegate && created.trackerIssueId) {
     try {
       await delegateToRalph(db, tracker, {
         organizationId: chatThread.organizationId,
         chatThreadId: chatThread.id,
-        linearIssueId: created.linearIssueId,
+        trackerIssueId: created.trackerIssueId,
       });
       delegated = true;
     } catch (error) {

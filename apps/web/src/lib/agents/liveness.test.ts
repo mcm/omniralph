@@ -295,8 +295,8 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("agent liveness", () => {
         .insert(triageRuns)
         .values({
           organizationId: org!.id,
-          linearIssueId: "triage-gh",
-          linearAgentSessionId: "triage-gh-session",
+          trackerIssueId: "triage-gh",
+          trackerSessionId: "triage-gh-session",
           trigger: "label",
           status: "queued",
         })

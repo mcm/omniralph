@@ -134,9 +134,9 @@ describe.skipIf(!databaseAvailable)("run analytics queries", () => {
       return {
         id,
         organizationId,
-        linearIssueId: id,
-        linearIdentifier: "ENG-1",
-        linearAgentSessionId: id,
+        trackerIssueId: id,
+        trackerIdentifier: "ENG-1",
+        trackerSessionId: id,
         kind: "children" as const,
         mode,
         repositoryId,
@@ -154,7 +154,7 @@ describe.skipIf(!databaseAvailable)("run analytics queries", () => {
 
     const story = (runId: string, status: (typeof ralphStories.$inferInsert)["status"]) => {
       const id = randomUUID();
-      return { runId, linearIssueId: id, identifier: "ENG-2", title: "S", status, attempts: 1 };
+      return { runId, trackerIssueId: id, identifier: "ENG-2", title: "S", status, attempts: 1 };
     };
     await db
       .insert(ralphStories)
@@ -226,8 +226,8 @@ describe.skipIf(!databaseAvailable)("run analytics queries", () => {
       .insert(triageRuns)
       .values({
         organizationId: acme,
-        linearIssueId: "triage-issue",
-        linearAgentSessionId: "triage-session",
+        trackerIssueId: "triage-issue",
+        trackerSessionId: "triage-session",
         trigger: "mention",
         status: "completed",
         createdAt: new Date("2026-10-03T09:00:00Z"),

@@ -289,10 +289,10 @@ export async function loadEpic(
  */
 export async function reloadEpic(
   tracker: TrackerGateway,
-  run: { linearIssueId: string; kind: "children" | "prd" | "single"; mode?: "epic" | "request" },
+  run: { trackerIssueId: string; kind: "children" | "prd" | "single"; mode?: "epic" | "request" },
   options: LoadEpicOptions = {},
 ): Promise<Epic> {
-  const issue = await tracker.getIssue(run.linearIssueId);
+  const issue = await tracker.getIssue(run.trackerIssueId);
   if (run.kind === "single") return singleIssueEpic(epicIssue(issue));
   const children = await tracker.getChildren(issue.id);
   // A mention's PRD whose stories were never created: its PRD stories, for context.

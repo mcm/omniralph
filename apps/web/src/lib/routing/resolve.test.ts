@@ -85,9 +85,9 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
   const runOf = (issueId: string, identifier: string, repositoryId: string, routedBy: string) =>
     createRun(db, {
       organizationId: orgId,
-      linearIssueId: issueId,
-      linearIdentifier: identifier,
-      linearAgentSessionId: `session-${identifier}-${randomBytes(4).toString("hex")}`,
+      trackerIssueId: issueId,
+      trackerIdentifier: identifier,
+      trackerSessionId: `session-${identifier}-${randomBytes(4).toString("hex")}`,
       kind: "children",
       mode: "epic",
       repositoryId,
@@ -640,7 +640,7 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
       baseBranch: "main",
     });
     await upsertStories(db, run.id, [
-      { linearIssueId: story.id, identifier: "ENG-11", title: "Story", laneId: lane.id },
+      { trackerIssueId: story.id, identifier: "ENG-11", title: "Story", laneId: lane.id },
     ]);
     expect(await resolveRoute(deps(), task.id)).toMatchObject({
       repository: { id: web },
@@ -726,7 +726,7 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
         baseBranch: "main",
       });
       await upsertStories(db, run.id, [
-        { linearIssueId: story.id, identifier: "ENG-11", title: "Story", laneId: lane.id },
+        { trackerIssueId: story.id, identifier: "ENG-11", title: "Story", laneId: lane.id },
       ]);
       return { epic, story, followUp };
     };

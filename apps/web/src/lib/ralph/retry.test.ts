@@ -22,7 +22,7 @@ import {
   upsertScmConnection,
   type Database,
   type Job,
-  type LinearRun,
+  type TrackerRun,
 } from "@omniralph/db";
 import {
   createTestDatabase,
@@ -132,7 +132,7 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
   });
 
   /** A new agent session on `issueId`: a delegation, or a mention with `body`. */
-  async function session(issueId: string, body?: string): Promise<LinearRun> {
+  async function session(issueId: string, body?: string): Promise<TrackerRun> {
     sessionSeq += 1;
     const sessionId = `retry-session-${sessionSeq}`;
     await startRun(
@@ -230,10 +230,10 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
     });
   }
 
-  const retry = (run: LinearRun, target: RalphRetryTarget = { kind: "run" }) =>
+  const retry = (run: TrackerRun, target: RalphRetryTarget = { kind: "run" }) =>
     retryRalphRun(deps(), run.id, target, "Ada Admin");
 
-  const thoughts = (run: LinearRun) => tracker.bodies(run.linearAgentSessionId, "thought");
+  const thoughts = (run: TrackerRun) => tracker.bodies(run.trackerSessionId, "thought");
 
   const storyStates = async (runId: string) =>
     (await listStories(db, runId)).map((s) => [s.identifier, s.status, s.attempts]);

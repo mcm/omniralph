@@ -93,7 +93,7 @@ export type InboxReviewState =
 export type InboxFacts =
   | {
       kind: "manual_story";
-      story: { id: string; linearIssueId: string; identifier: string; title: string };
+      story: { id: string; trackerIssueId: string; identifier: string; title: string };
       /** Why it is manual although it isn't labelled so (it routes to a repo with coding off). */
       elsewhere: string | null;
     }
@@ -212,13 +212,13 @@ async function manualStories(db: Queryable, scope: Scope): Promise<InboxCandidat
     run_id: string;
     organization_id: string;
     story_id: string;
-    linear_issue_id: string;
+    tracker_issue_id: string;
     identifier: string;
     title: string;
     elsewhere: string | null;
     since: string;
   }>(sql`
-    select r.id as run_id, r.organization_id, s.id as story_id, s.linear_issue_id,
+    select r.id as run_id, r.organization_id, s.id as story_id, s.tracker_issue_id,
       s.identifier, s.title, s.elsewhere, ${iso("s.updated_at")} as since
     from ralph_stories s join ralph_runs r on r.id = s.run_id
     where r.organization_id in (${scope.orgs}) and r.mode = 'epic' and r.status = 'waiting'
@@ -233,7 +233,7 @@ async function manualStories(db: Queryable, scope: Scope): Promise<InboxCandidat
       kind: "manual_story",
       story: {
         id: row.story_id,
-        linearIssueId: row.linear_issue_id,
+        trackerIssueId: row.tracker_issue_id,
         identifier: row.identifier,
         title: row.title,
       },
@@ -512,12 +512,12 @@ async function readyPrds(db: Queryable, scope: Scope): Promise<InboxCandidate[]>
   const result = await db.execute<{
     id: string;
     organization_id: string;
-    linear_issue_id: string;
+    tracker_issue_id: string;
     job_id: string | null;
     outcome: "prd" | "reformat";
     since: string;
   }>(sql`
-    select t.id, t.organization_id, t.linear_issue_id, tj.id as job_id,
+    select t.id, t.organization_id, t.tracker_issue_id, tj.id as job_id,
       t.last_result -> 'outcome' ->> 'outcome' as outcome,
       ${iso("coalesce(tj.finished_at, t.updated_at)")} as since
     from triage_runs t
@@ -531,11 +531,11 @@ async function readyPrds(db: Queryable, scope: Scope): Promise<InboxCandidate[]>
       and coalesce(tj.finished_at, t.updated_at) >= ${scope.cutoff}::timestamptz
       and not exists (
         select 1 from ralph_runs r
-        where r.organization_id = t.organization_id and r.linear_issue_id = t.linear_issue_id
+        where r.organization_id = t.organization_id and r.tracker_issue_id = t.tracker_issue_id
           and r.created_at >= t.created_at)`);
   const issues = result.rows.map((row) => ({
     organizationId: row.organization_id,
-    linearIssueId: row.linear_issue_id,
+    trackerIssueId: row.tracker_issue_id,
   }));
   const sizes = await triageSizesOf(db, issues);
   return result.rows.map((row) => ({
@@ -552,7 +552,7 @@ async function readyPrds(db: Queryable, scope: Scope): Promise<InboxCandidate[]>
         sizes.get(
           triageIssueKey({
             organizationId: row.organization_id,
-            linearIssueId: row.linear_issue_id,
+            trackerIssueId: row.tracker_issue_id,
           }),
         ) ?? null,
     },

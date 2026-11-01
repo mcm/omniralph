@@ -186,7 +186,7 @@ export interface RalphRunDetailFacts {
   routedBy: string | null;
   error: string | null;
   waitingOn: RalphWaitingOn | null;
-  linearIssueUrl: string | null;
+  trackerIssueUrl: string | null;
   /**
    * In execution order: the stories that have run by their first attempt, then the rest in
    * their stored (sub-issue) order.
@@ -204,8 +204,8 @@ export async function getRalphRunDetailFacts(
       routed_by: string | null;
       error: string | null;
       waiting_on: RalphWaitingOn | null;
-      linear_url: string | null;
-    }>(sql`select r.routed_by, r.error, r.waiting_on, r.linear_url from ralph_runs r
+      tracker_url: string | null;
+    }>(sql`select r.routed_by, r.error, r.waiting_on, r.tracker_url from ralph_runs r
       where r.id = ${runId}::uuid`),
     db.execute<{
       id: string;
@@ -260,7 +260,7 @@ export async function getRalphRunDetailFacts(
     routedBy: run.routed_by,
     error: run.error,
     waitingOn: run.waiting_on,
-    linearIssueUrl: run.linear_url,
+    trackerIssueUrl: run.tracker_url,
     stories: stories.rows.map((s) => ({
       id: s.id,
       identifier: s.identifier,

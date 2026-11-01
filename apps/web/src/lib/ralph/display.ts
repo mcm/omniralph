@@ -59,11 +59,11 @@ export const CHAT_PLATFORM_NAMES: Record<RalphChatThreadRef["platform"], string>
 export interface RalphRunRow {
   id: string;
   /** Where the run came from: a Linear issue, or a chat thread. */
-  origin: "linear" | "chat";
+  origin: "tracker" | "chat";
   /** The Linear issue's (null for a chat run). */
-  linearIdentifier: string | null;
-  linearTitle: string | null;
-  linearUrl: string | null;
+  trackerIdentifier: string | null;
+  trackerTitle: string | null;
+  trackerUrl: string | null;
   /** A chat run's thread (null for a Linear run, or once the thread is gone). */
   chatThread: RalphChatThreadRef | null;
   /** Null while a person is asked which repository to use. */
@@ -243,9 +243,9 @@ export function chatChannelLabel(channelId: string): string {
  * platform and channel (`Slack C0123`), or `Ask` for a web chat's.
  */
 export function runSourceLabel(
-  run: Pick<RalphRunRow, "origin" | "linearIdentifier" | "chatThread">,
+  run: Pick<RalphRunRow, "origin" | "trackerIdentifier" | "chatThread">,
 ): string {
-  if (run.origin === "linear") return run.linearIdentifier ?? "Linear issue";
+  if (run.origin === "tracker") return run.trackerIdentifier ?? "Linear issue";
   if (!run.chatThread) return "Chat";
   const { platform, channelId } = run.chatThread;
   // A web chat's channel is its organization: nothing to show.
@@ -268,7 +268,7 @@ export function truncate(text: string, max: number): string {
  * run's own issue URL (`https://linear.app/<workspace>/issue/<ID>/…`); null
  * when that URL is unknown.
  */
-export function linearIssueUrl(runUrl: string | null, identifier: string): string | null {
+export function trackerIssueUrl(runUrl: string | null, identifier: string): string | null {
   const match = runUrl?.match(/^(https:\/\/linear\.app\/[^/]+)\/issue\//);
   return match ? `${match[1]}/issue/${identifier}` : null;
 }
@@ -315,7 +315,7 @@ export function ralphRunFailure(
     RalphRunDetailView,
     | "status"
     | "origin"
-    | "linearIdentifier"
+    | "trackerIdentifier"
     | "repository"
     | "stories"
     | "jobs"
@@ -352,7 +352,7 @@ export function ralphRunFailure(
   const restart =
     run.origin === "chat"
       ? "ask Omniralph again in the chat thread to start a new run"
-      : `delegate ${run.linearIdentifier ?? "the issue"} to Omniralph again in Linear to start a new run`;
+      : `delegate ${run.trackerIdentifier ?? "the issue"} to Omniralph again in Linear to start a new run`;
   const resume =
     run.status === "failed"
       ? `A failed run can't be resumed. ${fix}, then ${restart}: it picks up this run's branches, ${change}s, guidance and progress.`

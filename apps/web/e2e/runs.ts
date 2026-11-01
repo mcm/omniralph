@@ -34,8 +34,8 @@ export async function triageRun(db: Database, prefix: string, status: TriageRunS
   const title = `${prefix} ${key}`;
   const { run } = await createTriageRun(db, {
     organizationId,
-    linearIssueId: `e2e-issue-${key}`,
-    linearAgentSessionId: `e2e-session-${key}`,
+    trackerIssueId: `e2e-issue-${key}`,
+    trackerSessionId: `e2e-session-${key}`,
     trigger: "mention",
   });
   const { job } = await insertJob(db, {

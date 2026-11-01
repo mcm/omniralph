@@ -358,14 +358,14 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   const { db, tracker: gateway } = deps;
   const run = await currentRun(db, job);
   if (!run) return { status: "ignored" };
-  const sessionId = run.linearAgentSessionId;
+  const sessionId = run.trackerSessionId;
 
   const read = readTriageResult(job.result);
   if ("problem" in read) {
     const claimed = await finishTriageRunJob(db, run.id, job.id, "failed", read.result);
     if (!claimed) return { status: "ignored" };
     await failCompletedJob(db, job.id, read.problem);
-    await postActivity(trackerConversation(gateway, sessionId, run.linearIssueId), {
+    await postActivity(trackerConversation(gateway, sessionId, run.trackerIssueId), {
       type: "error",
       body: `Triage didn't produce a usable PRD, so I changed nothing in ${trackerName(gateway.provider)}: ${read.problem}. Mention me with \`/triage\` to try again.`,
     });
@@ -378,7 +378,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
 
   const fail = async (error: unknown): Promise<ApplyTriageOutcome> => {
     await setTriageRunStatus(db, run.id, "failed");
-    await postActivity(trackerConversation(gateway, sessionId, run.linearIssueId), {
+    await postActivity(trackerConversation(gateway, sessionId, run.trackerIssueId), {
       type: "error",
       body: `I couldn't apply the triage to ${trackerName(gateway.provider)}: ${errorMessage(error)}`,
     });
@@ -388,7 +388,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   let issue: IssueSummary;
   let children: IssueSummary[];
   try {
-    issue = await gateway.getIssue(run.linearIssueId);
+    issue = await gateway.getIssue(run.trackerIssueId);
     children = await gateway.getChildren(issue.id);
   } catch (error) {
     return fail(error);
@@ -398,7 +398,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   const locked = lockedIssues(issue, children);
   if (locked.length > 0) {
     await setTriageRunStatus(db, run.id, "stopped");
-    await postActivity(trackerConversation(gateway, sessionId, run.linearIssueId), {
+    await postActivity(trackerConversation(gateway, sessionId, run.trackerIssueId), {
       type: "response",
       body: lockedMessage(issue, locked, trackerName(gateway.provider)),
     });
@@ -481,7 +481,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
     { db, organizationId: run.organizationId, tracker: gateway },
     issue.id,
   );
-  await postActivity(trackerConversation(gateway, sessionId, run.linearIssueId), {
+  await postActivity(trackerConversation(gateway, sessionId, run.trackerIssueId), {
     type: "response",
     body: appliedMessage(issue, triage, created, readiness, notes, reformat ? children.length : 0),
   });
@@ -520,7 +520,7 @@ export async function onTriageJobStarted(
   let locked: string[];
   try {
     tracker = deps?.tracker ?? (await defaultDeps(db, run)).tracker;
-    issue = await tracker.getIssue(run.linearIssueId);
+    issue = await tracker.getIssue(run.trackerIssueId);
     locked = lockedIssues(issue, await tracker.getChildren(issue.id));
   } catch (error) {
     console.warn(`Re-checking the issue of triage job ${job.id} failed`, error);
@@ -529,11 +529,11 @@ export async function onTriageJobStarted(
   if (locked.length === 0) return { skip: false };
   if (!(await finishTriageRunJob(db, run.id, job.id, "stopped"))) return { skip: false };
   await skipJobAndClearDue(db, job, { reason: "The issue is in progress or done" });
-  await postActivity(trackerConversation(tracker, run.linearAgentSessionId, run.linearIssueId), {
+  await postActivity(trackerConversation(tracker, run.trackerSessionId, run.trackerIssueId), {
     type: "response",
     body: lockedMessage(issue, locked, trackerName(tracker.provider)),
   });
-  await removeTriageLabelQuietly(tracker, run.linearIssueId);
+  await removeTriageLabelQuietly(tracker, run.trackerIssueId);
   return { skip: true, reason: "skipped" };
 }
 
@@ -552,7 +552,7 @@ export async function onTriageJobCompleted(
     const applyDeps = deps ?? (await defaultDeps(db, run));
     const outcome = await applyTriageJob(applyDeps, job);
     if (outcome.status !== "ignored") {
-      await removeTriageLabelQuietly(applyDeps.tracker, run.linearIssueId);
+      await removeTriageLabelQuietly(applyDeps.tracker, run.trackerIssueId);
       await continueWithPendingReply(db, run.id, applyDeps);
     }
   } catch (error) {
@@ -581,7 +581,7 @@ export async function onTriageJobFinishedWithoutResult(
     const jobDeps = deps ?? (await defaultDeps(db, run));
     const { tracker } = jobDeps;
     await postActivity(
-      trackerConversation(tracker, run.linearAgentSessionId, run.linearIssueId),
+      trackerConversation(tracker, run.trackerSessionId, run.trackerIssueId),
       status === "failed"
         ? {
             type: "error",
@@ -592,7 +592,7 @@ export async function onTriageJobFinishedWithoutResult(
             body: `Triage was canceled. Nothing changed in ${trackerName(tracker.provider)}.`,
           },
     );
-    await removeTriageLabelQuietly(tracker, run.linearIssueId);
+    await removeTriageLabelQuietly(tracker, run.trackerIssueId);
     await continueWithPendingReply(db, run.id, jobDeps);
   } catch (err) {
     console.error(`Recording the end of triage job ${job.id} failed`, err);

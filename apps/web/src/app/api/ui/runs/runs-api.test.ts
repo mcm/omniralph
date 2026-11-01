@@ -45,8 +45,8 @@ import {
   type Database,
   organizations,
   settleReviewRun,
-  type LinearRun,
-  type NewLinearRalphRunInput,
+  type TrackerRun,
+  type NewTrackerRalphRunInput,
 } from "@omniralph/db";
 import {
   createTestDatabase,
@@ -279,15 +279,15 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     state.scm = null;
   });
 
-  async function newRun(overrides: Partial<NewLinearRalphRunInput> = {}) {
+  async function newRun(overrides: Partial<NewTrackerRalphRunInput> = {}) {
     session += 1;
     const { run } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: `issue-${session}`,
-      linearIdentifier: `ENG-${session}`,
-      linearTitle: `Epic ${session}`,
-      linearUrl: `https://linear.app/acme/issue/ENG-${session}/epic`,
-      linearAgentSessionId: `session-${session}`,
+      trackerIssueId: `issue-${session}`,
+      trackerIdentifier: `ENG-${session}`,
+      trackerTitle: `Epic ${session}`,
+      trackerUrl: `https://linear.app/acme/issue/ENG-${session}/epic`,
+      trackerSessionId: `session-${session}`,
       kind: "children",
       repositoryId: repoA,
       branch: `eng-${session}`,
@@ -335,8 +335,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       prUrl: "https://github.com/acme/api/pull/7",
     });
     const stories = await upsertStories(db, epic.id, [
-      { linearIssueId: "s-1", identifier: "ENG-11", title: "One" },
-      { linearIssueId: "s-2", identifier: "ENG-12", title: "Two" },
+      { trackerIssueId: "s-1", identifier: "ENG-11", title: "One" },
+      { trackerIssueId: "s-2", identifier: "ENG-12", title: "Two" },
     ]);
     await updateStory(db, stories[0]!.id, { status: "completed" });
     const { job: storyJob } = await insertJob(db, {
@@ -400,8 +400,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     // Triage: from the label, its job read the issue.
     const { run: triage } = await createTriageRun(db, {
       organizationId: orgId,
-      linearIssueId: "issue-triage",
-      linearAgentSessionId: "session-triage",
+      trackerIssueId: "issue-triage",
+      trackerSessionId: "session-triage",
       trigger: "label",
     });
     await db.update(triageRuns).set({ status: "running" }).where(eq(triageRuns.id, triage.id));
@@ -490,12 +490,12 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       status: "completed",
       origin: "linear",
       organization,
-      title: epic.linearTitle!,
+      title: epic.trackerTitle!,
       workItem: {
-        id: `linear-${epic.linearIssueId}`,
+        id: `linear-${epic.trackerIssueId}`,
         tracker: "linear",
-        identifier: epic.linearIdentifier,
-        url: epic.linearUrl,
+        identifier: epic.trackerIdentifier,
+        url: epic.trackerUrl,
       },
       repository: github,
       branch: (await getMainLane(db, epic))!.branch,
@@ -512,11 +512,11 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       kind: "request",
       status: "waiting",
       origin: "linear_mention",
-      title: request.linearTitle,
+      title: request.trackerTitle,
       workItem: {
-        id: `linear-${request.linearIssueId}`,
+        id: `linear-${request.trackerIssueId}`,
         tracker: "linear",
-        identifier: request.linearIdentifier,
+        identifier: request.trackerIdentifier,
       },
       repository: github,
       pullRequest: null,
@@ -582,7 +582,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     });
     // The detail carries the same reference: the work item's URL ID, or null without one.
     expect((await detailPage(epic.id)).workItem).toMatchObject({
-      id: `linear-${epic.linearIssueId}`,
+      id: `linear-${epic.trackerIssueId}`,
     });
     expect((await detailPage(triage.id)).workItem).toMatchObject({ id: "linear-issue-triage" });
     expect((await detailPage(chat.id)).workItem).toBeNull();
@@ -757,8 +757,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     const triage = (
       await createTriageRun(db, {
         organizationId: orgId,
-        linearIssueId: "issue-page",
-        linearAgentSessionId: "session-page",
+        trackerIssueId: "issue-page",
+        trackerSessionId: "session-page",
         trigger: "mention",
       })
     ).run;
@@ -825,10 +825,10 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
   it("lists an epic's stories in execution order: by first attempt, then the rest in order", async () => {
     const run = await newRun();
     const [first, second, third, fourth] = await upsertStories(db, run.id, [
-      { linearIssueId: "o-1", identifier: "ENG-51", title: "Planned first" },
-      { linearIssueId: "o-2", identifier: "ENG-52", title: "Planned second" },
-      { linearIssueId: "o-3", identifier: "ENG-53", title: "Planned third" },
-      { linearIssueId: "o-4", identifier: "ENG-54", title: "Planned fourth" },
+      { trackerIssueId: "o-1", identifier: "ENG-51", title: "Planned first" },
+      { trackerIssueId: "o-2", identifier: "ENG-52", title: "Planned second" },
+      { trackerIssueId: "o-3", identifier: "ENG-53", title: "Planned third" },
+      { trackerIssueId: "o-4", identifier: "ENG-54", title: "Planned fourth" },
     ]);
     // The third story ran first, then the first one (twice); the others haven't run.
     await attempt(
@@ -868,10 +868,10 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     });
     await updateLane(db, web.id, { prNumber: 4, prClosed: true, prMerged: true });
     const [built, retried, merged, manual] = await upsertStories(db, run.id, [
-      { linearIssueId: "e-1", identifier: "ENG-41", title: "Built", laneId: main.id },
-      { linearIssueId: "e-2", identifier: "ENG-42", title: "Retried", laneId: main.id },
-      { linearIssueId: "e-3", identifier: "ENG-43", title: "Web", laneId: web.id },
-      { linearIssueId: "e-4", identifier: "ENG-44", title: "By hand" },
+      { trackerIssueId: "e-1", identifier: "ENG-41", title: "Built", laneId: main.id },
+      { trackerIssueId: "e-2", identifier: "ENG-42", title: "Retried", laneId: main.id },
+      { trackerIssueId: "e-3", identifier: "ENG-43", title: "Web", laneId: web.id },
+      { trackerIssueId: "e-4", identifier: "ENG-44", title: "By hand" },
     ]);
     await updateStory(db, built!.id, { status: "completed", attempts: 1, commitSha: "abc123" });
     await updateStory(db, retried!.id, {
@@ -939,9 +939,9 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       status: "failed",
       // The work item's URL ID, for the run ⋯ menu's View PRD.
       workItem: {
-        id: `linear-${run.linearIssueId}`,
+        id: `linear-${run.trackerIssueId}`,
         tracker: "linear",
-        identifier: run.linearIdentifier,
+        identifier: run.trackerIdentifier,
       },
       organization: { id: orgId, name: "Acme", role: "admin" },
       progress: { done: 1, total: 4 },
@@ -1020,7 +1020,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       transcriptEvents: 0,
     });
     expect(view.attempts[0]!.label).toBe(
-      "Wrote the pull request description for " + run.linearIdentifier,
+      "Wrote the pull request description for " + run.trackerIdentifier,
     );
     for (const a of view.attempts) expect(a.label).not.toContain("ralph");
 
@@ -1251,14 +1251,14 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       {
         kind: "attempt",
         id: first.id,
-        label: `Worked on a request in ${run.linearIdentifier}`,
+        label: `Worked on a request in ${run.trackerIdentifier}`,
         status: "completed",
         durationMs: 120_000,
       },
       {
         kind: "attempt",
         id: second.id,
-        label: `Couldn't work on a request in ${run.linearIdentifier}`,
+        label: `Couldn't work on a request in ${run.trackerIdentifier}`,
         status: "canceled",
         durationMs: null,
       },
@@ -1590,10 +1590,10 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     expect((await transcript(randomUUID(), job.id)).status).toBe(404);
   });
 
-  async function runningRun(): Promise<{ run: LinearRun; jobId: string }> {
+  async function runningRun(): Promise<{ run: TrackerRun; jobId: string }> {
     const run = await newRun();
     const [story] = await upsertStories(db, run.id, [
-      { linearIssueId: "r-1", identifier: "ENG-31", title: "Story" },
+      { trackerIssueId: "r-1", identifier: "ENG-31", title: "Story" },
     ]);
     const { job } = await insertJob(db, {
       organizationId: orgId,
@@ -1613,10 +1613,10 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     expect((await getRun(db, run.id))!.status).toBe("stopped");
     expect((await getJob(db, jobId))!.status).toBe("canceled");
     expect((await listStories(db, run.id)).map((s) => s.status)).toEqual(["pending"]);
-    const [response] = linear.bodies(run.linearAgentSessionId, "response");
+    const [response] = linear.bodies(run.trackerSessionId, "response");
     expect(response).toContain("Stopped (requested by Ada Admin).");
     expect(response).toContain("I canceled the job that was running.");
-    expect(linear.plan(run.linearAgentSessionId)).toBeDefined();
+    expect(linear.plan(run.trackerSessionId)).toBeDefined();
 
     expect(await stopRalphRun(run.id)).toEqual({
       ok: false,
@@ -1639,13 +1639,13 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     state.user = null;
     expect((await stopRalphRun(run.id)).ok).toBe(false);
     expect((await getRun(db, run.id))!.status).toBe("running");
-    expect(linear.bodies(run.linearAgentSessionId, "response")).toEqual([]);
+    expect(linear.bodies(run.trackerSessionId, "response")).toEqual([]);
 
     state.user = { ...member, name: "Mo Member" };
     expect(await stopRalphRun(run.id)).toEqual({ ok: true });
     expect((await getRun(db, run.id))!.status).toBe("stopped");
     expect((await getJob(db, jobId))!.status).toBe("canceled");
-    expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+    expect(linear.bodies(run.trackerSessionId, "response")[0]).toContain(
       "Stopped (requested by Mo Member).",
     );
   });
@@ -1677,13 +1677,13 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       const open = linear.add({ identifier: "ENG-42", title: "Open", parentId: epic.id });
       await linear.setIssueState(built.id, { type: "completed" });
       const run = await newRun({
-        linearIssueId: epic.id,
-        linearIdentifier: "ENG-40",
-        linearUrl: "https://linear.app/acme/issue/ENG-40/epic",
+        trackerIssueId: epic.id,
+        trackerIdentifier: "ENG-40",
+        trackerUrl: "https://linear.app/acme/issue/ENG-40/epic",
       });
       const [builtRow, openRow] = await upsertStories(db, run.id, [
-        { linearIssueId: built.id, identifier: "ENG-41", title: "Built" },
-        { linearIssueId: open.id, identifier: "ENG-42", title: "Open" },
+        { trackerIssueId: built.id, identifier: "ENG-41", title: "Built" },
+        { trackerIssueId: open.id, identifier: "ENG-42", title: "Open" },
       ]);
       await updateStory(db, builtRow!.id, {
         status: "completed",
@@ -1712,7 +1712,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       const [job, ...more] = await queuedStoryJobs(run.id);
       expect(more).toEqual([]);
       expect(job).toMatchObject({ type: "ralph.story", ralphStoryId: open.id });
-      expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+      expect(linear.bodies(run.trackerSessionId, "thought")).toContain(
         "Retried from Omniralph by Mo Member.",
       );
       expect((await listStories(db, run.id)).find((s) => s.id === open.id)).toMatchObject({
@@ -1727,7 +1727,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         await retryRequest(run.id, { target: { kind: "story", storyId: open.id } }),
       ).toMatchObject({ status: 200, body: { status: "running" } });
       expect(await getRun(db, run.id)).toMatchObject({ focusStoryId: openIssue.id });
-      expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+      expect(linear.bodies(run.trackerSessionId, "thought")).toContain(
         "Retried **ENG-42** from Omniralph by Ada Admin.",
       );
 
@@ -1875,8 +1875,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       const run = await newRun({
         mode: "request",
         kind: "single",
-        linearIssueId: issue.id,
-        linearIdentifier: "ENG-50",
+        trackerIssueId: issue.id,
+        trackerIdentifier: "ENG-50",
       });
       const message = await insertMessage(db, {
         runId: run.id,
@@ -2106,8 +2106,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       session += 1;
       const { run } = await createTriageRun(db, {
         organizationId: orgId,
-        linearIssueId: issue.id,
-        linearAgentSessionId: `triage-session-${session}`,
+        trackerIssueId: issue.id,
+        trackerSessionId: `triage-session-${session}`,
         trigger: "mention",
       });
       const { job } = await insertJob(db, {
@@ -2155,7 +2155,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         expect(JSON.stringify(again!.payload)).toContain("Owners only.");
         const [row] = await db.select().from(triageRuns).where(eq(triageRuns.id, run.id));
         expect(row).toMatchObject({ status: "queued", currentJobId: again!.id });
-        expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+        expect(linear.bodies(run.trackerSessionId, "thought")).toContain(
           "Retried from Omniralph by Mo Member.",
         );
         // Now busy.

@@ -106,7 +106,7 @@ export function webCardRef(card: CardElement): ChatWebCardRef | null {
       return { kind: "request_draft", draftId: button.value };
     }
     if (ISSUE_DRAFT_ACTIONS.includes(button.id)) {
-      return { kind: "linear_issue_draft", draftId: button.value };
+      return { kind: "tracker_issue_draft", draftId: button.value };
     }
   }
   return null;

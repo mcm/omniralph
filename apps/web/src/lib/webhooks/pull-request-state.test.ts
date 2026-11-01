@@ -107,9 +107,9 @@ describe.skipIf(!databaseAvailable)("PR/MR review and merge state from webhooks"
     session += 1;
     const { run } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: `issue-${session}`,
-      linearIdentifier: `ENG-${session}`,
-      linearAgentSessionId: `session-${session}`,
+      trackerIssueId: `issue-${session}`,
+      trackerIdentifier: `ENG-${session}`,
+      trackerSessionId: `session-${session}`,
       kind: "children",
       repositoryId,
       branch: `om/eng-${session}`,

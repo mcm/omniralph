@@ -268,7 +268,7 @@ async function noteStoredAnswer(
   if (!triage) return;
   const tracker = () => getTrackerGatewayOrDisconnected({ db, organizationId: run.organizationId });
   await postActivity(
-    trackerConversation(tracker, triage.linearAgentSessionId, triage.linearIssueId),
+    trackerConversation(tracker, triage.trackerSessionId, triage.trackerIssueId),
     note,
   );
 }

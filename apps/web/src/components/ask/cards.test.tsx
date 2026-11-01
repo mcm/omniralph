@@ -351,7 +351,7 @@ describe("AskCard", () => {
     expect(screen.getByRole("button", { name: "Start request" })).toBeTruthy();
     rerender(
       <UiProvider linkComponent={RouterLink}>
-        <AskCard card={{ kind: "linear_issue_draft", draft: linearIssueDraft() }} />
+        <AskCard card={{ kind: "tracker_issue_draft", draft: linearIssueDraft() }} />
       </UiProvider>,
     );
     expect(screen.getByRole("button", { name: "Create and delegate" })).toBeTruthy();

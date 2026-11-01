@@ -65,10 +65,10 @@ describe.skipIf(!databaseAvailable)("search", () => {
       .insert(ralphRuns)
       .values({
         organizationId: values.organizationId ?? acme,
-        linearIssueId: `issue-${values.identifier}`,
-        linearIdentifier: values.identifier,
-        linearTitle: values.title,
-        linearAgentSessionId: `session-${randomUUID()}`,
+        trackerIssueId: `issue-${values.identifier}`,
+        trackerIdentifier: values.identifier,
+        trackerTitle: values.title,
+        trackerSessionId: `session-${randomUUID()}`,
         kind: "children",
         mode: "epic",
         repositoryId: values.repositoryId === undefined ? repo : values.repositoryId,

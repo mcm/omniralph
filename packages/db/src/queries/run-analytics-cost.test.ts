@@ -95,9 +95,9 @@ describe.skipIf(!databaseAvailable)("run analytics cost", () => {
     await db.insert(ralphRuns).values({
       id: runId,
       organizationId: acme,
-      linearIssueId: runId,
-      linearIdentifier: "ENG-1",
-      linearAgentSessionId: runId,
+      trackerIssueId: runId,
+      trackerIdentifier: "ENG-1",
+      trackerSessionId: runId,
       kind: "children",
       mode: "epic",
       repositoryId: repo,

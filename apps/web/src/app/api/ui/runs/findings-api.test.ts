@@ -267,11 +267,11 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/runs/{id}/findings", () => {
   it("answers 400 for other run kinds and 404 for runs outside the user's organizations", async () => {
     const { run: epic } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: "issue-1",
-      linearIdentifier: "ENG-1",
-      linearTitle: "Epic",
-      linearUrl: "https://linear.app/acme/issue/ENG-1/epic",
-      linearAgentSessionId: "session-1",
+      trackerIssueId: "issue-1",
+      trackerIdentifier: "ENG-1",
+      trackerTitle: "Epic",
+      trackerUrl: "https://linear.app/acme/issue/ENG-1/epic",
+      trackerSessionId: "session-1",
       kind: "children",
       repositoryId: repoId,
       branch: "eng-1",

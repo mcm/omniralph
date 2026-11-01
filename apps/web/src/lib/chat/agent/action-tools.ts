@@ -1,12 +1,12 @@
 import "server-only";
 import {
-  createChatLinearIssueDraft,
+  createChatTrackerIssueDraft,
   createChatRequestDraft,
   setChatRequestDraftMessage,
   getRun,
   latestThreadRun,
   lockRun,
-  setChatLinearIssueDraftMessage,
+  setChatTrackerIssueDraftMessage,
   type ChatMessageAttachment,
   type RalphRun,
 } from "@omniralph/db";
@@ -511,7 +511,7 @@ export const draftLinearIssue = defineChatTool({
         teams: teams.map((t) => ({ key: t.key, name: t.name })),
       };
     }
-    const draft = await createChatLinearIssueDraft(db, {
+    const draft = await createChatTrackerIssueDraft(db, {
       threadId: chatThread.id,
       requestedByUserId: actor.userId,
       requestedByExternalUserId: context.requesterExternalUserId,
@@ -526,7 +526,7 @@ export const draftLinearIssue = defineChatTool({
       expiresAt: new Date(Date.now() + ISSUE_DRAFT_TTL_MS),
     });
     const posted = await thread.post(draftCard(draft));
-    await setChatLinearIssueDraftMessage(db, draft.id, posted.id);
+    await setChatTrackerIssueDraftMessage(db, draft.id, posted.id);
     context.handedOff();
     return {
       status: "drafted",
@@ -572,7 +572,7 @@ export const delegateLinearIssue = defineChatTool({
       await delegateToRalph(db, tracker, {
         organizationId,
         chatThreadId: chatThread.id,
-        linearIssueId: issue.id,
+        trackerIssueId: issue.id,
       });
     } catch (error) {
       if (error instanceof TrackerNotConnectedError) return TRACKER_NOT_CONNECTED_RESULT;

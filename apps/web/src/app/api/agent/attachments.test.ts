@@ -122,9 +122,9 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/jobs/{id}/attachments/{attac
   async function newJob(listed: string[] = [ID], values: Partial<typeof jobs.$inferInsert> = {}) {
     const { run } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: randomUUID(),
-      linearIdentifier: "TOOL-32",
-      linearAgentSessionId: `session-${randomUUID()}`,
+      trackerIssueId: randomUUID(),
+      trackerIdentifier: "TOOL-32",
+      trackerSessionId: `session-${randomUUID()}`,
       kind: "children",
       repositoryId,
       branch: "feat/tool-32",

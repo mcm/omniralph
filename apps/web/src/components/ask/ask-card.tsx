@@ -15,7 +15,7 @@ export function AskCard({ card, ...actions }: AskCardProps) {
   switch (card.kind) {
     case "request_draft":
       return <RequestDraftCard key={card.draft.id} draft={card.draft} {...actions} />;
-    case "linear_issue_draft":
+    case "tracker_issue_draft":
       return <LinearIssueDraftCard draft={card.draft} {...actions} />;
     case "generic":
       return <GenericCard card={card} {...actions} />;

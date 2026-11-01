@@ -54,17 +54,14 @@ export async function retryTriageRun(
       break;
   }
   const { run } = taken;
-  await postActivity(
-    trackerConversation(deps.tracker, run.linearAgentSessionId, run.linearIssueId),
-    {
-      type: "thought",
-      body: retriedBy ? `Retried from Omniralph by ${retriedBy}.` : "Retried from Omniralph.",
-    },
-  );
+  await postActivity(trackerConversation(deps.tracker, run.trackerSessionId, run.trackerIssueId), {
+    type: "thought",
+    body: retriedBy ? `Retried from Omniralph by ${retriedBy}.` : "Retried from Omniralph.",
+  });
   const prepared = await prepareTriage(
     deps,
-    run.linearIssueId,
-    run.linearAgentSessionId,
+    run.trackerIssueId,
+    run.trackerSessionId,
     async (status) => {
       await setTriageRunStatus(deps.db, run.id, status);
     },

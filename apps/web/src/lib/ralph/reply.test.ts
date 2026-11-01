@@ -26,7 +26,7 @@ import {
   type Job,
   type RalphRun,
   organizations,
-  type LinearRun,
+  type TrackerRun,
 } from "@omniralph/db";
 import { projectIs, setRoutingRules, teamIs } from "@/lib/routing/testing";
 import { preparationHash } from "@omniralph/ralph";
@@ -152,14 +152,14 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     dispatcher = new PostgresDispatcher({ db });
   });
 
-  async function delegate(issueId: string): Promise<LinearRun> {
+  async function delegate(issueId: string): Promise<TrackerRun> {
     sessionSeq += 1;
     const sessionId = `reply-session-${sessionSeq}`;
     await startRun({ kind: "issue_delegated", sessionId, issueId }, deps());
     return linearRun((await getRunBySession(db, sessionId))!);
   }
 
-  const branchOf = async (run: LinearRun) => (await getMainLane(db, run))!.branch;
+  const branchOf = async (run: TrackerRun) => (await getMainLane(db, run))!.branch;
 
   const activeJobs = (runId: string) =>
     db
@@ -266,19 +266,19 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     return payload;
   }
 
-  const reply = (run: LinearRun, body: string, signal?: string): Promise<ReplyResult | null> =>
+  const reply = (run: TrackerRun, body: string, signal?: string): Promise<ReplyResult | null> =>
     handleReply(
       {
         kind: "session_prompted",
-        sessionId: run.linearAgentSessionId,
+        sessionId: run.trackerSessionId,
         body,
         ...(signal && { signal }),
       },
       deps(),
     );
 
-  const last = (run: LinearRun, type: "thought" | "response" | "elicitation" | "error") =>
-    tracker.bodies(run.linearAgentSessionId, type).at(-1) ?? "";
+  const last = (run: TrackerRun, type: "thought" | "response" | "elicitation" | "error") =>
+    tracker.bodies(run.trackerSessionId, type).at(-1) ?? "";
 
   const storyStates = async (runId: string) =>
     (await listStories(db, runId)).map((s) => [s.identifier, s.status, s.attempts]);
@@ -322,9 +322,9 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     return { epic, alpha, bucket, run };
   }
 
-  const selects = (run: LinearRun) =>
+  const selects = (run: TrackerRun) =>
     tracker.activities.filter(
-      (a) => a.sessionId === run.linearAgentSessionId && a.options?.signal === "select",
+      (a) => a.sessionId === run.trackerSessionId && a.options?.signal === "select",
     );
 
   /** Plays the run's queued `worktree.cleanup` system RPC (no start hook: it runs on a stopped run). */
@@ -368,7 +368,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     date: "2026-10-11T10:00:00Z",
   });
 
-  const laneCleanup = async (run: LinearRun) => (await getMainLane(db, run))!.cleanup;
+  const laneCleanup = async (run: TrackerRun) => (await getMainLane(db, run))!.cleanup;
 
   describe("stop", () => {
     it("stops the run and cancels its running job; guidance resumes it", async () => {
@@ -384,7 +384,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         ["ENG-3", "pending", 0],
       ]);
       expect(last(run, "response")).toMatch(/^Stopped\. I canceled the job that was running\./);
-      expect(tracker.plan(run.linearAgentSessionId)?.[0]).toMatchObject({ status: "pending" });
+      expect(tracker.plan(run.trackerSessionId)?.[0]).toMatchObject({ status: "pending" });
 
       // The worktree is cleaned up keeping the branch, once the canceled job is through.
       expect(await laneCleanup(run)).toMatchObject({
@@ -401,7 +401,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       const branch = await branchOf(run);
       const cleanup = await activeJob(run.id);
       expect(cleanup.targetAgentId).toBe(agentA);
-      const responses = tracker.bodies(run.linearAgentSessionId, "response").length;
+      const responses = tracker.bodies(run.trackerSessionId, "response").length;
       const cleaned = await cleanUp(run.id, { stashed: sha(7), stashes: [stashEntry(7)] });
       expect(cleaned).toMatchObject({
         branch,
@@ -412,7 +412,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       expect(await laneCleanup(run)).toMatchObject({ status: "done", keepBranch: "stopped" });
       // It asks nothing and says nothing; the stash is recorded on the lane.
       expect(selects(run)).toEqual([]);
-      expect(tracker.bodies(run.linearAgentSessionId, "response")).toHaveLength(responses);
+      expect(tracker.bodies(run.trackerSessionId, "response")).toHaveLength(responses);
       expect((await getMainLane(db, run))!.stashes).toMatchObject([
         { sha: sha(7), reason: "cleanup" },
       ]);
@@ -539,11 +539,11 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       twoStoryEpic();
       const run = await delegate("issue-1");
       const job = await start(run.id);
-      const thoughts = tracker.bodies(run.linearAgentSessionId, "thought").length;
+      const thoughts = tracker.bodies(run.trackerSessionId, "thought").length;
 
       expect(await reply(run, "Use a smallint column")).toEqual({ kind: "live" });
       // Nothing else happens yet: no note, no guidance, no advance.
-      expect(tracker.bodies(run.linearAgentSessionId, "thought")).toHaveLength(thoughts);
+      expect(tracker.bodies(run.trackerSessionId, "thought")).toHaveLength(thoughts);
       expect((await getRun(db, run.id))?.guidance).toEqual([]);
 
       const [message, ...more] = await heartbeat([job.id]);
@@ -560,13 +560,13 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       ]);
       // A repeated acknowledgement changes nothing.
       await heartbeat([job.id], { delivered: [message!.messageId] });
-      expect(tracker.bodies(run.linearAgentSessionId, "thought").slice(thoughts)).toEqual([
+      expect(tracker.bodies(run.trackerSessionId, "thought").slice(thoughts)).toEqual([
         "Passed this to Om while it's working.",
       ]);
 
       // Delivered live, so it isn't applied again; later stories still see it as guidance.
       await finish(job, { ...storyResult({ commitSha: sha(1) }) });
-      expect(tracker.bodies(run.linearAgentSessionId, "thought")).not.toContain(
+      expect(tracker.bodies(run.trackerSessionId, "thought")).not.toContain(
         "Got it. I'll apply this from the next story iteration, or handle it directly once the stories are done.",
       );
       const next = await work(run.id);
@@ -623,7 +623,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       await finish(job, { ...storyResult({ commitSha: sha(1) }) });
       expect(
         tracker
-          .bodies(run.linearAgentSessionId, "thought")
+          .bodies(run.trackerSessionId, "thought")
           .filter((b) => b.startsWith("Got it. I'll apply this from the next story iteration")),
       ).toHaveLength(2);
       expect(await heartbeat([job.id])).toEqual([]);
@@ -718,11 +718,11 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       expect(last(run, "thought")).toBe("Nobody answered in time, so I didn't use **Bash**.");
 
       // A session that ended before the deadline closes its question quietly.
-      const thoughts = tracker.bodies(run.linearAgentSessionId, "thought").length;
+      const thoughts = tracker.bodies(run.trackerSessionId, "thought").length;
       const early = await ask(job);
       await expirePermission(permissionDeps(), job, early.requestId);
       expect(await answerOf(run, job, early.requestId)).toMatchObject({ status: "expired" });
-      expect(tracker.bodies(run.linearAgentSessionId, "thought")).toHaveLength(thoughts);
+      expect(tracker.bodies(run.trackerSessionId, "thought")).toHaveLength(thoughts);
 
       const third = await ask(job);
       await finish(job, { ...storyResult({ commitSha: sha(1) }) });
@@ -802,7 +802,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       const result = await reply(run, "Please start anyway");
       expect(result).toMatchObject({ kind: "start_anyway", advanced: { action: "enqueued" } });
       expect(await getRun(db, run.id)).toMatchObject({ ignoreBlockers: true, status: "running" });
-      expect(tracker.bodies(run.linearAgentSessionId, "thought")).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "thought")).toContain(
         "OK, I'll ignore the open blockers and start anyway.",
       );
       expect((await getRun(db, run.id))?.guidance).toEqual([]);
@@ -811,7 +811,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
 
   describe("/continue", () => {
     /** A two-story epic whose run hit the iteration cap after Alpha. */
-    async function cappedRun(): Promise<LinearRun> {
+    async function cappedRun(): Promise<TrackerRun> {
       twoStoryEpic();
       const run = await delegate("issue-1");
       await updateRun(db, run.id, { iterations: MAX_ITERATIONS_PER_RUN });
@@ -827,7 +827,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       const result = await reply(run, " /continue ");
       expect(result).toMatchObject({ kind: "continue", advanced: { action: "enqueued" } });
       expect(await getRun(db, run.id)).toMatchObject({ iterations: 1, guidance: [] });
-      expect(tracker.bodies(run.linearAgentSessionId, "thought")).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "thought")).toContain(
         "OK, continuing with a fresh iteration budget.",
       );
       expect(await listPendingRequests(db, run.id)).toEqual([]);
@@ -870,7 +870,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         const waiting = (await getRun(db, run.id))!;
         expect(waiting).toMatchObject({ status: "waiting", preparation: null });
         expect(waiting.waitingOn?.manual.map((m) => m.identifier)).toEqual(["ENG-3"]);
-        const posted = tracker.bodies(run.linearAgentSessionId, "elicitation").join("\n");
+        const posted = tracker.bodies(run.trackerSessionId, "elicitation").join("\n");
         expect(posted).toContain("waiting on **ENG-3**");
         expect(posted).not.toContain("rerun preparation");
         expect(posted).not.toContain("terraform");
@@ -928,7 +928,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         approvedHeadSha: sha(7),
         story: { identifier: "ENG-3", title: "Create the bucket" },
       });
-      const posted = tracker.bodies(run.linearAgentSessionId, "thought");
+      const posted = tracker.bodies(run.trackerSessionId, "thought");
       const outcome = posted.find((b) => b.startsWith("Ran the preparation of **ENG-3**"))!;
       expect(outcome).toContain("`terraform init` (exit 0)");
       expect(outcome).toContain("The rest of ENG-3 is up to a person, who marks it done.");
@@ -1136,7 +1136,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       });
       expect(
         tracker
-          .bodies(run.linearAgentSessionId, "thought")
+          .bodies(run.trackerSessionId, "thought")
           .some((b) => b.startsWith("Ran the preparation of **ENG-3**")),
       ).toBe(true);
     });
@@ -1147,7 +1147,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       await reply(run, "Run it");
       await prepare(run.id, { status: "stale", commands: [], headSha: sha(9) });
 
-      expect(tracker.bodies(run.linearAgentSessionId, "thought")).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "thought")).toContain(
         `\`${await branchOf(run)}\` (now at \`${sha(9).slice(0, 10)}\`) changed since I asked about the preparation of **ENG-3**, so I ran nothing. Here it is again as it is now.`,
       );
       const asks = selects(run);
@@ -1166,7 +1166,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         commands: [{ command: "terraform init", exitCode: 1, output: "no credentials" }],
       });
       const failure = tracker
-        .bodies(run.linearAgentSessionId, "thought")
+        .bodies(run.trackerSessionId, "thought")
         .find((b) => b.startsWith("The preparation of **ENG-3** failed"))!;
       expect(failure).toContain("`terraform init` (exit 1)");
       expect(failure).toContain("no credentials");
@@ -1237,7 +1237,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     twoStoryEpic();
     const run = await delegate("issue-1");
     await handleTrackerEvent(
-      { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "", signal: "stop" },
+      { kind: "session_prompted", sessionId: run.trackerSessionId, body: "", signal: "stop" },
       { db, organizationId: orgId, workspaceId: "org-1" },
       { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
     );

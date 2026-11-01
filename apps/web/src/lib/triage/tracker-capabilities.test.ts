@@ -130,9 +130,9 @@ describe.skipIf(!databaseAvailable)("triage on a tracker without optional capabi
     });
 
     const [run] = await db.select().from(triageRuns);
-    expect(run).toMatchObject({ linearIssueId: issue.id, trigger: "label", status: "queued" });
+    expect(run).toMatchObject({ trackerIssueId: issue.id, trigger: "label", status: "queued" });
     // No session to open: the conversation lives in the item's comments.
-    expect(run!.linearAgentSessionId.startsWith(COMMENT_CONVERSATION_PREFIX)).toBe(true);
+    expect(run!.trackerSessionId.startsWith(COMMENT_CONVERSATION_PREFIX)).toBe(true);
     expect(tracker.sessionsCreated).toEqual([]);
     expect(await getJob(db, run!.currentJobId!)).toMatchObject({ type: "triage.run" });
     expect(commentsOn(issue.id)).toEqual([

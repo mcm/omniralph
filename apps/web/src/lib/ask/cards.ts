@@ -1,8 +1,8 @@
 import "server-only";
 import {
-  getChatLinearIssueDraft,
+  getChatTrackerIssueDraft,
   getChatRequestDraft,
-  type ChatLinearIssueDraft,
+  type ChatTrackerIssueDraft,
   type ChatThread,
   type ChatWebMessage,
   type Database,
@@ -55,7 +55,7 @@ export function genericCard(card: CardElement): AskCard {
 
 /** A Linear issue draft as its card shows it (expired once past `expiresAt`). */
 export function linearIssueDraftView(
-  draft: ChatLinearIssueDraft,
+  draft: ChatTrackerIssueDraft,
   now: Date = new Date(),
 ): AskLinearIssueDraft {
   const pending = draft.status === "pending" || draft.status === "creating";
@@ -72,8 +72,8 @@ export function linearIssueDraftView(
     priority: draft.priority === null ? null : (PRIORITY_NAMES[draft.priority] ?? null),
     description,
     screenshots: draft.attachments.map((a) => attachmentName(a)),
-    issue: draft.linearIssueIdentifier
-      ? { identifier: draft.linearIssueIdentifier, url: draft.linearIssueUrl }
+    issue: draft.trackerIssueIdentifier
+      ? { identifier: draft.trackerIssueIdentifier, url: draft.trackerIssueUrl }
       : null,
     actions:
       status === "pending"
@@ -113,12 +113,12 @@ export async function askCards(
           return;
         }
       }
-      if (row.cardRef?.kind === "linear_issue_draft") {
-        const draft = await getChatLinearIssueDraft(db, row.cardRef.draftId);
+      if (row.cardRef?.kind === "tracker_issue_draft") {
+        const draft = await getChatTrackerIssueDraft(db, row.cardRef.draftId);
         // A draft of another chat never shows here.
         if (draft && draft.threadId === thread.id) {
           cards.set(row.id, {
-            kind: "linear_issue_draft",
+            kind: "tracker_issue_draft",
             draft: linearIssueDraftView(draft, now),
           });
           return;

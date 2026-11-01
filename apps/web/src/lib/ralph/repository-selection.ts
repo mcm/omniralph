@@ -19,7 +19,7 @@ import {
   type RalphTransaction,
   type Repository,
   type ScmProvider,
-  isLinearRun,
+  isTrackerRun,
 } from "@omniralph/db";
 import { epicBranchName } from "@omniralph/ralph";
 import { conversationFor, type RunConversation } from "./conversation";
@@ -139,7 +139,7 @@ export async function answerRepositorySelection(
   text: string,
 ): Promise<RepositoryAnswer> {
   // A Linear elicitation: a chat run is given its repository when it starts.
-  if (!isLinearRun(run)) return { status: "ignored" };
+  if (!isTrackerRun(run)) return { status: "ignored" };
   const candidates = await selectionCandidates(deps, run, offered);
   const repository = matchSelection(text, candidates);
   if (!repository) {
@@ -154,7 +154,7 @@ export async function answerRepositorySelection(
   let baseBranch: string;
   let branch: string;
   try {
-    const issue = await deps.tracker.getIssue(run.linearIssueId);
+    const issue = await deps.tracker.getIssue(run.trackerIssueId);
     branch = epicBranchName(epicIssue(issue), run.kind === "single" ? null : undefined);
     const found = await getRepositoryWithConnection(deps.db, repository.id);
     if (!found) throw new Error(`repository ${repository.fullPath} is gone`);
@@ -188,9 +188,9 @@ export async function answerRepositorySelection(
     body: `Using \`${repository.fullPath}\`. Building on branch \`${chosen.branch}\`, based on \`${baseBranch}\`.`,
   });
   // Request mode (a mention) never changes the issue's state.
-  await quietly(`Moving ${run.linearIdentifier} to started`, async () => {
+  await quietly(`Moving ${run.trackerIdentifier} to started`, async () => {
     if (run.mode === "request") return;
-    const issue = await deps.tracker.getIssue(run.linearIssueId);
+    const issue = await deps.tracker.getIssue(run.trackerIssueId);
     if (!["started", "completed", "canceled"].includes(issue.stateType)) {
       await deps.tracker.setIssueState(issue.id, { type: "started" });
     }
@@ -211,7 +211,7 @@ export async function awaitRepository(
 ): Promise<RalphRun | { failed: string }> {
   if (run.status === "waiting" && repositorySelectionOf(run)) return run;
   // Only a Linear run asks: a chat run is given its repository when it starts.
-  if (!isLinearRun(run)) return { failed: "This run has no repository to build in." };
+  if (!isTrackerRun(run)) return { failed: "This run has no repository to build in." };
   const candidates = await listRalphRepositories(tx, run.organizationId);
   if (candidates.length === 0) {
     return {

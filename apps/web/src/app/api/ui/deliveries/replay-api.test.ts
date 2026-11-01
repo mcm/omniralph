@@ -324,9 +324,9 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/deliveries/{id}/replay", () =>
   const ralphRun = (issueId: string, identifier: string, sessionId: string) =>
     createRun(db, {
       organizationId: acme,
-      linearIssueId: issueId,
-      linearIdentifier: identifier,
-      linearAgentSessionId: sessionId,
+      trackerIssueId: issueId,
+      trackerIdentifier: identifier,
+      trackerSessionId: sessionId,
       kind: "children",
       repositoryId: null,
     });
@@ -494,8 +494,8 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/deliveries/{id}/replay", () =>
     state.linear.issues.set("issue-3", issue("issue-3", "ENG-3"));
     const { run: triage } = await createTriageRun(db, {
       organizationId: acme,
-      linearIssueId: "issue-3",
-      linearAgentSessionId: "s-triage",
+      trackerIssueId: "issue-3",
+      trackerSessionId: "s-triage",
       trigger: "mention",
     });
     await setTriageRunStatus(db, triage.id, "completed");

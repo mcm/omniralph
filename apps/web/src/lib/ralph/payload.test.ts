@@ -62,14 +62,14 @@ const run = (kind: RalphRun["kind"] = "children") =>
   ({
     id: randomUUID(),
     kind,
-    origin: "linear",
+    origin: "tracker",
     progress: "",
     guidance: [],
   }) as unknown as RalphRun;
 
 const lane = { branch: "feat/epic", baseBranch: "main" };
 
-const row = { id: randomUUID(), linearIssueId: "issue-2", attempts: 0, lastFeedback: null };
+const row = { id: randomUUID(), trackerIssueId: "issue-2", attempts: 0, lastFeedback: null };
 
 function payloadFor(
   kind: RalphRun["kind"],
@@ -228,7 +228,7 @@ describe("story quality gates", () => {
         requests: [{ id: randomUUID(), text: "fix the typo" }],
         resumeSessionId: null,
       });
-    expect(request("linear").source).toBe("linear");
+    expect(request("tracker").source).toBe("linear");
     expect(request("chat").source).toBe("chat");
   });
 });

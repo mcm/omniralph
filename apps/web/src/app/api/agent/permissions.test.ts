@@ -278,9 +278,9 @@ describe.skipIf(!databaseAvailable)("/api/agent/jobs/{id}/permissions", () => {
     async function newRalphJob(runStatus?: "stopped") {
       const { run } = await createRun(db, {
         organizationId: orgId,
-        linearIssueId: randomUUID(),
-        linearIdentifier: "TOOL-32",
-        linearAgentSessionId: `session-${randomUUID()}`,
+        trackerIssueId: randomUUID(),
+        trackerIdentifier: "TOOL-32",
+        trackerSessionId: `session-${randomUUID()}`,
         kind: "children",
         repositoryId,
         branch: "feat/tool-32",
@@ -319,7 +319,7 @@ describe.skipIf(!databaseAvailable)("/api/agent/jobs/{id}/permissions", () => {
       });
       expect(state.linear.activities).toHaveLength(1);
       expect(state.linear.activities[0]).toMatchObject({
-        sessionId: run.linearAgentSessionId,
+        sessionId: run.trackerSessionId,
         content: { type: "elicitation" },
       });
       expect((await getRun(db, run.id))!.permission).toMatchObject({

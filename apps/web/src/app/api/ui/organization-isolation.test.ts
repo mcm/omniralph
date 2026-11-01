@@ -419,11 +419,11 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       .where(eq(agents.id, agentId));
     const { run } = await createRun(db, {
       organizationId: org.id,
-      linearIssueId: `${name}-issue`,
-      linearIdentifier: `${name.toUpperCase()}-1`,
-      linearTitle: `${name} epic`,
-      linearUrl: null,
-      linearAgentSessionId: `${name}-session`,
+      trackerIssueId: `${name}-issue`,
+      trackerIdentifier: `${name.toUpperCase()}-1`,
+      trackerTitle: `${name} epic`,
+      trackerUrl: null,
+      trackerSessionId: `${name}-session`,
       kind: "children",
       repositoryId: repo.id,
       branch: `${name}-branch`,
@@ -431,7 +431,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     });
     await updateRun(db, run.id, { status: "running" });
     const [story] = await upsertStories(db, run.id, [
-      { linearIssueId: `${name}-story`, identifier: `${name.toUpperCase()}-2`, title: "Story" },
+      { trackerIssueId: `${name}-story`, identifier: `${name.toUpperCase()}-2`, title: "Story" },
     ]);
     const review = await createReview(db, {
       repositoryId: repo.id,
@@ -470,8 +470,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       .returning();
     const { run: triageRun } = await createTriageRun(db, {
       organizationId: org.id,
-      linearIssueId: `${name}-triage-issue`,
-      linearAgentSessionId: `${name}-triage-session`,
+      trackerIssueId: `${name}-triage-issue`,
+      trackerSessionId: `${name}-triage-session`,
       trigger: "mention",
     });
     return {
@@ -726,11 +726,11 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     ] as const) {
       const { run: stopped } = await createRun(db, {
         organizationId: orgId,
-        linearIssueId: `${name}-all-stopped-issue`,
-        linearIdentifier: `${name.toUpperCase()}-77`,
-        linearTitle: `${name} stopped for all`,
-        linearUrl: null,
-        linearAgentSessionId: `${name}-all-stopped-session`,
+        trackerIssueId: `${name}-all-stopped-issue`,
+        trackerIdentifier: `${name.toUpperCase()}-77`,
+        trackerTitle: `${name} stopped for all`,
+        trackerUrl: null,
+        trackerSessionId: `${name}-all-stopped-session`,
         kind: "children",
         repositoryId,
         branch: `${name}-all-stopped`,
@@ -740,8 +740,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       ralph.push(stopped.id);
       const { run: failed } = await createTriageRun(db, {
         organizationId: orgId,
-        linearIssueId: `${name}-all-failed-issue`,
-        linearAgentSessionId: `${name}-all-failed-session`,
+        trackerIssueId: `${name}-all-failed-issue`,
+        trackerSessionId: `${name}-all-failed-session`,
         trigger: "mention",
       });
       await db.update(triageRuns).set({ status: "failed" }).where(eq(triageRuns.id, failed.id));
@@ -750,8 +750,8 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
       if (orgId === c.id) {
         const { run: running } = await createTriageRun(db, {
           organizationId: orgId,
-          linearIssueId: "gamma-all-running-issue",
-          linearAgentSessionId: "gamma-all-running-session",
+          trackerIssueId: "gamma-all-running-issue",
+          trackerSessionId: "gamma-all-running-session",
           trigger: "mention",
         });
         await db.update(triageRuns).set({ status: "running" }).where(eq(triageRuns.id, running.id));
@@ -845,11 +845,11 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
     for (const own of [a, b]) {
       const { run } = await createRun(db, {
         organizationId: own.orgId,
-        linearIssueId: `${own.name}-stopped-issue`,
-        linearIdentifier: `${own.name.toUpperCase()}-9`,
-        linearTitle: `${own.name} stopped epic`,
-        linearUrl: null,
-        linearAgentSessionId: `${own.name}-stopped-session`,
+        trackerIssueId: `${own.name}-stopped-issue`,
+        trackerIdentifier: `${own.name.toUpperCase()}-9`,
+        trackerTitle: `${own.name} stopped epic`,
+        trackerUrl: null,
+        trackerSessionId: `${own.name}-stopped-session`,
         kind: "children",
         repositoryId: own.repoId,
         branch: `${own.name}-stopped`,

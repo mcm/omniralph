@@ -11,7 +11,7 @@ import type { SlackAdapter } from "@chat-adapter/slack";
 import {
   getChatThreadWithConnection,
   getRepositoryWithConnection,
-  isLinearRun,
+  isTrackerRun,
   type ChatPlatform,
   type ChatThread,
   type Database,
@@ -405,16 +405,16 @@ export function conversationFor(
     | "id"
     | "organizationId"
     | "origin"
-    | "linearIssueId"
-    | "linearIdentifier"
-    | "linearAgentSessionId"
+    | "trackerIssueId"
+    | "trackerIdentifier"
+    | "trackerSessionId"
     | "chatThreadId"
     | "repositoryId"
   >,
   deps: ConversationDeps,
 ): RunConversation {
-  if (isLinearRun(run)) {
-    return new TrackerConversation(deps.tracker, run.linearAgentSessionId, run.linearIssueId);
+  if (isTrackerRun(run)) {
+    return new TrackerConversation(deps.tracker, run.trackerSessionId, run.trackerIssueId);
   }
   return new ChatConversation(run, deps.chat);
 }

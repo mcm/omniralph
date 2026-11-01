@@ -14,7 +14,7 @@ import {
   getRepositoryWithConnection,
   getRunByIssue,
   getRunBySession,
-  isLinearRun,
+  isTrackerRun,
   listActiveRunJobIds,
   listRalphRepositories,
   listStories,
@@ -23,7 +23,7 @@ import {
   updateLane,
   updateRun,
   updateStory,
-  takeChatLinearDelegation,
+  takeChatTrackerDelegation,
   type RalphLane,
   type RalphRun,
   type RalphRunMode,
@@ -357,10 +357,10 @@ async function supersede(deps: RalphDeps, previous: RalphRun, sessionId: string)
   }
   const prUrl = (await getMainLane(deps.db, previous))?.prUrl;
   const pr = prUrl ? ` The open draft stays where it is: ${prUrl}` : "";
-  if (!isLinearRun(previous)) return;
+  if (!isTrackerRun(previous)) return;
   await post(
     deps,
-    { sessionId: previous.linearAgentSessionId, issueId: previous.linearIssueId },
+    { sessionId: previous.trackerSessionId, issueId: previous.trackerIssueId },
     {
       type: "response",
       body: `This issue was delegated to me again, so I stopped here and continue in the new session.${pr}`,
@@ -409,11 +409,11 @@ async function askForRepositoryFirst(
   const { run, created } = await deps.db.transaction(async (tx) => {
     const result = await createRun(tx, {
       organizationId: deps.organizationId,
-      linearIssueId: root.id,
-      linearIdentifier: root.identifier,
-      linearTitle: root.title,
-      linearUrl: root.url,
-      linearAgentSessionId: event.sessionId,
+      trackerIssueId: root.id,
+      trackerIdentifier: root.identifier,
+      trackerTitle: root.title,
+      trackerUrl: root.url,
+      trackerSessionId: event.sessionId,
       kind: loaded.kind,
       mode: start.mode,
       focusStoryId: loaded.focusStoryId ?? null,
@@ -432,7 +432,7 @@ async function askForRepositoryFirst(
     return { run, created: true };
   });
   if (!created) {
-    if (run.linearAgentSessionId === event.sessionId) await advanceRun(run.id, deps);
+    if (run.trackerSessionId === event.sessionId) await advanceRun(run.id, deps);
     else {
       await post(deps, event, {
         type: "response",
@@ -463,9 +463,9 @@ async function delegatingThread(
   event: SessionCreatedEvent,
 ): Promise<string | null> {
   if (isMention(event)) return null;
-  const delegation = await takeChatLinearDelegation(tx, {
+  const delegation = await takeChatTrackerDelegation(tx, {
     organizationId: deps.organizationId,
-    linearIssueId: event.issueId,
+    trackerIssueId: event.issueId,
   });
   return delegation?.threadId ?? null;
 }
@@ -695,11 +695,11 @@ async function startNewRun(
     // The run continues the previous one (in its repository, with its lanes), then moves to the chosen repository.
     const result = await createRun(tx, {
       organizationId: deps.organizationId,
-      linearIssueId: root.id,
-      linearIdentifier: root.identifier,
-      linearTitle: root.title,
-      linearUrl: root.url,
-      linearAgentSessionId: sessionId,
+      trackerIssueId: root.id,
+      trackerIdentifier: root.identifier,
+      trackerTitle: root.title,
+      trackerUrl: root.url,
+      trackerSessionId: sessionId,
       kind: loaded.kind,
       mode: start.mode,
       focusStoryId: loaded.focusStoryId ?? null,
@@ -724,7 +724,7 @@ async function startNewRun(
   });
   if (!created) {
     // Another delivery started this session's (or this issue's) run first.
-    if (run.linearAgentSessionId === sessionId) await advanceRun(run.id, deps);
+    if (run.trackerSessionId === sessionId) await advanceRun(run.id, deps);
     else {
       await post(deps, event, {
         type: "response",

@@ -177,9 +177,9 @@ describe.skipIf(!databaseAvailable)("routing rules", () => {
         .insert(ralphRuns)
         .values({
           organizationId,
-          linearIssueId: issueId,
-          linearIdentifier: issueId.toUpperCase(),
-          linearAgentSessionId: randomUUID(),
+          trackerIssueId: issueId,
+          trackerIdentifier: issueId.toUpperCase(),
+          trackerSessionId: randomUUID(),
           kind: "children",
           // Finished, so one issue can have several.
           status: "completed",

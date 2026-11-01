@@ -286,7 +286,7 @@ export async function enqueueTriage(
 ): Promise<Extract<StartTriageOutcome, { status: "queued" | "failed" }>> {
   const { db, tracker } = deps;
   const { issue, children, repository } = context;
-  const sessionId = run.linearAgentSessionId;
+  const sessionId = run.trackerSessionId;
   const reply = options.reply?.trim();
   const definitions = organizationPlaybooks(db, deps.organizationId);
   const task = await getPlaybookTask(definitions, TRIAGE_TASK_ID);
@@ -343,14 +343,14 @@ export async function enqueueTriage(
     await setTriageRunJob(db, run.id, job.id);
   } catch (error) {
     await setTriageRunStatus(db, run.id, "failed");
-    await postActivity(trackerConversation(tracker, sessionId, run.linearIssueId), {
+    await postActivity(trackerConversation(tracker, sessionId, run.trackerIssueId), {
       type: "error",
       body: `I couldn't queue the triage: ${errorMessage(error)}`,
     });
     return { status: "failed", error: errorMessage(error) };
   }
 
-  await postActivity(trackerConversation(tracker, sessionId, run.linearIssueId), {
+  await postActivity(trackerConversation(tracker, sessionId, run.trackerIssueId), {
     type: "thought",
     body: queuedMessage(
       issue,
@@ -407,12 +407,12 @@ export async function startTriage(
     ? { run: given, created: true }
     : await createTriageRun(db, {
         organizationId: deps.organizationId,
-        linearIssueId: issue.id,
-        linearAgentSessionId: sessionId,
+        trackerIssueId: issue.id,
+        trackerSessionId: sessionId,
         trigger: "mention",
       });
   if (!created) {
-    if (run.linearAgentSessionId === sessionId) return { status: "exists", run };
+    if (run.trackerSessionId === sessionId) return { status: "exists", run };
     await postActivity(trackerConversation(tracker, sessionId, event.issueId), {
       type: "response",
       body: `**${issue.identifier}** is already being triaged in another session.`,

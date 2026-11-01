@@ -3,10 +3,10 @@ import { createMockAdapter, createMockState } from "@chat-adapter/tests";
 import {
   agentRepoPins,
   insertPlaybook,
-  chatLinearDelegations,
+  chatTrackerDelegations,
   chatMessages,
   chatRunEvents,
-  createChatLinearDelegation,
+  createChatTrackerDelegation,
   ensureChatThread,
   saveChatConnection,
   agents,
@@ -44,7 +44,7 @@ import {
   type Database,
   type Job,
   organizations,
-  type LinearRun,
+  type TrackerRun,
 } from "@omniralph/db";
 import { labelsInclude, projectIs, setRoutingRules, teamIs } from "@/lib/routing/testing";
 import {
@@ -242,7 +242,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   });
 
   /** Delegates `issueId` and returns its run. */
-  async function delegate(issueId: string): Promise<LinearRun> {
+  async function delegate(issueId: string): Promise<TrackerRun> {
     sessionSeq += 1;
     const sessionId = `session-${sessionSeq}`;
     await startRun(
@@ -520,7 +520,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         ].map((s) => ({ ...s, repository: null })),
       ]);
       expect(tracker.issues.get(gamma.id)?.stateType).toBe("started");
-      expect(tracker.plan(run.linearAgentSessionId)?.map((s) => s.status)).toEqual([
+      expect(tracker.plan(run.trackerSessionId)?.map((s) => s.status)).toEqual([
         "pending",
         "pending",
         "inProgress",
@@ -628,12 +628,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         sha(1),
       ]);
       expect(tracker.issues.get(alpha.id)?.stateType).toBe("completed");
-      expect(tracker.plan(run.linearAgentSessionId)?.map((s) => s.status)).toEqual([
+      expect(tracker.plan(run.trackerSessionId)?.map((s) => s.status)).toEqual([
         "completed",
         "completed",
         "completed",
       ]);
-      expect(tracker.bodies(run.linearAgentSessionId, "response")).toEqual([
+      expect(tracker.bodies(run.trackerSessionId, "response")).toEqual([
         [
           "Finished all 3 stories of **ENG-1** on `feat/epic`. Opened [Pull request #1](https://github.com/acme/api/pull/1), ready for review.",
           "",
@@ -666,13 +666,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       ]);
       expect(tracker.urls).toEqual([
         {
-          sessionId: run.linearAgentSessionId,
+          sessionId: run.trackerSessionId,
           label: "Pull request #1",
           url: "https://github.com/acme/api/pull/1",
         },
       ]);
       expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).toHaveLength(4);
-      expect(tracker.bodies(run.linearAgentSessionId, "error")).toEqual([]);
+      expect(tracker.bodies(run.trackerSessionId, "error")).toEqual([]);
     });
 
     it("sends the first job to the pinned agent, then sticks to the agent that ran it until it's revoked", async () => {
@@ -723,7 +723,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         feedback: "The quality gate `pnpm test` failed:\n\n1 test failed",
       });
       expect(await storyStates(run.id)).toEqual([["ENG-21", "running", 1]]);
-      expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
         "**ENG-21** attempt 1/3 did not complete; retrying with feedback.",
       );
       const retry = await work(run.id, { commitSha: sha(9) });
@@ -755,7 +755,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(third).toMatchObject({ attempt: 3 });
       expect(third.lastFeedback).toContain("reported the story incomplete");
 
-      const [error] = tracker.bodies(run.linearAgentSessionId, "error");
+      const [error] = tracker.bodies(run.trackerSessionId, "error");
       expect(error).toContain("**ENG-31** did not complete after 3 attempts");
       expect(error).toContain("Stories that don't depend on it carry on.");
       // Z runs next; Y (blocked by X) never does.
@@ -766,14 +766,14 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         ["ENG-32", "pending", 0],
         ["ENG-33", "completed", 1],
       ]);
-      expect(tracker.plan(run.linearAgentSessionId)?.map((s) => s.status)).toEqual([
+      expect(tracker.plan(run.trackerSessionId)?.map((s) => s.status)).toEqual([
         "canceled",
         "pending",
         "completed",
       ]);
       const paused = (await getRun(db, run.id))!;
       expect(paused).toMatchObject({ status: "waiting", waitingOn: { blockers: [], manual: [] } });
-      const [elicitation] = tracker.bodies(run.linearAgentSessionId, "elicitation");
+      const [elicitation] = tracker.bodies(run.trackerSessionId, "elicitation");
       expect(elicitation).toContain("Paused with 1/3 stories complete");
       expect(elicitation).toContain("**ENG-31: X** didn't complete after 3 attempts");
       expect(elicitation).toContain("**ENG-32** is blocked by ENG-31");
@@ -801,8 +801,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         await work(run.id, { status: "failed", summary: "Gate failed", feedback });
       }
 
-      const [error] = tracker.bodies(run.linearAgentSessionId, "error");
-      const [elicitation] = tracker.bodies(run.linearAgentSessionId, "elicitation");
+      const [error] = tracker.bodies(run.trackerSessionId, "error");
+      const [elicitation] = tracker.bodies(run.trackerSessionId, "elicitation");
       for (const body of [error!, elicitation!]) {
         expect(body).toContain(
           "The agent reported the story complete, but the quality gate `pnpm test` failed (exit 1):\n\n```\n…\n",
@@ -830,7 +830,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(described.epic).toMatchObject({ identifier: "ENG-80", title: "Fix the login bug" });
       expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: 1 });
       expect(await storyStates(run.id)).toEqual([["ENG-80", "completed", 1]]);
-      expect(tracker.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "response")[0]).toContain(
         `Finished **ENG-80** on \`${issue.branchName}\`. Opened [Pull request #1]`,
       );
     });
@@ -1048,7 +1048,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     /** A one-story epic whose story is done: the run is describing its PR. */
-    async function describingRun(n: number): Promise<LinearRun> {
+    async function describingRun(n: number): Promise<TrackerRun> {
       const epic = tracker.add({
         identifier: `ENG-${n}`,
         title: "Gadgets",
@@ -1070,9 +1070,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       return run;
     }
 
-    const replyTo = (run: LinearRun, body: string) =>
+    const replyTo = (run: TrackerRun, body: string) =>
       handleTrackerEvent(
-        { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
+        { kind: "session_prompted", sessionId: run.trackerSessionId, body },
         { db, organizationId: orgId, workspaceId: "org-1" },
         { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
       );
@@ -1109,7 +1109,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await describePr(run.id, { jobError: "the session ran out of turns" });
       const failed = (await withPullRequest(run.id))!;
       expect(failed).toMatchObject({ status: "waiting", prJobId: null, prNumber: null });
-      expect(tracker.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "elicitation").at(-1)).toContain(
         "Every story is done, but I couldn't open the pull request: writing its description failed: the session ran out of turns.",
       );
       expect(await activeJobs(run.id)).toEqual([]);
@@ -1117,7 +1117,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await replyTo(run, "retry");
       await describePr(run.id, { invalid: true });
       expect(await withPullRequest(run.id)).toMatchObject({ status: "waiting", prNumber: null });
-      expect(tracker.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "elicitation").at(-1)).toContain(
         "Every story is done, but I couldn't open the pull request: writing its description failed: the agent sent an invalid result.",
       );
       expect(scm.changeRequests).toEqual([]);
@@ -1219,7 +1219,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await updateRun(db, run.id, { iterations: MAX_ITERATIONS_PER_RUN });
       expect(await advanceRun(run.id, deps())).toMatchObject({ action: "waiting" });
       expect(await activeJobs(run.id)).toEqual([]);
-      expect(tracker.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "elicitation").at(-1)).toContain(
         `I reached the per-run iteration cap (${MAX_ITERATIONS_PER_RUN} story attempts).`,
       );
     });
@@ -1422,7 +1422,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         status: "pushing",
         jobId: pushJob.id,
       });
-      expect(tracker.bodies(run.linearAgentSessionId, "thought")).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "thought")).toContain(
         "All 2 stories are done. Pushing `feat/widgets`.",
       );
       const pushed = await push(run.id, { sha: sha(172) });
@@ -1542,13 +1542,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         prJobId: null,
         prNumber: null,
       });
-      expect(tracker.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "elicitation").at(-1)).toContain(
         "Every story is done, but I couldn't push `feat/sprockets`: the remote rejected the push: protected branch.",
       );
       expect(await activeJobs(run.id)).toEqual([]);
 
       await handleTrackerEvent(
-        { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "retry" },
+        { kind: "session_prompted", sessionId: run.trackerSessionId, body: "retry" },
         { db, organizationId: orgId, workspaceId: "org-1" },
         { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
       );
@@ -1634,7 +1634,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         attempts: 0,
         rounds: 2,
       });
-      const [error] = tracker.bodies(run.linearAgentSessionId, "error");
+      const [error] = tracker.bodies(run.trackerSessionId, "error");
       expect(error).toContain("**ENG-311** reached its round cap (2 rounds) without completing");
       expect(error).not.toContain("Trend:");
       // Its follow-up still gets done.
@@ -1651,7 +1651,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect((await work(run.id, { jobError: "Agent crashed" })).story.identifier).toBe("ENG-81");
       const second = await work(run.id, { status: "failed", summary: "Nope" });
       expect(second).toMatchObject({ attempt: 2, story: { identifier: "ENG-81" } });
-      expect(tracker.bodies(run.linearAgentSessionId, "error")[0]).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "error")[0]).toContain(
         "**ENG-81** did not complete after 2 attempts",
       );
       expect(await storyStates(run.id)).toEqual([
@@ -1663,7 +1663,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect((await work(run.id, { jobError: "Agent crashed" })).story.identifier).toBe("ENG-82");
       expect(await activeJobs(run.id)).toEqual([]);
       expect((await getRun(db, run.id))?.status).toBe("waiting");
-      expect(tracker.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "elicitation").at(-1)).toContain(
         "I reached the per-run iteration cap (3 story attempts).",
       );
     });
@@ -1760,7 +1760,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     tracker.add({ identifier: "ENG-28", title: "Urgent", parentId: epic.id, priority: 1 });
     const focus = tracker.add({ identifier: "ENG-29", title: "Asked for", parentId: epic.id });
     const run = await delegate(focus.id);
-    expect(run).toMatchObject({ linearIdentifier: "ENG-27", focusStoryId: focus.id });
+    expect(run).toMatchObject({ trackerIdentifier: "ENG-27", focusStoryId: focus.id });
     expect((await work(run.id)).story.identifier).toBe("ENG-29");
     expect((await work(run.id)).story.identifier).toBe("ENG-28");
     expect((await getRun(db, run.id))?.status).toBe("completed");
@@ -1806,7 +1806,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       ["ENG-42", "running", 0],
     ]);
     const [thought] = tracker
-      .bodies(run.linearAgentSessionId, "thought")
+      .bodies(run.trackerSessionId, "thought")
       .filter((b) => b.includes("is blocked"));
     expect(thought).toContain("**ENG-41** is blocked, so I'm setting it aside without retrying.");
     expect(thought).toContain("I need an API key for the payment sandbox.");
@@ -1816,7 +1816,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     await work(run.id, { commitSha: sha(5) });
     expect((await getRun(db, run.id))?.status).toBe("waiting");
-    const [elicitation] = tracker.bodies(run.linearAgentSessionId, "elicitation");
+    const [elicitation] = tracker.bodies(run.trackerSessionId, "elicitation");
     expect(elicitation).toContain("**ENG-41: Needs a key** is blocked:");
     expect(elicitation).toContain("I need an API key for the payment sandbox.");
   });
@@ -1844,14 +1844,14 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(progress).toContain(`committed as \`wip(ENG-46)\` in \`${sha(9).slice(0, 10)}\``);
     expect(progress).toContain("I need an API key.");
     const [thought] = tracker
-      .bodies(run.linearAgentSessionId, "thought")
+      .bodies(run.trackerSessionId, "thought")
       .filter((b) => b.includes("is blocked"));
     expect(thought).toContain(`Its work so far is committed as \`${sha(9).slice(0, 10)}\`.`);
     // The other story's payload carries the log with the wip entry.
     const other = storyPayload(await activeJob(run.id));
     expect(other.progress).toContain("ENG-46: Needs a key (blocked)");
     // Not a Linear completion: the story stays open.
-    const comments = tracker.comments.filter((c) => c.issueId === blocked.linearIssueId);
+    const comments = tracker.comments.filter((c) => c.issueId === blocked.trackerIssueId);
     expect(comments.map((c) => c.body).join("\n")).not.toContain("Completed by");
   });
 
@@ -1901,7 +1901,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(index.description).toContain(`${FOLLOW_UP_MARK} ENG-51.`);
     expect(await getFollowUpSource(db, orgId, index.id)).toBe(first.id);
     expect(tracker.blocks.get(first.id)).toBeUndefined();
-    expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+    expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
       `Filed **${index.identifier}** as a new story of **ENG-50**.`,
     );
 
@@ -1917,7 +1917,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(grant.labels).toEqual(["manual"]);
     expect(await getFollowUpSource(db, orgId, grant.id)).toBe(second.id);
     expect(tracker.blocks.get(second.id)).toEqual([grant.id]);
-    expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+    expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
       `blocking **ENG-52**`,
     );
 
@@ -1963,7 +1963,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(created.every((c) => c.cycleId === undefined)).toBe(true);
     const cache = [...tracker.issues.values()].find((i) => i.title === "Add a cache")!;
     expect(await getFollowUpSource(db, orgId, cache.id)).toBe(story.id);
-    const thoughts = tracker.bodies(run.linearAgentSessionId, "thought").join("\n");
+    const thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
     expect(thoughts).not.toContain("I couldn't file");
   });
 
@@ -2009,7 +2009,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const index = [...tracker.issues.values()].find((i) => i.title === "Add an index")!;
     expect(tracker.blocks.get(first.id)).toBeUndefined();
     expect(tracker.blocks.get(validate.id)).toEqual([first.id, index.id]);
-    expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+    expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
       `Filed **${index.identifier}** as a new story of **ENG-55**, blocking **ENG-57**.`,
     );
 
@@ -2032,7 +2032,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         attempts: 0,
         rounds: n,
       });
-      expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
         `**ENG-301** round ${n}/8 filed follow-ups; it runs again once they're done.`,
       );
       // The follow-up blocks the story: it runs first.
@@ -2045,7 +2045,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       attempts: 0,
       rounds: 3,
     });
-    const [error] = tracker.bodies(run.linearAgentSessionId, "error");
+    const [error] = tracker.bodies(run.trackerSessionId, "error");
     expect(error).toContain(
       "**ENG-301**'s critique score hasn't beaten its best (20) in 3 rounds, so I'm setting it aside after round 3.",
     );
@@ -2065,7 +2065,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     // `/continue` gives it fresh rounds and clears its metric history.
     await handleTrackerEvent(
-      { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "/continue" },
+      { kind: "session_prompted", sessionId: run.trackerSessionId, body: "/continue" },
       { db, organizationId: orgId, workspaceId: "org-1" },
       { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
     );
@@ -2103,7 +2103,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         manual: [],
       },
     });
-    const [elicitation] = tracker.bodies(run.linearAgentSessionId, "elicitation");
+    const [elicitation] = tracker.bodies(run.trackerSessionId, "elicitation");
     expect(elicitation).toContain("0/1 stories are done; the rest are waiting on **OPS-1**");
     expect(elicitation).toContain("start anyway");
 
@@ -2116,7 +2116,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       );
     await event("unrelated");
     await advanceRun(run.id, deps());
-    expect(tracker.bodies(run.linearAgentSessionId, "elicitation")).toHaveLength(1);
+    expect(tracker.bodies(run.trackerSessionId, "elicitation")).toHaveLength(1);
     expect(await activeJobs(run.id)).toEqual([]);
 
     await tracker.setIssueState(outside.id, { type: "completed" });
@@ -2154,7 +2154,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         manual: [{ id: manual.id, identifier: "ENG-72", title: "Configure DNS" }],
       },
     });
-    expect(tracker.bodies(run.linearAgentSessionId, "elicitation")[0]).toContain(
+    expect(tracker.bodies(run.trackerSessionId, "elicitation")[0]).toContain(
       "1/3 stories are done; the rest are waiting on **ENG-72**",
     );
 
@@ -2238,7 +2238,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   });
 
   /** A run waiting on an outside blocker that was just completed (without a webhook). */
-  async function unblockedWaitingRun(): Promise<LinearRun> {
+  async function unblockedWaitingRun(): Promise<TrackerRun> {
     const outside = tracker.add({ identifier: "OPS-9", title: "Outside", teamKey: "OPS" });
     const epic = tracker.add({ identifier: "ENG-90", title: "Epic" });
     const story = tracker.add({ identifier: "ENG-91", title: "Story", parentId: epic.id });
@@ -2256,7 +2256,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(results.filter((r) => r.action === "busy")).toHaveLength(4);
     expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).toHaveLength(1);
     expect(
-      tracker.bodies(run.linearAgentSessionId, "thought").filter((t) => t.startsWith("▶️")),
+      tracker.bodies(run.trackerSessionId, "thought").filter((t) => t.startsWith("▶️")),
     ).toHaveLength(1);
   });
 
@@ -2366,14 +2366,14 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         expect(tracker.issues.get(t.s2.id)?.stateType).toBe("unstarted");
         expect(
           tracker
-            .bodies(run.linearAgentSessionId, "thought")
+            .bodies(run.trackerSessionId, "thought")
             .some((b) =>
               b.includes(
                 "**ENG-3** isn't built here (it routes to `group/app` by rule 1 (Project is Web), and coding is off there), so I'll treat it like a manual step: I won't work it, and stories that depend on it wait until it's done.",
               ),
             ),
         ).toBe(true);
-        expect(tracker.plan(run.linearAgentSessionId)?.map((p) => p.content)).toContain(
+        expect(tracker.plan(run.trackerSessionId)?.map((p) => p.content)).toContain(
           "ENG-3: Show badge (manual: coding off)",
         );
         expect(scm.changeRequests).toEqual([]);
@@ -2490,7 +2490,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       ]);
       expect(
         tracker
-          .bodies(run.linearAgentSessionId, "thought")
+          .bodies(run.trackerSessionId, "thought")
           .some((b) =>
             b.includes(
               "**ENG-3** belongs in `group/app` (routed by rule 1 (Project is Web)), so I'll work it there, on its own branch",
@@ -2532,7 +2532,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         (await listStories(db, run.id)).map((s) => [s.identifier, s.status, s.laneId, s.elsewhere]),
       ).toEqual([["OPS-2", "running", lanes[0]!.id, null]]);
       expect(await activeJob(run.id)).toMatchObject({ repositoryId: repoId });
-      expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).not.toContain(
+      expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).not.toContain(
         "belongs in",
       );
       expect(tracker.routingLoads).toContain(ops.id);
@@ -2607,9 +2607,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       }
     }
 
-    const reply = (run: LinearRun, body: string) =>
+    const reply = (run: TrackerRun, body: string) =>
       handleTrackerEvent(
-        { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
+        { kind: "session_prompted", sessionId: run.trackerSessionId, body },
         { db, organizationId: orgId, workspaceId: "org-1" },
         { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
       );
@@ -2643,7 +2643,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         // The story's project (not the epic's), and the organization's manual label.
         expect(style).toMatchObject({ parentId: t.epic.id, projectName: "Web", labels: [] });
         expect(icon).toMatchObject({ projectName: "Web", labels: ["ops"] });
-        expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+        expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
           `Filed **${style.identifier}**, **${icon.identifier}** as new stories of **ENG-1** in \`group/app\`.`,
         );
 
@@ -2807,12 +2807,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           repositoryId: null,
           pendingElicitation: { kind: "repository" },
         });
-        expect(tracker.bodies(run.linearAgentSessionId, "elicitation")[0]).toContain(
+        expect(tracker.bodies(run.trackerSessionId, "elicitation")[0]).toContain(
           "Which repository should I work in for this issue?",
         );
 
         await handleTrackerEvent(
-          { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "group/app" },
+          { kind: "session_prompted", sessionId: run.trackerSessionId, body: "group/app" },
           { db, organizationId: orgId, workspaceId: "org-1" },
           { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
         );
@@ -2901,7 +2901,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         const api = await describePr(run.id, { title: "API: priority" });
         expect(api).toMatchObject({ repositoryId: repoId, branch: main.branch });
         expect(api.stories.map((s) => s.identifier)).toEqual(["ENG-2", "ENG-4"]);
-        expect(tracker.bodies(run.linearAgentSessionId, "thought").at(-1)).toBe(
+        expect(tracker.bodies(run.trackerSessionId, "thought").at(-1)).toBe(
           "All 3 stories are done. Writing the merge request description of `group/app`.",
         );
         const app = await describePr(run.id, { title: "Web: badge" });
@@ -2926,18 +2926,18 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         });
         expect(tracker.urls).toEqual([
           {
-            sessionId: run.linearAgentSessionId,
+            sessionId: run.trackerSessionId,
             label: `Pull request #${apiPr!.number} (acme/api)`,
             url: apiPr!.url,
           },
           {
-            sessionId: run.linearAgentSessionId,
+            sessionId: run.trackerSessionId,
             label: `Merge request !${appPr!.number} (group/app)`,
             url: appPr!.url,
           },
         ]);
         expect((await getRun(db, run.id))?.status).toBe("completed");
-        const response = tracker.bodies(run.linearAgentSessionId, "response").at(-1) ?? "";
+        const response = tracker.bodies(run.trackerSessionId, "response").at(-1) ?? "";
         expect(response).toContain(
           `- \`acme/api\`: Opened [Pull request #${apiPr!.number}](${apiPr!.url})`,
         );
@@ -2961,7 +2961,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const lanes = await listLanes(db, run.id);
       expect(lanes.find((l) => l.repositoryId === repoId)?.prNumber).toBeNull();
       // One PR/MR: no repository label in the response.
-      expect(tracker.bodies(run.linearAgentSessionId, "response").at(-1)).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "response").at(-1)).toContain(
         `Opened [Merge request !${scm.changeRequests[0]!.number}](${scm.changeRequests[0]!.url}), ready for review.`,
       );
     });
@@ -2980,7 +2980,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(waiting).toMatchObject({ status: "waiting", prJobId: null });
       const [apiPr] = scm.changeRequests;
       expect(scm.changeRequests.map((c) => c.fullPath)).toEqual(["acme/api"]);
-      const elicitation = tracker.bodies(run.linearAgentSessionId, "elicitation").at(-1) ?? "";
+      const elicitation = tracker.bodies(run.trackerSessionId, "elicitation").at(-1) ?? "";
       expect(elicitation).toContain(
         "Every story is done, but the last step didn't happen everywhere.",
       );
@@ -2992,7 +2992,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       );
       expect(elicitation).toContain("Reply with guidance (for example `retry`)");
       expect(waiting.error).toContain("In `group/app`:");
-      expect(tracker.bodies(run.linearAgentSessionId, "response")).toEqual([]);
+      expect(tracker.bodies(run.trackerSessionId, "response")).toEqual([]);
 
       // Nothing happens until someone replies.
       expect(await advanceRun(run.id, deps())).toMatchObject({ action: "waiting" });
@@ -3003,7 +3003,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(await activeJobs(run.id)).toEqual([]);
       expect(await getRun(db, run.id)).toMatchObject({ status: "completed", error: null });
       expect(scm.changeRequests.map((c) => c.fullPath)).toEqual(["acme/api", "group/app"]);
-      const response = tracker.bodies(run.linearAgentSessionId, "response").at(-1) ?? "";
+      const response = tracker.bodies(run.trackerSessionId, "response").at(-1) ?? "";
       expect(response).toContain(`\`acme/api\`: Opened [Pull request #${apiPr!.number}]`);
       expect(response).toContain("`group/app`: Opened [Merge request !");
       expect(tracker.urls.map((u) => u.url)).toEqual(scm.changeRequests.map((c) => c.url));
@@ -3019,7 +3019,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         expect(scm.changeRequests).toEqual([
           expect.objectContaining({ fullPath: "group/app", draft: true }),
         ]);
-        expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+        expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
           "Opened a draft merge request for `eng-1-branch` in `group/app`:",
         );
         const draft = scm.changeRequests[0]!.body;
@@ -3068,7 +3068,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
   describe("the pull/merge request", () => {
     /** A one-story epic whose story is done: the run is describing its PR/MR. */
-    async function finishedRun(teamKey = "ENG"): Promise<LinearRun> {
+    async function finishedRun(teamKey = "ENG"): Promise<TrackerRun> {
       const epic = tracker.add({
         identifier: `${teamKey}-100`,
         title: "Widgets",
@@ -3084,15 +3084,15 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const run = await delegate(epic.id);
       await work(run.id, { commitSha: sha(11) });
       expect((await getRun(db, run.id))?.status).toBe("running");
-      expect(tracker.bodies(run.linearAgentSessionId, "thought").at(-1)).toMatch(
+      expect(tracker.bodies(run.trackerSessionId, "thought").at(-1)).toMatch(
         /^All 1 story is done\. Writing the (pull|merge) request description\.$/,
       );
       return linearRun((await getRun(db, run.id))!);
     }
 
-    const reply = (run: LinearRun, body: string) =>
+    const reply = (run: TrackerRun, body: string) =>
       handleTrackerEvent(
-        { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
+        { kind: "session_prompted", sessionId: run.trackerSessionId, body },
         { db, organizationId: orgId, workspaceId: "org-1" },
         { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
       );
@@ -3126,9 +3126,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         /\n\n---\nLinear: \[GL-100\]\(https:\/\/linear\.app\/acme\/issue\/GL-100\) · _Opened by Omniralph\._$/,
       );
       expect(tracker.urls).toEqual([
-        { sessionId: run.linearAgentSessionId, label: "Merge request !1", url },
+        { sessionId: run.trackerSessionId, label: "Merge request !1", url },
       ]);
-      expect(tracker.bodies(run.linearAgentSessionId, "response")).toEqual([
+      expect(tracker.bodies(run.trackerSessionId, "response")).toEqual([
         [
           `Finished all 1 story of **GL-100** on \`feat/widgets\`. Opened [Merge request !1](${url}), ready for review.`,
           "",
@@ -3164,7 +3164,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         prNumber: 7,
         prUrl: "https://github.com/acme/api/pull/7",
       });
-      expect(tracker.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "response")[0]).toContain(
         "Updated [Pull request #7](https://github.com/acme/api/pull/7), ready for review.",
       );
     });
@@ -3204,7 +3204,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         });
         expect(tracker.urls).toEqual([
           {
-            sessionId: run.linearAgentSessionId,
+            sessionId: run.trackerSessionId,
             label: "Pull request #1",
             url: "https://github.com/acme/api/pull/1",
           },
@@ -3220,7 +3220,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         ]);
         expect(scm.changeRequests[0]!.body).toMatch(/^Adds gadgets\.\n\n---\nLinear: /);
         expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: 1 });
-        expect(tracker.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+        expect(tracker.bodies(run.trackerSessionId, "response")[0]).toContain(
           "Updated [Pull request #1]",
         );
       } finally {
@@ -3244,7 +3244,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
         await work(run.id, { commitSha: sha(23) });
         expect(scm.changeRequests).toEqual([]);
-        expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+        expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
           "I couldn't open a draft pull request yet (I'll try again after the next story): Validation failed",
         );
         expect(await withPullRequest(run.id)).toMatchObject({ status: "running", prNumber: null });
@@ -3339,7 +3339,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         scm.failures.set("updateChangeRequest", "Bad gateway");
         await work(run.id, { commitSha: sha(35) });
         expect(draft!.body).toContain("- [ ] ENG-127: Second");
-        expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+        expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
           "I couldn't tick the pushed stories in the pull request yet (I'll try again after the next story): Bad gateway",
         );
         expect((await activeJob(run.id)).type).toBe("ralph.story");
@@ -3374,7 +3374,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         }
       }
 
-      const epicOf = (run: LinearRun) => tracker.issues.get(run.linearIssueId)!;
+      const epicOf = (run: TrackerRun) => tracker.issues.get(run.trackerIssueId)!;
 
       it("moves the epic to the named state once the pull request is opened", async () => {
         await withEpicCompletedState("in review", async () => {
@@ -3452,13 +3452,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         waitingOn: { blockers: [], manual: [] },
       });
       expect(waiting.error).toContain("the session ended without a valid title and body");
-      const [error] = tracker.bodies(run.linearAgentSessionId, "elicitation");
+      const [error] = tracker.bodies(run.trackerSessionId, "elicitation");
       expect(error).toContain(
         "Every story is done, but I couldn't open the pull request: writing its description failed: the session ended without a valid title and body.",
       );
       expect(error).toContain("Reply with guidance");
       expect(scm.changeRequests).toEqual([]);
-      expect(tracker.bodies(run.linearAgentSessionId, "response")).toEqual([]);
+      expect(tracker.bodies(run.trackerSessionId, "response")).toEqual([]);
 
       // Nothing happens until someone replies.
       expect(await advanceRun(run.id, deps())).toMatchObject({ action: "waiting" });
@@ -3480,7 +3480,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const run = await finishedRun();
       await describePr(run.id);
       expect(await withPullRequest(run.id)).toMatchObject({ status: "waiting", prNumber: null });
-      expect(tracker.bodies(run.linearAgentSessionId, "elicitation")[0]).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "elicitation")[0]).toContain(
         "Every story is done, but I couldn't open the pull request: Resource not accessible by integration.",
       );
 
@@ -3497,7 +3497,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await work(run.id, {});
       expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: null });
       expect(await activeJobs(run.id)).toEqual([]);
-      expect(tracker.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+      expect(tracker.bodies(run.trackerSessionId, "response")[0]).toContain(
         "Nothing was committed",
       );
     });
@@ -3509,7 +3509,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     let threadId: string;
 
     beforeEach(async () => {
-      await db.delete(chatLinearDelegations);
+      await db.delete(chatTrackerDelegations);
       await db.delete(chatMessages);
       const connection = await saveChatConnection(db, {
         organizationId: orgId,
@@ -3548,11 +3548,11 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         return (message as { markdown: string }).markdown;
       });
 
-    async function delegateFromChat(issueId: string): Promise<LinearRun> {
-      await createChatLinearDelegation(db, {
+    async function delegateFromChat(issueId: string): Promise<TrackerRun> {
+      await createChatTrackerDelegation(db, {
         organizationId: orgId,
         threadId,
-        linearIssueId: issueId,
+        trackerIssueId: issueId,
       });
       return delegate(issueId);
     }
@@ -3561,8 +3561,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const issue = tracker.add({ identifier: "ENG-140", title: "Fix the login bug" });
       const run = await delegateFromChat(issue.id);
 
-      expect(run).toMatchObject({ origin: "linear", chatThreadId: threadId });
-      expect(await db.select().from(chatLinearDelegations)).toEqual([]);
+      expect(run).toMatchObject({ origin: "tracker", chatThreadId: threadId });
+      expect(await db.select().from(chatTrackerDelegations)).toEqual([]);
       expect(posted()).toEqual([
         `🚀 Omniralph started building [ENG-140 Fix the login bug](<${issue.url}>). Its progress is in the Linear issue; I'll post here when it opens a pull/merge request and when it finishes.`,
       ]);
@@ -3591,9 +3591,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       // Its notices are posted, not recorded as run events for the responder.
       expect(await db.select().from(chatRunEvents)).toEqual([]);
       // The Linear session still has everything.
-      expect(tracker.bodies(run.linearAgentSessionId, "response")[0]).toContain(
-        "Finished **ENG-140**",
-      );
+      expect(tracker.bodies(run.trackerSessionId, "response")[0]).toContain("Finished **ENG-140**");
     });
 
     it("posts the failure to the thread", async () => {
@@ -3628,20 +3626,20 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     it("ignores a delegation older than an hour, and prunes it", async () => {
       const issue = tracker.add({ identifier: "ENG-143", title: "Late" });
-      await createChatLinearDelegation(db, {
+      await createChatTrackerDelegation(db, {
         organizationId: orgId,
         threadId,
-        linearIssueId: issue.id,
+        trackerIssueId: issue.id,
       });
       await db
-        .update(chatLinearDelegations)
+        .update(chatTrackerDelegations)
         .set({ createdAt: new Date(Date.now() - 61 * 60 * 1000) });
 
       const run = await delegate(issue.id);
 
       expect(run).toMatchObject({ status: "running", chatThreadId: null });
       expect(posted()).toEqual([]);
-      expect(await db.select().from(chatLinearDelegations)).toEqual([]);
+      expect(await db.select().from(chatTrackerDelegations)).toEqual([]);
     });
 
     it("skips the notifications when the thread is gone, without failing the run", async () => {

@@ -26,7 +26,7 @@ import {
   type RalphTransaction,
   type Repository,
   type ScmConnection,
-  isLinearRun,
+  isTrackerRun,
 } from "@omniralph/db";
 import type { Epic } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
@@ -248,13 +248,13 @@ export async function sessionLinkLabel(
  */
 export async function linkPullRequestToIssue(
   deps: Pick<RalphDeps, "tracker">,
-  run: Pick<RalphRun, "origin" | "linearIssueId" | "linearIdentifier" | "linearAgentSessionId">,
+  run: Pick<RalphRun, "origin" | "trackerIssueId" | "trackerIdentifier" | "trackerSessionId">,
   label: string,
   url: string,
 ): Promise<void> {
-  if (!isLinearRun(run)) return;
-  await quietly(`Linking ${url} to ${run.linearIdentifier}`, () =>
-    deps.tracker.linkUrl(run.linearIssueId, url, label),
+  if (!isTrackerRun(run)) return;
+  await quietly(`Linking ${url} to ${run.trackerIdentifier}`, () =>
+    deps.tracker.linkUrl(run.trackerIssueId, url, label),
   );
 }
 
@@ -409,22 +409,22 @@ export async function moveCompletedEpic(
     RalphRun,
     | "kind"
     | "origin"
-    | "linearIssueId"
-    | "linearIdentifier"
-    | "linearAgentSessionId"
+    | "trackerIssueId"
+    | "trackerIdentifier"
+    | "trackerSessionId"
     | "repositoryId"
     | "organizationId"
   >,
 ): Promise<void> {
-  if (run.kind === "single" || !isLinearRun(run)) return;
-  await quietly(`Moving epic ${run.linearIssueId} to its completed state`, async () => {
+  if (run.kind === "single" || !isTrackerRun(run)) return;
+  await quietly(`Moving epic ${run.trackerIssueId} to its completed state`, async () => {
     const repository = run.repositoryId ? await getRepository(deps.db, run.repositoryId) : null;
     const target = epicCompletedTarget(
       repository &&
         (await storyCodingSettings(repository, organizationPlaybooks(deps.db, run.organizationId)))
           .epicCompletedState,
     );
-    if (target) await deps.tracker.setIssueState(run.linearIssueId, target);
+    if (target) await deps.tracker.setIssueState(run.trackerIssueId, target);
   });
 }
 
