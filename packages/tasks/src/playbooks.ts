@@ -201,7 +201,11 @@ export const REFUSED_PLAYBOOK_FIELDS = {
   triggers: "A playbook's role sets what starts its runs; remove triggers.",
   draftPullRequest:
     'The repo\'s "open PR early" setting decides when the draft PR opens; remove draftPullRequest.',
+  verifyCommands: "Checks are set per repo, on its Coding card; remove verifyCommands.",
 } as const;
+
+/** Coding settings a playbook used to have, refused under `coding` with their `REFUSED_PLAYBOOK_FIELDS` message. */
+export const REFUSED_CODING_FIELDS = ["draftPullRequest", "verifyCommands"] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -213,12 +217,16 @@ function refuseRemovedFields(input: unknown, ctx: z.RefinementCtx): unknown {
   for (const [field, message] of Object.entries(REFUSED_PLAYBOOK_FIELDS)) {
     if (field in input) ctx.addIssue({ code: "custom", path: [field], message });
   }
-  if (isRecord(input.coding) && "draftPullRequest" in input.coding) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["coding", "draftPullRequest"],
-      message: REFUSED_PLAYBOOK_FIELDS.draftPullRequest,
-    });
+  if (isRecord(input.coding)) {
+    for (const field of REFUSED_CODING_FIELDS) {
+      if (field in input.coding) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["coding", field],
+          message: REFUSED_PLAYBOOK_FIELDS[field],
+        });
+      }
+    }
   }
   const { skills: _skills, ...rest } = input;
   return rest;

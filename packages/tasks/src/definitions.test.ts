@@ -173,7 +173,6 @@ describe("TaskDefinition", () => {
         maxFixRounds: 3,
         pushTiming: "per-story",
         prDescriptionTaskId: "builtin:describe-pr",
-        verifyCommands: [],
         worktreeSetupCommand: null,
         runPrdQualityGates: true,
         allowPreparation: true,
@@ -197,7 +196,6 @@ describe("TaskDefinition", () => {
         pushTiming: "end",
         draftPullRequest: "end",
         prDescriptionTaskId: UUID,
-        verifyCommands: ["pnpm test"],
         worktreeSetupCommand: "pnpm install",
         runPrdQualityGates: false,
         allowPreparation: false,
@@ -222,7 +220,6 @@ describe("TaskDefinition", () => {
         pushTiming: "per-story",
         draftPullRequest: "early",
         prDescriptionTaskId: "builtin:describe-pr",
-        verifyCommands: ["pnpm test"],
         cleanupMergedWorktrees: true,
       };
       expect(issues(TaskDefinition.safeParse({ ...task, ...fields })).sort()).toEqual(
@@ -239,7 +236,6 @@ describe("TaskDefinition", () => {
         ["pushTiming", "never"],
         ["draftPullRequest", "late"],
         ["prDescriptionTaskId", "pr"],
-        ["verifyCommands", "pnpm test"],
         ["worktreeSetupCommand", "two\nlines"],
         ["unmergedBranchTimeoutMinutes", 0],
       ] as const) {

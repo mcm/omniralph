@@ -71,7 +71,17 @@ import {
   setCodingEnabled,
 } from "@omniralph/db/testing";
 import { and, eq, inArray } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from "vitest";
 import { revokeAgent } from "@/lib/agent-auth/revoke";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
 import { handleTrackerEvent } from "@/lib/tracker/events";
@@ -2849,7 +2859,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("works a story whose project routes to another repository there, on its own branch and PR", async () => {
-      const story = { verifyCommands: ["npm run check"], worktreeSetupCommand: "npm ci" };
+      const story = { worktreeSetupCommand: "npm ci" };
+      await updateRepositoryCoding(db, repoId, { checks: ["pnpm check:api"] });
+      await updateRepositoryCoding(db, gitlabRepoId, { checks: ["npm run check"] });
+      onTestFinished(async () => {
+        await updateRepositoryCoding(db, repoId, { checks: [] });
+        await updateRepositoryCoding(db, gitlabRepoId, { checks: [] });
+      });
       await withAppPlaybook(story, { model: "sonnet" }, async () => {
         const t = crossRepo("Web");
         const run = await delegate(t.epic.id);
@@ -2864,7 +2880,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           branch: main.branch,
           baseBranch: "develop",
           settings: { setupCommand: null },
-          qualityGates: [],
+          // The main lane runs the main repo's checks.
+          qualityGates: ["pnpm check:api"],
         });
         expect(first.stories.map((s) => [s.identifier, s.repository])).toEqual([
           ["ENG-2", null],
@@ -2886,6 +2903,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           branch: web.branch,
           baseBranch: web.baseBranch,
           settings: { model: "sonnet", setupCommand: "npm ci" },
+          // That lane runs its own repo's checks, not the main repo's.
           qualityGates: ["npm run check"],
           story: { identifier: "ENG-3" },
         });

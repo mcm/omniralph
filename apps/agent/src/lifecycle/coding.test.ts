@@ -351,7 +351,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
             attempt: 1,
             maxAttempts: 3,
             followUps: true,
-            verifyCommands: ["test -f feature.txt", "true"],
+            checks: ["test -f feature.txt", "true"],
             stashes: [],
             now,
           }),

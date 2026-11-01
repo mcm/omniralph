@@ -66,7 +66,7 @@ export function storyRunPrompt(
     attempt: payload.attempt,
     maxAttempts: spec.task.maxAttemptsPerStory ?? MAX_ATTEMPTS_PER_STORY,
     followUps: payload.epic.kind !== "single",
-    verifyCommands: payload.qualityGates,
+    checks: payload.qualityGates,
     ...(payload.settings.appendInstruction && {
       appendInstruction: payload.settings.appendInstruction,
     }),

@@ -118,7 +118,7 @@ export const STORY_FIXTURES: Record<string, PromptContext> = {
     maxAttempts: 3,
     appendInstruction: "Write commit-ready code.",
     followUps: true,
-    verifyCommands: ["pnpm lint", "pnpm build"],
+    checks: ["pnpm lint", "pnpm build"],
     stashes: [
       {
         sha: "a".repeat(40),
@@ -138,7 +138,7 @@ export const STORY_FIXTURES: Record<string, PromptContext> = {
     attempt: 1,
     maxAttempts: 3,
     followUps: false,
-    verifyCommands: [],
+    checks: [],
     stashes: [],
     now: NOW,
   },

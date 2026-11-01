@@ -316,23 +316,6 @@ function CodingCard({
     : [...EPIC_STATES, coding.epicCompletedState];
   return (
     <Card title="Coding" headingLevel={3}>
-      <OrderedRows
-        legend="Verify commands"
-        item="verify command"
-        rows={coding.verifyCommands}
-        onChange={(verifyCommands) => update({ verifyCommands })}
-        create={() => ({ key: rowKey(), command: "" })}
-        errorOf={(index) => errorAt(errors, `coding.verifyCommands.${index}`)}
-        error={errors["coding.verifyCommands"]}
-        render={(row, index, set) => (
-          <TextInput
-            aria-label={`Verify command ${index + 1}`}
-            mono
-            value={row.command}
-            onChange={(event) => set({ ...row, command: event.target.value })}
-          />
-        )}
-      />
       <Field label="Worktree setup">
         <TextInput
           mono
@@ -377,7 +360,7 @@ function CodingCard({
       </Field>
       <div className="or-playbook-editor__choices">
         <Checkbox
-          label="Run the PRD's quality gates after the verify commands"
+          label="Run the PRD's quality gates after the repo's checks"
           checked={coding.runPrdQualityGates}
           onCheckedChange={(runPrdQualityGates) => update({ runPrdQualityGates })}
         />

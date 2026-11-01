@@ -105,7 +105,7 @@ const customPlaybook = Playbook.parse({
   tools: { builtin: ["Read"], agent: ["ship"], tracker: [], mcpServers: [] },
   setupCommands: [{ name: "deps", command: "pnpm install", timeoutSeconds: 60 }],
   variableLimits: { "story.description": 4000 },
-  coding: { verifyCommands: ["pnpm test"], maxAttemptsPerStory: 5 },
+  coding: { maxAttemptsPerStory: 5 },
 });
 
 function detailOf(playbook: Playbook, builtin = false): PlaybookDetailData {
@@ -380,13 +380,11 @@ describe("creating a playbook", () => {
     expect(screen.queryByRole("list", { name: "Teardown commands" })).toBeNull();
 
     // Coding settings.
-    await userEvent.click(screen.getByRole("button", { name: "Add verify command" }));
-    await userEvent.type(field("Verify command 1"), "pnpm test");
     await userEvent.type(field("Worktree setup"), "pnpm install");
     await userEvent.selectOptions(field("Epic completed state"), "completed");
     await userEvent.click(
       screen.getByRole("checkbox", {
-        name: "Run the PRD's quality gates after the verify commands",
+        name: "Run the PRD's quality gates after the repo's checks",
       }),
     );
 
@@ -431,7 +429,6 @@ describe("creating a playbook", () => {
       ],
       teardownCommands: [],
       coding: {
-        verifyCommands: ["pnpm test"],
         worktreeSetupCommand: "pnpm install",
         runPrdQualityGates: false,
         allowPreparation: true,
@@ -573,7 +570,6 @@ describe("editing a playbook", () => {
     expect((field("Role") as HTMLSelectElement).disabled).toBe(true);
     expect((field("Model") as HTMLSelectElement).value).toBe("claude-opus-5-5");
     expect((field("Setup command 1") as HTMLInputElement).value).toBe("pnpm install");
-    expect((field("Verify command 1") as HTMLInputElement).value).toBe("pnpm test");
 
     answers.update = () =>
       jsonResponse(
@@ -622,7 +618,7 @@ describe("editing a playbook", () => {
       model: "claude-sonnet-5-5",
       setupCommands: [{ name: "Deps", command: "pnpm install", timeoutSeconds: 60 }],
       variableLimits: { "story.description": 4000 },
-      coding: { maxAttemptsPerStory: 5, verifyCommands: ["pnpm test"] },
+      coding: { maxAttemptsPerStory: 5 },
     });
     expect(writes()[0]!.body).not.toHaveProperty("id");
 

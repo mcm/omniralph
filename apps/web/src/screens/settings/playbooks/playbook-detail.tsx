@@ -311,9 +311,6 @@ function CodingCard({ playbook }: { playbook: Playbook }) {
   return (
     <Card title="Coding">
       <dl className="or-playbook__facts">
-        <Fact term="Verify commands">
-          <CommandList label="Verify commands" commands={coding.verifyCommands} />
-        </Fact>
         <Fact term="Worktree setup">
           {coding.worktreeSetupCommand ? (
             <code className="or-mono">{coding.worktreeSetupCommand}</code>
@@ -322,7 +319,7 @@ function CodingCard({ playbook }: { playbook: Playbook }) {
           )}
         </Fact>
         <Fact term="PRD quality gates">
-          {coding.runPrdQualityGates ? "Runs them after the verify commands" : "Skipped"}
+          {coding.runPrdQualityGates ? "Runs them after the repo's checks" : "Skipped"}
         </Fact>
         <Fact term="Preparation">
           {coding.allowPreparation

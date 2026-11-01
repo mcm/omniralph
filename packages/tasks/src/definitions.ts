@@ -212,9 +212,7 @@ export const CODING_MAX_FIX_ROUNDS = 20;
 export const DEFAULT_FIX_ROUNDS = 3;
 /** Most checks of a repo (its Coding card's commands that must pass after every story). */
 export const MAX_CHECKS = 50;
-/** Most verify commands of a coding playbook: as many as a repo's checks. */
-export const MAX_VERIFY_COMMANDS = MAX_CHECKS;
-/** Longest check, verify or worktree setup command. */
+/** Longest check or worktree setup command. */
 export const MAX_CODING_COMMAND_LENGTH = 4000;
 /** Longest wait for an answer about a merged lane's unmerged commits (a week). */
 export const MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES = 7 * 24 * 60;
@@ -231,7 +229,7 @@ export const DEFAULT_PR_DESCRIPTION_TASK_ID = "builtin:describe-pr";
 
 const FixRounds = z.int().min(0).max(CODING_MAX_FIX_ROUNDS);
 
-/** A one-line shell command (a repo's check, a verify command or the worktree setup command). */
+/** A one-line shell command (a repo's check or the worktree setup command). */
 export const CodingCommand = z
   .string()
   .trim()
@@ -260,8 +258,6 @@ export const CODING_FIELDS = {
   draftPullRequest: z.enum(DRAFT_PULL_REQUEST_TIMINGS).optional(),
   /** Query task (accepting `run.invoked`) that writes the PR title and description. */
   prDescriptionTaskId: DefinitionId.optional(),
-  /** Quality gates every story and request runs, before the PRD's. */
-  verifyCommands: z.array(CodingCommand).max(MAX_VERIFY_COMMANDS).optional(),
   /** Run once in a fresh branch worktree (e.g. `pnpm install`); null for none. */
   worktreeSetupCommand: CodingCommand.nullable().optional(),
   /** Also run the PRD's `## Quality Gates` commands. */
@@ -291,7 +287,6 @@ export const CODING_DEFAULTS = {
   maxFixRounds: DEFAULT_FIX_ROUNDS,
   pushTiming: "per-story",
   prDescriptionTaskId: DEFAULT_PR_DESCRIPTION_TASK_ID,
-  verifyCommands: [] as string[],
   worktreeSetupCommand: null,
   runPrdQualityGates: true,
   allowPreparation: true,

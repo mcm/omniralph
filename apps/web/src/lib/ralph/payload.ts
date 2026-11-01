@@ -90,19 +90,19 @@ export function prdGatesFor(
 }
 
 /**
- * A story's quality gates (cyralph's `verifyCommands` of `runStory`): the
- * playbook's `verifyCommands`, then the PRD's gates for the repository
- * (`prdGatesFor`) when its `runPrdQualityGates` is on, duplicates removed. A
- * single issue has no PRD: only `verifyCommands`.
+ * The commands a story or request job runs after its session: the lane
+ * repository's checks (its Coding card's), then the PRD's gates for that
+ * repository (`prdGatesFor`) when the playbook's `runPrdQualityGates` is on,
+ * duplicates removed. A single issue has no PRD: only the checks.
  */
 export function storyQualityGates(
   kind: RalphRun["kind"],
   epic: Pick<Epic, "qualityGates" | "repositoryQualityGates">,
-  repository: Pick<Repository, "fullPath">,
-  coding: Pick<CodingSettings, "verifyCommands" | "runPrdQualityGates">,
+  repository: Pick<Repository, "fullPath" | "checks">,
+  coding: Pick<CodingSettings, "runPrdQualityGates">,
 ): string[] {
   const prd = kind !== "single" && coding.runPrdQualityGates ? prdGatesFor(epic, repository) : [];
-  return uniqueCommands([...coding.verifyCommands, ...prd]).slice(0, 100);
+  return uniqueCommands([...repository.checks, ...prd]).slice(0, 100);
 }
 
 const url = (value: string | undefined) => (value && /^https?:\/\//.test(value) ? value : null);

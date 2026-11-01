@@ -198,8 +198,8 @@ export const RalphStoryPayload = RalphJobBase.extend({
   /** The commit message, e.g. `feat(TOOL-83): <title>` (or `TOOL-83: <title>` for a single issue). */
   commitMessage: z.string().min(1).max(2000),
   /**
-   * The story's quality gates, run by the job after the session: the story
-   * playbook's `verifyCommands`, then (with `runPrdQualityGates`) the PRD's.
+   * The story's quality gates, run by the job after the session: the lane
+   * repository's checks, then (with `runPrdQualityGates`) the PRD's.
    */
   qualityGates: z.array(z.string().min(1).max(4000)).max(100),
   /** The PRD's `## Quality Gates` commands, shown in the prompt (those the job runs aren't repeated). */
@@ -409,7 +409,7 @@ export const RalphRequestPayload = RalphJobBase.extend({
   prUrl: z.url().nullable().default(null),
   /** The run's progress log so far. */
   progress: z.string().max(MAX_DOCUMENT_LENGTH),
-  /** The request playbook's `verifyCommands`, then (with `runPrdQualityGates`) the PRD's gates. */
+  /** The lane repository's checks, then (with `runPrdQualityGates`) the PRD's gates. */
   qualityGates: z.array(z.string().min(1).max(4000)).max(100).default([]),
   /** Whether an explicit request may rebase and `--force-with-lease` the branch (the repo's). */
   historyRewrite: z.enum(RALPH_HISTORY_REWRITE_POLICIES).default("when-asked"),

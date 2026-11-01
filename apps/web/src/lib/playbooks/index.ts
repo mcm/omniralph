@@ -36,9 +36,22 @@ export interface ResolvedPlaybook {
   requirements: TaskRequirements | null;
 }
 
-/** A stored playbook as the row holds it: its definition with the columns' ID, name and role. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A stored playbook as the row holds it: its definition with the columns' ID, name and role.
+ * Verify commands it was saved with are dropped (a repo's checks replaced them), so it still
+ * reads; saving it again without them is up to its editor.
+ */
 export function storedPlaybookInput(row: StoredPlaybook): Record<string, unknown> {
-  return { ...row.definition, id: row.id, name: row.name, role: row.role };
+  const definition: Record<string, unknown> = { ...row.definition };
+  if (isRecord(definition.coding) && "verifyCommands" in definition.coding) {
+    const { verifyCommands: _retired, ...coding } = definition.coding;
+    definition.coding = coding;
+  }
+  return { ...definition, id: row.id, name: row.name, role: row.role };
 }
 
 function parseStoredPlaybook(row: StoredPlaybook): ResolvedPlaybook | null {
