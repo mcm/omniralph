@@ -35,15 +35,16 @@ vi.mock("server-only", () => ({}));
 
 const { chatTools } = await import("./agent/registry");
 const {
-  CANCEL_LINEAR_ISSUE_ACTION,
-  CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION,
-  CREATE_LINEAR_ISSUE_ACTION,
+  CANCEL_ISSUE_ACTION,
+  CREATE_AND_DELEGATE_ISSUE_ACTION,
+  CREATE_ISSUE_ACTION,
   DELEGATION_FAILED_REPLY,
-  LINEAR_ISSUE_DRAFT_TTL_MS,
+  DELEGATION_UNSUPPORTED_REPLY,
+  ISSUE_DRAFT_TTL_MS,
   NOT_REQUESTER_REPLY,
   TRACKER_NOT_CONNECTED_REPLY,
-  handleLinearIssueAction,
-} = await import("./linear-issue");
+  handleIssueDraftAction,
+} = await import("./issue-draft");
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -206,7 +207,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     event: ActionEvent,
     options: { now?: Date; via?: ChatConnection; fetchAttachment?: FetchAttachment } = {},
   ): Promise<void> {
-    await handleLinearIssueAction(
+    await handleIssueDraftAction(
       {
         db,
         fetchAttachment: options.fetchAttachment,
@@ -234,6 +235,16 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
       .where(eq(chatMessages.threadId, chatThread.id))
       .orderBy(asc(chatMessages.createdAt));
 
+  /** From now on, the organization's tracker has no optional capabilities. */
+  function withoutCapabilities(): void {
+    const fake = fakeWorkItemTracker({
+      teams: [{ id: "team-1", key: "ENG", name: "Engineering" }],
+      capabilities: "none",
+    });
+    linear = fake.workspace;
+    tracker = async () => fake.tracker;
+  }
+
   async function drafted(): Promise<string> {
     const result = await draft();
     expect(result.status).toBe("drafted");
@@ -252,10 +263,10 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect(text).toContain("Users signing in with SSO get a 500.");
     expect(text).toContain("ENG");
     expect(text).toContain("High");
-    expect(text).toContain(CREATE_LINEAR_ISSUE_ACTION);
-    expect(text).toContain(CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION);
+    expect(text).toContain(CREATE_ISSUE_ACTION);
+    expect(text).toContain(CREATE_AND_DELEGATE_ISSUE_ACTION);
     expect(text).toContain("Create and delegate");
-    expect(text).toContain(CANCEL_LINEAR_ISSUE_ACTION);
+    expect(text).toContain(CANCEL_ISSUE_ACTION);
 
     const id = (result.draft as { id: string }).id;
     const row = await getChatLinearIssueDraft(db, id);
@@ -270,7 +281,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
       externalMessageId: CARD_ID,
     });
     expect(row!.expiresAt.getTime() - row!.createdAt.getTime()).toBeGreaterThanOrEqual(
-      LINEAR_ISSUE_DRAFT_TTL_MS - 60_000,
+      ISSUE_DRAFT_TTL_MS - 60_000,
     );
   });
 
@@ -314,7 +325,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
 
   it("creates the issue on the requester's Create click, shows its link and records it", async () => {
     const id = await drafted();
-    const { event, adapter } = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
+    const { event, adapter } = click(id, CREATE_ISSUE_ACTION, "D-ADA");
 
     await handle(event);
 
@@ -330,7 +341,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect(edit).toMatchObject({ threadId: THREAD_ID, messageId: CARD_ID });
     expect(edit!.text).toContain(issue!.identifier);
     expect(edit!.text).toContain(issue!.url);
-    expect(edit!.text).not.toContain(CREATE_LINEAR_ISSUE_ACTION);
+    expect(edit!.text).not.toContain(CREATE_ISSUE_ACTION);
     expect(await getChatLinearIssueDraft(db, id)).toMatchObject({
       status: "created",
       linearIssueId: issue!.id,
@@ -344,7 +355,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect(messages[0]!.content).toContain(issue!.url);
 
     // A second click creates nothing more.
-    const again = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
+    const again = click(id, CREATE_ISSUE_ACTION, "D-ADA");
     await handle(again.event);
     expect(linear.issues.size).toBe(1);
     expect(edited(again.adapter)[0]!.text).toContain(issue!.identifier);
@@ -353,7 +364,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
   it("ignores a click by another member, and by an unlinked user", async () => {
     const id = await drafted();
     for (const user of ["D-BOB", "D-DOMAIN", "D-NOBODY"]) {
-      const { event, adapter, postEphemeral } = click(id, CREATE_LINEAR_ISSUE_ACTION, user);
+      const { event, adapter, postEphemeral } = click(id, CREATE_ISSUE_ACTION, user);
 
       await handle(event);
 
@@ -364,7 +375,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
       );
       expect(adapter.editMessage).not.toHaveBeenCalled();
     }
-    const cancel = click(id, CANCEL_LINEAR_ISSUE_ACTION, "D-BOB");
+    const cancel = click(id, CANCEL_ISSUE_ACTION, "D-BOB");
     await handle(cancel.event);
 
     expect(linear.issues.size).toBe(0);
@@ -374,7 +385,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
 
   it("cancels on the requester's Cancel click", async () => {
     const id = await drafted();
-    const { event, adapter } = click(id, CANCEL_LINEAR_ISSUE_ACTION, "D-ADA");
+    const { event, adapter } = click(id, CANCEL_ISSUE_ACTION, "D-ADA");
 
     await handle(event);
 
@@ -382,7 +393,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect((await getChatLinearIssueDraft(db, id))!.status).toBe("cancelled");
     expect((await recorded())[0]!.content).toContain("Cancelled");
 
-    const create = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
+    const create = click(id, CREATE_ISSUE_ACTION, "D-ADA");
     await handle(create.event);
     expect(linear.issues.size).toBe(0);
     expect(edited(create.adapter)[0]!.text).toContain("Cancelled");
@@ -393,7 +404,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     const row = (await getChatLinearIssueDraft(db, id))!;
     const later = new Date(row.expiresAt.getTime() + 1);
 
-    const { event, adapter } = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
+    const { event, adapter } = click(id, CREATE_ISSUE_ACTION, "D-ADA");
 
     await handle(event, { now: later });
 
@@ -406,7 +417,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
   it("keeps the draft when no tracker is connected anymore, and tells the requester", async () => {
     const id = await drafted();
     tracker = disconnected;
-    const { event, adapter, postEphemeral } = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
+    const { event, adapter, postEphemeral } = click(id, CREATE_ISSUE_ACTION, "D-ADA");
 
     await handle(event);
 
@@ -423,7 +434,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
   it("puts the draft back when Linear fails, so Create can be clicked again", async () => {
     const id = await drafted();
     linear.failures.set("createIssue", new Error("Linear is down"));
-    const first = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
+    const first = click(id, CREATE_ISSUE_ACTION, "D-ADA");
 
     await handle(first.event);
 
@@ -431,7 +442,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect((await getChatLinearIssueDraft(db, id))!.status).toBe("pending");
 
     linear.failures.delete("createIssue");
-    const second = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
+    const second = click(id, CREATE_ISSUE_ACTION, "D-ADA");
     await handle(second.event);
     expect(linear.issues.size).toBe(1);
   });
@@ -439,11 +450,11 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
   it("ignores clicks received by another connection or in another thread", async () => {
     const id = await drafted();
 
-    await handle(click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA").event, { via: otherConnection });
+    await handle(click(id, CREATE_ISSUE_ACTION, "D-ADA").event, { via: otherConnection });
     await handle(
-      click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA", { threadId: "discord:G1:CH1:OTHER" }).event,
+      click(id, CREATE_ISSUE_ACTION, "D-ADA", { threadId: "discord:G1:CH1:OTHER" }).event,
     );
-    await handle(click("not-a-draft", CREATE_LINEAR_ISSUE_ACTION, "D-ADA").event);
+    await handle(click("not-a-draft", CREATE_ISSUE_ACTION, "D-ADA").event);
 
     expect(linear.issues.size).toBe(0);
     expect((await getChatLinearIssueDraft(db, id))!.status).toBe("pending");
@@ -508,7 +519,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
       expect(linear.uploaded).toEqual([]);
 
       const id = (result.draft as { id: string }).id;
-      const { event, adapter } = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
+      const { event, adapter } = click(id, CREATE_ISSUE_ACTION, "D-ADA");
       await handle(event, { fetchAttachment: fetchFile });
 
       expect(linear.uploaded).toEqual([
@@ -516,12 +527,12 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
           filename: "login-error.png",
           contentType: "image/png",
           size: PNG.length,
-          assetUrl: "https://uploads.linear.app/fake/1/login-error.png",
+          url: "https://uploads.tracker.test/1/login-error.png",
         },
       ]);
       const [issue] = [...linear.issues.values()];
       expect(issue!.description).toBe(
-        "Users signing in with SSO get a 500.\n\n- [ ] SSO login works\n\n## Screenshots\n\n![login-error.png](https://uploads.linear.app/fake/1/login-error.png)",
+        "Users signing in with SSO get a 500.\n\n- [ ] SSO login works\n\n## Screenshots\n\n![login-error.png](https://uploads.tracker.test/1/login-error.png)",
       );
       expect(edited(adapter)[0]!.text).not.toContain("Couldn't attach");
     });
@@ -530,7 +541,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
       const { shot } = await attach();
       const result = await draft({ attachments: [shot] });
       const id = (result.draft as { id: string }).id;
-      const { event, adapter } = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
+      const { event, adapter } = click(id, CREATE_ISSUE_ACTION, "D-ADA");
       await handle(event, {
         fetchAttachment: async () => {
           throw new Error("expired");
@@ -546,7 +557,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
       linear.failures.set("uploadFile", new Error("Upload refused"));
       const result = await draft({ attachments: [shot] });
       const id = (result.draft as { id: string }).id;
-      const { event, adapter } = click(id, CREATE_LINEAR_ISSUE_ACTION, "D-ADA");
+      const { event, adapter } = click(id, CREATE_ISSUE_ACTION, "D-ADA");
       await handle(event, { fetchAttachment: fetchFile });
 
       expect(linear.issues.size).toBe(1);
@@ -556,6 +567,23 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
       );
       expect(edited(adapter)[0]!.text).toContain("Couldn't attach: login-error.png");
       expect((await getChatLinearIssueDraft(db, id))!.status).toBe("created");
+    });
+
+    it("creates the issue without screenshots on a tracker that takes no uploads, and says so", async () => {
+      withoutCapabilities();
+      const { shot } = await attach();
+      const result = await draft({ attachments: [shot] });
+      const id = (result.draft as { id: string }).id;
+      const { event, adapter } = click(id, CREATE_ISSUE_ACTION, "D-ADA");
+
+      await handle(event, { fetchAttachment: fetchFile });
+
+      const [issue] = [...linear.issues.values()];
+      expect(issue!.description).toBe(
+        "Users signing in with SSO get a 500.\n\n- [ ] SSO login works",
+      );
+      expect(linear.uploaded).toEqual([]);
+      expect(edited(adapter)[0]!.text).toContain("Couldn't attach: login-error.png");
     });
 
     it("refuses refs that aren't images of the thread, listing the ones there are", async () => {
@@ -571,8 +599,9 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
 
   function watchDelegations(): Array<{ issueId: string; rows: string[] }> {
     const seen: Array<{ issueId: string; rows: string[] }> = [];
-    const delegateIssue = linear.delegation.delegateIssue;
-    linear.delegation.delegateIssue = async (issueId: string, delegateId: string | null) => {
+    const delegation = linear.delegation!;
+    const delegateIssue = delegation.delegateIssue;
+    delegation.delegateIssue = async (issueId: string, delegateId: string | null) => {
       const rows = await db.select().from(chatLinearDelegations);
       seen.push({ issueId, rows: rows.map((r) => `${r.threadId}:${r.linearIssueId}`) });
       return delegateIssue(issueId, delegateId);
@@ -584,11 +613,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     linear.viewer = { id: "omniralph-app", name: "Omniralph" };
     const seen = watchDelegations();
     const id = await drafted();
-    const { event, adapter, postEphemeral } = click(
-      id,
-      CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION,
-      "D-ADA",
-    );
+    const { event, adapter, postEphemeral } = click(id, CREATE_AND_DELEGATE_ISSUE_ACTION, "D-ADA");
 
     await handle(event);
 
@@ -609,11 +634,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
   it("keeps the created issue and tells the requester when delegating fails", async () => {
     linear.failures.set("delegateIssue", new Error("Linear is down"));
     const id = await drafted();
-    const { event, adapter, postEphemeral } = click(
-      id,
-      CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION,
-      "D-ADA",
-    );
+    const { event, adapter, postEphemeral } = click(id, CREATE_AND_DELEGATE_ISSUE_ACTION, "D-ADA");
 
     await handle(event);
 
@@ -628,6 +649,25 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect(edit!.text).toContain("Created");
     expect(edit!.text).not.toContain("Delegated to Omniralph");
     expect((await getChatLinearIssueDraft(db, id))!.status).toBe("created");
+  });
+
+  it("creates the issue and says it can't be delegated on a tracker without delegation", async () => {
+    withoutCapabilities();
+    const id = await drafted();
+    const { event, adapter, postEphemeral } = click(id, CREATE_AND_DELEGATE_ISSUE_ACTION, "D-ADA");
+
+    await handle(event);
+
+    expect(linear.issues.size).toBe(1);
+    expect(linear.delegations).toEqual([]);
+    expect(postEphemeral).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "D-ADA" }),
+      DELEGATION_UNSUPPORTED_REPLY,
+      expect.anything(),
+    );
+    const [edit] = edited(adapter);
+    expect(edit!.text).toContain("Created");
+    expect(edit!.text).not.toContain("Delegated to Omniralph");
   });
 
   describe("delegate_linear_issue", () => {
@@ -668,6 +708,14 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
       const result = await delegate("ENG-8");
       expect(result).toMatchObject({ error: "tracker_not_connected" });
       expect(result.message).toContain("Connect a tracker to file work items.");
+    });
+
+    it("explains that a tracker without delegation can't delegate", async () => {
+      withoutCapabilities();
+      linear.add({ identifier: "ENG-10", title: "Import" });
+
+      expect(await delegate("ENG-10")).toMatchObject({ error: "delegation_unsupported" });
+      expect(linear.delegations).toEqual([]);
     });
 
     it("is an action tool: a domain user can't delegate", async () => {

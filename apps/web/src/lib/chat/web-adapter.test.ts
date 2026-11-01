@@ -57,7 +57,7 @@ const {
   webChatConnection,
   webMessageContent,
 } = await import("./web-adapter");
-const { cancelledCard, draftCard, LINEAR_ISSUE_ACTIONS } = await import("./linear-issue");
+const { cancelledCard, draftCard, ISSUE_DRAFT_ACTIONS } = await import("./issue-draft");
 const { createChatBot } = await import("./bot");
 const { createChatAgentHandler } = await import("./agent/handler");
 const { processThreadRunEvents } = await import("./agent/wake");
@@ -254,7 +254,7 @@ describe("web thread IDs", () => {
 });
 
 describe("webCardRef", () => {
-  it("is the Linear issue draft of a card whose buttons are LINEAR_ISSUE_ACTIONS", () => {
+  it("is the Linear issue draft of a card whose buttons are ISSUE_DRAFT_ACTIONS", () => {
     expect(webCardRef(draftCard(linearDraft))).toEqual({
       kind: "linear_issue_draft",
       draftId: linearDraft.id,
@@ -270,7 +270,7 @@ describe("webCardRef", () => {
     ).toBeNull();
     // A Linear draft's card once cancelled has no buttons left.
     expect(webCardRef(cancelledCard(linearDraft))).toBeNull();
-    expect(LINEAR_ISSUE_ACTIONS).toHaveLength(3);
+    expect(ISSUE_DRAFT_ACTIONS).toHaveLength(3);
   });
 });
 
@@ -413,7 +413,7 @@ describe.skipIf(!databaseAvailable)("the web chat adapter", () => {
       const [row] = await rows(thread.id);
       expect(row!.card).toEqual(JSON.parse(JSON.stringify(card)));
       expect(row!.cardRef).toEqual({ kind: "linear_issue_draft", draftId: linearDraft.id });
-      expect(row!.markdown).toContain("New Linear issue: Fix the login bug");
+      expect(row!.markdown).toContain("New work item: Fix the login bug");
     });
 
     it("editMessage updates the row, keeping the draft its card was for", async () => {

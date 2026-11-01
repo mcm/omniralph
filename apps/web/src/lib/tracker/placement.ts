@@ -8,11 +8,7 @@ import type {
   IssueSummary,
   TrackerGateway,
 } from "@omniralph/tracker";
-import {
-  createLinearIssueWithExtras,
-  isLinearGateway,
-  linearIssuePlacement,
-} from "./linear/placement";
+import { trackerExtras } from "./adapters";
 
 export interface IssuePlacement {
   teamId?: string;
@@ -34,7 +30,8 @@ export async function readIssuePlacement(
   gateway: TrackerGateway,
   issueId: string,
 ): Promise<IssuePlacement> {
-  if (isLinearGateway(gateway)) return linearIssuePlacement(gateway, issueId);
+  const extras = trackerExtras(gateway);
+  if (extras) return extras.issuePlacement(issueId);
   const issue = await gateway.getIssue(issueId);
   return {
     teamId: issue.teamId,
@@ -56,6 +53,7 @@ export async function createIssueWithExtras(
   input: CreateIssueInput,
   extras: Record<string, string>,
 ): Promise<{ issue: IssueSummary; extras: Record<string, string> }> {
-  if (isLinearGateway(gateway)) return createLinearIssueWithExtras(gateway, input, extras);
+  const provider = trackerExtras(gateway);
+  if (provider) return provider.createIssueWithExtras(input, extras);
   return { issue: await gateway.createIssue(input), extras };
 }

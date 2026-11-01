@@ -101,7 +101,7 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => state.dispatcher }));
 vi.mock("@/lib/tracker/linear/client", async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  getLinearGatewayOrDisconnected: async () => state.linear,
+  getLinearGateway: async () => state.linear,
 }));
 vi.mock("@/lib/scm/adapters", async (importOriginal) => {
   const actual = await importOriginal<typeof Adapters>();

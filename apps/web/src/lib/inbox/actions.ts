@@ -32,7 +32,7 @@ import type { ScopedOrganization } from "@/lib/api/scope";
 import { hasRole } from "@/lib/auth/roles";
 import { getDispatcher } from "@/lib/dispatch";
 import { rerunJob } from "@/lib/jobs/rerun";
-import { getLinearGatewayOrDisconnected } from "@/lib/tracker/linear/client";
+import { getTrackerGatewayOrDisconnected } from "@/lib/tracker/client";
 import { finishManualStory, startEpicAnyway } from "@/lib/ralph/person-actions";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { retryRun } from "@/lib/runs/retry";
@@ -173,7 +173,7 @@ async function ralphDeps(db: Database, organizationId: string): Promise<RalphDep
   return {
     db,
     organizationId,
-    linear: await getLinearGatewayOrDisconnected({ db, organizationId }),
+    linear: await getTrackerGatewayOrDisconnected({ db, organizationId }),
     dispatcher: getDispatcher(),
     adapterFor: scmAdapterFor,
   };

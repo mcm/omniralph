@@ -4,7 +4,7 @@ import { badRequest, readJson } from "@/lib/agent-auth/request";
 import { requireJob } from "@/lib/agent-auth/verify";
 import { jobIdParam, notFound, type JobRouteContext } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
-import { getLinearGateway } from "@/lib/tracker/linear/client";
+import { getTrackerGateway } from "@/lib/tracker/client";
 import { relayActivity } from "@/lib/ralph/activities";
 import { liveRoute } from "@/lib/live/request";
 
@@ -43,7 +43,7 @@ async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
 
   try {
     const outcome = await relayActivity(
-      { db, linear: (organizationId) => getLinearGateway({ db, organizationId }) },
+      { db, linear: (organizationId) => getTrackerGateway({ db, organizationId }) },
       job,
       activity.data,
     );

@@ -2,16 +2,22 @@ import { DEFAULT_TRACKER_STATE_MAPPING, type TrackerStateMapping } from "@omnira
 import { describe, expect, it, vi } from "vitest";
 import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import type { LinearGateway } from "@omniralph/tracker/linear";
-import type { WorkflowState, WorkflowStateType } from "@omniralph/tracker";
+import {
+  TrackerCapabilityError,
+  type WorkflowState,
+  type WorkflowStateType,
+} from "@omniralph/tracker";
+import { FakeTrackerGateway, NO_CAPABILITIES } from "@omniralph/tracker/testing";
 import { describeWorkItemTrackerContract, type WorkItemTrackerAgent } from "./contract";
 
 vi.mock("server-only", () => ({}));
 
-const { LinearWorkItemTracker, LINEAR_STATE_TYPES, stateCategoryOf } = await import("./linear");
+const { GatewayWorkItemTracker, WORK_ITEM_STATE_TYPES, stateCategoryOf } =
+  await import("./gateway-tracker");
 const { WORK_ITEM_STATES, WorkItemNotFoundError } = await import("./tracker");
 const { fixtureLinearGateway } = await import("@omniralph/tracker/linear/testing");
 
-const TYPE_OF_CATEGORY = { triage: "triage", ...LINEAR_STATE_TYPES } as const;
+const TYPE_OF_CATEGORY = { triage: "triage", ...WORK_ITEM_STATE_TYPES } as const;
 
 const statesFor = (prefix: string): WorkflowState[] =>
   [
@@ -43,7 +49,7 @@ function linearAgent(
   fake.projects = [{ id: "project-1", name: "Control panel" }];
   const saved: TrackerStateMapping[] = [];
   const activeRuns = new Set<string>();
-  const tracker = new LinearWorkItemTracker({
+  const tracker = new GatewayWorkItemTracker({
     gateway: options.gateway?.(fake) ?? fake,
     integrationId: "integration-1",
     stateMapping: structuredClone(DEFAULT_TRACKER_STATE_MAPPING),
@@ -148,9 +154,9 @@ function counting(fake: FakeLinearGateway, calls: string[]): LinearGateway {
   });
 }
 
-describe("LinearWorkItemTracker", () => {
+describe("GatewayWorkItemTracker over Linear", () => {
   it("maps every work item state to its Linear workflow state type", async () => {
-    expect(LINEAR_STATE_TYPES).toEqual({
+    expect(WORK_ITEM_STATE_TYPES).toEqual({
       backlog: "backlog",
       todo: "unstarted",
       in_progress: "started",
@@ -163,7 +169,7 @@ describe("LinearWorkItemTracker", () => {
     expect(h.fake.stateChanges).toEqual(
       WORK_ITEM_STATES.map((state) => ({
         issueId: id,
-        target: { type: LINEAR_STATE_TYPES[state] },
+        target: { type: WORK_ITEM_STATE_TYPES[state] },
       })),
     );
     // The team's first state of the type: Todo, In Progress (not In Review), ...
@@ -414,7 +420,7 @@ describe("LinearWorkItemTracker", () => {
 
   it("orders sub-issues by their sort order and marks manual ones by the default label", async () => {
     const fake = new FakeLinearGateway();
-    const tracker = new LinearWorkItemTracker({
+    const tracker = new GatewayWorkItemTracker({
       gateway: fake,
       integrationId: "integration-1",
       stateMapping: structuredClone(DEFAULT_TRACKER_STATE_MAPPING),
@@ -523,7 +529,7 @@ describe("LinearWorkItemTracker", () => {
   });
 
   it("lists the fixture workspace's work items with readiness and blockers", async () => {
-    const tracker = new LinearWorkItemTracker({
+    const tracker = new GatewayWorkItemTracker({
       gateway: fixtureLinearGateway(),
       integrationId: "fixture",
       stateMapping: DEFAULT_TRACKER_STATE_MAPPING,
@@ -545,5 +551,65 @@ describe("LinearWorkItemTracker", () => {
       team: { id: "fixture-team-fix", key: "FIX", name: "Fixtures" },
       project: { id: "fixture-project-1", name: "Control panel" },
     });
+  });
+});
+
+describe("GatewayWorkItemTracker on a tracker without optional capabilities", () => {
+  function bare() {
+    const fake = new FakeTrackerGateway({ capabilities: NO_CAPABILITIES });
+    const tracker = new GatewayWorkItemTracker({
+      gateway: fake,
+      integrationId: "integration-1",
+      stateMapping: structuredClone(DEFAULT_TRACKER_STATE_MAPPING),
+      saveStateMapping: async () => undefined,
+    });
+    return { fake, tracker };
+  }
+
+  it("creates the item without its images, reporting each as not attached", async () => {
+    const { fake, tracker } = bare();
+    const created = await tracker.create({
+      teamId: "team-1",
+      title: "Broken button",
+      description: "It doesn't click.",
+      images: [{ filename: "shot.png", contentType: "image/png", data: new Uint8Array([1]) }],
+    });
+    expect(created.failedImages).toEqual(["shot.png"]);
+    expect(fake.created).toEqual([
+      expect.objectContaining({ title: "Broken button", description: "It doesn't click." }),
+    ]);
+  });
+
+  it("refuses to delegate, and lists nothing as delegated to Omniralph", async () => {
+    const { fake, tracker } = bare();
+    const issue = fake.add({ title: "Work" });
+    await expect(tracker.delegateToOmniralph(issue.id)).rejects.toBeInstanceOf(
+      TrackerCapabilityError,
+    );
+    expect((await tracker.listCandidates({ delegatedToOmniralph: true, limit: 10 })).items).toEqual(
+      [],
+    );
+    expect(
+      (await tracker.listCandidates({ delegatedToOmniralph: false, limit: 10 })).items.map(
+        (item) => item.id,
+      ),
+    ).toEqual([issue.id]);
+  });
+
+  it("reads routing fields from the issue and its parent", async () => {
+    const { fake, tracker } = bare();
+    const parent = fake.add({ title: "Epic", labels: ["area:web"] });
+    const child = fake.add({ title: "Story", parentId: parent.id, labels: ["ui"] });
+    const { items } = await tracker.listCandidates({ withRoutingFields: true, limit: 10 });
+    // Without a routing read in the same query, each item's fields are read on their own.
+    expect(items.every((item) => item.routingFields === undefined)).toBe(true);
+    const routing = await tracker.routingFields(child.identifier);
+    expect(routing.issue).toMatchObject({ id: child.id, team: "ENG", labels: ["ui"], cycle: null });
+    expect(routing.parent).toMatchObject({ id: parent.id, labels: ["area:web"] });
+  });
+
+  it("names the gateway's provider as its kind", () => {
+    const { fake, tracker } = bare();
+    expect(tracker.kind).toBe(fake.provider);
   });
 });

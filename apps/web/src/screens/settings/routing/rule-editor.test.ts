@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RuleGroupType } from "react-querybuilder";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
+import { ROUTING_FIELDS } from "@/lib/routing/fields";
 import {
   coerceValue,
   draftsOf,
@@ -14,15 +14,15 @@ import {
   valueOptions,
   type DraftRule,
   type RoutingFieldData,
-  type RoutingLinear,
+  type RoutingTracker,
 } from "./rule-editor";
 
-const fields = LINEAR_ROUTING_FIELDS as unknown as RoutingFieldData[];
+const fields = ROUTING_FIELDS as unknown as RoutingFieldData[];
 const byId = new Map(fields.map((field) => [field.id, field]));
 const API = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const WEB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
-const connected: RoutingLinear = {
+const connected: RoutingTracker = {
   status: "connected",
   options: {
     teams: [{ key: "ENG", name: "Engineering" }],

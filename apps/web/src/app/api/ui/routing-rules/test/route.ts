@@ -3,16 +3,16 @@ import { apiHandler } from "@/lib/api/handler";
 import type { RoutingTestResult } from "@/lib/api/routing-rules";
 import { getDb } from "@/lib/db";
 import { workItemMatchInputSchema } from "@/lib/api/work-item-matches";
-import { linearRoutingRulesSchema } from "@/lib/tracker/linear/routing-fields";
+import { routingRulesBodySchema } from "@/lib/routing/fields";
 import {
   hitRoutingTestLimit,
-  routingLinearGateway,
+  routingTrackerGateway,
   testRoutingRules,
 } from "@/lib/routing/test-issue";
 
-const bodySchema = linearRoutingRulesSchema.extend({
+const bodySchema = routingRulesBodySchema.extend({
   /** The unsaved rules to route by; left out, the saved ones. */
-  rules: linearRoutingRulesSchema.shape.rules.optional(),
+  rules: routingRulesBodySchema.shape.rules.optional(),
   identifier: z
     .string()
     .trim()
@@ -38,13 +38,13 @@ export const POST = apiHandler(
   async ({ user, body }): Promise<RoutingTestResult> => {
     const db = getDb();
     await hitRoutingTestLimit(db, user.id);
-    const linear = await routingLinearGateway(
+    const tracker = await routingTrackerGateway(
       db,
       user.organization.id,
       "Connect Linear to test where an issue would go.",
     );
     return testRoutingRules(
-      { db, organizationId: user.organization.id, linear },
+      { db, organizationId: user.organization.id, linear: tracker },
       body.identifier,
       body.rules,
       body.workItemMatch,

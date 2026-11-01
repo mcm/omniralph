@@ -34,12 +34,12 @@ import {
 } from "@omniralph/ralph";
 import { QueryRunResult, RunSpecJobPayload, TriageRunResult } from "@omniralph/shared";
 import { z } from "zod";
-import { getLinearGateway } from "@/lib/tracker/linear/client";
-import { toIssuePriority, type IssueSummary } from "@omniralph/tracker";
-import type { LinearGateway } from "@omniralph/tracker/linear";
+import { getTrackerGateway } from "@/lib/tracker/client";
+import { toIssuePriority, type IssueSummary, type TrackerGateway } from "@omniralph/tracker";
 import { createPlannedSubIssues, runManualLabels } from "@/lib/ralph/epic-loader";
 import { errorMessage, postActivity, quietly } from "@/lib/ralph/notify";
 import { trackerConversation } from "@/lib/ralph/conversation";
+import { trackerName } from "@/lib/tracker/adapters";
 import { getDispatcher } from "@/lib/dispatch";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
@@ -50,7 +50,7 @@ import { lockedIssues, lockedMessage, type TriageDeps } from "./start";
 
 export interface TriageApplyDeps {
   db: Database;
-  linear: LinearGateway;
+  linear: TrackerGateway;
   /** The work item tracker the issue's state changes go through (default: over `linear`). */
   tracker?: WorkItemTracker;
 }
@@ -285,7 +285,7 @@ interface SubIssueReformat {
  * non-canceled sub-issue. Nothing is ever canceled, deleted or reparented.
  */
 export async function reformatSubIssues(
-  linear: LinearGateway,
+  linear: TrackerGateway,
   issue: IssueSummary,
   children: readonly IssueSummary[],
   updates: TriageAgentOutput["subIssueUpdates"],
@@ -365,9 +365,9 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
     const claimed = await finishTriageRunJob(db, run.id, job.id, "failed", read.result);
     if (!claimed) return { status: "ignored" };
     await failCompletedJob(db, job.id, read.problem);
-    await postActivity(trackerConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId, run.linearIssueId), {
       type: "error",
-      body: `Triage didn't produce a usable PRD, so I changed nothing in Linear: ${read.problem}. Mention me with \`/triage\` to try again.`,
+      body: `Triage didn't produce a usable PRD, so I changed nothing in ${trackerName(linear.provider)}: ${read.problem}. Mention me with \`/triage\` to try again.`,
     });
     return { status: "invalid", problem: read.problem };
   }
@@ -378,9 +378,9 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
 
   const fail = async (error: unknown): Promise<ApplyTriageOutcome> => {
     await setTriageRunStatus(db, run.id, "failed");
-    await postActivity(trackerConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId, run.linearIssueId), {
       type: "error",
-      body: `I couldn't apply the triage to Linear: ${errorMessage(error)}`,
+      body: `I couldn't apply the triage to ${trackerName(linear.provider)}: ${errorMessage(error)}`,
     });
     return { status: "failed", error: errorMessage(error) };
   };
@@ -398,9 +398,9 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   const locked = lockedIssues(issue, children);
   if (locked.length > 0) {
     await setTriageRunStatus(db, run.id, "stopped");
-    await postActivity(trackerConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId, run.linearIssueId), {
       type: "response",
-      body: lockedMessage(issue, locked),
+      body: lockedMessage(issue, locked, trackerName(linear.provider)),
     });
     return { status: "in_progress", issues: locked };
   }
@@ -478,7 +478,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   }
   // Before the final response: a later delegation to Om must be a change Linear acts on.
   await releaseTriageDelegation({ db, organizationId: run.organizationId, linear }, issue.id);
-  await postActivity(trackerConversation(linear, sessionId), {
+  await postActivity(trackerConversation(linear, sessionId, run.linearIssueId), {
     type: "response",
     body: appliedMessage(issue, triage, created, readiness, notes, reformat ? children.length : 0),
   });
@@ -512,7 +512,7 @@ export async function onTriageJobStarted(
     return { skip: true, reason: "skipped" };
   }
 
-  let linear: LinearGateway;
+  let linear: TrackerGateway;
   let issue: IssueSummary;
   let locked: string[];
   try {
@@ -528,7 +528,7 @@ export async function onTriageJobStarted(
   await skipJobAndClearDue(db, job, { reason: "The issue is in progress or done" });
   await postActivity(trackerConversation(linear, run.linearAgentSessionId, run.linearIssueId), {
     type: "response",
-    body: lockedMessage(issue, locked),
+    body: lockedMessage(issue, locked, trackerName(linear.provider)),
   });
   await removeTriageLabelQuietly(linear, run.linearIssueId);
   return { skip: true, reason: "skipped" };
@@ -582,9 +582,12 @@ export async function onTriageJobFinishedWithoutResult(
       status === "failed"
         ? {
             type: "error",
-            body: `Triage failed${error ? `: ${error}` : ""}. Nothing changed in Linear; mention me with \`/triage\` to try again.`,
+            body: `Triage failed${error ? `: ${error}` : ""}. Nothing changed in ${trackerName(linear.provider)}; mention me with \`/triage\` to try again.`,
           }
-        : { type: "response", body: "Triage was canceled. Nothing changed in Linear." },
+        : {
+            type: "response",
+            body: `Triage was canceled. Nothing changed in ${trackerName(linear.provider)}.`,
+          },
     );
     await removeTriageLabelQuietly(linear, run.linearIssueId);
     await continueWithPendingReply(db, run.id, jobDeps);
@@ -617,5 +620,5 @@ async function continueWithPendingReply(
 }
 
 async function defaultDeps(db: Database, run: TriageRun): Promise<TriageApplyDeps> {
-  return { db, linear: await getLinearGateway({ db, organizationId: run.organizationId }) };
+  return { db, linear: await getTrackerGateway({ db, organizationId: run.organizationId }) };
 }

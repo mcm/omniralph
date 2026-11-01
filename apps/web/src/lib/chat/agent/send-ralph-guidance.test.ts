@@ -30,7 +30,7 @@ import type { Thread } from "chat";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { fakeRalphLinear } from "@/lib/testing/fake-linear";
+import { fakeRalphTracker } from "@/lib/testing/fake-tracker";
 import type { ChatChannel } from "@/lib/ralph/conversation";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
@@ -58,7 +58,7 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
   let repositoryId: string;
   let otherRepositoryId: string;
   let chatThread: ChatThread;
-  let linear: ReturnType<typeof fakeRalphLinear>;
+  let linear: ReturnType<typeof fakeRalphTracker>;
   let seq = 0;
 
   const ralph = (organizationId: string): RalphDeps => ({
@@ -110,12 +110,16 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
     status: RalphRunStatus = "running",
   ): Promise<RalphRun> {
     seq += 1;
+    // The epic and its session (unique across tests), on the fake tracker.
+    const epic = linear.add({ id: `issue-${seq}`, identifier: `ENG-${seq}`, title: `Epic ${seq}` });
+    const sessionId = `session-${seq}`;
+    linear.sessionsCreated.push({ issueId: epic.id, sessionId });
     const { run } = await createRun(db, {
       organizationId,
-      linearIssueId: `issue-${seq}`,
-      linearIdentifier: `ENG-${seq}`,
-      linearTitle: `Epic ${seq}`,
-      linearAgentSessionId: `session-${seq}`,
+      linearIssueId: epic.id,
+      linearIdentifier: epic.identifier,
+      linearTitle: epic.title,
+      linearAgentSessionId: sessionId,
       kind: "children",
       repositoryId: repository,
       branch: `omniralph/eng-${seq}`,
@@ -197,7 +201,7 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
   });
 
   beforeEach(() => {
-    linear = fakeRalphLinear();
+    linear = fakeRalphTracker();
   });
 
   it("is an action tool", () => {

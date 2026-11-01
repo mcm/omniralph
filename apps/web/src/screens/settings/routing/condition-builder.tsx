@@ -30,7 +30,7 @@ import {
   valueKindOf,
   valueOptions,
   type RoutingFieldData,
-  type RoutingLinear,
+  type RoutingTracker,
   type ValueOption,
 } from "./rule-editor";
 
@@ -45,7 +45,7 @@ import {
 /** What the controls read beyond react-querybuilder's own props. */
 interface BuilderContext {
   fields: ReadonlyMap<string, RoutingFieldData>;
-  linear: RoutingLinear;
+  tracker: RoutingTracker;
   /** Errors by condition or group path (`"1.0"`; `""` for the rule's own group). */
   errors: ReadonlyMap<string, string>;
 }
@@ -343,10 +343,10 @@ function ValueEditor({
   disabled,
   context,
 }: ValueEditorProps) {
-  const { fields, linear } = useBuilder(context);
+  const { fields, tracker } = useBuilder(context);
   const fieldData = fields.get(field);
   const kind = valueKindOf(fieldData, operator);
-  const options = valueOptions(fieldData, linear);
+  const options = valueOptions(fieldData, tracker);
   const current = coerceValue(kind, value);
   switch (kind) {
     case null:
@@ -471,7 +471,7 @@ export interface ConditionBuilderProps {
   query: RuleGroupType;
   onChange: (query: RuleGroupType) => void;
   fields: ReadonlyMap<string, RoutingFieldData>;
-  linear: RoutingLinear;
+  tracker: RoutingTracker;
   errors: ReadonlyMap<string, string>;
   disabled?: boolean;
 }
@@ -481,7 +481,7 @@ export function ConditionBuilder({
   query,
   onChange,
   fields,
-  linear,
+  tracker,
   errors,
   disabled = false,
 }: ConditionBuilderProps) {
@@ -495,8 +495,8 @@ export function ConditionBuilder({
     [fields],
   );
   const context = React.useMemo<BuilderContext>(
-    () => ({ fields, linear, errors }),
-    [fields, linear, errors],
+    () => ({ fields, tracker, errors }),
+    [fields, tracker, errors],
   );
   const getDefaultOperator = React.useCallback(
     (field: string) => fields.get(field)?.operators[0]?.name ?? "=",

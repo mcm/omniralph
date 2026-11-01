@@ -29,7 +29,7 @@ import { WORK_ITEM_TRACKERS } from "@/lib/api/work-item-matches";
 import { hasRole } from "@/lib/auth/roles";
 import { organizationAgentVersion } from "@/lib/agents/desired-version";
 import { agentRow } from "@/lib/agents/rows";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
+import { ROUTING_FIELDS } from "@/lib/routing/fields";
 import type { SettingsSection } from "@/lib/live/events";
 import {
   listPlaybooks,
@@ -92,7 +92,7 @@ export async function loadCodingCard(db: Database, repository: Repository): Prom
     roundLimits: { review: settings.maxReviewRounds, fix: settings.maxFixRounds },
     routingRules: rules.flatMap((rule, index) =>
       rule.repositoryId === id
-        ? [{ position: index + 1, description: describeQuery(rule.query, LINEAR_ROUTING_FIELDS) }]
+        ? [{ position: index + 1, description: describeQuery(rule.query, ROUTING_FIELDS) }]
         : [],
     ),
   };

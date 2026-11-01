@@ -1,6 +1,9 @@
 import { FakeTrackerGateway, NO_CAPABILITIES } from "@omniralph/tracker/testing";
-import { describe, expect, it } from "vitest";
-import { readRoutingIssue } from "./routing-issue";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+const { readRoutingIssue } = await import("./routing-issue");
 
 describe("readRoutingIssue on a tracker without Linear's routing read", () => {
   it("builds the issue's and its parent's fields from the issues", async () => {

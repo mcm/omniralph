@@ -31,13 +31,9 @@ import {
   type RoutingRule,
   type WorkItemMatchFields,
 } from "@omniralph/db";
-import type { RoutingIssueFields } from "@omniralph/tracker/linear";
+import type { RoutingIssueFields } from "@omniralph/tracker";
 import { readRoutingIssue, type RoutingSource } from "@/lib/tracker/routing-issue";
-import {
-  LINEAR_ROUTING_FIELDS,
-  LINEAR_ROUTING_FIELD_TYPES,
-  linearRoutingValues,
-} from "@/lib/tracker/linear/routing-fields";
+import { ROUTING_FIELDS, ROUTING_FIELD_TYPES, routingValues } from "@/lib/routing/fields";
 import { describeRule } from "./describe";
 import { evaluateQuery } from "./evaluate";
 import { describeMatchRoute, describeMatchTie, matchesWorkItem, specificity } from "./match";
@@ -140,12 +136,12 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
       ? { repository, by, ...(rule !== undefined && { rule }) }
       : { manual: repository, by, ...(rule !== undefined && { rule }) };
 
-  const matchRules = (values: ReturnType<typeof linearRoutingValues>): RouteOutcome | null => {
+  const matchRules = (values: ReturnType<typeof routingValues>): RouteOutcome | null => {
     for (const [index, rule] of rules.entries()) {
       // A rule whose repository is disconnected routes nothing.
       const repository = byId.get(rule.repositoryId);
       if (!repository) continue;
-      if (evaluateQuery(rule.query, values, LINEAR_ROUTING_FIELD_TYPES)) {
+      if (evaluateQuery(rule.query, values, ROUTING_FIELD_TYPES)) {
         return outcome(repository, describe(index, rule), index + 1);
       }
     }
@@ -195,7 +191,7 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
     const sourceId = await getFollowUpSource(deps.db, deps.organizationId, issue.id);
     const source = sourceId ? await sourceFields(issue.identifier, sourceId) : null;
 
-    const matched = matchRules(linearRoutingValues(routing, source)) ?? matchWorkItem(issue);
+    const matched = matchRules(routingValues(routing, source)) ?? matchWorkItem(issue);
     if (matched) return matched;
 
     // Default rule 1: a follow-up routes the same as its source.
@@ -270,7 +266,7 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
   };
 
   const describe = (index: number, rule: Pick<RoutingRule, "query">) =>
-    describeRule(index + 1, rule.query, LINEAR_ROUTING_FIELDS);
+    describeRule(index + 1, rule.query, ROUTING_FIELDS);
 
   return {
     hasCustomRoutes: rules.length > 0 || matches.length > 0,

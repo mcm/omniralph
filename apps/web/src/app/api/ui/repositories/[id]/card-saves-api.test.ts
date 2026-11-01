@@ -89,8 +89,8 @@ const linear = vi.hoisted(() => ({
   options: null as unknown,
   organizations: [] as string[],
 }));
-vi.mock("@/lib/tracker/linear/settings-options", () => ({
-  getLinearSettingsOptions: async (organizationId: string) => {
+vi.mock("@/lib/tracker/settings-options", () => ({
+  getTrackerSettingsOptions: async (organizationId: string) => {
     linear.organizations.push(organizationId);
     if (linear.options instanceof Error) throw linear.options;
     return linear.options;

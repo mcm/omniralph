@@ -775,9 +775,9 @@ and epic runs that are already going aren't affected.
 
 Code that creates, updates, triages or cancels a work item goes through the tracker-neutral
 `WorkItemTracker` interface (`apps/web/src/lib/work-items/tracker.ts`), never `LinearGateway`
-directly. `getWorkItemTracker({db, organizationId})` returns the organization's tracker (its
-Linear connection, `apps/web/src/lib/work-items/linear.ts`) and throws `TrackerNotConnectedError`
-without one. A new adapter runs the shared contract suite
+directly. `getWorkItemTracker({db, organizationId})` returns the organization's tracker
+(`GatewayWorkItemTracker` in `apps/web/src/lib/work-items/gateway-tracker.ts`, over its connected
+tracker's gateway) and throws `TrackerNotConnectedError` without one. A new adapter runs the shared contract suite
 (`describeWorkItemTrackerContract` in `apps/web/src/lib/work-items/contract.ts`).
 
 | Method                     | Linear                                                                                                                                                                                                                                                                                                     |

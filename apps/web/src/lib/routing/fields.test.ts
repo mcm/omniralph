@@ -1,6 +1,6 @@
 import { ROUTING_OPERATORS } from "@omniralph/shared";
 import { describe, expect, it } from "vitest";
-import { LINEAR_ROUTING_FIELDS, linearRoutingRulesSchema } from "./routing-fields";
+import { ROUTING_FIELDS, routingRulesBodySchema } from "./fields";
 
 const ISSUE_FIELDS = {
   identifier: "text",
@@ -21,26 +21,26 @@ const ISSUE_FIELDS = {
   dueDate: "date",
 };
 
-describe("LINEAR_ROUTING_FIELDS", () => {
+describe("ROUTING_FIELDS", () => {
   it("has every issue field, then the parent's and the source's, with their type's operators", () => {
     const expected = ["", "parent.", "source."].flatMap((prefix) =>
       Object.entries(ISSUE_FIELDS).map(([id, type]) => [`${prefix}${id}`, type]),
     );
-    expect(LINEAR_ROUTING_FIELDS.map((f) => [f.id, f.type])).toEqual(expected);
-    for (const field of LINEAR_ROUTING_FIELDS) {
+    expect(ROUTING_FIELDS.map((f) => [f.id, f.type])).toEqual(expected);
+    for (const field of ROUTING_FIELDS) {
       expect(field.operators).toBe(ROUTING_OPERATORS[field.type]);
     }
   });
 
   it("labels the related issues' fields with their issue", () => {
-    const label = (id: string) => LINEAR_ROUTING_FIELDS.find((f) => f.id === id)?.label;
+    const label = (id: string) => ROUTING_FIELDS.find((f) => f.id === id)?.label;
     expect(label("labels")).toBe("Labels");
     expect(label("parent.labels")).toBe("Parent › Labels");
     expect(label("source.team")).toBe("Source › Team");
   });
 
   it("feeds pickers from the workspace's lists or fixed values", () => {
-    const options = (id: string) => LINEAR_ROUTING_FIELDS.find((f) => f.id === id)?.options;
+    const options = (id: string) => ROUTING_FIELDS.find((f) => f.id === id)?.options;
     expect(options("team")).toEqual({ source: "teams" });
     expect(options("projectMilestone")).toEqual({ source: "projectMilestones" });
     expect(options("cycle")).toEqual({ source: "cycles" });
@@ -67,14 +67,14 @@ describe("LINEAR_ROUTING_FIELDS", () => {
         },
       ],
     });
+    expect(routingRulesBodySchema.safeParse(rule("source.stateType", "=", "started")).success).toBe(
+      true,
+    );
+    expect(routingRulesBodySchema.safeParse(rule("stateType", "=", "doing")).success).toBe(false);
     expect(
-      linearRoutingRulesSchema.safeParse(rule("source.stateType", "=", "started")).success,
+      routingRulesBodySchema.safeParse(rule("parent.priority", "in", ["1", "2"])).success,
     ).toBe(true);
-    expect(linearRoutingRulesSchema.safeParse(rule("stateType", "=", "doing")).success).toBe(false);
-    expect(
-      linearRoutingRulesSchema.safeParse(rule("parent.priority", "in", ["1", "2"])).success,
-    ).toBe(true);
-    expect(linearRoutingRulesSchema.safeParse(rule("grandparent.team", "=", "ENG")).success).toBe(
+    expect(routingRulesBodySchema.safeParse(rule("grandparent.team", "=", "ENG")).success).toBe(
       false,
     );
   });

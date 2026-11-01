@@ -35,7 +35,7 @@ import type { OrgUser } from "@/lib/auth/session";
 import { platformChannelId } from "@/lib/chat/playbooks";
 import { listPlaybooks } from "@/lib/playbooks";
 import type { SettingsSection } from "@/lib/live/events";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
+import { ROUTING_FIELDS } from "@/lib/routing/fields";
 import { describeQuery } from "@/lib/routing/describe";
 import { matchSentence } from "@/lib/routing/match";
 import { userDisplayName } from "@/lib/user-display";
@@ -249,7 +249,7 @@ function ruleFields(before: SettingsValues | null, after: SettingsValues | null)
 
 /** A rule as the history shows it: its condition in words and the repository it routes to. */
 export function describeRoutingRule(query: Parameters<typeof describeQuery>[0], target: string) {
-  return `${describeQuery(query, LINEAR_ROUTING_FIELDS)} → ${target}`;
+  return `${describeQuery(query, ROUTING_FIELDS)} → ${target}`;
 }
 
 async function readRoutingRules(db: Database, organizationId: string): Promise<SettingsValues> {

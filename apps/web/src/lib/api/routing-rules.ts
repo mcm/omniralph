@@ -1,6 +1,6 @@
 import type { RoutingQuery } from "@omniralph/shared";
 import { z } from "zod";
-import { isoDate, linearSettingsOptionsSchema } from "./schemas";
+import { isoDate, trackerSettingsOptionsSchema } from "./schemas";
 import { settingsHistoryEntrySchema } from "./settings-history";
 import type { WorkItemMatchInput } from "./work-item-matches";
 
@@ -19,7 +19,7 @@ export type RoutingRuleRow = z.infer<typeof routingRuleRowSchema>;
 
 const fieldValueSchema = z.object({ value: z.string(), label: z.string() });
 
-/** A field of the catalog (`LINEAR_ROUTING_FIELDS`). */
+/** A field of the catalog (`ROUTING_FIELDS`). */
 export const routingFieldSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -43,9 +43,9 @@ export const routingFieldSchema = z.object({
     .nullable(),
 });
 
-/** The connected Linear workspace's values the value pickers offer, or why there are none. */
-export const routingLinearSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("connected"), options: linearSettingsOptionsSchema }),
+/** The connected tracker's values the value pickers offer, or why there are none. */
+export const routingTrackerSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("connected"), options: trackerSettingsOptionsSchema }),
   z.object({ status: z.literal("disconnected") }),
   z.object({ status: z.literal("unavailable") }),
 ]);
@@ -55,7 +55,7 @@ export const routingRulesSchema = z.object({
   rules: z.array(routingRuleRowSchema),
   /** The fields rules can test. */
   fields: z.array(routingFieldSchema),
-  linear: routingLinearSchema,
+  tracker: routingTrackerSchema,
   /** The organization's connected repositories rules can target, by path. */
   repositories: z.array(
     z.object({

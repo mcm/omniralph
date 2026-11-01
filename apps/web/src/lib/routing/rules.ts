@@ -12,8 +12,8 @@ import type { RoutingRuleInput } from "@omniralph/shared";
 import { ApiRouteError } from "@/lib/api/handler";
 import type { ScopedOrganization } from "@/lib/api/scope";
 import type { RoutingRuleRow, RoutingRules, SavedRoutingRules } from "@/lib/api/routing-rules";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
-import { getLinearSettingsOptions } from "@/lib/tracker/linear/settings-options";
+import { ROUTING_FIELDS } from "@/lib/routing/fields";
+import { getTrackerSettingsOptions } from "@/lib/tracker/settings-options";
 import { loadSettingsHistory } from "@/lib/settings-history/history";
 import { trackedRoutingRules } from "@/lib/settings-history/sections";
 
@@ -30,12 +30,12 @@ function toRow(rule: RoutingRule): RoutingRuleRow {
   };
 }
 
-async function loadLinear(organizationId: string): Promise<RoutingRules["linear"]> {
+async function loadTracker(organizationId: string): Promise<RoutingRules["tracker"]> {
   try {
-    const options = await getLinearSettingsOptions(organizationId);
+    const options = await getTrackerSettingsOptions(organizationId);
     return options ? { status: "connected", options } : { status: "disconnected" };
   } catch (error) {
-    console.error("Loading the Linear settings options failed", error);
+    console.error("Loading the tracker settings options failed", error);
     return { status: "unavailable" };
   }
 }
@@ -49,15 +49,15 @@ export async function loadRoutingRules(
   organization: ScopedOrganization,
 ): Promise<RoutingRules> {
   const organizationId = organization.id;
-  const [rules, linear, repositories, history] = await Promise.all([
+  const [rules, tracker, repositories, history] = await Promise.all([
     listRoutingRules(db, organizationId),
-    loadLinear(organizationId),
+    loadTracker(organizationId),
     listRepositoryOverview(db, organizationId),
     loadSettingsHistory(db, [organization], { section: "routing_rules", limit: 1 }),
   ]);
   return {
     rules: rules.map(toRow),
-    fields: LINEAR_ROUTING_FIELDS.map((field) => ({
+    fields: ROUTING_FIELDS.map((field) => ({
       ...field,
       operators: [...field.operators],
       options:
@@ -65,7 +65,7 @@ export async function loadRoutingRules(
           ? { values: [...field.options.values] }
           : field.options,
     })),
-    linear,
+    tracker,
     repositories: repositories.map((repo) => ({
       id: repo.id,
       provider: repo.provider,

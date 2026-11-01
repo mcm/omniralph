@@ -1,7 +1,7 @@
 import { apiHandler, ApiRouteError } from "@/lib/api/handler";
 import type { CodingTrackerOptions } from "@/lib/api/repositories";
 import { requireRepositoryAccess } from "@/lib/api/scope";
-import { getLinearSettingsOptions } from "@/lib/tracker/linear/settings-options";
+import { getTrackerSettingsOptions } from "@/lib/tracker/settings-options";
 
 /**
  * The teams, projects and labels of the repo's organization's Linear workspace, for the
@@ -14,7 +14,7 @@ export const GET = apiHandler<"member", undefined, undefined, { id: string }>(
     const { repository, organization } = await requireRepositoryAccess(user, params.id, "admin");
     if (repository.disconnectedAt) throw ApiRouteError.notFound();
     try {
-      const options = await getLinearSettingsOptions(organization.id);
+      const options = await getTrackerSettingsOptions(organization.id);
       if (!options) return { status: "disconnected" };
       return {
         status: "connected",

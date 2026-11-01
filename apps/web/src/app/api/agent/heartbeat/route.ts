@@ -37,7 +37,7 @@ import { readAgentOrganization } from "@/lib/agents/organization";
 import { hasDueJob, renewJobsDue } from "@/lib/dispatch/due";
 import { hotStateEnabled } from "@/lib/hot-state";
 import { getDb } from "@/lib/db";
-import { getLinearGatewayOrDisconnected } from "@/lib/tracker/linear/client";
+import { getTrackerGatewayOrDisconnected } from "@/lib/tracker/client";
 import { exchangeJobMessages } from "@/lib/ralph/messages";
 import { liveRoute } from "@/lib/live/request";
 
@@ -155,7 +155,7 @@ async function post(req: Request): Promise<Response> {
     jobMessages = await exchangeJobMessages(
       {
         db,
-        linear: (organizationId) => getLinearGatewayOrDisconnected({ db, organizationId }),
+        linear: (organizationId) => getTrackerGatewayOrDisconnected({ db, organizationId }),
       },
       agentId,
       keepIds,

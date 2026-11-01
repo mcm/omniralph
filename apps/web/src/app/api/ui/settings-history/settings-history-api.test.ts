@@ -44,8 +44,8 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 // No Linear workspace for the Coding tab's checks.
-vi.mock("@/lib/tracker/linear/settings-options", () => ({
-  getLinearSettingsOptions: async () => null,
+vi.mock("@/lib/tracker/settings-options", () => ({
+  getTrackerSettingsOptions: async () => null,
 }));
 vi.mock("@/lib/auth/session", () => ({
   requireUser: async (role: Role = "member") =>

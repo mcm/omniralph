@@ -1,3 +1,4 @@
+import { requireCapability } from "@omniralph/tracker";
 import { LinearEntityId } from "@omniralph/shared";
 import { notFound } from "@/lib/agent-api/jobs";
 import { runLinearDocument, serveRunLinearTool } from "@/lib/runs/linear";
@@ -11,8 +12,10 @@ interface DocumentRouteContext {
 async function get(req: Request, ctx: DocumentRouteContext): Promise<Response> {
   const documentId = LinearEntityId.safeParse((await ctx.params).documentId);
   if (!documentId.success) return notFound();
-  return serveRunLinearTool(req, ctx, "linear_get_document", async (linear) => ({
-    document: runLinearDocument(await linear.documents.getDocument(documentId.data)),
+  return serveRunLinearTool(req, ctx, "linear_get_document", async (tracker) => ({
+    document: runLinearDocument(
+      await requireCapability(tracker, "documents").getDocument(documentId.data),
+    ),
   }));
 }
 

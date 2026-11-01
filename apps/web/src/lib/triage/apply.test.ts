@@ -43,7 +43,10 @@ vi.mock("server-only", () => ({}));
 
 /** The gateway the sink's hooks get (they load the organization's own). */
 const gateway = vi.hoisted(() => ({ current: null as unknown }));
-vi.mock("@/lib/tracker/linear/client", () => ({ getLinearGateway: async () => gateway.current }));
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getLinearGateway: async () => gateway.current,
+}));
 
 const databaseAvailable = testDatabaseAvailable();
 

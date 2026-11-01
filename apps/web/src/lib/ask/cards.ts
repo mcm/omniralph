@@ -13,12 +13,12 @@ import { getAppUrl } from "@/lib/app-url";
 import { attachmentName } from "@/lib/chat/attachments";
 import { requestDraftContext, requestDraftView } from "@/lib/chat/request-draft";
 import {
-  CANCEL_LINEAR_ISSUE_ACTION,
-  CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION,
-  CREATE_LINEAR_ISSUE_ACTION,
+  CANCEL_ISSUE_ACTION,
+  CREATE_AND_DELEGATE_ISSUE_ACTION,
+  CREATE_ISSUE_ACTION,
   draftPreview,
   PRIORITY_NAMES,
-} from "@/lib/chat/linear-issue";
+} from "@/lib/chat/issue-draft";
 
 /**
  * The cards of a web chat as the web shows them: a card that acts on a draft (its
@@ -78,13 +78,13 @@ export function linearIssueDraftView(
     actions:
       status === "pending"
         ? [
-            { id: CREATE_LINEAR_ISSUE_ACTION, label: "Create", value: draft.id },
+            { id: CREATE_ISSUE_ACTION, label: "Create", value: draft.id },
             {
-              id: CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION,
+              id: CREATE_AND_DELEGATE_ISSUE_ACTION,
               label: "Create and delegate",
               value: draft.id,
             },
-            { id: CANCEL_LINEAR_ISSUE_ACTION, label: "Cancel", value: draft.id },
+            { id: CANCEL_ISSUE_ACTION, label: "Cancel", value: draft.id },
           ]
         : [],
   };

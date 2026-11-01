@@ -43,7 +43,7 @@ import {
   type DraftErrors,
   type DraftRule,
   type RoutingFieldData,
-  type RoutingLinear,
+  type RoutingTracker,
   type RoutingRepository,
   type RuleErrors,
 } from "./rule-editor";
@@ -101,17 +101,17 @@ interface RuleSheetProps {
   errors: RuleErrors | undefined;
   fields: readonly RoutingFieldData[];
   fieldsById: ReadonlyMap<string, RoutingFieldData>;
-  linear: RoutingLinear;
+  tracker: RoutingTracker;
   repositories: readonly RoutingRepository[];
   onApply: (rule: DraftRule) => void;
   onClose: () => void;
 }
 
-function LinearNote({ linear }: { linear: RoutingLinear }) {
-  if (linear.status === "connected") return null;
+function TrackerNote({ tracker }: { tracker: RoutingTracker }) {
+  if (tracker.status === "connected") return null;
   return (
     <p className="or-routing__note">
-      {linear.status === "disconnected"
+      {tracker.status === "disconnected"
         ? "Linear isn't connected, so values can't be suggested from your workspace's teams, projects, labels and people. Type them instead."
         : "Your Linear workspace's values couldn't be loaded, so they can't be suggested. Type values instead, or reload the page to try again."}
     </p>
@@ -129,7 +129,7 @@ function RuleSheet({
   errors: savedErrors,
   fields,
   fieldsById,
-  linear,
+  tracker,
   repositories,
   onApply,
   onClose,
@@ -182,12 +182,12 @@ function RuleSheet({
           <h3 id={`${repoId}-condition`} className="or-routing-sheet__heading">
             Condition
           </h3>
-          <LinearNote linear={linear} />
+          <TrackerNote tracker={tracker} />
           <ConditionBuilder
             query={rule.query}
             onChange={setQuery}
             fields={fieldsById}
-            linear={linear}
+            tracker={tracker}
             errors={errors?.nodes ?? NO_NODE_ERRORS}
           />
           {rule.query.rules.length === 0 ? (
@@ -543,7 +543,7 @@ export function RoutingRulesCard({ data, isAdmin }: { data: RoutingRules; isAdmi
             errors={editing.index === null ? undefined : errors.rules.get(editing.index)}
             fields={data.fields}
             fieldsById={fieldsById}
-            linear={data.linear}
+            tracker={data.tracker}
             repositories={repositories}
             onApply={apply}
             onClose={() => setEditing(null)}

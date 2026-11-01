@@ -2,7 +2,7 @@ import { apiHandler } from "@/lib/api/handler";
 import type { RoutingRules, SavedRoutingRules } from "@/lib/api/routing-rules";
 import { activeOrganization } from "@/lib/api/scope";
 import { getDb } from "@/lib/db";
-import { linearRoutingRulesSchema } from "@/lib/tracker/linear/routing-fields";
+import { routingRulesBodySchema } from "@/lib/routing/fields";
 import { loadRoutingRules, saveRoutingRules } from "@/lib/routing/rules";
 import { settingsActor } from "@/lib/settings-history/sections";
 
@@ -21,7 +21,7 @@ export const GET = apiHandler({}, async ({ user }): Promise<RoutingRules> =>
  * nothing is saved.
  */
 export const PUT = apiHandler(
-  { access: "admin", body: linearRoutingRulesSchema },
+  { access: "admin", body: routingRulesBodySchema },
   async ({ user, body }): Promise<SavedRoutingRules> =>
     saveRoutingRules(getDb(), user.organization.id, body.rules, settingsActor(user)),
 );

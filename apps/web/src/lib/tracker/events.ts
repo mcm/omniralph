@@ -21,9 +21,14 @@ import { trackerConversation } from "@/lib/ralph/conversation";
 import { startTriage } from "@/lib/triage/start";
 import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
 import type { WorkItem } from "@/lib/work-items/tracker";
-import { getLinearGateway } from "./linear/client";
-import type { LinearGateway } from "@omniralph/tracker/linear";
-import type { HandledTrackerEvent } from "@omniralph/tracker";
+import { getTrackerGateway } from "./client";
+import {
+  hasCapability,
+  type HandledTrackerEvent,
+  type IssueSummary,
+  type TrackerGateway,
+  type Viewer,
+} from "@omniralph/tracker";
 
 export type { HandledTrackerEvent } from "@omniralph/tracker";
 
@@ -44,24 +49,27 @@ export const ACKNOWLEDGE_REFRESH_TIMEOUT_MS = 2_000;
 
 /**
  * Posts what the tracker needs before the webhook responds: a new agent session
- * must get an activity within 10 seconds (Linear's limit), so it is acknowledged
+ * must get an activity within 10 seconds (Linear's limit; a tracker without
+ * sessions needs none), so it is acknowledged
  * with a thought right away (without waiting long for a token refresh). Failures
  * are logged; the event is still handled.
  */
 export async function acknowledgeTrackerEvent(
   event: HandledTrackerEvent,
   context: TrackerEventContext,
-  linear?: LinearGateway,
+  tracker?: TrackerGateway,
 ): Promise<void> {
   if (event.kind !== "issue_delegated" && event.kind !== "issue_mentioned") return;
   try {
     const gateway =
-      linear ??
-      (await getLinearGateway({
+      tracker ??
+      (await getTrackerGateway({
         db: context.db,
         organizationId: context.organizationId,
         refreshTimeoutMs: ACKNOWLEDGE_REFRESH_TIMEOUT_MS,
       }));
+    // Only a session waits for an acknowledgement; a comment thread doesn't.
+    if (!hasCapability(gateway, "sessions")) return;
     await gateway.sessions.createActivity(
       event.sessionId,
       { type: "thought", body: ACKNOWLEDGEMENT },
@@ -71,9 +79,6 @@ export async function acknowledgeTrackerEvent(
     console.error(`Acknowledging agent session ${event.sessionId} failed`, error);
   }
 }
-
-/** The orchestrator's dependencies with a Linear gateway (triage still needs Linear's). */
-type LinearRalphDeps = RalphDeps & { linear: LinearGateway };
 
 const isActiveTriage = (run: TriageRun) =>
   (ACTIVE_TRIAGE_RUN_STATUSES as readonly string[]).includes(run.status);
@@ -89,11 +94,11 @@ export function stillNeedsRefiningMessage(identifier: string): string {
  * delegation reads the work item's readiness first and triages an item that needs
  * refining (in the delegation's own session) instead of building it. When the work item
  * can't be read, the delegation starts a run as before. Triage's own sessions are left
- * alone while triage runs; a finished triage session Linear opens again is a delegation
- * into it (Linear reusing Om's existing session on the issue), which builds a ready item
+ * alone while triage runs; a finished triage session the tracker opens again is a delegation
+ * into it (the tracker reusing Om's existing session on the issue), which builds a ready item
  * there and says what is still open otherwise.
  */
-async function startSession(event: SessionCreatedEvent, ralph: LinearRalphDeps): Promise<void> {
+async function startSession(event: SessionCreatedEvent, ralph: RalphDeps): Promise<void> {
   const { db, organizationId } = ralph;
   if (parseInstruction(event.commentBody).wantsTriage) {
     await startTriage(event, ralph);
@@ -132,7 +137,7 @@ async function startSession(event: SessionCreatedEvent, ralph: LinearRalphDeps):
 }
 
 /**
- * A delegation Linear sent as an empty prompt into a finished triage session (should it
+ * A delegation the tracker sent as an empty prompt into a finished triage session (should it
  * reuse Om's existing session on the issue rather than open one): the session as a delegation's
  * `created` event, when the session has no run yet and the issue is delegated to Om now;
  * otherwise null (a reply, for triage or ralph).
@@ -145,8 +150,8 @@ async function delegationIntoTriageSession(
   const triage = await getTriageRunBySession(ralph.db, event.sessionId);
   if (!triage || isActiveTriage(triage)) return null;
   if (await getRunBySession(ralph.db, event.sessionId)) return null;
-  let issue: Awaited<ReturnType<LinearGateway["getIssue"]>>;
-  let viewer: Awaited<ReturnType<LinearGateway["getViewer"]>>;
+  let issue: IssueSummary;
+  let viewer: Viewer;
   try {
     [issue, viewer] = await Promise.all([
       ralph.linear.getIssue(triage.linearIssueId),
@@ -180,12 +185,12 @@ export async function handleTrackerEvent(
   event: HandledTrackerEvent,
   context: TrackerEventContext,
   deps: Partial<Omit<RalphDeps, "db" | "organizationId" | "linear">> & {
-    linear?: LinearGateway;
+    linear?: TrackerGateway;
   } = {},
 ): Promise<void> {
   const { db, organizationId } = context;
-  const linear = deps.linear ?? (await getLinearGateway({ db, organizationId }));
-  const ralph: LinearRalphDeps = {
+  const linear = deps.linear ?? (await getTrackerGateway({ db, organizationId }));
+  const ralph: RalphDeps = {
     db,
     organizationId,
     linear,

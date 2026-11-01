@@ -21,8 +21,8 @@ import {
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
 import { FEEDBACK_REASON_LABELS, REVIEW_DEPTHS } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/tracker/linear/client";
-import type { LinearGateway } from "@omniralph/tracker/linear";
+import { lazyTrackerGateway } from "@/lib/tracker/client";
+import type { TrackerGateway } from "@omniralph/tracker";
 import {
   addPullRequestCommentRequest,
   findRalphPullRequest,
@@ -50,8 +50,8 @@ export interface BotCommandContext {
   command: BotCommand;
   /** The code-host adapter of a connection (ralph lanes); default `scmAdapterFor`. */
   adapterFor?: (db: Database, connection: ScmConnection) => ScmAdapter;
-  /** The Linear workspace (ralph requests); default: the connected one. */
-  linear?: () => Promise<LinearGateway>;
+  /** The tracker (ralph requests); default: the connected one. */
+  linear?: () => Promise<TrackerGateway>;
   /** Where ralph runs from chat post (default: the deployment's chat bot). */
   chat?: ChatSource;
 }
@@ -167,9 +167,11 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       db,
       organizationId,
       dispatcher,
-      linear: lazyLinearGateway(
-        ctx.linear ?? (() => getLinearGatewayOrDisconnected({ db, organizationId })),
-      ),
+      linear: lazyTrackerGateway({
+        db,
+        organizationId,
+        ...(ctx.linear && { load: ctx.linear }),
+      }),
       adapterFor: ctx.adapterFor ?? scmAdapterFor,
       chat: ctx.chat,
     };

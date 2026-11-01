@@ -35,7 +35,7 @@ import { createChatAgentHandler } from "./agent/handler";
 import { discordOAuthConfig, type DiscordOAuthConfig } from "./discord-oauth";
 import { resolveChatActor, type ChatActor, type ChatMemberActor } from "./identity";
 import { createLinkUrl } from "./link";
-import { handleLinearIssueAction, LINEAR_ISSUE_ACTIONS } from "./linear-issue";
+import { handleIssueDraftAction, ISSUE_DRAFT_ACTIONS } from "./issue-draft";
 import { CHAT_ACCOUNTS_PATH } from "./link-paths";
 import type { PlaybookLookup } from "./playbooks";
 import { REQUEST_DRAFT_ACTIONS } from "./request-draft";
@@ -378,10 +378,10 @@ export function createChatBot(deps: ChatBotDeps): ChatBot {
       platform: c.platform,
       externalUserId,
     });
-  chat.onAction(LINEAR_ISSUE_ACTIONS, async (event) => {
+  chat.onAction(ISSUE_DRAFT_ACTIONS, async (event) => {
     const connection = await actionConnection(event);
     if (!connection) return;
-    await handleLinearIssueAction(
+    await handleIssueDraftAction(
       {
         db,
         resolveActor,

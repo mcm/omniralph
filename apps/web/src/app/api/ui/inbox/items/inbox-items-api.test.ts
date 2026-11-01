@@ -65,7 +65,7 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => state.dispatcher }));
 vi.mock("@/lib/tracker/linear/client", async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  getLinearGatewayOrDisconnected: async () => state.linear,
+  getLinearGateway: async () => state.linear,
 }));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");

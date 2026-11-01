@@ -1,6 +1,6 @@
 import type { RoutingCondition, RoutingGroup } from "@omniralph/shared";
 import { describe, expect, it } from "vitest";
-import { LINEAR_ROUTING_FIELD_TYPES } from "@/lib/tracker/linear/routing-fields";
+import { ROUTING_FIELD_TYPES } from "@/lib/routing/fields";
 import { evaluateCondition, evaluateQuery, type RoutingFieldValues } from "./evaluate";
 
 const values: RoutingFieldValues = {
@@ -27,7 +27,7 @@ const values: RoutingFieldValues = {
 };
 
 const holds = (field: string, operator: string, value: RoutingCondition["value"] = null) =>
-  evaluateCondition({ field, operator, value }, values, LINEAR_ROUTING_FIELD_TYPES);
+  evaluateCondition({ field, operator, value }, values, ROUTING_FIELD_TYPES);
 
 describe("evaluateCondition", () => {
   it("text: equals, does not equal, contains, begins and ends with, ignoring case", () => {
@@ -163,7 +163,7 @@ const condition = (field: string, operator: string, value: RoutingCondition["val
 });
 const TRUE = condition("team", "=", "ENG");
 const FALSE = condition("team", "=", "OPS");
-const query = (group: RoutingGroup) => evaluateQuery(group, values, LINEAR_ROUTING_FIELD_TYPES);
+const query = (group: RoutingGroup) => evaluateQuery(group, values, ROUTING_FIELD_TYPES);
 
 describe("evaluateQuery", () => {
   it("AND needs every rule, OR any", () => {

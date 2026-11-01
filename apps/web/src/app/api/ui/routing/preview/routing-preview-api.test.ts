@@ -268,7 +268,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing/preview", () => {
     state.linear = null;
     expect(await post(["ENG-1"])).toMatchObject({
       status: 409,
-      body: { code: "linear_not_connected" },
+      body: { code: "tracker_not_connected" },
     });
   });
 

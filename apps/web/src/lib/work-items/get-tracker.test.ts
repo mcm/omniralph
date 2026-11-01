@@ -75,27 +75,26 @@ describe.skipIf(!databaseAvailable)("getWorkItemTracker", () => {
     );
   });
 
-  it("returns the organization's Linear tracker, over its workspace's token", async () => {
+  it("returns the organization's tracker, loading its gateway on the first call", async () => {
     await connect();
     const fake = new FakeLinearGateway();
     const issue = fake.add({ title: "Ship it", identifier: "ENG-7" });
-    const tokens: string[] = [];
+    let loads = 0;
     const tracker = await getWorkItemTracker({
       db,
       organizationId,
-      key,
-      createGateway: (token) => {
-        tokens.push(token);
+      gateway: async () => {
+        loads += 1;
         return fake;
       },
     });
     const integration = await getIntegration(db, organizationId, "linear");
     expect(tracker).toMatchObject({ kind: "linear", integrationId: integration!.id });
-    // The token is only read on the first call to Linear.
-    expect(tokens).toEqual([]);
+    // The credentials are only read on the first call to the tracker.
+    expect(loads).toBe(0);
     expect(await tracker.get("ENG-7")).toMatchObject({ id: issue.id, readiness: "ready" });
     await tracker.get(issue.id);
-    expect(tokens).toEqual(["lin_token"]);
+    expect(loads).toBe(1);
     expect(await tracker.getStateMapping()).toEqual(DEFAULT_TRACKER_STATE_MAPPING);
 
     // Another organization's tracker isn't this one.
@@ -110,8 +109,7 @@ describe.skipIf(!databaseAvailable)("getWorkItemTracker", () => {
     const tracker = await getWorkItemTracker({
       db,
       organizationId,
-      key,
-      createGateway: () => fake,
+      gateway: async () => fake,
     });
     const mapping = {
       ready: { types: ["unstarted"] },
@@ -123,8 +121,7 @@ describe.skipIf(!databaseAvailable)("getWorkItemTracker", () => {
     const reloaded = await getWorkItemTracker({
       db,
       organizationId,
-      key,
-      createGateway: () => fake,
+      gateway: async () => fake,
     });
     expect(await reloaded.getStateMapping()).toEqual(mapping);
   });
@@ -144,8 +141,7 @@ describe.skipIf(!databaseAvailable)("getWorkItemTracker", () => {
     const tracker = await getWorkItemTracker({
       db,
       organizationId,
-      key,
-      createGateway: () => fake,
+      gateway: async () => fake,
     });
     expect(
       (await tracker.stories(parent.id)).map(({ title, manual }) => ({ title, manual })),
@@ -158,7 +154,7 @@ describe.skipIf(!databaseAvailable)("getWorkItemTracker", () => {
 
   it("throws TrackerNotConnectedError when the connection was removed since", async () => {
     await connect();
-    const tracker = await getWorkItemTracker({ db, organizationId, key });
+    const tracker = await getWorkItemTracker({ db, organizationId });
     await db.delete(integrations);
     await expect(tracker.get("ENG-1")).rejects.toBeInstanceOf(TrackerNotConnectedError);
     await expect(tracker.setStateMapping(DEFAULT_TRACKER_STATE_MAPPING)).rejects.toBeInstanceOf(

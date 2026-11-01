@@ -5,7 +5,7 @@
  */
 import { formatQuery } from "react-querybuilder/formatQuery";
 import type { RoutingCondition, RoutingQuery } from "@omniralph/shared";
-import type { RoutingField } from "@/lib/tracker/linear/routing-fields";
+import type { RoutingField } from "@/lib/routing/fields";
 
 /** What an empty rule (it matches every issue) reads as. */
 export const EVERY_ISSUE = "every issue";

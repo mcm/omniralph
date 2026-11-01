@@ -3,7 +3,8 @@ import { MAX_ATTACHMENT_BYTES, RalphAttachmentId } from "@omniralph/shared";
 import { requireJob } from "@/lib/agent-auth/verify";
 import { jobIdParam, notFound } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
-import { getLinearGateway, LinearNotConnectedError } from "@/lib/tracker/linear/client";
+import { hasCapability } from "@omniralph/tracker";
+import { getTrackerGateway, TrackerNotConnectedError } from "@/lib/tracker/client";
 import { runAttachment } from "@/lib/runs/attachments";
 import { liveRoute } from "@/lib/live/request";
 
@@ -37,10 +38,10 @@ function capped(body: ReadableStream<Uint8Array>, max: number): ReadableStream<U
 }
 
 /**
- * Streams a file uploaded to Linear (a screenshot, mockup or document of the
+ * Streams a file uploaded to the tracker (a screenshot, mockup or document of the
  * run) to a running job whose run lists it (`runAttachment`: a ralph run's
  * attachments, or `attachments` in the run's trigger context; 404 otherwise),
- * fetched with the control panel's Linear token, which agents never hold.
+ * fetched with the control panel's tracker credentials, which agents never hold.
  * Needs the job's own token (session or legacy) with `run:attachments`. HTML (a sign-in page instead of the file)
  * and files over 25 MB are rejected; a failed download answers
  * `{ error: "download_failed", reason }`.
@@ -61,13 +62,15 @@ async function get(req: Request, ctx: AttachmentRouteContext): Promise<Response>
 
   let download;
   try {
-    const linear = await getLinearGateway({ db, organizationId: attachment.organizationId });
-    download = await linear.uploads.downloadUpload(attachment.url, req.signal);
+    const tracker = await getTrackerGateway({ db, organizationId: attachment.organizationId });
+    // A tracker without uploads never listed any attachment, so this is a gone one.
+    if (!hasCapability(tracker, "uploads")) return notFound();
+    download = await tracker.uploads.downloadUpload(attachment.url, req.signal);
   } catch (error) {
-    if (error instanceof LinearNotConnectedError) {
-      return failed(503, "the run's organization has no Linear workspace connected");
+    if (error instanceof TrackerNotConnectedError) {
+      return failed(503, "the run's organization has no tracker connected");
     }
-    console.error("downloading a Linear attachment failed", error);
+    console.error("downloading a tracker attachment failed", error);
     return failed(502, error instanceof Error ? error.message : String(error));
   }
   if (!download.ok || !download.body) {

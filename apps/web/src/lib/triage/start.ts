@@ -24,12 +24,17 @@ import {
   type TriageOutcome,
   type TriageRepository,
 } from "@omniralph/shared";
-import type { IssueComment, IssueSummary, SessionStartedEvent } from "@omniralph/tracker";
+import type {
+  IssueComment,
+  IssueSummary,
+  SessionStartedEvent,
+  TrackerGateway,
+} from "@omniralph/tracker";
 import { errorMessage, postActivity } from "@/lib/ralph/notify";
 import { trackerConversation } from "@/lib/ralph/conversation";
+import { trackerName } from "@/lib/tracker/adapters";
 import { resolveRoute, routedRepository } from "@/lib/routing/resolve";
 import type { RalphDeps } from "@/lib/ralph/run";
-import type { LinearGateway } from "@omniralph/tracker/linear";
 import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/playbooks";
 import { jobRepository } from "@/lib/scm/adapters";
 import type { TriageRunContext } from "./apply";
@@ -38,7 +43,7 @@ import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
 export type SessionCreatedEvent = SessionStartedEvent;
 
 export type TriageDeps = Pick<RalphDeps, "db" | "organizationId" | "dispatcher" | "adapterFor"> & {
-  linear: LinearGateway;
+  linear: TrackerGateway;
 };
 
 export type StartTriageOutcome =
@@ -85,13 +90,17 @@ export function lockedIssues(issue: IssueSummary, children: readonly IssueSummar
 }
 
 /** The response when triage refuses an issue that is in progress or done. */
-export function lockedMessage(issue: Pick<IssueSummary, "identifier">, locked: string[]): string {
+export function lockedMessage(
+  issue: Pick<IssueSummary, "identifier">,
+  locked: string[],
+  tracker: string,
+): string {
   const which =
     locked.length === 1 && locked[0] === issue.identifier
       ? `**${issue.identifier}** is already in progress or done`
       : `${locked.map((id) => `**${id}**`).join(", ")} ${locked.length === 1 ? "is" : "are"} already in progress or done`;
   return (
-    `${which}, so I didn't triage **${issue.identifier}** and changed nothing in Linear. ` +
+    `${which}, so I didn't triage **${issue.identifier}** and changed nothing in ${tracker}. ` +
     "Triage only rewrites issues whose work hasn't started; edit the PRD by hand, or move those issues back to Backlog or Todo and ask again."
   );
 }
@@ -100,10 +109,11 @@ export function lockedMessage(issue: Pick<IssueSummary, "identifier">, locked: s
 export function queuedMessage(
   issue: Pick<IssueSummary, "identifier">,
   repository: { fullPath: string; routedBy: string; defaultBranch: string } | null,
+  tracker: string,
 ): string {
   return repository
     ? `Triaging **${issue.identifier}**, reading \`${repository.fullPath}\` (routed by ${repository.routedBy}) at \`${repository.defaultBranch}\`.`
-    : `Triaging **${issue.identifier}**. No repository routes it, so I'll work from Linear alone and ask which repository it belongs in.`;
+    : `Triaging **${issue.identifier}**. No repository routes it, so I'll work from ${tracker} alone and ask which repository it belongs in.`;
 }
 
 function comments(list: readonly IssueComment[]) {
@@ -224,9 +234,9 @@ export async function prepareTriage(
     const locked = lockedIssues(issue, children);
     if (locked.length > 0) {
       await end("stopped");
-      await postActivity(trackerConversation(linear, sessionId), {
+      await postActivity(trackerConversation(linear, sessionId, issueId), {
         type: "response",
-        body: lockedMessage(issue, locked),
+        body: lockedMessage(issue, locked, trackerName(linear.provider)),
       });
       return { status: "in_progress", issues: locked };
     }
@@ -234,9 +244,9 @@ export async function prepareTriage(
     blockers = await loadBlockers(deps, [issue, ...children]);
   } catch (error) {
     await end("failed");
-    await postActivity(trackerConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId, issueId), {
       type: "error",
-      body: `I couldn't load the issue from Linear: ${errorMessage(error)}`,
+      body: `I couldn't load the issue from ${trackerName(linear.provider)}: ${errorMessage(error)}`,
     });
     return { status: "load_failed", error: errorMessage(error) };
   }
@@ -246,7 +256,7 @@ export async function prepareTriage(
     repository = await resolveRepository(deps, issue);
   } catch (error) {
     await end("failed");
-    await postActivity(trackerConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId, issueId), {
       type: "error",
       body: `I couldn't read the repository this issue routes to: ${errorMessage(error)}`,
     });
@@ -333,14 +343,14 @@ export async function enqueueTriage(
     await setTriageRunJob(db, run.id, job.id);
   } catch (error) {
     await setTriageRunStatus(db, run.id, "failed");
-    await postActivity(trackerConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId, run.linearIssueId), {
       type: "error",
       body: `I couldn't queue the triage: ${errorMessage(error)}`,
     });
     return { status: "failed", error: errorMessage(error) };
   }
 
-  await postActivity(trackerConversation(linear, sessionId), {
+  await postActivity(trackerConversation(linear, sessionId, run.linearIssueId), {
     type: "thought",
     body: queuedMessage(
       issue,
@@ -349,6 +359,7 @@ export async function enqueueTriage(
         routedBy: repository.routedBy,
         defaultBranch: repository.payload.defaultBranch,
       },
+      trackerName(linear.provider),
     ),
   });
   return {
@@ -378,7 +389,7 @@ export async function startTriage(
     if (existing) return { status: "exists", run: existing };
   }
   if (options.delegation) {
-    await postActivity(trackerConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId, event.issueId), {
       type: "thought",
       body: needsRefiningMessage(options.delegation.identifier),
     });
@@ -402,7 +413,7 @@ export async function startTriage(
       });
   if (!created) {
     if (run.linearAgentSessionId === sessionId) return { status: "exists", run };
-    await postActivity(trackerConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId, event.issueId), {
       type: "response",
       body: `**${issue.identifier}** is already being triaged in another session.`,
     });

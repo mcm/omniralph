@@ -24,8 +24,8 @@ import { bumpOrganizationHeartbeat } from "@/lib/agents/heartbeat-cache";
 import { githubAccountType } from "@/lib/connections/github-installation";
 import { connectionBotHandle, isOwnComment, parseBotCommand } from "@/lib/mentions/commands";
 import { runBotCommand, type BotCommandOutcome } from "@/lib/mentions/handle";
-import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/tracker/linear/client";
-import type { LinearGateway } from "@omniralph/tracker/linear";
+import { lazyTrackerGateway } from "@/lib/tracker/client";
+import type { TrackerGateway } from "@omniralph/tracker";
 import { respondToCiEvent } from "@/lib/ralph/ci";
 import type { ChatSource } from "@/lib/ralph/conversation";
 import { cleanupClosedPullRequest } from "@/lib/ralph/cleanup";
@@ -103,8 +103,8 @@ export interface WebhookDeps {
   defer?: (task: () => Promise<void>) => void | Promise<void>;
   /** The handle where the connection has no bot username (GitHub): default `BOT_HANDLE`. */
   handle?: string;
-  /** The Linear workspace, for `@bot` requests to ralph runs; default: the connected one. */
-  linear?: () => Promise<LinearGateway>;
+  /** The tracker, for `@bot` requests to ralph runs; default: the connected one. */
+  linear?: () => Promise<TrackerGateway>;
   /** Where ralph runs from chat post (default: the deployment's chat bot). */
   chat?: ChatSource;
 }
@@ -599,9 +599,11 @@ async function handleCi(
   const task = async () => {
     try {
       const organizationId = repository.organizationId;
-      const linear = lazyLinearGateway(
-        input.linear ?? (() => getLinearGatewayOrDisconnected({ db, organizationId })),
-      );
+      const linear = lazyTrackerGateway({
+        db,
+        organizationId,
+        ...(input.linear && { load: input.linear }),
+      });
       await respondToCiEvent(
         {
           db,
@@ -654,9 +656,11 @@ async function handleClosed(
   const task = async () => {
     try {
       const organizationId = repository.organizationId;
-      const linear = lazyLinearGateway(
-        input.linear ?? (() => getLinearGatewayOrDisconnected({ db, organizationId })),
-      );
+      const linear = lazyTrackerGateway({
+        db,
+        organizationId,
+        ...(input.linear && { load: input.linear }),
+      });
       await cleanupClosedPullRequest(
         {
           db,

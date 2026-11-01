@@ -1,7 +1,7 @@
 import "server-only";
 import type { Database } from "@omniralph/db";
 import { getDispatcher } from "@/lib/dispatch";
-import { getLinearGatewayOrDisconnected } from "@/lib/tracker/linear/client";
+import { getTrackerGatewayOrDisconnected } from "@/lib/tracker/client";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 
@@ -10,7 +10,7 @@ export async function ralphDepsOf(db: Database, organizationId: string): Promise
   return {
     db,
     organizationId,
-    linear: await getLinearGatewayOrDisconnected({ db, organizationId }),
+    linear: await getTrackerGatewayOrDisconnected({ db, organizationId }),
     dispatcher: getDispatcher(),
     adapterFor: scmAdapterFor,
   };

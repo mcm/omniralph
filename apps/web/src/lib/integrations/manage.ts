@@ -37,7 +37,8 @@ import {
   type ChatPlaybookSlot,
 } from "@/lib/chat/playbooks";
 import { getPlaybook, listPlaybookChoices } from "@/lib/playbooks";
-import { revokeToken, type LinearCredentials } from "@/lib/tracker/linear/oauth";
+import { trackerAdapter } from "@/lib/tracker/adapters";
+import type { TrackerProvider } from "@omniralph/tracker";
 import {
   settingsActor,
   trackedChatPlaybookDefaults,
@@ -107,25 +108,31 @@ function channelPlaybooksOf(setting: ChatChannelPlaybookSetting): ChannelPlayboo
 }
 
 /**
- * Disconnects the active organization's Linear workspace: forgets its tokens and revokes them at
- * Linear (best effort). Linear webhooks are ignored from then on.
+ * Disconnects the active organization's tracker of `provider`: forgets its credentials and
+ * revokes them at the tracker (best effort). Its webhooks are ignored from then on.
  */
-export async function disconnectLinear(db: Database, admin: OrgUser): Promise<ActionResult> {
-  const connected = await getIntegration(db, admin.organization.id, "linear");
-  if (!connected) return { ok: false, error: "No Linear workspace is connected." };
+export async function disconnectTracker(
+  db: Database,
+  admin: OrgUser,
+  provider: TrackerProvider,
+): Promise<ActionResult> {
+  const adapter = trackerAdapter(provider);
+  const notConnected = { ok: false, error: `No ${adapter.name} workspace is connected.` } as const;
+  const connected = await getIntegration(db, admin.organization.id, provider);
+  if (!connected) return notConnected;
   const removed = await savingConnection(db, admin, connected.id, (tx) =>
-    deleteIntegration<LinearCredentials>(tx, admin.organization.id, "linear"),
+    deleteIntegration<unknown>(tx, admin.organization.id, provider),
   );
-  if (!removed) return { ok: false, error: "No Linear workspace is connected." };
+  if (!removed) return notConnected;
   try {
-    await revokeToken(removed.credentials.accessToken);
+    await adapter.revokeCredentials(removed.credentials);
   } catch (error) {
-    console.error("Revoking the Linear token failed", {
+    console.error(`Revoking the ${adapter.name} credentials failed`, {
       message: error instanceof Error ? error.message : String(error),
     });
     return {
       ok: true,
-      warning: `Disconnected ${removed.name}, but Linear didn't confirm revoking the token. Remove the app in Linear's settings if it's still listed.`,
+      warning: `Disconnected ${removed.name}, but ${adapter.name} didn't confirm revoking the token. Remove the app in ${adapter.name}'s settings if it's still listed.`,
     };
   }
   return { ok: true };
