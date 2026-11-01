@@ -2,7 +2,7 @@
   "name": "@omniralph/planning",
   "version": "0.0.0",
   "private": true,
-  "description": "Tracker-neutral planning model: work item kinds and roles, and the dependency rules",
+  "description": "Tracker-neutral planning model and methodology: work item kinds and roles, the dependency rules, and the templates and rules triage, story prompts and the plugin share",
   "type": "module",
   "exports": {
     ".": {
