@@ -229,18 +229,19 @@ details.
 
 ## Layout
 
-| Path               | Package              | Purpose                                                                |
-| ------------------ | -------------------- | ---------------------------------------------------------------------- |
-| `apps/web`         | `@omniralph/web`     | Control panel UI, agent API, job claims, webhooks                      |
-| `apps/agent`       | `@omniralph/agent`   | Agent host daemon (`bin: omniralph-agent`)                             |
-| `packages/engine`  | `@omniralph/engine`  | Review core: diff parsing, budgets, prompts, Claude provider           |
-| `packages/scm`     | `@omniralph/scm`     | SCM adapter interface + GitHub and GitLab implementations              |
-| `packages/tracker` | `@omniralph/tracker` | Tracker gateway interface, neutral types, the Linear adapter and fakes |
-| `packages/db`      | `@omniralph/db`      | Drizzle schema, migrations, typed queries                              |
-| `packages/ralph`   | `@omniralph/ralph`   | Coding loop logic: PRD parsing, story selection, prompts               |
-| `packages/shared`  | `@omniralph/shared`  | zod schemas and shared types                                           |
-| `packages/tasks`   | `@omniralph/tasks`   | Agent and task definitions, built-ins, templates, variables            |
-| `evals`            |                      | Review eval corpus and baseline (`pnpm eval`)                          |
+| Path                | Package               | Purpose                                                                |
+| ------------------- | --------------------- | ---------------------------------------------------------------------- |
+| `apps/web`          | `@omniralph/web`      | Control panel UI, agent API, job claims, webhooks                      |
+| `apps/agent`        | `@omniralph/agent`    | Agent host daemon (`bin: omniralph-agent`)                             |
+| `packages/engine`   | `@omniralph/engine`   | Review core: diff parsing, budgets, prompts, Claude provider           |
+| `packages/scm`      | `@omniralph/scm`      | SCM adapter interface + GitHub and GitLab implementations              |
+| `packages/tracker`  | `@omniralph/tracker`  | Tracker gateway interface, neutral types, the Linear adapter and fakes |
+| `packages/planning` | `@omniralph/planning` | Planning model: work item kinds and roles, the dependency rules        |
+| `packages/db`       | `@omniralph/db`       | Drizzle schema, migrations, typed queries                              |
+| `packages/ralph`    | `@omniralph/ralph`    | Coding loop logic: PRD parsing, story selection, prompts               |
+| `packages/shared`   | `@omniralph/shared`   | zod schemas and shared types                                           |
+| `packages/tasks`    | `@omniralph/tasks`    | Agent and task definitions, built-ins, templates, variables            |
+| `evals`             |                       | Review eval corpus and baseline (`pnpm eval`)                          |
 
 ## Development
 
