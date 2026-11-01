@@ -309,11 +309,11 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
     await db.insert(ralphRuns).values({
       id: epicId,
       organizationId: alpha.id,
-      linearIssueId: "issue-epic",
-      linearIdentifier: "SOC-1700",
-      linearTitle: "Billing exports",
-      linearUrl: "https://linear.app/acme/issue/SOC-1700/billing-exports",
-      linearAgentSessionId: "session-epic",
+      trackerIssueId: "issue-epic",
+      trackerIdentifier: "SOC-1700",
+      trackerTitle: "Billing exports",
+      trackerUrl: "https://linear.app/acme/issue/SOC-1700/billing-exports",
+      trackerSessionId: "session-epic",
       kind: "children",
       repositoryId: repoIds[1],
       status: "running",
@@ -323,7 +323,7 @@ describe.skipIf(!databaseAvailable)("Fleet API", () => {
         .insert(ralphStories)
         .values({
           runId: epicId,
-          linearIssueId: `issue-${identifier}`,
+          trackerIssueId: `issue-${identifier}`,
           identifier,
           title: `Story ${identifier}`,
           position,

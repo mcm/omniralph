@@ -26,7 +26,7 @@ import {
   upsertScmConnection,
   upsertStories,
   type Database,
-  type NewLinearRalphRunInput,
+  type NewTrackerRalphRunInput,
 } from "@omniralph/db";
 import {
   createTestDatabase,
@@ -219,15 +219,15 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
     state.scm = null;
   });
 
-  async function newRun(overrides: Partial<NewLinearRalphRunInput> = {}) {
+  async function newRun(overrides: Partial<NewTrackerRalphRunInput> = {}) {
     session += 1;
     const { run } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: `issue-${session}`,
-      linearIdentifier: `ENG-${session}`,
-      linearTitle: `Epic ${session}`,
-      linearUrl: `https://linear.app/acme/issue/ENG-${session}/epic`,
-      linearAgentSessionId: `session-${session}`,
+      trackerIssueId: `issue-${session}`,
+      trackerIdentifier: `ENG-${session}`,
+      trackerTitle: `Epic ${session}`,
+      trackerUrl: `https://linear.app/acme/issue/ENG-${session}/epic`,
+      trackerSessionId: `session-${session}`,
       kind: "children",
       repositoryId: repoA,
       branch: `eng-${session}`,
@@ -315,7 +315,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
       status: "allowed",
       answeredBy: "Mo Member",
     });
-    expect(linear.bodies(run.linearAgentSessionId, "thought")).toEqual([
+    expect(linear.bodies(run.trackerSessionId, "thought")).toEqual([
       "Allowed **Bash**. Carrying on.",
       "Mo Member answered from Omniralph: Allow",
     ]);
@@ -362,7 +362,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
     expect((await getRun(db, run.id))?.permission?.answer).toBe("expired");
     expect(
       linear
-        .bodies(run.linearAgentSessionId, "thought")
+        .bodies(run.trackerSessionId, "thought")
         .filter((b) => b.includes("answered from Omniralph")),
     ).toEqual([]);
     expect((await getRunPermissionRequest(db, jobId, requestId))?.answer).not.toBe("allowed");
@@ -401,7 +401,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
     const answered = await answer(run.id, { questionKey: question.key, optionId: "later" });
     expect(answered.status).toBe(200);
     expect((await getRun(db, run.id))?.preparation?.request).toMatchObject({ answer: "later" });
-    expect(linear.bodies(run.linearAgentSessionId, "thought")).toEqual([
+    expect(linear.bodies(run.trackerSessionId, "thought")).toEqual([
       "OK, I won't run anything for **ENG-51** yet. The question stays open: answer it whenever you're ready.",
       "Mo Member answered from Omniralph: Not yet",
     ]);
@@ -418,12 +418,12 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
       description: MANUAL_DESCRIPTION,
     });
     const run = await newRun({
-      linearIssueId: epic.id,
-      linearIdentifier: "ENG-80",
-      linearUrl: "https://linear.app/acme/issue/ENG-80/epic",
+      trackerIssueId: epic.id,
+      trackerIdentifier: "ENG-80",
+      trackerUrl: "https://linear.app/acme/issue/ENG-80/epic",
     });
     const [row] = await upsertStories(db, run.id, [
-      { linearIssueId: bucket.id, identifier: "ENG-81", title: "Create the bucket" },
+      { trackerIssueId: bucket.id, identifier: "ENG-81", title: "Create the bucket" },
     ]);
     await updateStory(db, row!.id, { status: "manual" });
     await updateRun(db, run.id, {
@@ -471,7 +471,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
         handled: {},
       },
     });
-    expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+    expect(linear.bodies(run.trackerSessionId, "thought")).toContain(
       "Mo Member answered from Omniralph: Run it",
     );
   });
@@ -489,7 +489,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
       handled: { [bucket.id]: { how: "myself" } },
     });
     expect(await execJobs(run.id)).toEqual([]);
-    expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+    expect(linear.bodies(run.trackerSessionId, "thought")).toContain(
       "Mo Member answered from Omniralph: I'll do it myself",
     );
   });
@@ -498,8 +498,8 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
     const issue = linear.add({ title: "Build it", identifier: "ENG-90", description: "Build it." });
     linear.add({ title: "First story", identifier: "ENG-91", parentId: issue.id });
     const run = await newRun({
-      linearIssueId: issue.id,
-      linearIdentifier: issue.identifier,
+      trackerIssueId: issue.id,
+      trackerIdentifier: issue.identifier,
       repositoryId: undefined,
     });
     await updateRun(db, run.id, {
@@ -526,7 +526,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
       routedBy: "your selection",
       pendingElicitation: null,
     });
-    const thoughts = linear.bodies(run.linearAgentSessionId, "thought");
+    const thoughts = linear.bodies(run.trackerSessionId, "thought");
     expect(thoughts[0]).toMatch(
       /^Using `acme\/web`\. Building on branch `.+`, based on `trunk`\.$/,
     );
@@ -631,8 +631,8 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/runs/{id}/answer", () => {
   it("answers another run's tool permission on its stored request", async () => {
     const { run: triage } = await createTriageRun(db, {
       organizationId: orgId,
-      linearIssueId: "issue-triage",
-      linearAgentSessionId: "session-triage",
+      trackerIssueId: "issue-triage",
+      trackerSessionId: "session-triage",
       trigger: "label",
     });
     await db.update(triageRuns).set({ status: "running" }).where(eq(triageRuns.id, triage.id));

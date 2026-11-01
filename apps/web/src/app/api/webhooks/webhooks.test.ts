@@ -463,9 +463,9 @@ describe.skipIf(!databaseAvailable)("webhook ingestion", () => {
       const number = ++prCounter;
       const { run } = await createRun(db, {
         organizationId: orgId,
-        linearIssueId: `issue-pr-${number}`,
-        linearIdentifier: `ENG-${number}`,
-        linearAgentSessionId: `session-pr-${number}`,
+        trackerIssueId: `issue-pr-${number}`,
+        trackerIdentifier: `ENG-${number}`,
+        trackerSessionId: `session-pr-${number}`,
         kind: "children",
         repositoryId: githubRepoId,
         branch: `om/eng-${number}`,

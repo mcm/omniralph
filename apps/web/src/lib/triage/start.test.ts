@@ -184,7 +184,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
     const run = await getTriageRunBySession(db, event.sessionId);
     expect(run).toMatchObject({
       organizationId: orgId,
-      linearIssueId: issue.id,
+      trackerIssueId: issue.id,
       trigger: "mention",
       status: "queued",
     });
@@ -324,9 +324,9 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
     const story = linear.add({ identifier: "OPS-51", title: "Story", parentId: epic.id });
     await createRun(db, {
       organizationId: orgId,
-      linearIssueId: epic.id,
-      linearIdentifier: "OPS-50",
-      linearAgentSessionId: "session-epic",
+      trackerIssueId: epic.id,
+      trackerIdentifier: "OPS-50",
+      trackerSessionId: "session-epic",
       kind: "children",
       mode: "epic",
       repositoryId: repoId,
@@ -475,7 +475,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       await handle(event);
 
       const run = await getTriageRunBySession(db, event.sessionId);
-      expect(run).toMatchObject({ linearIssueId: issue.id, status: "queued" });
+      expect(run).toMatchObject({ trackerIssueId: issue.id, status: "queued" });
       expect(await db.select().from(ralphRuns)).toEqual([]);
       const activities = linear.activities.filter((a) => a.sessionId === event.sessionId);
       expect(activities[0]!.content).toEqual({
@@ -505,7 +505,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       await handle(event);
       expect(await db.select().from(triageRuns)).toEqual([]);
       expect(await db.select().from(ralphRuns)).toEqual([
-        expect.objectContaining({ linearIssueId: issue.id, linearAgentSessionId: event.sessionId }),
+        expect.objectContaining({ trackerIssueId: issue.id, trackerSessionId: event.sessionId }),
       ]);
       expect(linear.bodies(event.sessionId, "thought").join("\n")).not.toContain("needs refining");
     });
@@ -531,7 +531,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       await handle(event);
       expect(await db.select().from(triageRuns)).toEqual([]);
       expect(await db.select().from(ralphRuns)).toEqual([
-        expect.objectContaining({ linearIssueId: issue.id, mode: "epic" }),
+        expect.objectContaining({ trackerIssueId: issue.id, mode: "epic" }),
       ]);
     });
 
@@ -552,7 +552,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
         await handle(event);
         expect(await db.select().from(triageRuns)).toEqual([]);
         expect(await db.select().from(ralphRuns)).toEqual([
-          expect.objectContaining({ linearIssueId: issue.id }),
+          expect.objectContaining({ trackerIssueId: issue.id }),
         ]);
         expect(logged).toHaveBeenCalledWith(
           expect.stringContaining("Reading the readiness of ENG-43 failed"),
@@ -570,8 +570,8 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
         const sessionId = `triaged-session-${sessionSeq}`;
         const { run } = await createTriageRun(db, {
           organizationId: orgId,
-          linearIssueId: issueId,
-          linearAgentSessionId: sessionId,
+          trackerIssueId: issueId,
+          trackerSessionId: sessionId,
           trigger: "label",
         });
         await setTriageRunStatus(db, run.id, status);
@@ -600,7 +600,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
         await handle(reopened(issue.id, sessionId));
 
         expect(await db.select().from(ralphRuns)).toEqual([
-          expect.objectContaining({ linearIssueId: issue.id, linearAgentSessionId: sessionId }),
+          expect.objectContaining({ trackerIssueId: issue.id, trackerSessionId: sessionId }),
         ]);
         expect(await getTriageRunBySession(db, sessionId)).toMatchObject({
           id: run.id,
@@ -639,7 +639,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
         await prompted(sessionId);
 
         const [coding] = await db.select().from(ralphRuns);
-        expect(coding).toMatchObject({ linearIssueId: issue.id, linearAgentSessionId: sessionId });
+        expect(coding).toMatchObject({ trackerIssueId: issue.id, trackerSessionId: sessionId });
 
         // A reply in the session now goes to the coding run, not to triage.
         await prompted(sessionId, "Use the v2 API.");

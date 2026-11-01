@@ -2,7 +2,7 @@ import "server-only";
 import {
   findFindingByScmComment,
   getReviewRun,
-  isLinearRun,
+  isTrackerRun,
   listReviewFindings,
   listReviewRunFindings,
   type Database,
@@ -192,16 +192,16 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
     });
     const { run } = result;
     // A run from chat has no Linear issue: it's followed in its chat thread.
-    const tracker = isLinearRun(run) ? run : null;
+    const tracker = isTrackerRun(run) ? run : null;
     const issue = !tracker
       ? ""
-      : tracker.linearUrl
-        ? ` of [${tracker.linearIdentifier}](${tracker.linearUrl})`
-        : ` of **${tracker.linearIdentifier}**`;
-    const hosts = tracker?.linearUrl ? [new URL(tracker.linearUrl).hostname] : [];
+      : tracker.trackerUrl
+        ? ` of [${tracker.trackerIdentifier}](${tracker.trackerUrl})`
+        : ` of **${tracker.trackerIdentifier}**`;
+    const hosts = tracker?.trackerUrl ? [new URL(tracker.trackerUrl).hostname] : [];
     if (result.status === "run_over") {
       const again = tracker
-        ? `Delegate ${tracker.linearIdentifier} to me in Linear again to pick it back up.`
+        ? `Delegate ${tracker.trackerIdentifier} to me in Linear again to pick it back up.`
         : "Ask for it again in the chat thread it came from to pick it back up.";
       await respond(
         `Sorry @${author}, the coding task${issue} is over, so I can't work on this ${term}. ${again}`,
@@ -331,7 +331,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       // In a review thread of a ralph PR/MR followed in a Linear agent session:
       // routed to that session with the review's context, like the review itself.
       const ralph = repository.codingEnabled ? await ralphLane() : null;
-      if (ralph && isLinearRun(ralph.run) && ralph.run.status !== "failed") {
+      if (ralph && isTrackerRun(ralph.run) && ralph.run.status !== "failed") {
         return requestRalph(ralph, command.text, found);
       }
       const result = await enqueueReply(db, dispatcher, {

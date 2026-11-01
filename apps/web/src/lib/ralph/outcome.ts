@@ -15,7 +15,7 @@ import {
   type RalphRun,
   type RalphStory,
   type RalphTransaction,
-  isLinearRun,
+  isTrackerRun,
   runReference,
 } from "@omniralph/db";
 import { appendProgress, initialProgress, isDoneStateType } from "@omniralph/ralph";
@@ -204,7 +204,7 @@ async function applyStoryResult(
   // A single issue stays open for review: its run's PR/MR is what finishes it.
   if (run.kind !== "single") {
     await quietly(`Completing ${story.identifier} in Linear`, () =>
-      tracker.setIssueState(story.linearIssueId, { type: "completed" }),
+      tracker.setIssueState(story.trackerIssueId, { type: "completed" }),
     );
     const lane = await storyLane(tx, run, story);
     // A story of another lane says which repository it was done in.
@@ -219,7 +219,7 @@ async function applyStoryResult(
       tail(result.summary.trim() || "Done.", 4000),
     ].join("\n");
     await quietly(`Commenting on ${story.identifier}`, () =>
-      tracker.addComment(story.linearIssueId, note),
+      tracker.addComment(story.trackerIssueId, note),
     );
   }
 
@@ -346,14 +346,14 @@ export async function fileFollowUps(
   options: { blocking: boolean },
 ): Promise<void> {
   const { tracker, run } = ctx;
-  if (followUps.length === 0 || run.kind === "single" || !isLinearRun(run)) return;
+  if (followUps.length === 0 || run.kind === "single" || !isTrackerRun(run)) return;
   let siblings;
   let parent;
   try {
-    parent = await tracker.getIssue(run.linearIssueId);
+    parent = await tracker.getIssue(run.trackerIssueId);
     siblings = await tracker.getChildren(parent.id);
   } catch (error) {
-    console.warn(`${run.linearIdentifier}: could not read the epic to file follow-ups`, error);
+    console.warn(`${run.trackerIdentifier}: could not read the epic to file follow-ups`, error);
     await postActivity(conversationFor(run, ctx), {
       type: "thought",
       body: `I couldn't file the follow-ups of **${story.identifier}** in Linear: ${followUps.map((f) => `"${f.title}"`).join(", ")}.`,
@@ -363,7 +363,7 @@ export async function fileFollowUps(
   const open = new Map(
     siblings.filter((s) => !isDoneStateType(s.stateType)).map((s) => [s.title.toLowerCase(), s]),
   );
-  const own = siblings.find((s) => s.id === story.linearIssueId);
+  const own = siblings.find((s) => s.id === story.trackerIssueId);
   const target = await followUpTarget(ctx, story, parent, own);
   const { manualLabel } = target;
   // A blocking follow-up holds the story, so its dependents wait for it already.
@@ -371,7 +371,7 @@ export async function fileFollowUps(
     ? []
     : await openDependents(ctx, story, [...open.values()]).catch((error: unknown) => {
         console.warn(
-          `${run.linearIdentifier}: could not read the dependents of ${story.identifier}`,
+          `${run.trackerIdentifier}: could not read the dependents of ${story.identifier}`,
           error,
         );
         return [];
@@ -396,9 +396,9 @@ export async function fileFollowUps(
         }));
       open.set(followUp.title.toLowerCase(), issue);
       // A reused open sub-issue too (unless it's the story itself).
-      if (issue.id !== story.linearIssueId) {
-        await recordFollowUpSource(ctx.tx, run.organizationId, issue.id, story.linearIssueId);
-        if (options.blocking) await tracker.createBlocksRelation(issue.id, story.linearIssueId);
+      if (issue.id !== story.trackerIssueId) {
+        await recordFollowUpSource(ctx.tx, run.organizationId, issue.id, story.trackerIssueId);
+        if (options.blocking) await tracker.createBlocksRelation(issue.id, story.trackerIssueId);
       }
       for (const dependent of dependents) {
         // A reused follow-up may already block it, or be one of the dependents itself.
@@ -409,7 +409,7 @@ export async function fileFollowUps(
       filed.push(`**${issue.identifier}**`);
       if (followUp.manual) forPerson.push(`**${issue.identifier}**`);
     } catch (error) {
-      console.warn(`${run.linearIdentifier}: could not file follow-up "${followUp.title}"`, error);
+      console.warn(`${run.trackerIdentifier}: could not file follow-up "${followUp.title}"`, error);
       failed.push(`"${followUp.title}"`);
     }
   }
@@ -419,7 +419,7 @@ export async function fileFollowUps(
       ? [story.identifier]
       : dependents.map((d) => d.issue.identifier);
     lines.push(
-      `Filed ${filed.join(", ")} as ${filed.length === 1 ? "a new story" : "new stories"} of **${run.linearIdentifier}**` +
+      `Filed ${filed.join(", ")} as ${filed.length === 1 ? "a new story" : "new stories"} of **${run.trackerIdentifier}**` +
         (target.repository ? ` in \`${target.repository}\`` : "") +
         `${blocked.length > 0 ? `, blocking ${blocked.map((id) => `**${id}**`).join(", ")}` : ""}.`,
     );
@@ -490,9 +490,9 @@ async function followUpTarget(
       : null;
   const [manualLabel = "manual"] = await runManualLabels(ctx.db, run);
   const where = { manualLabel, ...(repository && { repository: repository.fullPath }) };
-  const source = await readIssuePlacement(ctx.tracker, story.linearIssueId).catch(
+  const source = await readIssuePlacement(ctx.tracker, story.trackerIssueId).catch(
     (error: unknown) => {
-      console.warn(`${run.linearIdentifier}: could not read ${story.identifier}'s fields`, error);
+      console.warn(`${run.trackerIdentifier}: could not read ${story.identifier}'s fields`, error);
       return null;
     },
   );
@@ -532,11 +532,11 @@ async function openDependents(
 ): Promise<{ issue: IssueSummary; blockerIds: Set<string> }[]> {
   const siblings = await Promise.all(
     openSiblings
-      .filter((s) => s.id !== story.linearIssueId)
+      .filter((s) => s.id !== story.trackerIssueId)
       .map(async (issue) => ({
         issue,
         blockerIds: new Set((await ctx.tracker.getBlockers(issue.id)).map((b) => b.id)),
       })),
   );
-  return siblings.filter((s) => s.blockerIds.has(story.linearIssueId));
+  return siblings.filter((s) => s.blockerIds.has(story.trackerIssueId));
 }

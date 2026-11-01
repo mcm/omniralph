@@ -122,11 +122,11 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
     ] as const) {
       const { run } = await createRun(db, {
         organizationId,
-        linearIssueId: `${name}-issue`,
-        linearIdentifier: "ENG-1",
-        linearTitle: "Epic",
-        linearUrl: null,
-        linearAgentSessionId: `${name}-session`,
+        trackerIssueId: `${name}-issue`,
+        trackerIdentifier: "ENG-1",
+        trackerTitle: "Epic",
+        trackerUrl: null,
+        trackerSessionId: `${name}-session`,
         kind: "children",
         repositoryId,
         branch: `${name}-branch`,
@@ -134,7 +134,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
       });
       await updateRun(db, run.id, { status: "completed" });
       const [story] = await upsertStories(db, run.id, [
-        { linearIssueId: `${name}-story`, identifier: "ENG-2", title: "Story" },
+        { trackerIssueId: `${name}-story`, identifier: "ENG-2", title: "Story" },
       ]);
       await updateStory(db, story!.id, { status: "completed" });
       await db.insert(jobs).values({
@@ -151,8 +151,8 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/analytics/runs", () => {
     // A triage attempt of Acme's, with no repository.
     const { run: triage } = await createTriageRun(db, {
       organizationId: acme,
-      linearIssueId: "acme-triage-issue",
-      linearAgentSessionId: "acme-triage-session",
+      trackerIssueId: "acme-triage-issue",
+      trackerSessionId: "acme-triage-session",
       trigger: "mention",
     });
     await db.insert(jobs).values({

@@ -15,8 +15,8 @@ import {
   chatConnections,
   chatIdentities,
   chatIdentityOptOuts,
-  chatLinearDelegations,
-  chatLinearIssueDrafts,
+  chatTrackerDelegations,
+  chatTrackerIssueDrafts,
   chatLinkStateUses,
   chatMessages,
   chatRequestDrafts,
@@ -1178,10 +1178,10 @@ export async function runRequester(
 
 // ── Linear issue drafts ──────────────────────────────────────────────────────
 
-export type ChatLinearIssueDraft = typeof chatLinearIssueDrafts.$inferSelect;
-export type ChatLinearIssueDraftStatus = ChatLinearIssueDraft["status"];
+export type ChatTrackerIssueDraft = typeof chatTrackerIssueDrafts.$inferSelect;
+export type ChatTrackerIssueDraftStatus = ChatTrackerIssueDraft["status"];
 
-export interface CreateChatLinearIssueDraftInput {
+export interface CreateChatTrackerIssueDraftInput {
   threadId: string;
   requestedByUserId: string;
   requestedByExternalUserId: string;
@@ -1198,12 +1198,12 @@ export interface CreateChatLinearIssueDraftInput {
 }
 
 /** Stores a `pending` draft (its card isn't posted yet). */
-export async function createChatLinearIssueDraft(
+export async function createChatTrackerIssueDraft(
   db: Database,
-  input: CreateChatLinearIssueDraftInput,
-): Promise<ChatLinearIssueDraft> {
+  input: CreateChatTrackerIssueDraftInput,
+): Promise<ChatTrackerIssueDraft> {
   const [row] = await db
-    .insert(chatLinearIssueDrafts)
+    .insert(chatTrackerIssueDrafts)
     .values({
       ...input,
       projectName: input.projectName ?? null,
@@ -1216,47 +1216,47 @@ export async function createChatLinearIssueDraft(
 }
 
 /** A draft by ID, or null. */
-export async function getChatLinearIssueDraft(
+export async function getChatTrackerIssueDraft(
   db: Database,
   id: string,
-): Promise<ChatLinearIssueDraft | null> {
+): Promise<ChatTrackerIssueDraft | null> {
   const [row] = await db
     .select()
-    .from(chatLinearIssueDrafts)
-    .where(eq(chatLinearIssueDrafts.id, id))
+    .from(chatTrackerIssueDrafts)
+    .where(eq(chatTrackerIssueDrafts.id, id))
     .limit(1);
   return row ?? null;
 }
 
 /** Records the chat message of the draft's card. */
-export async function setChatLinearIssueDraftMessage(
+export async function setChatTrackerIssueDraftMessage(
   db: Database,
   id: string,
   externalMessageId: string,
 ): Promise<void> {
   await db
-    .update(chatLinearIssueDrafts)
+    .update(chatTrackerIssueDrafts)
     .set({ externalMessageId, updatedAt: new Date() })
-    .where(eq(chatLinearIssueDrafts.id, id));
+    .where(eq(chatTrackerIssueDrafts.id, id));
 }
 
 /**
  * Moves a `pending` draft that hasn't expired at `now` to `creating`, so one
  * click creates it once. Null when it isn't pending or has expired.
  */
-export async function claimChatLinearIssueDraft(
+export async function claimChatTrackerIssueDraft(
   db: Database,
   id: string,
   now: Date,
-): Promise<ChatLinearIssueDraft | null> {
+): Promise<ChatTrackerIssueDraft | null> {
   const [row] = await db
-    .update(chatLinearIssueDrafts)
+    .update(chatTrackerIssueDrafts)
     .set({ status: "creating", updatedAt: now })
     .where(
       and(
-        eq(chatLinearIssueDrafts.id, id),
-        eq(chatLinearIssueDrafts.status, "pending"),
-        gt(chatLinearIssueDrafts.expiresAt, now),
+        eq(chatTrackerIssueDrafts.id, id),
+        eq(chatTrackerIssueDrafts.status, "pending"),
+        gt(chatTrackerIssueDrafts.expiresAt, now),
       ),
     )
     .returning();
@@ -1264,60 +1264,60 @@ export async function claimChatLinearIssueDraft(
 }
 
 /** A `creating` draft whose issue couldn't be created goes back to `pending`. */
-export async function releaseChatLinearIssueDraft(db: Database, id: string): Promise<void> {
+export async function releaseChatTrackerIssueDraft(db: Database, id: string): Promise<void> {
   await db
-    .update(chatLinearIssueDrafts)
+    .update(chatTrackerIssueDrafts)
     .set({ status: "pending", updatedAt: new Date() })
-    .where(and(eq(chatLinearIssueDrafts.id, id), eq(chatLinearIssueDrafts.status, "creating")));
+    .where(and(eq(chatTrackerIssueDrafts.id, id), eq(chatTrackerIssueDrafts.status, "creating")));
 }
 
 /** Marks a `creating` draft `created` with its Linear issue. */
-export async function completeChatLinearIssueDraft(
+export async function completeChatTrackerIssueDraft(
   db: Database,
   id: string,
   issue: { id: string; identifier: string; url: string },
-): Promise<ChatLinearIssueDraft | null> {
+): Promise<ChatTrackerIssueDraft | null> {
   const [row] = await db
-    .update(chatLinearIssueDrafts)
+    .update(chatTrackerIssueDrafts)
     .set({
       status: "created",
-      linearIssueId: issue.id,
-      linearIssueIdentifier: issue.identifier,
-      linearIssueUrl: issue.url,
+      trackerIssueId: issue.id,
+      trackerIssueIdentifier: issue.identifier,
+      trackerIssueUrl: issue.url,
       updatedAt: new Date(),
     })
-    .where(and(eq(chatLinearIssueDrafts.id, id), eq(chatLinearIssueDrafts.status, "creating")))
+    .where(and(eq(chatTrackerIssueDrafts.id, id), eq(chatTrackerIssueDrafts.status, "creating")))
     .returning();
   return row ?? null;
 }
 
 /** Cancels a `pending` draft; null when it isn't pending. */
-export async function cancelChatLinearIssueDraft(
+export async function cancelChatTrackerIssueDraft(
   db: Database,
   id: string,
-): Promise<ChatLinearIssueDraft | null> {
+): Promise<ChatTrackerIssueDraft | null> {
   const [row] = await db
-    .update(chatLinearIssueDrafts)
+    .update(chatTrackerIssueDrafts)
     .set({ status: "cancelled", updatedAt: new Date() })
-    .where(and(eq(chatLinearIssueDrafts.id, id), eq(chatLinearIssueDrafts.status, "pending")))
+    .where(and(eq(chatTrackerIssueDrafts.id, id), eq(chatTrackerIssueDrafts.status, "pending")))
     .returning();
   return row ?? null;
 }
 
 /** Marks a `pending` draft that expired by `now` `expired`; null otherwise. */
-export async function expireChatLinearIssueDraft(
+export async function expireChatTrackerIssueDraft(
   db: Database,
   id: string,
   now: Date,
-): Promise<ChatLinearIssueDraft | null> {
+): Promise<ChatTrackerIssueDraft | null> {
   const [row] = await db
-    .update(chatLinearIssueDrafts)
+    .update(chatTrackerIssueDrafts)
     .set({ status: "expired", updatedAt: now })
     .where(
       and(
-        eq(chatLinearIssueDrafts.id, id),
-        eq(chatLinearIssueDrafts.status, "pending"),
-        lte(chatLinearIssueDrafts.expiresAt, now),
+        eq(chatTrackerIssueDrafts.id, id),
+        eq(chatTrackerIssueDrafts.status, "pending"),
+        lte(chatTrackerIssueDrafts.expiresAt, now),
       ),
     )
     .returning();
@@ -1498,7 +1498,7 @@ export async function expireChatRequestDraft(
 
 // ── Linear delegations ───────────────────────────────────────────────────────
 
-export type ChatLinearDelegation = typeof chatLinearDelegations.$inferSelect;
+export type ChatTrackerDelegation = typeof chatTrackerDelegations.$inferSelect;
 
 /** How long a delegation waits for Linear's agent session before it's ignored. */
 export const CHAT_LINEAR_DELEGATION_TTL_MS = 60 * 60 * 1000;
@@ -1507,11 +1507,11 @@ export const CHAT_LINEAR_DELEGATION_TTL_MS = 60 * 60 * 1000;
 type ChatExecutor = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 /** Records that a chat thread is delegating a Linear issue (before the delegation itself). */
-export async function createChatLinearDelegation(
+export async function createChatTrackerDelegation(
   db: ChatExecutor,
-  input: { organizationId: string; threadId: string; linearIssueId: string },
-): Promise<ChatLinearDelegation> {
-  const [row] = await db.insert(chatLinearDelegations).values(input).returning();
+  input: { organizationId: string; threadId: string; trackerIssueId: string },
+): Promise<ChatTrackerDelegation> {
+  const [row] = await db.insert(chatTrackerDelegations).values(input).returning();
   return row!;
 }
 
@@ -1521,31 +1521,31 @@ export async function createChatLinearDelegation(
  * to the thread. Delegations older than that (no session ever took them) are
  * pruned on the way. Null when there is none.
  */
-export async function takeChatLinearDelegation(
+export async function takeChatTrackerDelegation(
   db: ChatExecutor,
-  input: { organizationId: string; linearIssueId: string; now?: Date },
-): Promise<ChatLinearDelegation | null> {
+  input: { organizationId: string; trackerIssueId: string; now?: Date },
+): Promise<ChatTrackerDelegation | null> {
   const since = new Date((input.now ?? new Date()).getTime() - CHAT_LINEAR_DELEGATION_TTL_MS);
-  await db.delete(chatLinearDelegations).where(lt(chatLinearDelegations.createdAt, since));
+  await db.delete(chatTrackerDelegations).where(lt(chatTrackerDelegations.createdAt, since));
   const [latest] = await db
-    .select({ id: chatLinearDelegations.id })
-    .from(chatLinearDelegations)
+    .select({ id: chatTrackerDelegations.id })
+    .from(chatTrackerDelegations)
     .where(
       and(
-        eq(chatLinearDelegations.organizationId, input.organizationId),
-        eq(chatLinearDelegations.linearIssueId, input.linearIssueId),
+        eq(chatTrackerDelegations.organizationId, input.organizationId),
+        eq(chatTrackerDelegations.trackerIssueId, input.trackerIssueId),
       ),
     )
-    .orderBy(desc(chatLinearDelegations.createdAt))
+    .orderBy(desc(chatTrackerDelegations.createdAt))
     .limit(1);
   if (!latest) return null;
   // Delete every delegation of the issue: a repeated delegation shouldn't tie a later run.
   const taken = await db
-    .delete(chatLinearDelegations)
+    .delete(chatTrackerDelegations)
     .where(
       and(
-        eq(chatLinearDelegations.organizationId, input.organizationId),
-        eq(chatLinearDelegations.linearIssueId, input.linearIssueId),
+        eq(chatTrackerDelegations.organizationId, input.organizationId),
+        eq(chatTrackerDelegations.trackerIssueId, input.trackerIssueId),
       ),
     )
     .returning();

@@ -105,7 +105,7 @@ export async function finishManualStory(
       organizationId: run.organizationId,
       gateway: deps.tracker,
     });
-    await tracker.setState(story.linearIssueId, outcome === "done" ? "done" : "canceled");
+    await tracker.setState(story.trackerIssueId, outcome === "done" ? "done" : "canceled");
   } catch (error) {
     console.error(`Setting the state of ${story.identifier} failed`, error);
     return {

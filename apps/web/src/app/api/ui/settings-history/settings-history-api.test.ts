@@ -540,9 +540,9 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
         organizationId: orgId,
         repositoryId: subject,
         kind: "children",
-        linearIssueId: "issue-history",
-        linearIdentifier: "ENG-1",
-        linearAgentSessionId: "session-history",
+        trackerIssueId: "issue-history",
+        trackerIdentifier: "ENG-1",
+        trackerSessionId: "session-history",
         status: "completed",
         createdAt: at("2026-10-04T12:00:00Z"),
       });

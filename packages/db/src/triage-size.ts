@@ -12,7 +12,7 @@ type Queryable = Database | Parameters<Parameters<Database["transaction"]>[0]>[0
 /** An issue of an organization (Linear issue IDs are per organization's workspace). */
 export interface TriageIssueRef {
   organizationId: string;
-  linearIssueId: string;
+  trackerIssueId: string;
 }
 
 const isTriageSize = (value: unknown): value is TriageSize =>
@@ -20,7 +20,7 @@ const isTriageSize = (value: unknown): value is TriageSize =>
 
 /** The map key of an issue in `triageSizesOf`'s result. */
 export const triageIssueKey = (issue: TriageIssueRef) =>
-  `${issue.organizationId}:${issue.linearIssueId}`;
+  `${issue.organizationId}:${issue.trackerIssueId}`;
 
 /**
  * The sizes of issues of any organizations, in one query, by `triageIssueKey`. Every asked
@@ -42,19 +42,19 @@ export async function triageSizesOf(
   );
   const result = await db.execute<{
     organization_id: string;
-    linear_issue_id: string;
+    tracker_issue_id: string;
     size: string | null;
   }>(sql`
-    select distinct on (t.organization_id, t.linear_issue_id) t.organization_id,
-      t.linear_issue_id, t.last_result -> 'outcome' ->> 'size' as size
+    select distinct on (t.organization_id, t.tracker_issue_id) t.organization_id,
+      t.tracker_issue_id, t.last_result -> 'outcome' ->> 'size' as size
     from triage_runs t
-    where (t.organization_id, t.linear_issue_id) in (${pairs})
+    where (t.organization_id, t.tracker_issue_id) in (${pairs})
       and jsonb_typeof(t.last_result -> 'outcome') = 'object'
-    order by t.organization_id, t.linear_issue_id, t.created_at desc, t.id desc`);
+    order by t.organization_id, t.tracker_issue_id, t.created_at desc, t.id desc`);
   for (const row of result.rows) {
     const key = triageIssueKey({
       organizationId: row.organization_id,
-      linearIssueId: row.linear_issue_id,
+      trackerIssueId: row.tracker_issue_id,
     });
     sizes.set(key, isTriageSize(row.size) ? row.size : null);
   }
@@ -74,12 +74,12 @@ export async function latestTriageSizes(
   const unique = [...new Set(issueIds)];
   const sizes = await triageSizesOf(
     db,
-    unique.map((linearIssueId) => ({ organizationId, linearIssueId })),
+    unique.map((trackerIssueId) => ({ organizationId, trackerIssueId })),
   );
   return new Map(
     unique.map((id) => [
       id,
-      sizes.get(triageIssueKey({ organizationId, linearIssueId: id })) ?? null,
+      sizes.get(triageIssueKey({ organizationId, trackerIssueId: id })) ?? null,
     ]),
   );
 }

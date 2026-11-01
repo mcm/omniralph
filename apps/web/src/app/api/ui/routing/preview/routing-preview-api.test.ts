@@ -157,11 +157,11 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing/preview", () => {
     sessions += 1;
     const { run } = await createRun(state.db, {
       organizationId: state.orgId,
-      linearIssueId: issueId,
-      linearIdentifier: identifier,
-      linearTitle: identifier,
-      linearUrl: null,
-      linearAgentSessionId: `session-${sessions}`,
+      trackerIssueId: issueId,
+      trackerIdentifier: identifier,
+      trackerTitle: identifier,
+      trackerUrl: null,
+      trackerSessionId: `session-${sessions}`,
       kind: "single",
       repositoryId: web,
       routedBy: by,

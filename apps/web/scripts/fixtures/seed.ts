@@ -816,11 +816,11 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
     await tx.insert(ralphRuns).values({
       id: run.id,
       organizationId: O.main,
-      linearIssueId: `fixture-linear-issue-${run.identifier}`,
-      linearIdentifier: run.identifier,
-      linearTitle: run.title,
-      linearUrl: `https://linear.app/fixture-labs/issue/${run.identifier}`,
-      linearAgentSessionId: `fixture-agent-session-${run.n}`,
+      trackerIssueId: `fixture-linear-issue-${run.identifier}`,
+      trackerIdentifier: run.identifier,
+      trackerTitle: run.title,
+      trackerUrl: `https://linear.app/fixture-labs/issue/${run.identifier}`,
+      trackerSessionId: `fixture-agent-session-${run.n}`,
       kind: run.kind ?? "children",
       repositoryId: run.repositoryId,
       routedBy: run.repositoryId ? "team `FIX`" : null,
@@ -911,7 +911,7 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
       await tx.insert(ralphStories).values({
         id: fixtureId("ralphStory", run.n * 100 + position),
         runId: run.id,
-        linearIssueId: `fixture-linear-issue-${identifier}`,
+        trackerIssueId: `fixture-linear-issue-${identifier}`,
         identifier,
         title: story.title,
         position,
@@ -1306,8 +1306,8 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
     {
       id: T.completed,
       organizationId: O.main,
-      linearIssueId: "fixture-issue-triage-1",
-      linearAgentSessionId: "fixture-session-triage-1",
+      trackerIssueId: "fixture-issue-triage-1",
+      trackerSessionId: "fixture-session-triage-1",
       trigger: "mention",
       status: "completed",
       lastResult: {
@@ -1363,8 +1363,8 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
     {
       id: T.failed,
       organizationId: O.main,
-      linearIssueId: "fixture-issue-triage-2",
-      linearAgentSessionId: "fixture-session-triage-2",
+      trackerIssueId: "fixture-issue-triage-2",
+      trackerSessionId: "fixture-session-triage-2",
       trigger: "label",
       status: "failed",
       lastResult: {
@@ -1380,8 +1380,8 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
     {
       id: T.running,
       organizationId: O.main,
-      linearIssueId: "fixture-issue-triage-3",
-      linearAgentSessionId: "fixture-session-triage-3",
+      trackerIssueId: "fixture-issue-triage-3",
+      trackerSessionId: "fixture-session-triage-3",
       trigger: "mention",
       status: "running",
       pendingReply: "Please keep it to the GitHub provider for now.",

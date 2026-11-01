@@ -130,10 +130,10 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
       (
         await createRun(db, {
           organizationId: id,
-          linearIssueId: `${slug}-issue-${n}`,
-          linearIdentifier: n === 1 ? "ENG-1" : `ENG-${n}`,
-          linearTitle: `${name} epic ${n}`,
-          linearAgentSessionId: `${slug}-session-${n}`,
+          trackerIssueId: `${slug}-issue-${n}`,
+          trackerIdentifier: n === 1 ? "ENG-1" : `ENG-${n}`,
+          trackerTitle: `${name} epic ${n}`,
+          trackerSessionId: `${slug}-session-${n}`,
           kind: "children",
           repositoryId: repository.id,
           branch: `${slug}/eng-${n}`,
@@ -145,8 +145,8 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
     const doneRun = await run(2, "completed");
     const activeRun = await run(1, "running");
     await upsertStories(db, activeRun.id, [
-      { linearIssueId: `${slug}-s1`, identifier: "ENG-11", title: `${name} story one` },
-      { linearIssueId: `${slug}-s2`, identifier: "ENG-12", title: `${name} story two` },
+      { trackerIssueId: `${slug}-s1`, identifier: "ENG-11", title: `${name} story one` },
+      { trackerIssueId: `${slug}-s2`, identifier: "ENG-12", title: `${name} story two` },
     ]);
     const lane = (await getMainLane(db, activeRun))!;
     await updateLane(db, lane.id, {
@@ -220,9 +220,9 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
     for (let n = 1; n <= CHAT_TOOL_RESULT_LIMIT + 3; n += 1) {
       await createRun(db, {
         organizationId: crowdedOrgId,
-        linearIssueId: `crowded-issue-${n}`,
-        linearIdentifier: `BIG-${n}`,
-        linearAgentSessionId: `crowded-session-${n}`,
+        trackerIssueId: `crowded-issue-${n}`,
+        trackerIdentifier: `BIG-${n}`,
+        trackerSessionId: `crowded-session-${n}`,
         kind: "single",
         repositoryId: null,
         status: "pending",

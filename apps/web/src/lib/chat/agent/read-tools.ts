@@ -172,9 +172,9 @@ export const listRalphRunsTool = defineChatTool({
         return {
           id: run.id,
           url: `${appUrl}${runHref(run.id)}`,
-          linearIssue: run.linearIdentifier,
-          title: run.linearTitle,
-          linearUrl: run.linearUrl,
+          linearIssue: run.trackerIdentifier,
+          title: run.trackerTitle,
+          trackerUrl: run.trackerUrl,
           status: run.status,
           repository: run.repository?.fullPath ?? null,
           stories: run.stories,
@@ -201,7 +201,7 @@ export async function findRalphRunId(
 ): Promise<string | null> {
   if (UUID.safeParse(ref).success) return ref.toLowerCase();
   const page = await listRuns(db, organizationId, {
-    linearIdentifier: ref.toUpperCase(),
+    trackerIdentifier: ref.toUpperCase(),
     pageSize: 1,
   });
   return page.runs[0]?.id ?? null;
@@ -219,9 +219,9 @@ async function ralphRunState(
   return {
     id: run.id,
     url: `${appUrl}${runHref(run.id)}`,
-    linearIssue: run.linearIdentifier,
-    title: run.linearTitle,
-    linearUrl: run.linearUrl,
+    linearIssue: run.trackerIdentifier,
+    title: run.trackerTitle,
+    trackerUrl: run.trackerUrl,
     kind: run.kind,
     status: run.status,
     error: run.error,

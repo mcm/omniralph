@@ -110,8 +110,8 @@ describe.skipIf(!databaseAvailable)("run index", () => {
         .insert(triageRuns)
         .values({
           organizationId: orgId,
-          linearIssueId: `issue-${i}`,
-          linearAgentSessionId: `session-${i}`,
+          trackerIssueId: `issue-${i}`,
+          trackerSessionId: `session-${i}`,
           trigger: "label",
           status: "completed",
           createdAt: i < 5 ? at : sql`'2026-10-01T12:00:00.123455Z'::timestamptz`,

@@ -22,8 +22,8 @@ import {
   getRunByChatThread,
   getRunByIssue,
   getRunBySession,
-  isLinearRun,
-  linearSessionOf,
+  isTrackerRun,
+  trackerSessionOf,
   listActiveRunJobIds,
   runReference,
   listRunsAffectedByIssue,
@@ -55,7 +55,7 @@ import {
   RUN_DETAIL_MESSAGE_LIMIT,
   type NewChatRalphRunInput,
   type RalphRun,
-  type NewLinearRalphRunInput,
+  type NewTrackerRalphRunInput,
 } from "./ralph.js";
 import {
   connectRepository,
@@ -145,13 +145,13 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     await db.delete(ralphRuns);
   });
 
-  const runInput = (overrides: Partial<NewLinearRalphRunInput> = {}): NewLinearRalphRunInput => {
+  const runInput = (overrides: Partial<NewTrackerRalphRunInput> = {}): NewTrackerRalphRunInput => {
     session += 1;
     return {
       organizationId: orgId,
-      linearIssueId: `issue-${session}`,
-      linearIdentifier: `TOOL-${session}`,
-      linearAgentSessionId: `session-${session}`,
+      trackerIssueId: `issue-${session}`,
+      trackerIdentifier: `TOOL-${session}`,
+      trackerSessionId: `session-${session}`,
       kind: "children",
       repositoryId: repoA,
       branch: `steve/tool-${session}`,
@@ -306,8 +306,8 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       iterations: 0,
     });
     expect(await getRun(db, run.id)).toEqual(run);
-    expect(await getRunBySession(db, input.linearAgentSessionId)).toEqual(run);
-    expect(await getRunByIssue(db, orgId, input.linearIssueId)).toEqual(run);
+    expect(await getRunBySession(db, input.trackerSessionId)).toEqual(run);
+    expect(await getRunByIssue(db, orgId, input.trackerIssueId)).toEqual(run);
     expect(await getRunBySession(db, "unknown")).toBeNull();
     expect(await getRunByIssue(db, orgId, "unknown")).toBeNull();
     // The branches are the main lane's.
@@ -320,25 +320,25 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     expect(await createRun(db, input)).toEqual({ run: first.run, created: false });
 
     // A second session on the same issue while the first run is unfinished.
-    const other = { ...input, linearAgentSessionId: "session-other" };
+    const other = { ...input, trackerSessionId: "session-other" };
     expect(await createRun(db, other)).toEqual({ run: first.run, created: false });
 
     // Once it finished, the issue can be delegated again; the latest run wins.
     await updateRun(db, first.run.id, { status: "completed" });
     const second = await createRun(db, other);
     expect(second.created).toBe(true);
-    expect((await getRunByIssue(db, orgId, input.linearIssueId))?.id).toBe(second.run.id);
-    expect((await getRunByIssue(db, orgId, input.linearIssueId, { activeOnly: true }))?.id).toBe(
+    expect((await getRunByIssue(db, orgId, input.trackerIssueId))?.id).toBe(second.run.id);
+    expect((await getRunByIssue(db, orgId, input.trackerIssueId, { activeOnly: true }))?.id).toBe(
       second.run.id,
     );
     await updateRun(db, second.run.id, { status: "stopped" });
-    expect(await getRunByIssue(db, orgId, input.linearIssueId, { activeOnly: true })).toBeNull();
+    expect(await getRunByIssue(db, orgId, input.trackerIssueId, { activeOnly: true })).toBeNull();
 
     // Concurrent creates make one run.
     const racing = runInput();
     const results = await Promise.all(
       Array.from({ length: 5 }, (_, i) =>
-        createRun(db, { ...racing, linearAgentSessionId: `race-${session}-${i}` }),
+        createRun(db, { ...racing, trackerSessionId: `race-${session}-${i}` }),
       ),
     );
     expect(results.filter((r) => r.created)).toHaveLength(1);
@@ -395,9 +395,9 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
         chatThreadId: threadId,
         mode: "request",
         kind: "single",
-        linearIssueId: null,
-        linearIdentifier: null,
-        linearAgentSessionId: null,
+        trackerIssueId: null,
+        trackerIdentifier: null,
+        trackerSessionId: null,
         status: "pending",
       });
       expect(await getMainLane(db, run)).toMatchObject({ repositoryId: repoA, baseBranch: "main" });
@@ -408,16 +408,16 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       expect(await getRunByChatThread(db, threadId)).toEqual(run);
       expect(await getActiveRunByChatThread(db, threadId)).toEqual(run);
       expect(await getActiveRunOfSameOrigin(db, run)).toEqual(run);
-      expect(isLinearRun(run)).toBe(false);
-      expect(linearSessionOf(run)).toBeNull();
+      expect(isTrackerRun(run)).toBe(false);
+      expect(trackerSessionOf(run)).toBeNull();
       expect(runReference(run)).toBe(`chat-${run.id.slice(0, 8)}`);
 
       // A Linear run is one.
       const linear = (await createRun(db, runInput())).run;
-      expect(isLinearRun(linear)).toBe(true);
-      expect(linearSessionOf(linear)).toBe(linear.linearAgentSessionId);
-      expect(runReference(linear)).toBe(linear.linearIdentifier);
-      expect(linear.origin).toBe("linear");
+      expect(isTrackerRun(linear)).toBe(true);
+      expect(trackerSessionOf(linear)).toBe(linear.trackerSessionId);
+      expect(runReference(linear)).toBe(linear.trackerIdentifier);
+      expect(linear.origin).toBe("tracker");
       expect(await getActiveRunOfSameOrigin(db, linear)).toEqual(linear);
     });
 
@@ -478,7 +478,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       const { runs } = await listRuns(db, orgId);
       expect(runs.find((r) => r.id === run.id)).toMatchObject({
         origin: "chat",
-        linearIdentifier: null,
+        trackerIdentifier: null,
         chatThread: {
           id: threadId,
           platform: "slack",
@@ -486,7 +486,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
         },
       });
       expect(runs.find((r) => r.id === linear.id)).toMatchObject({
-        origin: "linear",
+        origin: "tracker",
         chatThread: null,
       });
       expect((await getRunDetail(db, orgId, run.id))?.chatThread).toMatchObject({
@@ -546,8 +546,8 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
   it("upserts stories, keeping their state and refreshing title and order", async () => {
     const { run } = await createRun(db, runInput());
     const stories = await upsertStories(db, run.id, [
-      { linearIssueId: "i-1", identifier: "TOOL-1", title: "First" },
-      { linearIssueId: "i-2", identifier: "TOOL-2", title: "Second" },
+      { trackerIssueId: "i-1", identifier: "TOOL-1", title: "First" },
+      { trackerIssueId: "i-2", identifier: "TOOL-2", title: "Second" },
     ]);
     expect(stories.map((s) => [s.identifier, s.position, s.status, s.attempts])).toEqual([
       ["TOOL-1", 0, "pending", 0],
@@ -570,9 +570,9 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     });
 
     const again = await upsertStories(db, run.id, [
-      { linearIssueId: "i-3", identifier: "TOOL-3", title: "Third" },
-      { linearIssueId: "i-1", identifier: "TOOL-1", title: "First (renamed)" },
-      { linearIssueId: "i-2", identifier: "TOOL-2", title: "Second" },
+      { trackerIssueId: "i-3", identifier: "TOOL-3", title: "Third" },
+      { trackerIssueId: "i-1", identifier: "TOOL-1", title: "First (renamed)" },
+      { trackerIssueId: "i-2", identifier: "TOOL-2", title: "Second" },
     ]);
     expect(again.map((s) => s.identifier)).toEqual(["TOOL-3", "TOOL-1", "TOOL-2"]);
     expect(again[1]).toMatchObject({
@@ -628,10 +628,12 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
       waitingOn: { blockers: [ref("ext-1")], manual: [] },
     });
     await upsertStories(db, running.id, [
-      { linearIssueId: "story-1", identifier: "S-1", title: "s" },
+      { trackerIssueId: "story-1", identifier: "S-1", title: "s" },
     ]);
     const { run: done } = await createRun(db, runInput());
-    await upsertStories(db, done.id, [{ linearIssueId: "story-1", identifier: "S-1", title: "s" }]);
+    await upsertStories(db, done.id, [
+      { trackerIssueId: "story-1", identifier: "S-1", title: "s" },
+    ]);
     await updateRun(db, done.id, { status: "completed" });
 
     const ids = async (issue: string) =>
@@ -715,7 +717,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     const a1 = (
       await createRun(
         db,
-        runInput({ linearTitle: "Epic A", linearUrl: "https://linear.app/acme/issue/A-1" }),
+        runInput({ trackerTitle: "Epic A", trackerUrl: "https://linear.app/acme/issue/A-1" }),
       )
     ).run;
     const a2 = (await createRun(db, runInput())).run;
@@ -734,9 +736,9 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
         .where(eq(ralphRuns.id, id));
     }
     const stories = await upsertStories(db, a1.id, [
-      { linearIssueId: "x-1", identifier: "X-1", title: "One" },
-      { linearIssueId: "x-2", identifier: "X-2", title: "Two" },
-      { linearIssueId: "x-3", identifier: "X-3", title: "Three" },
+      { trackerIssueId: "x-1", identifier: "X-1", title: "One" },
+      { trackerIssueId: "x-2", identifier: "X-2", title: "Two" },
+      { trackerIssueId: "x-3", identifier: "X-3", title: "Three" },
     ]);
     await updateStory(db, stories[0]!.id, { status: "completed" });
     await updateStory(db, stories[1]!.id, { status: "completed" });
@@ -745,9 +747,9 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     expect(all).toMatchObject({ total: 3, page: 1, pageSize: 25 });
     expect(all.runs.map((r) => r.id)).toEqual([b1.id, a2.id, a1.id]);
     expect(all.runs[2]).toMatchObject({
-      linearIdentifier: a1.linearIdentifier,
-      linearTitle: "Epic A",
-      linearUrl: "https://linear.app/acme/issue/A-1",
+      trackerIdentifier: a1.trackerIdentifier,
+      trackerTitle: "Epic A",
+      trackerUrl: "https://linear.app/acme/issue/A-1",
       status: "completed",
       repository: { id: repoA, provider: "github", fullPath: "acme/b-api" },
       agent: { id: agentId, name: "coder-1" },
@@ -774,11 +776,11 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
   });
 
   it("loads a run's detail: repository, agent, stories in order and jobs newest first", async () => {
-    const run = (await createRun(db, runInput({ linearTitle: "Epic" }))).run;
+    const run = (await createRun(db, runInput({ trackerTitle: "Epic" }))).run;
     await updateRun(db, run.id, { agentId, status: "running" });
     const stories = await upsertStories(db, run.id, [
-      { linearIssueId: "d-1", identifier: "D-1", title: "One" },
-      { linearIssueId: "d-2", identifier: "D-2", title: "Two" },
+      { trackerIssueId: "d-1", identifier: "D-1", title: "One" },
+      { trackerIssueId: "d-2", identifier: "D-2", title: "Two" },
     ]);
     const { job: first } = await insertJob(db, {
       organizationId: orgId,
@@ -808,7 +810,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
 
     const detail = await getRunDetail(db, orgId, run.id);
     expect(detail).toMatchObject({
-      run: { id: run.id, status: "running", linearTitle: "Epic" },
+      run: { id: run.id, status: "running", trackerTitle: "Epic" },
       repository: { id: repoA, provider: "github", fullPath: "acme/b-api" },
       agent: { id: agentId, name: "coder-1" },
     });
@@ -912,10 +914,10 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
 
       // Stories record their lane (and why one is manual) on every upsert.
       const stories = await upsertStories(db, run.id, [
-        { linearIssueId: "l-1", identifier: "L-1", title: "Api", laneId: main!.id },
-        { linearIssueId: "l-2", identifier: "L-2", title: "Web", laneId: web.id },
+        { trackerIssueId: "l-1", identifier: "L-1", title: "Api", laneId: main!.id },
+        { trackerIssueId: "l-2", identifier: "L-2", title: "Web", laneId: web.id },
         {
-          linearIssueId: "l-3",
+          trackerIssueId: "l-3",
           identifier: "L-3",
           title: "Docs",
           elsewhere: "it's in project Docs",
@@ -1097,7 +1099,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
           .set({ laneId: api.id })
           .where(eq(ralphMessages.id, message.id));
         const [story] = await upsertStories(db, run.id, [
-          { linearIssueId: "m-1", identifier: "M-1", title: "Web", laneId: old.id },
+          { trackerIssueId: "m-1", identifier: "M-1", title: "Web", laneId: old.id },
         ]);
 
         const moved = await moveToRepository(db, run.id, repoA, {
@@ -1204,7 +1206,7 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     const otherInput = runInput({ organizationId: other!.id, repositoryId: otherRepo });
     const { run: otherRun } = await createRun(db, otherInput);
     await upsertStories(db, otherRun.id, [
-      { linearIssueId: "shared-story", identifier: "S-1", title: "s" },
+      { trackerIssueId: "shared-story", identifier: "S-1", title: "s" },
     ]);
     await updateRun(db, otherRun.id, { status: "waiting" });
     await updateLane(db, (await getMainLane(db, otherRun))!.id, {
@@ -1230,9 +1232,9 @@ describe.skipIf(!databaseAvailable)("ralph queries", () => {
     expect((await listLanesToCleanUp(db, other!.id)).map((l) => l.run.id)).toEqual([otherRun.id]);
 
     // The same issue (a workspace that moved) doesn't collide with the other organization's run.
-    expect(await getRunByIssue(db, orgId, otherInput.linearIssueId)).toBeNull();
-    const mine = await createRun(db, runInput({ linearIssueId: otherInput.linearIssueId }));
+    expect(await getRunByIssue(db, orgId, otherInput.trackerIssueId)).toBeNull();
+    const mine = await createRun(db, runInput({ trackerIssueId: otherInput.trackerIssueId }));
     expect(mine).toMatchObject({ created: true, run: { organizationId: orgId } });
-    expect((await getRunByIssue(db, orgId, otherInput.linearIssueId))?.id).toBe(mine.run.id);
+    expect((await getRunByIssue(db, orgId, otherInput.trackerIssueId))?.id).toBe(mine.run.id);
   });
 });

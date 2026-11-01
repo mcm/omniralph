@@ -48,7 +48,7 @@ import {
   type RalphRun,
   type RalphTransaction,
   getMainLane,
-  isLinearRun,
+  isTrackerRun,
 } from "@omniralph/db";
 import {
   isRerunPreparationRequest,
@@ -143,7 +143,7 @@ export async function handleReply(
   if (run.status === "failed") {
     await postActivity(conversationFor(run, deps), {
       type: "response",
-      body: `This run is over (${run.status}), so I didn't act on that. Delegate **${run.linearIdentifier}** to me again to start a new run.`,
+      body: `This run is over (${run.status}), so I didn't act on that. Delegate **${run.trackerIdentifier}** to me again to start a new run.`,
     });
     return null;
   }
@@ -159,8 +159,8 @@ export async function handleReply(
   const ship = parseShipRequest(body);
   const instruction = parseInstruction(body);
   // `/coding` on a mention's run switches it to the story loop: not while the PRD has open questions.
-  if (instruction.wantsLoop && run.mode === "request" && isLinearRun(run)) {
-    const issueId = run.focusStoryId ?? run.linearIssueId;
+  if (instruction.wantsLoop && run.mode === "request" && isTrackerRun(run)) {
+    const issueId = run.focusStoryId ?? run.trackerIssueId;
     let found: Awaited<ReturnType<typeof withOpenQuestions>>;
     try {
       found = await withOpenQuestions(deps, issueId);
@@ -433,10 +433,10 @@ export async function answerRunQuestion(
 
 /** Creates a PRD's missing stories as sub-issues (a request-mode run switched to the epic loop). */
 async function materializeStories(deps: RalphDeps, run: RalphRun): Promise<void> {
-  if (run.kind === "single" || !isLinearRun(run)) return;
-  await quietly(`Creating the stories of ${run.linearIdentifier}`, async () => {
+  if (run.kind === "single" || !isTrackerRun(run)) return;
+  await quietly(`Creating the stories of ${run.trackerIdentifier}`, async () => {
     const options = await runEpicOptions(deps.db, run);
-    await loadEpic(deps.tracker, run.linearIssueId, { ...options, completePrd: true });
+    await loadEpic(deps.tracker, run.trackerIssueId, { ...options, completePrd: true });
   });
 }
 
@@ -512,7 +512,7 @@ export async function stopRun(
     );
     if (ok) canceled += 1;
   }
-  await quietly(`Posting the plan of session ${run.linearAgentSessionId}`, () =>
+  await quietly(`Posting the plan of session ${run.trackerSessionId}`, () =>
     publishPlan(conversationFor(run, deps), stopped.stories),
   );
   const by = authorName ? ` (requested by ${authorName})` : "";

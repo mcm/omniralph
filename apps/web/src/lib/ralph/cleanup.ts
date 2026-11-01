@@ -39,7 +39,7 @@ import {
   getRepositoryWithConnection,
   getRun,
   getRunByIssue,
-  isLinearRun,
+  isTrackerRun,
   listActiveRunJobIds,
   listLanes,
   listLanesToCleanUp,
@@ -390,12 +390,12 @@ export async function recordClosedPullRequest(
 async function resolveMergedIssue(deps: RalphDeps, lane: RalphLane): Promise<void> {
   try {
     const run = await getRun(deps.db, lane.runId);
-    if (!run || !isLinearRun(run)) return;
+    if (!run || !isTrackerRun(run)) return;
     const lanes = await listLanes(deps.db, run.id);
     if (lanes.some((l) => l.id !== lane.id && !l.prClosed && !l.prMerged)) return;
-    const issue = await deps.tracker.getIssue(run.linearIssueId);
+    const issue = await deps.tracker.getIssue(run.trackerIssueId);
     if (issue.stateType === "completed" || issue.stateType === "canceled") return;
-    await deps.tracker.setIssueState(run.linearIssueId, { type: "completed" });
+    await deps.tracker.setIssueState(run.trackerIssueId, { type: "completed" });
   } catch (error) {
     console.error(
       `Resolving the Linear issue of ralph lane ${lane.id} after its merge failed`,
@@ -441,9 +441,9 @@ export async function cleanupClosedPullRequest(
  */
 export async function cleanupAfterIssueCompleted(
   deps: RalphDeps,
-  linearIssueId: string,
+  trackerIssueId: string,
 ): Promise<void> {
-  const run = await getRunByIssue(deps.db, deps.organizationId, linearIssueId);
+  const run = await getRunByIssue(deps.db, deps.organizationId, trackerIssueId);
   if (!run) return;
   for (const lane of await listLanes(deps.db, run.id)) {
     if (lane.prNumber === null || (lane.prClosed && !lane.prMerged)) continue;
@@ -452,7 +452,7 @@ export async function cleanupAfterIssueCompleted(
       else if (!lane.cleanup) await checkMergedAgain(deps, lane);
     } catch (error) {
       console.error(
-        `Checking ${lane.prUrl} after ${run.linearIdentifier} was completed failed`,
+        `Checking ${lane.prUrl} after ${run.trackerIdentifier} was completed failed`,
         error,
       );
     }

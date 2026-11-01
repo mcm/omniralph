@@ -71,8 +71,8 @@ const idList = (values: readonly string[]) =>
  */
 function runSearchFactsSql(): SQL {
   return sql`
-    select r.id, r.linear_identifier as identifier,
-      coalesce(r.linear_title, (select m.text from ralph_messages m
+    select r.id, r.tracker_identifier as identifier,
+      coalesce(r.tracker_title, (select m.text from ralph_messages m
         where m.run_id = r.id and m.kind = 'request' order by m.created_at, m.id limit 1)) as title,
       l.pr_number
     from ralph_runs r

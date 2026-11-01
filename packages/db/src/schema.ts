@@ -149,8 +149,8 @@ export const ralphMessageKind = pgEnum("ralph_message_kind", ["guidance", "reque
  * delegation, or `/coding`); `request` only does what a mention asks.
  */
 export const ralphRunMode = pgEnum("ralph_run_mode", ["epic", "request"]);
-/** Where a run came from: a Linear delegation or mention, or a chat thread (`chat_thread_id`). */
-export const ralphRunOrigin = pgEnum("ralph_run_origin", ["linear", "chat"]);
+/** Where a run came from: a tracker delegation or mention, or a chat thread (`chat_thread_id`). */
+export const ralphRunOrigin = pgEnum("ralph_run_origin", ["tracker", "chat"]);
 /** A chat thread's run: a query task's job, or a coding run. */
 export const chatThreadRunKind = pgEnum("chat_thread_run_kind", ["query", "coding"]);
 export const chatRunEventKind = pgEnum("chat_run_event_kind", [
@@ -175,8 +175,8 @@ export const ralphMessageTrigger = pgEnum("ralph_message_trigger", [
 /** How a repository's ralph runs work: legacy `ralph.*` jobs, or coding tasks. */
 /** What started a triage run: an `@omniralph /triage` mention, or the triage label. */
 export const triageRunTrigger = pgEnum("triage_run_trigger", ["mention", "label"]);
-/** A Linear issue draft posted from chat: `creating` while its **Create** click runs. */
-export const chatLinearIssueDraftStatus = pgEnum("chat_linear_issue_draft_status", [
+/** A work item draft posted from chat: `creating` while its **Create** click runs. */
+export const chatTrackerIssueDraftStatus = pgEnum("chat_tracker_issue_draft_status", [
   "pending",
   "creating",
   "created",
@@ -743,7 +743,7 @@ export const chatMessages = pgTable(
 
 /** What a web chat card is, from its button actions (`webCardRef`). */
 export interface ChatWebCardRef {
-  kind: "request_draft" | "linear_issue_draft";
+  kind: "request_draft" | "tracker_issue_draft";
   draftId: string;
 }
 
@@ -784,12 +784,12 @@ export const chatWebMessages = pgTable(
 );
 
 /**
- * A Linear issue the control-panel agent drafted in a chat thread: posted as a
+ * A work item the control-panel agent drafted in a chat thread: posted as a
  * card with **Create** / **Cancel** buttons, created only when the member who
  * asked clicks **Create** before `expiresAt`.
  */
-export const chatLinearIssueDrafts = pgTable(
-  "chat_linear_issue_drafts",
+export const chatTrackerIssueDrafts = pgTable(
+  "chat_tracker_issue_drafts",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     threadId: uuid("thread_id")
@@ -801,30 +801,33 @@ export const chatLinearIssueDrafts = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     /** Their chat user ID. */
     requestedByExternalUserId: text("requested_by_external_user_id").notNull(),
+    /** The tracker the work item is created in. */
+    trackerProvider: integrationProvider("tracker_provider").notNull().default("linear"),
     teamId: text("team_id").notNull(),
     teamKey: text("team_key").notNull(),
     title: text("title").notNull(),
     description: text("description").notNull(),
     projectName: text("project_name"),
     labels: jsonb("labels").$type<string[]>().notNull().default([]),
-    /** Linear priority: 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low. */
+    /** Tracker priority: 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low. */
     priority: integer("priority"),
-    /** Screenshots from the thread to upload to Linear and embed in the description. */
+    /** Screenshots from the thread to upload to the tracker and embed in the description. */
     attachments: jsonb("attachments")
       .$type<Array<ChatMessageAttachment & { ref: string }>>()
       .notNull()
       .default([]),
-    status: chatLinearIssueDraftStatus("status").notNull().default("pending"),
+    status: chatTrackerIssueDraftStatus("status").notNull().default("pending"),
     /** The chat message of the card (set once posted). */
     externalMessageId: text("external_message_id"),
-    linearIssueId: text("linear_issue_id"),
-    linearIssueIdentifier: text("linear_issue_identifier"),
-    linearIssueUrl: text("linear_issue_url"),
+    /** The created work item. */
+    trackerIssueId: text("tracker_issue_id"),
+    trackerIssueIdentifier: text("tracker_issue_identifier"),
+    trackerIssueUrl: text("tracker_issue_url"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("chat_linear_issue_drafts_thread_id_idx").on(t.threadId)],
+  (t) => [index("chat_tracker_issue_drafts_thread_id_idx").on(t.threadId)],
 );
 
 /**
@@ -878,14 +881,14 @@ export const chatRequestDrafts = pgTable(
 );
 
 /**
- * A Linear issue delegated to the Omniralph app from a chat thread, written
- * just before the delegation: when Linear's agent session for it starts the
+ * A work item delegated to the Omniralph app from a chat thread, written
+ * just before the delegation: when the tracker's agent session for it starts the
  * run, `startRun` takes the row and ties the run to the thread (its
  * `chat_thread_id`) for start/PR/finish notifications. A row no session takes
  * within an hour is ignored and pruned.
  */
-export const chatLinearDelegations = pgTable(
-  "chat_linear_delegations",
+export const chatTrackerDelegations = pgTable(
+  "chat_tracker_delegations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     organizationId: uuid("organization_id")
@@ -894,12 +897,13 @@ export const chatLinearDelegations = pgTable(
     threadId: uuid("thread_id")
       .notNull()
       .references(() => chatThreads.id, { onDelete: "cascade" }),
-    linearIssueId: text("linear_issue_id").notNull(),
+    trackerProvider: integrationProvider("tracker_provider").notNull().default("linear"),
+    trackerIssueId: text("tracker_issue_id").notNull(),
     createdAt: createdAt(),
   },
   (t) => [
-    index("chat_linear_delegations_issue_idx").on(t.organizationId, t.linearIssueId, t.createdAt),
-    index("chat_linear_delegations_created_at_idx").on(t.createdAt),
+    index("chat_tracker_delegations_issue_idx").on(t.organizationId, t.trackerIssueId, t.createdAt),
+    index("chat_tracker_delegations_created_at_idx").on(t.createdAt),
   ],
 );
 
@@ -1998,8 +2002,8 @@ export interface RalphAttachmentLink {
 }
 
 /**
- * A delegated Linear issue being built story by story (the ralph loop), or a
- * request-mode run started from a chat thread (`origin` `chat`: no Linear
+ * A delegated work item being built story by story (the ralph loop), or a
+ * request-mode run started from a chat thread (`origin` `chat`: no tracker
  * issue, session or stories). The control panel owns this state; every change goes through a row lock
  * (`lockRun`) because webhooks and job outcomes race.
  */
@@ -2007,25 +2011,28 @@ export const ralphRuns = pgTable(
   "ralph_runs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    /** The organization whose Linear workspace delegated the issue (and whose repositories it uses). */
+    /** The organization whose tracker workspace delegated the issue (and whose repositories it uses). */
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    origin: ralphRunOrigin("origin").notNull().default("linear"),
+    origin: ralphRunOrigin("origin").notNull().default("tracker"),
+    /** The tracker of the run's issue and stories (`tracker` runs). */
+    trackerProvider: integrationProvider("tracker_provider").notNull().default("linear"),
     /** The chat thread a `chat` run belongs to (its session posts there). */
     chatThreadId: uuid("chat_thread_id").references(() => chatThreads.id, {
       onDelete: "set null",
     }),
-    /** The delegated issue (the epic, or the single issue); set for `linear` runs only. */
-    linearIssueId: text("linear_issue_id"),
-    linearIdentifier: text("linear_identifier"),
-    /** The delegated issue's title and Linear URL when the run started (for the Ralph runs pages). */
-    linearTitle: text("linear_title"),
-    linearUrl: text("linear_url"),
-    linearAgentSessionId: text("linear_agent_session_id"),
+    /** The delegated issue (the epic, or the single issue); set for `tracker` runs only. */
+    trackerIssueId: text("tracker_issue_id"),
+    trackerIdentifier: text("tracker_identifier"),
+    /** The delegated issue's title and tracker URL when the run started (for the Ralph runs pages). */
+    trackerTitle: text("tracker_title"),
+    trackerUrl: text("tracker_url"),
+    /** The tracker's agent session, or a `comments:` ID on a tracker without sessions. */
+    trackerSessionId: text("tracker_session_id"),
     kind: ralphRunKind("kind").notNull(),
     mode: ralphRunMode("mode").notNull().default("epic"),
-    /** Linear issue ID of the story to work on first (a delegated sub-issue). */
+    /** Tracker issue ID of the story to work on first (a delegated sub-issue). */
     focusStoryId: text("focus_story_id"),
     /** Null while the run waits for a person to pick one (`pending_elicitation`). */
     repositoryId: uuid("repository_id").references(() => repositories.id, { onDelete: "cascade" }),
@@ -2074,28 +2081,28 @@ export const ralphRuns = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex("ralph_runs_agent_session_uq").on(t.linearAgentSessionId),
-    /** At most one unfinished Linear run per delegated issue (and organization). */
+    uniqueIndex("ralph_runs_agent_session_uq").on(t.trackerSessionId),
+    /** At most one unfinished tracker run per delegated issue (and organization). */
     uniqueIndex("ralph_runs_issue_active_uq")
-      .on(t.organizationId, t.linearIssueId)
-      .where(sql`origin = 'linear' and status in ('pending', 'running', 'waiting')`),
+      .on(t.organizationId, t.trackerIssueId)
+      .where(sql`origin = 'tracker' and status in ('pending', 'running', 'waiting')`),
     /** At most one unfinished chat run per thread. */
     uniqueIndex("ralph_runs_chat_thread_active_uq")
       .on(t.chatThreadId)
       .where(sql`origin = 'chat' and status in ('pending', 'running', 'waiting')`),
     index("ralph_runs_chat_thread_id_idx").on(t.chatThreadId, t.createdAt),
     /**
-     * A Linear run has its issue and agent session; a chat run only does what
+     * A tracker run has its issue and agent session; a chat run only does what
      * it was asked. A chat run starts with its thread (`createRun` requires
      * it), but loses it when the thread goes (e.g. the chat connection is
      * removed), so the thread can't be required here.
      */
     check(
       "ralph_runs_origin_check",
-      sql`(origin = 'linear' and linear_issue_id is not null and linear_identifier is not null and linear_agent_session_id is not null)
+      sql`(origin = 'tracker' and tracker_issue_id is not null and tracker_identifier is not null and tracker_session_id is not null)
         or (origin = 'chat' and mode = 'request')`,
     ),
-    index("ralph_runs_linear_issue_id_idx").on(t.linearIssueId, t.createdAt),
+    index("ralph_runs_tracker_issue_id_idx").on(t.trackerIssueId, t.createdAt),
     index("ralph_runs_status_created_at_idx").on(t.status, t.createdAt),
     index("ralph_runs_repository_created_at_idx").on(t.repositoryId, t.createdAt),
     index("ralph_runs_organization_created_at_idx").on(t.organizationId, t.createdAt),
@@ -2369,7 +2376,8 @@ export const ralphStories = pgTable(
     runId: uuid("run_id")
       .notNull()
       .references(() => ralphRuns.id, { onDelete: "cascade" }),
-    linearIssueId: text("linear_issue_id").notNull(),
+    trackerProvider: integrationProvider("tracker_provider").notNull().default("linear"),
+    trackerIssueId: text("tracker_issue_id").notNull(),
     identifier: text("identifier").notNull(),
     title: text("title").notNull(),
     /** Sub-issue order in the epic (for display; selection re-reads Linear). */
@@ -2400,7 +2408,7 @@ export const ralphStories = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex("ralph_stories_run_issue_uq").on(t.runId, t.linearIssueId)],
+  (t) => [uniqueIndex("ralph_stories_run_issue_uq").on(t.runId, t.trackerIssueId)],
 );
 
 /**
@@ -2462,8 +2470,9 @@ export const triageRuns = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     /** The issue being triaged. */
-    linearIssueId: text("linear_issue_id").notNull(),
-    linearAgentSessionId: text("linear_agent_session_id").notNull(),
+    trackerProvider: integrationProvider("tracker_provider").notNull().default("linear"),
+    trackerIssueId: text("tracker_issue_id").notNull(),
+    trackerSessionId: text("tracker_session_id").notNull(),
     trigger: triageRunTrigger("trigger").notNull(),
     /** The `triage.run` job whose outcome the run hasn't applied yet. */
     currentJobId: uuid("current_job_id").references(() => jobs.id, { onDelete: "set null" }),
@@ -2475,10 +2484,10 @@ export const triageRuns = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex("triage_runs_agent_session_uq").on(t.linearAgentSessionId),
+    uniqueIndex("triage_runs_agent_session_uq").on(t.trackerSessionId),
     /** At most one unfinished triage per issue (and organization). */
     uniqueIndex("triage_runs_issue_active_uq")
-      .on(t.organizationId, t.linearIssueId)
+      .on(t.organizationId, t.trackerIssueId)
       .where(sql`status in ('queued', 'running')`),
     index("triage_runs_organization_created_at_idx").on(t.organizationId, t.createdAt),
   ],

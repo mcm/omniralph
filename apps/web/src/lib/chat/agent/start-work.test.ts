@@ -395,7 +395,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
       chatThreadId: chatThread.id,
       repositoryId: appRepoId,
       status: "running",
-      linearIssueId: null,
+      trackerIssueId: null,
       codingTaskId: "builtin:handle-request",
     });
     expect(toolOutput(calls[1]!)).toMatchObject({

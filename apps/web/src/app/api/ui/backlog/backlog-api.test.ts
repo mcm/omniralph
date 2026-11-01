@@ -213,8 +213,8 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
   const sized = async (orgId: string, issueId: string, size: string) => {
     await db.insert(triageRuns).values({
       organizationId: orgId,
-      linearIssueId: issueId,
-      linearAgentSessionId: `triage-${randomUUID()}`,
+      trackerIssueId: issueId,
+      trackerSessionId: `triage-${randomUUID()}`,
       trigger: "label",
       status: "completed",
       lastResult: {
@@ -272,9 +272,9 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
 
     await db.insert(ralphRuns).values({
       organizationId: orgs.Acme!,
-      linearIssueId: items.withRun.id,
-      linearIdentifier: "ENG-10",
-      linearAgentSessionId: "session-with-run",
+      trackerIssueId: items.withRun.id,
+      trackerIdentifier: "ENG-10",
+      trackerSessionId: "session-with-run",
       kind: "children",
       status: "completed",
     });
@@ -414,8 +414,8 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       .insert(triageRuns)
       .values({
         organizationId: orgs.Acme!,
-        linearIssueId: items.refine!.id,
-        linearAgentSessionId: `triage-${randomUUID()}`,
+        trackerIssueId: items.refine!.id,
+        trackerSessionId: `triage-${randomUUID()}`,
         trigger: "label",
         status: "running",
       })

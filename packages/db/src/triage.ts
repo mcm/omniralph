@@ -35,8 +35,8 @@ export const ACTIVE_TRIAGE_RUN_STATUSES = [
 
 export interface NewTriageRunInput {
   organizationId: string;
-  linearIssueId: string;
-  linearAgentSessionId: string;
+  trackerIssueId: string;
+  trackerSessionId: string;
   trigger: TriageRunTrigger;
 }
 
@@ -58,11 +58,11 @@ export async function createTriageRun(
     }
 
     const existing =
-      (await getTriageRunBySession(db, input.linearAgentSessionId)) ??
-      (await getActiveTriageRun(db, input.organizationId, input.linearIssueId));
+      (await getTriageRunBySession(db, input.trackerSessionId)) ??
+      (await getActiveTriageRun(db, input.organizationId, input.trackerIssueId));
     if (existing) return { run: existing, created: false };
   }
-  throw new Error(`Failed to create a triage run for Linear issue ${input.linearIssueId}`);
+  throw new Error(`Failed to create a triage run for Linear issue ${input.trackerIssueId}`);
 }
 
 export async function getTriageRun(db: Executor, id: string): Promise<TriageRun | null> {
@@ -73,12 +73,12 @@ export async function getTriageRun(db: Executor, id: string): Promise<TriageRun 
 /** The triage run of a Linear agent session, or null. */
 export async function getTriageRunBySession(
   db: Executor,
-  linearAgentSessionId: string,
+  trackerSessionId: string,
 ): Promise<TriageRun | null> {
   const [row] = await db
     .select()
     .from(triageRuns)
-    .where(eq(triageRuns.linearAgentSessionId, linearAgentSessionId))
+    .where(eq(triageRuns.trackerSessionId, trackerSessionId))
     .limit(1);
   return row ?? null;
 }
@@ -87,7 +87,7 @@ export async function getTriageRunBySession(
 export async function getActiveTriageRun(
   db: Executor,
   organizationId: string,
-  linearIssueId: string,
+  trackerIssueId: string,
 ): Promise<TriageRun | null> {
   const [row] = await db
     .select()
@@ -95,7 +95,7 @@ export async function getActiveTriageRun(
     .where(
       and(
         eq(triageRuns.organizationId, organizationId),
-        eq(triageRuns.linearIssueId, linearIssueId),
+        eq(triageRuns.trackerIssueId, trackerIssueId),
         inArray(triageRuns.status, ACTIVE_TRIAGE_RUN_STATUSES),
       ),
     )
@@ -108,27 +108,27 @@ export async function getActiveTriageRun(
 export async function listActiveTriageIssueIds(
   db: Executor,
   organizationId: string,
-  linearIssueIds: readonly string[],
+  trackerIssueIds: readonly string[],
 ): Promise<Set<string>> {
-  if (linearIssueIds.length === 0) return new Set();
+  if (trackerIssueIds.length === 0) return new Set();
   const rows = await db
-    .selectDistinct({ linearIssueId: triageRuns.linearIssueId })
+    .selectDistinct({ trackerIssueId: triageRuns.trackerIssueId })
     .from(triageRuns)
     .where(
       and(
         eq(triageRuns.organizationId, organizationId),
-        inArray(triageRuns.linearIssueId, [...new Set(linearIssueIds)]),
+        inArray(triageRuns.trackerIssueId, [...new Set(trackerIssueIds)]),
         inArray(triageRuns.status, ACTIVE_TRIAGE_RUN_STATUSES),
       ),
     );
-  return new Set(rows.map((row) => row.linearIssueId));
+  return new Set(rows.map((row) => row.trackerIssueId));
 }
 
 /** The organization's triage runs of a Linear issue, newest first (at most `limit`, default 50). */
 export async function listIssueTriageRuns(
   db: Executor,
   organizationId: string,
-  linearIssueId: string,
+  trackerIssueId: string,
   limit = 50,
 ): Promise<TriageRun[]> {
   return db
@@ -137,7 +137,7 @@ export async function listIssueTriageRuns(
     .where(
       and(
         eq(triageRuns.organizationId, organizationId),
-        eq(triageRuns.linearIssueId, linearIssueId),
+        eq(triageRuns.trackerIssueId, trackerIssueId),
       ),
     )
     .orderBy(desc(triageRuns.createdAt), desc(triageRuns.id))
@@ -251,11 +251,11 @@ export async function finishTriageRunJob(
 export async function setTriageRunSession(
   db: Executor,
   runId: string,
-  linearAgentSessionId: string,
+  trackerSessionId: string,
 ): Promise<TriageRun | null> {
   const [row] = await db
     .update(triageRuns)
-    .set({ linearAgentSessionId, updatedAt: new Date() })
+    .set({ trackerSessionId, updatedAt: new Date() })
     .where(eq(triageRuns.id, runId))
     .returning();
   if (row) recordTriageRunChange(db, row);
@@ -360,7 +360,7 @@ async function requeueTriageRun(
       }
       const combined = joinReplies(run.pendingReply, reply);
       if (!combined && !retry) return { status: "none" } as const;
-      const other = await getActiveTriageRun(tx, run.organizationId, run.linearIssueId);
+      const other = await getActiveTriageRun(tx, run.organizationId, run.trackerIssueId);
       if (other) return { status: "conflict", other } as const;
       const [row] = await tx
         .update(triageRuns)
@@ -374,7 +374,7 @@ async function requeueTriageRun(
     // Another run of the issue became active meanwhile (`triage_runs_issue_active_uq`).
     if (isUniqueViolation(error)) {
       const run = await getTriageRun(db, runId);
-      const other = run && (await getActiveTriageRun(db, run.organizationId, run.linearIssueId));
+      const other = run && (await getActiveTriageRun(db, run.organizationId, run.trackerIssueId));
       return { status: "conflict", other: other ?? null };
     }
     throw error;
@@ -412,7 +412,7 @@ export async function stopTriageRun(db: Database, runId: string): Promise<Triage
  */
 function recordTriageRunChange(
   db: Executor,
-  run: { id: string; organizationId: string; linearIssueId: string },
+  run: { id: string; organizationId: string; trackerIssueId: string },
 ): void {
   recordChange(db, {
     resource: "run",
@@ -423,7 +423,7 @@ function recordTriageRunChange(
   recordWorkItemChange(db, {
     organizationId: run.organizationId,
     tracker: "linear",
-    externalIds: [run.linearIssueId],
+    externalIds: [run.trackerIssueId],
   });
 }
 

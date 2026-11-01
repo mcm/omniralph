@@ -242,7 +242,7 @@ export function parseRequestDraftValue(
 /** A card in a chat: a request or Linear issue draft, or any other card as its title, text and buttons. */
 export const askCardSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("request_draft"), draft: askRequestDraftSchema }),
-  z.object({ kind: z.literal("linear_issue_draft"), draft: askLinearIssueDraftSchema }),
+  z.object({ kind: z.literal("tracker_issue_draft"), draft: askLinearIssueDraftSchema }),
   z.object({
     kind: z.literal("generic"),
     title: z.string(),

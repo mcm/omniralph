@@ -236,9 +236,9 @@ describe.skipIf(!databaseAvailable)(
       const { changes } = await captureChanges(() =>
         createRun(db, {
           organizationId: orgId,
-          linearIssueId: "issue-run",
-          linearIdentifier: "ENG-2",
-          linearAgentSessionId: `session-${randomUUID()}`,
+          trackerIssueId: "issue-run",
+          trackerIdentifier: "ENG-2",
+          trackerSessionId: `session-${randomUUID()}`,
           kind: "children",
           repositoryId: repoId,
           branch: "feat/eng-2",
@@ -254,8 +254,8 @@ describe.skipIf(!databaseAvailable)(
     it("a triage run changing status", async () => {
       const { run } = await createTriageRun(db, {
         organizationId: orgId,
-        linearIssueId: "issue-triage",
-        linearAgentSessionId: `triage-${randomUUID()}`,
+        trackerIssueId: "issue-triage",
+        trackerSessionId: `triage-${randomUUID()}`,
         trigger: "label",
       });
       await fill(orgId);

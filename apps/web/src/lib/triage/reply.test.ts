@@ -335,9 +335,9 @@ describe.skipIf(!databaseAvailable)("continuing triage from session replies", ()
     const { sessionId, runId } = await mentioned(issue);
     const { run: ralph } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: "other-issue",
-      linearIdentifier: "ENG-99",
-      linearAgentSessionId: "ralph-session",
+      trackerIssueId: "other-issue",
+      trackerIdentifier: "ENG-99",
+      trackerSessionId: "ralph-session",
       kind: "single",
       repositoryId: null,
       status: "pending",

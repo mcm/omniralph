@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   chatChannelLabel,
-  linearIssueUrl,
+  trackerIssueUrl,
   ralphMessageState,
   ralphRunFailure,
   roundsLabel,
@@ -14,17 +14,17 @@ import {
 
 describe("formatting", () => {
   it("derives other issues' Linear URLs from the run's", () => {
-    expect(linearIssueUrl("https://linear.app/acme/issue/ENG-1/epic-title", "OPS-2")).toBe(
+    expect(trackerIssueUrl("https://linear.app/acme/issue/ENG-1/epic-title", "OPS-2")).toBe(
       "https://linear.app/acme/issue/OPS-2",
     );
-    expect(linearIssueUrl(null, "OPS-2")).toBeNull();
-    expect(linearIssueUrl("https://example.com/ENG-1", "OPS-2")).toBeNull();
+    expect(trackerIssueUrl(null, "OPS-2")).toBeNull();
+    expect(trackerIssueUrl("https://example.com/ENG-1", "OPS-2")).toBeNull();
   });
 
   it("names a run by its Linear issue, or its chat platform and channel", () => {
-    const tracker = { origin: "linear" as const, linearIdentifier: "ENG-1", chatThread: null };
+    const tracker = { origin: "tracker" as const, trackerIdentifier: "ENG-1", chatThread: null };
     expect(runSourceLabel(tracker)).toBe("ENG-1");
-    const chat = { origin: "chat" as const, linearIdentifier: null };
+    const chat = { origin: "chat" as const, trackerIdentifier: null };
     expect(
       runSourceLabel({ ...chat, chatThread: { platform: "slack", channelId: "slack:C0123" } }),
     ).toBe("Slack C0123");
@@ -99,8 +99,8 @@ describe("ralphRunFailure", () => {
   });
   const base = {
     status: "failed" as const,
-    origin: "linear" as const,
-    linearIdentifier: "FIX-130",
+    origin: "tracker" as const,
+    trackerIdentifier: "FIX-130",
     repository: { id: "r1", provider: "gitlab" as const, fullPath: "acme/api" },
     stories: [story()],
     jobs: [job("job-3", "completed"), job("job-2", "failed"), job("job-1", "failed")],

@@ -130,12 +130,12 @@ function ralphKindFacts(
           blockers: facts.waitingOn.blockers.map((b) => ({
             tracker: "linear" as const,
             identifier: b.identifier,
-            url: storyIssueUrl(facts.linearIssueUrl, b.identifier),
+            url: storyIssueUrl(facts.trackerIssueUrl, b.identifier),
           })),
           manual: facts.waitingOn.manual.map((m) => ({
             tracker: "linear" as const,
             identifier: m.identifier,
-            url: storyIssueUrl(facts.linearIssueUrl, m.identifier),
+            url: storyIssueUrl(facts.trackerIssueUrl, m.identifier),
           })),
         }
       : null;
@@ -172,7 +172,7 @@ function ralphKindFacts(
         workItem: {
           tracker: "linear",
           identifier: story.identifier,
-          url: storyIssueUrl(facts.linearIssueUrl, story.identifier),
+          url: storyIssueUrl(facts.trackerIssueUrl, story.identifier),
         },
         title: story.title,
         status: story.status,

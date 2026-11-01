@@ -345,8 +345,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
       ]);
       const { run: triage } = await createTriageRun(db, {
         organizationId: state.orgId,
-        linearIssueId: epic.id,
-        linearAgentSessionId: `triage-${randomUUID()}`,
+        trackerIssueId: epic.id,
+        trackerSessionId: `triage-${randomUUID()}`,
         trigger: "label",
       });
       await db
@@ -434,8 +434,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
       // Triage queued, then a run: the actions follow.
       const { run: active } = await createTriageRun(db, {
         organizationId: state.orgId,
-        linearIssueId: epic.id,
-        linearAgentSessionId: `triage-${randomUUID()}`,
+        trackerIssueId: epic.id,
+        trackerSessionId: `triage-${randomUUID()}`,
         trigger: "label",
       });
       expect(await detail(epic)).toMatchObject({
@@ -447,9 +447,9 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
         .insert(ralphRuns)
         .values({
           organizationId: state.orgId,
-          linearIssueId: epic.id,
-          linearIdentifier: epic.identifier,
-          linearAgentSessionId: `session-${randomUUID()}`,
+          trackerIssueId: epic.id,
+          trackerIdentifier: epic.identifier,
+          trackerSessionId: `session-${randomUUID()}`,
           kind: "children",
           status: "running",
         })
@@ -614,8 +614,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
 
     await createTriageRun(db, {
       organizationId: state.orgId,
-      linearIssueId: idea.id,
-      linearAgentSessionId: `triage-${randomUUID()}`,
+      trackerIssueId: idea.id,
+      trackerSessionId: `triage-${randomUUID()}`,
       trigger: "label",
     });
     expect(await call(triageRoute.POST, urlId(idea), { method: "POST" })).toEqual({
@@ -664,9 +664,9 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
           .insert(ralphRuns)
           .values({
             organizationId: state.orgId,
-            linearIssueId: item.id,
-            linearIdentifier: item.identifier,
-            linearAgentSessionId: `session-${randomUUID()}`,
+            trackerIssueId: item.id,
+            trackerIdentifier: item.identifier,
+            trackerSessionId: `session-${randomUUID()}`,
             kind: "children",
             status,
           })

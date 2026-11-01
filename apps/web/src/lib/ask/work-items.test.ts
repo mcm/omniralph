@@ -70,9 +70,9 @@ describe.skipIf(!databaseAvailable)("createWorkItemResolver", () => {
     // ENG-1 has a coding run, then a newer triage run; ENG-2 has none.
     const { run } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: "issue-1",
-      linearIdentifier: "ENG-1",
-      linearAgentSessionId: "session-1",
+      trackerIssueId: "issue-1",
+      trackerIdentifier: "ENG-1",
+      trackerSessionId: "session-1",
       kind: "children",
       repositoryId: null,
       branch: "omniralph/eng-1",
@@ -85,8 +85,8 @@ describe.skipIf(!databaseAvailable)("createWorkItemResolver", () => {
       .where(eq(ralphRuns.id, run.id));
     const triage = await createTriageRun(db, {
       organizationId: orgId,
-      linearIssueId: "issue-1",
-      linearAgentSessionId: "session-2",
+      trackerIssueId: "issue-1",
+      trackerSessionId: "session-2",
       trigger: "mention",
     });
     triageRun = triage.run.id;

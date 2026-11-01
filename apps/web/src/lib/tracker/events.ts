@@ -154,11 +154,11 @@ async function delegationIntoTriageSession(
   let viewer: Viewer;
   try {
     [issue, viewer] = await Promise.all([
-      ralph.tracker.getIssue(triage.linearIssueId),
+      ralph.tracker.getIssue(triage.trackerIssueId),
       ralph.tracker.getViewer(),
     ]);
   } catch (error) {
-    console.error(`Checking whether ${triage.linearIssueId} was delegated to Om failed`, error);
+    console.error(`Checking whether ${triage.trackerIssueId} was delegated to Om failed`, error);
     return null;
   }
   if (!issue.delegateId || issue.delegateId !== viewer.id) return null;

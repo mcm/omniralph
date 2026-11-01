@@ -157,7 +157,7 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
     story: {
       identifier,
       title: story.title.slice(0, 1000),
-      linearIssueId: row.linearIssueId,
+      linearIssueId: row.trackerIssueId,
       url: url(story.url),
       description: headOf(story.description),
     },
@@ -316,7 +316,7 @@ export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPay
     branch: lane.branch,
     baseBranch: lane.baseBranch,
     settings: jobSettings(repository, input.coding),
-    source: run.origin,
+    source: run.origin === "chat" ? "chat" : "linear",
     epic: {
       identifier: epic.identifier,
       title: epic.title.slice(0, 1000),

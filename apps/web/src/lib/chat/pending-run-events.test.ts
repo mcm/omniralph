@@ -152,9 +152,9 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("chat run events marker",
   async function recordEvent(): Promise<void> {
     const { run } = await createRun(db, {
       organizationId,
-      linearIssueId: `issue-${randomUUID()}`,
-      linearIdentifier: "TOOL-1",
-      linearAgentSessionId: `session-${randomUUID()}`,
+      trackerIssueId: `issue-${randomUUID()}`,
+      trackerIdentifier: "TOOL-1",
+      trackerSessionId: `session-${randomUUID()}`,
       kind: "children",
       repositoryId: null,
       status: "running",

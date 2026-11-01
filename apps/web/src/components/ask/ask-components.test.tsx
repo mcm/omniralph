@@ -42,9 +42,9 @@ function everything() {
     { kind: "request_draft" as const, draft: outcome("added", "Added to the backlog") },
     { kind: "request_draft" as const, draft: outcome("dismissed", "Not now") },
     { kind: "request_draft" as const, draft: outcome("expired", "This draft expired") },
-    { kind: "linear_issue_draft" as const, draft: linearIssueDraft() },
+    { kind: "tracker_issue_draft" as const, draft: linearIssueDraft() },
     {
-      kind: "linear_issue_draft" as const,
+      kind: "tracker_issue_draft" as const,
       draft: linearIssueDraft({
         status: "created",
         actions: [],
@@ -52,7 +52,7 @@ function everything() {
       }),
     },
     {
-      kind: "linear_issue_draft" as const,
+      kind: "tracker_issue_draft" as const,
       draft: linearIssueDraft({ status: "cancelled", actions: [] }),
     },
     {

@@ -153,7 +153,7 @@ function itemFields(
         title: story.title,
         workItem: {
           tracker: "linear",
-          id: workItemUrlId("linear", story.linearIssueId),
+          id: workItemUrlId("linear", story.trackerIssueId),
           identifier: story.identifier,
           url: storyIssueUrl(entry?.workItem?.url ?? null, story.identifier),
         },

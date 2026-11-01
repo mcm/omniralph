@@ -59,10 +59,10 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
     await db.insert(ralphRuns).values({
       id,
       organizationId: acme,
-      linearIssueId: `issue-${name}`,
-      linearIdentifier: `ENG-${name}`,
-      linearTitle: `Epic ${name}`,
-      linearAgentSessionId: `session-${name}`,
+      trackerIssueId: `issue-${name}`,
+      trackerIdentifier: `ENG-${name}`,
+      trackerTitle: `Epic ${name}`,
+      trackerSessionId: `session-${name}`,
       kind: "children",
       mode: "epic",
       repositoryId: repo,
@@ -152,7 +152,7 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
     await db.insert(ralphStories).values([
       {
         runId: ids.waiting!,
-        linearIssueId: "story-manual",
+        trackerIssueId: "story-manual",
         identifier: "ENG-11",
         title: "Set up DNS",
         status: "manual",
@@ -160,7 +160,7 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       },
       {
         runId: ids.waiting!,
-        linearIssueId: "story-pending",
+        trackerIssueId: "story-pending",
         identifier: "ENG-12",
         title: "Build",
         status: "pending",
@@ -169,7 +169,7 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
     const [manual] = await db
       .select()
       .from(ralphStories)
-      .where(eq(ralphStories.linearIssueId, "story-manual"));
+      .where(eq(ralphStories.trackerIssueId, "story-manual"));
     ids.manualStory = manual!.id;
     // A manual story of a running epic (no item; the run is under Running), whose live
     // session asks to use a tool (a question).
@@ -187,7 +187,7 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
     });
     await db.insert(ralphStories).values({
       runId: ids.running!,
-      linearIssueId: "story-run-manual",
+      trackerIssueId: "story-run-manual",
       identifier: "ENG-21",
       title: "Manual",
       status: "manual",
@@ -370,8 +370,8 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
         .insert(triageRuns)
         .values({
           organizationId: acme,
-          linearIssueId: issue,
-          linearAgentSessionId: `triage-session-${name}`,
+          trackerIssueId: issue,
+          trackerSessionId: `triage-session-${name}`,
           trigger: "label",
           status: "completed",
           lastResult: {
@@ -487,8 +487,8 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       .insert(triageRuns)
       .values({
         organizationId: acme,
-        linearIssueId: "triage-running",
-        linearAgentSessionId: "triage-running",
+        trackerIssueId: "triage-running",
+        trackerSessionId: "triage-running",
         trigger: "mention",
         status: "running",
       })
@@ -512,8 +512,8 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       .insert(triageRuns)
       .values({
         organizationId: acme,
-        linearIssueId: "triage-waiting",
-        linearAgentSessionId: "triage-waiting",
+        trackerIssueId: "triage-waiting",
+        trackerSessionId: "triage-waiting",
         trigger: "mention",
         status: "queued",
       })
@@ -535,8 +535,8 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
     });
     await db.insert(triageRuns).values({
       organizationId: acme,
-      linearIssueId: "triage-old",
-      linearAgentSessionId: "triage-old",
+      trackerIssueId: "triage-old",
+      trackerSessionId: "triage-old",
       trigger: "mention",
       status: "queued",
       createdAt: ago(15 * DAY),
@@ -545,9 +545,9 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
     // ── Another organization ──
     await db.insert(ralphRuns).values({
       organizationId: beta,
-      linearIssueId: "beta-issue",
-      linearIdentifier: "BETA-1",
-      linearAgentSessionId: "beta-session",
+      trackerIssueId: "beta-issue",
+      trackerIdentifier: "BETA-1",
+      trackerSessionId: "beta-session",
       kind: "single",
       status: "failed",
     });

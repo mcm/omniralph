@@ -35,7 +35,7 @@ import {
   type RalphWaitingOn,
   type Repository,
   type ScmConnection,
-  isLinearRun,
+  isTrackerRun,
   runReference,
 } from "@omniralph/db";
 import {
@@ -192,7 +192,7 @@ export async function syncStories(
     tx,
     runId,
     epic.stories.map((s) => ({
-      linearIssueId: s.issueId ?? s.key,
+      trackerIssueId: s.issueId ?? s.key,
       identifier: s.identifier ?? s.storyId,
       title: s.title,
       ...lanes?.get(s.issueId ?? s.key),
@@ -200,7 +200,7 @@ export async function syncStories(
   );
   let changed = false;
   for (const row of stored) {
-    const story = byIssue.get(row.linearIssueId);
+    const story = byIssue.get(row.trackerIssueId);
     if (!story) continue;
     const status = syncedStoryStatus(row.status, story);
     if (status !== row.status) {
@@ -302,7 +302,7 @@ function storiesWithRunState(
   rows: readonly RalphStory[],
   ignoreBlockers: boolean,
 ): Story[] {
-  const byIssue = new Map(rows.map((r) => [r.linearIssueId, r]));
+  const byIssue = new Map(rows.map((r) => [r.trackerIssueId, r]));
   const stories = epic.stories.map((story): Story => {
     const row = byIssue.get(story.issueId ?? story.key);
     // Completed here wins over Linear (marking it done there may have failed; a single issue stays open).
@@ -323,13 +323,13 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
     return { action: "waiting", run: asked, waitingOn: { blockers: [], manual: [] } };
   }
   // A chat run has no Linear issue: only its requests run, as in request mode.
-  if (!isLinearRun(run)) {
+  if (!isTrackerRun(run)) {
     const epic = await chatRequestEpic(tx, run);
     const [next] = await pendingRequestLanes(tx, run);
     if (next) return enqueueRequest(deps, tx, run, { epic, stories: [], ...next });
     return finishRequests(deps, tx, run);
   }
-  const { linearIssueId } = run;
+  const { trackerIssueId } = run;
 
   const epic = await reloadEpic(deps.tracker, run, await runEpicOptions(deps.db, run));
   // Stories routed to another repository get a lane there; those belonging nowhere here are manual.
@@ -359,7 +359,7 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   // Blockers of the epic issue itself gate all of its stories (as in cyralph and Cyrus).
   const rootBlockers = run.ignoreBlockers
     ? []
-    : openRootBlockers(epic, await deps.tracker.getBlockers(linearIssueId));
+    : openRootBlockers(epic, await deps.tracker.getBlockers(trackerIssueId));
 
   if (rootBlockers.length === 0) {
     const focused = run.focusStoryId
@@ -376,7 +376,7 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
       if (run.iterations >= cap) {
         return wait(deps, tx, run, { epic, stories, rows, rootBlockers, hitCap: cap });
       }
-      const row = rows.find((r) => r.linearIssueId === (next.issueId ?? next.key));
+      const row = rows.find((r) => r.trackerIssueId === (next.issueId ?? next.key));
       if (row) return enqueueStory(deps, tx, run, { epic, stories, story: next, row });
     }
   }
@@ -607,7 +607,7 @@ async function enqueueStory(
   if (found.lane.publish) await updateLane(tx, found.lane.id, { publish: null });
   if (run.kind !== "single" && story.status === "open") {
     await quietly(`Starting ${row.identifier} in Linear`, () =>
-      deps.tracker.setIssueState(row.linearIssueId, { type: "started" }),
+      deps.tracker.setIssueState(row.trackerIssueId, { type: "started" }),
     );
   }
   // The story's prompt carries the thread's requests as guidance: they're handled.
@@ -854,7 +854,7 @@ async function enqueuePreparation(
 ): Promise<AdvanceResult> {
   const { story, request } = input;
   // In the worktree of the story's lane (the repository it routes to).
-  const row = input.rows.find((r) => r.linearIssueId === (story.issueId ?? story.key));
+  const row = input.rows.find((r) => r.trackerIssueId === (story.issueId ?? story.key));
   const lane = await storyLane(tx, run, row ?? { laneId: request.laneId ?? null });
   const found = await usableRepository(deps, tx, run, lane ?? undefined);
   if ("action" in found) return found;
@@ -917,7 +917,7 @@ async function enqueueRequest(
       ? lane.requestClaudeSessionId
       : null;
   // Attachments are Linear's; a chat run has none.
-  const attachments = isLinearRun(run)
+  const attachments = isTrackerRun(run)
     ? await gatherRunAttachments(deps.tracker, tx, run, input.epic)
     : [];
   const playbooks = organizationPlaybooks(deps.db, run.organizationId);
@@ -1151,7 +1151,7 @@ async function wait(
       startAnyway,
     ].join("\n\n");
   } else {
-    const feedback = new Map(rows.map((r) => [r.linearIssueId, r]));
+    const feedback = new Map(rows.map((r) => [r.trackerIssueId, r]));
     const lines = [
       `Paused with ${done}/${stories.length} stories complete on \`${await mainBranch(tx, run)}\`.`,
     ];

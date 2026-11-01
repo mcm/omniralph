@@ -18,15 +18,15 @@ describe.skipIf(!databaseAvailable)("triage sizes", () => {
 
   const triage = async (
     organizationId: string,
-    linearIssueId: string,
+    trackerIssueId: string,
     lastResult: Record<string, unknown> | null,
     createdMinutesAgo: number,
   ) => {
     session += 1;
     await db.insert(triageRuns).values({
       organizationId,
-      linearIssueId,
-      linearAgentSessionId: `session-${session}`,
+      trackerIssueId,
+      trackerSessionId: `session-${session}`,
       trigger: "label",
       status: "completed",
       lastResult,
@@ -114,9 +114,9 @@ describe.skipIf(!databaseAvailable)("triage sizes", () => {
       },
     });
     const issues = [
-      { organizationId: acme, linearIssueId: "resized" },
-      { organizationId: beta, linearIssueId: "resized" },
-      { organizationId: beta, linearIssueId: "failed-since" },
+      { organizationId: acme, trackerIssueId: "resized" },
+      { organizationId: beta, trackerIssueId: "resized" },
+      { organizationId: beta, trackerIssueId: "failed-since" },
     ];
     const sizes = await triageSizesOf(counted, issues);
     expect(queries).toBe(1);

@@ -201,9 +201,9 @@ describe.skipIf(!databaseAvailable)("reconcile cron, organization without Linear
     });
     const { run } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: "issue-1",
-      linearIdentifier: "ENG-1",
-      linearAgentSessionId: "session-1",
+      trackerIssueId: "issue-1",
+      trackerIdentifier: "ENG-1",
+      trackerSessionId: "session-1",
       kind: "single",
       mode: "request",
       repositoryId: null,

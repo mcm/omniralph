@@ -189,7 +189,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
 
     expect(linear.sessionsCreated).toEqual([{ issueId: issue.id, sessionId: "session-1" }]);
     const run = await getTriageRunBySession(db, "session-1");
-    expect(run).toMatchObject({ linearIssueId: issue.id, trigger: "label", status: "queued" });
+    expect(run).toMatchObject({ trackerIssueId: issue.id, trigger: "label", status: "queued" });
     const job = (await getJob(db, run!.currentJobId!))!;
     expect(job).toMatchObject({
       type: "triage.run",
@@ -224,7 +224,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
     wake.mockRestore();
     expect(linear.sessionsCreated).toEqual([{ issueId: issue.id, sessionId: "session-1" }]);
     const run = await getTriageRunBySession(db, "session-1");
-    expect(run).toMatchObject({ linearIssueId: issue.id, trigger: "label", status: "queued" });
+    expect(run).toMatchObject({ trackerIssueId: issue.id, trigger: "label", status: "queued" });
     expect(await db.select().from(jobs)).toHaveLength(1);
     expect(linear.labelChanges).toEqual([]);
 
@@ -321,8 +321,8 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
     const other = await labeledIssue({ title: "other" });
     await createTriageRun(db, {
       organizationId: orgId,
-      linearIssueId: other.issue.id,
-      linearAgentSessionId: "mention-session",
+      trackerIssueId: other.issue.id,
+      trackerSessionId: "mention-session",
       trigger: "mention",
     });
     expect(await startLabelTriage(labelEvent(other.issue, other.labelId), deps())).toMatchObject({
@@ -421,8 +421,8 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
     expect(await own("unknown")).toBe(false);
     const { run } = await createTriageRun(db, {
       organizationId: orgId,
-      linearIssueId: issue.id,
-      linearAgentSessionId: "pending-label:abc",
+      trackerIssueId: issue.id,
+      trackerSessionId: "pending-label:abc",
       trigger: "label",
     });
     expect(await own("session-9")).toBe(true);
@@ -431,8 +431,8 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
     // A mention's run doesn't claim other sessions on the issue.
     await createTriageRun(db, {
       organizationId: orgId,
-      linearIssueId: issue.id,
-      linearAgentSessionId: "mention-session",
+      trackerIssueId: issue.id,
+      trackerSessionId: "mention-session",
       trigger: "mention",
     });
     expect(await own("session-9")).toBe(false);

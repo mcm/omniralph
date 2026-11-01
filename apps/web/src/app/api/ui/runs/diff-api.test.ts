@@ -11,7 +11,7 @@ import {
   upsertScmConnection,
   upsertStories,
   type Database,
-  type NewLinearRalphRunInput,
+  type NewTrackerRalphRunInput,
 } from "@omniralph/db";
 import {
   createTestDatabase,
@@ -176,15 +176,15 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/runs/{id}/steps/{stepId}/diff",
     state.connections = [];
   });
 
-  async function newRun(overrides: Partial<NewLinearRalphRunInput> = {}) {
+  async function newRun(overrides: Partial<NewTrackerRalphRunInput> = {}) {
     session += 1;
     const { run } = await createRun(db, {
       organizationId: orgId,
-      linearIssueId: `issue-${session}`,
-      linearIdentifier: `ENG-${session}`,
-      linearTitle: `Epic ${session}`,
-      linearUrl: null,
-      linearAgentSessionId: `session-${session}`,
+      trackerIssueId: `issue-${session}`,
+      trackerIdentifier: `ENG-${session}`,
+      trackerTitle: `Epic ${session}`,
+      trackerUrl: null,
+      trackerSessionId: `session-${session}`,
       kind: "children",
       repositoryId: api,
       branch: `eng-${session}`,
@@ -196,7 +196,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/runs/{id}/steps/{stepId}/diff",
 
   async function story(runId: string, commitSha: string | null, laneId?: string) {
     const [created] = await upsertStories(db, runId, [
-      { linearIssueId: `s-${runId}`, identifier: "ENG-41", title: "Build the importer", laneId },
+      { trackerIssueId: `s-${runId}`, identifier: "ENG-41", title: "Build the importer", laneId },
     ]);
     if (commitSha) await updateStory(db, created!.id, { commitSha });
     return created!;
@@ -249,7 +249,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/runs/{id}/steps/{stepId}/diff",
     });
     const onGitHub = (
       await upsertStories(db, run.id, [
-        { linearIssueId: "s-web", identifier: "ENG-42", title: "Web", laneId: lane.id },
+        { trackerIssueId: "s-web", identifier: "ENG-42", title: "Web", laneId: lane.id },
       ])
     ).find((s) => s.identifier === "ENG-42");
     await updateStory(db, onGitHub!.id, { commitSha: SHA });

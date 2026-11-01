@@ -23,7 +23,7 @@ import {
   type Database,
   type Job,
   organizations,
-  type LinearRun,
+  type TrackerRun,
 } from "@omniralph/db";
 import { teamIs, projectIs, setRoutingRules } from "@/lib/routing/testing";
 import {
@@ -166,7 +166,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
   async function session(
     issueId: string,
     body?: string,
-  ): Promise<{ outcome: StartOutcome; sessionId: string; run: LinearRun | null }> {
+  ): Promise<{ outcome: StartOutcome; sessionId: string; run: TrackerRun | null }> {
     sessionSeq += 1;
     const sessionId = `session-${sessionSeq}`;
     const outcome = await startRun(
@@ -184,9 +184,9 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     return { outcome, sessionId, run: run && linearRun(run) };
   }
 
-  const reply = (run: LinearRun, body: string) =>
+  const reply = (run: TrackerRun, body: string) =>
     handleReply(
-      { kind: "session_prompted", sessionId: run.linearAgentSessionId, body, authorName: "Steve" },
+      { kind: "session_prompted", sessionId: run.trackerSessionId, body, authorName: "Steve" },
       deps(),
     );
 
@@ -627,7 +627,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
         "Added this to the run that's already working on **ENG-1**",
       );
       await request(delegated.id, { summary: "Here's the plan." });
-      expect(last(delegated.linearAgentSessionId, "thought")).toBe("Here's the plan.");
+      expect(last(delegated.trackerSessionId, "thought")).toBe("Here's the plan.");
       expect((await getRun(db, delegated.id))?.status).toBe("waiting");
     });
 
@@ -659,14 +659,14 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       await request(run!.id);
       expect(await reply(run!, "/ralph")).toEqual({ kind: "open_questions" });
       expect(await getRun(db, run!.id)).toMatchObject({ mode: "request", status: "completed" });
-      expect(last(run!.linearAgentSessionId, "response")).toContain("Then reply `/coding` again.");
+      expect(last(run!.trackerSessionId, "response")).toContain("Then reply `/coding` again.");
       expect(await activeJobs(run!.id)).toEqual([]);
 
       // Linear can't be read: refused too.
       tracker.failures.set("getIssue", new Error("timed out"));
       expect(await reply(run!, "/ralph")).toEqual({ kind: "open_questions" });
       tracker.failures.delete("getIssue");
-      expect(last(run!.linearAgentSessionId, "error")).toContain(
+      expect(last(run!.trackerSessionId, "error")).toContain(
         "I couldn't check the issue for open questions in Linear, so I didn't start: timed out.",
       );
       expect(await getRun(db, run!.id)).toMatchObject({ mode: "request", status: "completed" });
@@ -691,7 +691,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       expect(payload.requests.map((r) => r.text)).toEqual(["Add a CHANGELOG entry for this epic"]);
       expect(payload.prUrl).toBe(scm.changeRequests[0]?.url);
       expect((await getRun(db, run.id))?.status).toBe("completed");
-      expect(last(run.linearAgentSessionId, "response")).toBe(
+      expect(last(run.trackerSessionId, "response")).toBe(
         `Added the entry.\n\nPull request #1: ${scm.changeRequests[0]?.url}`,
       );
     });
@@ -709,8 +709,8 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
         (await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).map((j) => j.type),
       ).toEqual(["ralph.request"]);
       expect((await getRun(db, run.id))?.status).toBe("waiting");
-      expect(last(run.linearAgentSessionId, "thought")).toBe("Summarised it.");
-      expect(last(run.linearAgentSessionId, "elicitation")).toContain("is blocked on **OPS-9**");
+      expect(last(run.trackerSessionId, "thought")).toBe("Summarised it.");
+      expect(last(run.trackerSessionId, "elicitation")).toContain("is blocked on **OPS-9**");
     });
 
     it("keeps push/MR requests away from the story agents and runs them once the stories are done", async () => {
@@ -727,7 +727,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       expect(payload.requests.map((r) => r.text)).toEqual(["Please push and open an MR"]);
       await describePr(run.id);
       expect((await getRun(db, run.id))?.status).toBe("completed");
-      expect(last(run.linearAgentSessionId, "response")).toBe(
+      expect(last(run.trackerSessionId, "response")).toBe(
         `Pushed.\n\nPull request #1: ${scm.changeRequests[0]?.url}`,
       );
       expect(await listPendingRequests(db, run.id)).toEqual([]);
@@ -756,7 +756,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
         "main",
         ["fix CI"],
       ]);
-      expect(last(run!.linearAgentSessionId, "response")).toBe(
+      expect(last(run!.trackerSessionId, "response")).toBe(
         "**acme/api**: Renamed it.\n\n**acme/web**: Fixed CI.",
       );
       expect((await listLanes(db, run!.id)).find((l) => l.id === web.id)).toMatchObject({

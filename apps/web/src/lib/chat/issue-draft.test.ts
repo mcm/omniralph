@@ -1,13 +1,13 @@
 import { createMockAdapter } from "@chat-adapter/tests";
 import {
   appendChatMessage,
-  chatLinearDelegations,
-  chatLinearIssueDrafts,
+  chatTrackerDelegations,
+  chatTrackerIssueDrafts,
   chatMessages,
   closeDb,
   createDb,
   ensureChatThread,
-  getChatLinearIssueDraft,
+  getChatTrackerIssueDraft,
   listChatMessages,
   organizations,
   saveChatConnection,
@@ -123,8 +123,8 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
   });
 
   beforeEach(async () => {
-    await db.delete(chatLinearIssueDrafts);
-    await db.delete(chatLinearDelegations);
+    await db.delete(chatTrackerIssueDrafts);
+    await db.delete(chatTrackerDelegations);
     await db.delete(chatMessages);
     attachments = undefined;
     const fake = fakeWorkItemTracker({
@@ -269,7 +269,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect(text).toContain(CANCEL_ISSUE_ACTION);
 
     const id = (result.draft as { id: string }).id;
-    const row = await getChatLinearIssueDraft(db, id);
+    const row = await getChatTrackerIssueDraft(db, id);
     expect(row).toMatchObject({
       status: "pending",
       threadId: chatThread.id,
@@ -297,7 +297,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     });
     expect(result.message).toContain("ENG (Engineering)");
     expect(thread.post).not.toHaveBeenCalled();
-    expect(await db.select().from(chatLinearIssueDrafts)).toHaveLength(0);
+    expect(await db.select().from(chatTrackerIssueDrafts)).toHaveLength(0);
   });
 
   it("matches a team by name too", async () => {
@@ -313,7 +313,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect(result.message).toContain("Connect a tracker to file work items.");
     expect(result.message).toContain("Settings › Connections › Add connection");
     expect(thread.post).not.toHaveBeenCalled();
-    expect(await db.select().from(chatLinearIssueDrafts)).toHaveLength(0);
+    expect(await db.select().from(chatTrackerIssueDrafts)).toHaveLength(0);
   });
 
   it("is an action tool: a domain user can't draft", async () => {
@@ -342,11 +342,11 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect(edit!.text).toContain(issue!.identifier);
     expect(edit!.text).toContain(issue!.url);
     expect(edit!.text).not.toContain(CREATE_ISSUE_ACTION);
-    expect(await getChatLinearIssueDraft(db, id)).toMatchObject({
+    expect(await getChatTrackerIssueDraft(db, id)).toMatchObject({
       status: "created",
-      linearIssueId: issue!.id,
-      linearIssueIdentifier: issue!.identifier,
-      linearIssueUrl: issue!.url,
+      trackerIssueId: issue!.id,
+      trackerIssueIdentifier: issue!.identifier,
+      trackerIssueUrl: issue!.url,
     });
     const messages = await recorded();
     expect(messages).toHaveLength(1);
@@ -379,7 +379,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     await handle(cancel.event);
 
     expect(linear.issues.size).toBe(0);
-    expect((await getChatLinearIssueDraft(db, id))!.status).toBe("pending");
+    expect((await getChatTrackerIssueDraft(db, id))!.status).toBe("pending");
     expect(await recorded()).toHaveLength(0);
   });
 
@@ -390,7 +390,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     await handle(event);
 
     expect(edited(adapter)[0]!.text).toContain("Cancelled");
-    expect((await getChatLinearIssueDraft(db, id))!.status).toBe("cancelled");
+    expect((await getChatTrackerIssueDraft(db, id))!.status).toBe("cancelled");
     expect((await recorded())[0]!.content).toContain("Cancelled");
 
     const create = click(id, CREATE_ISSUE_ACTION, "D-ADA");
@@ -401,7 +401,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
 
   it("expires a draft after 24 hours", async () => {
     const id = await drafted();
-    const row = (await getChatLinearIssueDraft(db, id))!;
+    const row = (await getChatTrackerIssueDraft(db, id))!;
     const later = new Date(row.expiresAt.getTime() + 1);
 
     const { event, adapter } = click(id, CREATE_ISSUE_ACTION, "D-ADA");
@@ -410,7 +410,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
 
     expect(linear.issues.size).toBe(0);
     expect(edited(adapter)[0]!.text).toContain("Expired");
-    expect((await getChatLinearIssueDraft(db, id))!.status).toBe("expired");
+    expect((await getChatTrackerIssueDraft(db, id))!.status).toBe("expired");
     expect((await recorded())[0]!.content).toContain("expired");
   });
 
@@ -428,7 +428,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     );
     expect(TRACKER_NOT_CONNECTED_REPLY).toContain("Connect a tracker to file work items.");
     expect(adapter.editMessage).not.toHaveBeenCalled();
-    expect((await getChatLinearIssueDraft(db, id))!.status).toBe("pending");
+    expect((await getChatTrackerIssueDraft(db, id))!.status).toBe("pending");
   });
 
   it("puts the draft back when Linear fails, so Create can be clicked again", async () => {
@@ -439,7 +439,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     await handle(first.event);
 
     expect(first.postEphemeral).toHaveBeenCalledOnce();
-    expect((await getChatLinearIssueDraft(db, id))!.status).toBe("pending");
+    expect((await getChatTrackerIssueDraft(db, id))!.status).toBe("pending");
 
     linear.failures.delete("createIssue");
     const second = click(id, CREATE_ISSUE_ACTION, "D-ADA");
@@ -457,7 +457,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     await handle(click("not-a-draft", CREATE_ISSUE_ACTION, "D-ADA").event);
 
     expect(linear.issues.size).toBe(0);
-    expect((await getChatLinearIssueDraft(db, id))!.status).toBe("pending");
+    expect((await getChatTrackerIssueDraft(db, id))!.status).toBe("pending");
   });
   /** Records the delegations stored when `delegateIssue` is called (to check they come first). */
   describe("screenshots", () => {
@@ -566,7 +566,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
         "Users signing in with SSO get a 500.\n\n- [ ] SSO login works",
       );
       expect(edited(adapter)[0]!.text).toContain("Couldn't attach: login-error.png");
-      expect((await getChatLinearIssueDraft(db, id))!.status).toBe("created");
+      expect((await getChatTrackerIssueDraft(db, id))!.status).toBe("created");
     });
 
     it("creates the issue without screenshots on a tracker that takes no uploads, and says so", async () => {
@@ -602,8 +602,8 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     const delegation = linear.delegation!;
     const delegateIssue = delegation.delegateIssue;
     delegation.delegateIssue = async (issueId: string, delegateId: string | null) => {
-      const rows = await db.select().from(chatLinearDelegations);
-      seen.push({ issueId, rows: rows.map((r) => `${r.threadId}:${r.linearIssueId}`) });
+      const rows = await db.select().from(chatTrackerDelegations);
+      seen.push({ issueId, rows: rows.map((r) => `${r.threadId}:${r.trackerIssueId}`) });
       return delegateIssue(issueId, delegateId);
     };
     return seen;
@@ -622,7 +622,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect(linear.delegations).toEqual([{ issueId: issue!.id, delegateId: "omniralph-app" }]);
     // The delegation row is written before Linear is asked to delegate.
     expect(seen).toEqual([{ issueId: issue!.id, rows: [`${chatThread.id}:${issue!.id}`] }]);
-    const [row] = await db.select().from(chatLinearDelegations);
+    const [row] = await db.select().from(chatTrackerDelegations);
     expect(row).toMatchObject({ organizationId: orgId, threadId: chatThread.id });
     expect(postEphemeral).not.toHaveBeenCalled();
     const [edit] = edited(adapter);
@@ -648,7 +648,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     const [edit] = edited(adapter);
     expect(edit!.text).toContain("Created");
     expect(edit!.text).not.toContain("Delegated to Omniralph");
-    expect((await getChatLinearIssueDraft(db, id))!.status).toBe("created");
+    expect((await getChatTrackerIssueDraft(db, id))!.status).toBe("created");
   });
 
   it("creates the issue and says it can't be delegated on a tracker without delegation", async () => {
@@ -696,7 +696,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
 
       expect(result.error).toBe("unknown_issue");
       expect(linear.delegations).toEqual([]);
-      expect(await db.select().from(chatLinearDelegations)).toHaveLength(0);
+      expect(await db.select().from(chatTrackerDelegations)).toHaveLength(0);
     });
 
     it("explains a tracker failure, and a missing tracker", async () => {

@@ -104,8 +104,8 @@ const linearDraft = {
   labels: [],
   priority: null,
   attachments: [],
-  linearIssueIdentifier: null,
-  linearIssueUrl: null,
+  trackerIssueIdentifier: null,
+  trackerIssueUrl: null,
 };
 
 /** The stream parts of a model step answering `text` in `pieces` (default: one). */
@@ -256,7 +256,7 @@ describe("web thread IDs", () => {
 describe("webCardRef", () => {
   it("is the Linear issue draft of a card whose buttons are ISSUE_DRAFT_ACTIONS", () => {
     expect(webCardRef(draftCard(linearDraft))).toEqual({
-      kind: "linear_issue_draft",
+      kind: "tracker_issue_draft",
       draftId: linearDraft.id,
     });
   });
@@ -412,7 +412,7 @@ describe.skipIf(!databaseAvailable)("the web chat adapter", () => {
       await adapter.postMessage(thread.externalThreadId, card);
       const [row] = await rows(thread.id);
       expect(row!.card).toEqual(JSON.parse(JSON.stringify(card)));
-      expect(row!.cardRef).toEqual({ kind: "linear_issue_draft", draftId: linearDraft.id });
+      expect(row!.cardRef).toEqual({ kind: "tracker_issue_draft", draftId: linearDraft.id });
       expect(row!.markdown).toContain("New work item: Fix the login bug");
     });
 
@@ -424,7 +424,7 @@ describe.skipIf(!databaseAvailable)("the web chat adapter", () => {
       );
       const row = (await getWebMessage(db, posted.id))!;
       expect(row.card).toEqual(JSON.parse(JSON.stringify(cancelledCard(linearDraft))));
-      expect(row.cardRef).toEqual({ kind: "linear_issue_draft", draftId: linearDraft.id });
+      expect(row.cardRef).toEqual({ kind: "tracker_issue_draft", draftId: linearDraft.id });
       expect(messages).toEqual([chatEvent(thread)]);
 
       await adapter.editMessage(thread.externalThreadId, posted.id, { markdown: "Done." });

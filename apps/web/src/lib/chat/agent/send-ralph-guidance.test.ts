@@ -116,10 +116,10 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
     linear.sessionsCreated.push({ issueId: epic.id, sessionId });
     const { run } = await createRun(db, {
       organizationId,
-      linearIssueId: epic.id,
-      linearIdentifier: epic.identifier,
-      linearTitle: epic.title,
-      linearAgentSessionId: sessionId,
+      trackerIssueId: epic.id,
+      trackerIdentifier: epic.identifier,
+      trackerTitle: epic.title,
+      trackerSessionId: sessionId,
       kind: "children",
       repositoryId: repository,
       branch: `omniralph/eng-${seq}`,
@@ -127,8 +127,8 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
       status,
     });
     await upsertStories(db, run.id, [
-      { linearIssueId: `story-${seq}-1`, identifier: `ENG-${seq}1`, title: "Story one" },
-      { linearIssueId: `story-${seq}-2`, identifier: `ENG-${seq}2`, title: "Story two" },
+      { trackerIssueId: `story-${seq}-1`, identifier: `ENG-${seq}1`, title: "Story one" },
+      { trackerIssueId: `story-${seq}-2`, identifier: `ENG-${seq}2`, title: "Story two" },
     ]);
     const { job } = await insertJob(db, {
       organizationId,
@@ -212,7 +212,7 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
     const run = await linearRun(orgId, repositoryId);
 
     const result = await call("send_ralph_guidance", {
-      run: run.linearIdentifier!.toLowerCase(),
+      run: run.trackerIdentifier!.toLowerCase(),
       text: "Skip the docs story for now.",
     });
 
@@ -233,7 +233,7 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
     });
     expect(linear.activities).toEqual([
       {
-        sessionId: run.linearAgentSessionId,
+        sessionId: run.trackerSessionId,
         content: {
           type: "thought",
           body: "Guidance from Ada (from chat):\n\n> Skip the docs story for now.",
@@ -288,7 +288,7 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
   it("refuses another organization's run", async () => {
     const run = await linearRun(otherOrgId, otherRepositoryId);
 
-    for (const ref of [run.id, run.linearIdentifier!]) {
+    for (const ref of [run.id, run.trackerIdentifier!]) {
       expect(await call("send_ralph_guidance", { run: ref, text: "Stop." })).toMatchObject({
         error: "not_found",
       });

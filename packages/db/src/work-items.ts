@@ -215,11 +215,11 @@ export async function latestWorkItemRuns(
   );
   const result = await db.execute<{ issue_id: string; run_id: string }>(sql`
     select distinct on (issue_id) issue_id, run_id from (
-      select linear_issue_id as issue_id, id as run_id, created_at from ralph_runs
-        where organization_id = ${organizationId} and linear_issue_id in (${list})
+      select tracker_issue_id as issue_id, id as run_id, created_at from ralph_runs
+        where organization_id = ${organizationId} and tracker_issue_id in (${list})
       union all
-      select linear_issue_id, id, created_at from triage_runs
-        where organization_id = ${organizationId} and linear_issue_id in (${list})
+      select tracker_issue_id, id, created_at from triage_runs
+        where organization_id = ${organizationId} and tracker_issue_id in (${list})
     ) runs
     order by issue_id, created_at desc, run_id desc`);
   return new Map(result.rows.map((r) => [r.issue_id, r.run_id]));
