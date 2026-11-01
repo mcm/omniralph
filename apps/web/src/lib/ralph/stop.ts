@@ -2,7 +2,7 @@ import "server-only";
 import { getRun, type Database } from "@omniralph/db";
 import type { ActionResult } from "@/lib/action-result";
 import { getDispatcher } from "@/lib/dispatch";
-import { getLinearGatewayOrDisconnected } from "@/lib/tracker/linear/client";
+import { getTrackerGatewayOrDisconnected } from "@/lib/tracker/client";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { stopRun } from "./reply";
 
@@ -27,7 +27,7 @@ export async function stopRalphRun(
     {
       db,
       organizationId,
-      linear: await getLinearGatewayOrDisconnected({ db, organizationId }),
+      linear: await getTrackerGatewayOrDisconnected({ db, organizationId }),
       dispatcher: getDispatcher(),
       adapterFor: scmAdapterFor,
     },

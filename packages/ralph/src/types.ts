@@ -2,28 +2,28 @@
  * Core ralph domain types (ported from cyralph).
  *
  * An epic is a named body of work split into small, independently completable user stories
- * with priorities and dependencies. In Linear an epic is a parent issue and each story is a
- * sub-issue; priority, order, state and dependencies come from Linear's own fields.
+ * with priorities and dependencies. In a tracker an epic is a parent work item and each story
+ * is a child work item; priority, order, state and dependencies come from the tracker's own fields.
  */
 
 export type StoryStatus = "open" | "in_progress" | "completed" | "cancelled";
 
 export interface Story {
-  /** Stable key used for dependency resolution within an epic (Linear issue id, or story id for in-memory stories). */
+  /** Stable key used for dependency resolution within an epic (the work item's tracker ID, or story id for in-memory stories). */
   key: string;
-  /** How the story is referred to: its Linear identifier (e.g. "ENG-12"), or the PRD story id for in-memory stories. */
+  /** How the story is referred to: its work item's identifier (e.g. "ENG-12"), or the PRD story id for in-memory stories. */
   storyId: string;
   title: string;
   description: string;
   acceptanceCriteria: string[];
   /**
-   * Sort rank, lower = sooner: Linear priority 1 (Urgent) … 4 (Low), 5 for no priority; or the PRD
-   * priority. A rank of 0 or less (Linear's "No priority") sorts last.
+   * Sort rank, lower = sooner: the tracker priority 1 (Urgent) … 4 (Low), 5 for no priority; or the
+   * PRD priority. A rank of 0 or less (the tracker's "No priority") sorts last.
    */
   priority: number;
-  /** Tie-break after priority: the story's position among the epic's sub-issues in Linear (`subIssueSortOrder`). */
+  /** Tie-break after priority: the story's position among the epic's children in the tracker (`subIssueSortOrder`). */
   sortOrder?: number;
-  /** Keys of stories (or `external:<linear issue id>` markers) that must be completed first. */
+  /** Keys of stories (or `external:<work item id>` markers) that must be completed first. */
   dependsOn: string[];
   status: StoryStatus;
   notes?: string;
@@ -48,11 +48,11 @@ export interface Story {
   preparation?: string[];
   /** The story issue's full description as written. */
   sourceText?: string;
-  /** The story issue's routing fields: its Linear project, team and labels. */
+  /** The story work item's routing fields: its tracker project, team and labels. */
   projectName?: string;
   teamKey?: string;
   labels?: string[];
-  /** Present when the story is backed by a Linear issue. */
+  /** Present when the story is backed by a work item in a tracker. */
   issueId?: string;
   identifier?: string;
   url?: string;
@@ -74,7 +74,7 @@ export interface Epic {
   description: string;
   url?: string;
   teamId?: string;
-  /** The epic issue's Linear project and team, which its stories inherit for routing unless they differ. */
+  /** The epic work item's project and team, which its stories inherit for routing unless they differ. */
   projectName?: string;
   teamKey?: string;
   branchName: string;
@@ -86,11 +86,11 @@ export interface Epic {
    */
   repositoryQualityGates?: Record<string, string[]>;
   stories: Story[];
-  /** Open issues outside the epic that block one of its stories: Linear id -> identifier (e.g. "ENG-99"). */
+  /** Open work items outside the epic that block one of its stories: tracker ID -> identifier (e.g. "ENG-99"). */
   externalIssues?: Record<string, string>;
 }
 
-/** Story dependency marker for a blocker outside the epic: `external:<linear issue id>`. */
+/** Story dependency marker for a blocker outside the epic: `external:<work item id>`. */
 export const EXTERNAL_DEP_PREFIX = "external:";
 
 export function externalIdOf(dep: string): string | undefined {

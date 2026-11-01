@@ -5,6 +5,7 @@
  * and the reconcile cron that race to move a run apply one at a time; it is
  * idempotent (calling it again with nothing new changes nothing).
  */
+import type { TrackerGateway } from "@omniralph/tracker";
 import {
   agentAcceptedTaskTypes,
   getAgent,
@@ -78,7 +79,6 @@ import {
 import type { ScmAdapter } from "@omniralph/scm";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
-import type { LinearGateway } from "@omniralph/tracker/linear";
 import { notifyRunThread } from "./chat-notify";
 import {
   conversationFor,
@@ -139,7 +139,7 @@ export interface RalphDeps {
    * repositories, and `linear` is its Linear workspace's gateway.
    */
   organizationId: string;
-  linear: LinearGateway;
+  linear: TrackerGateway;
   dispatcher: JobDispatcher;
   /** The code-host adapter of a repository's connection (default branch, PRs/MRs). */
   adapterFor: (db: Database, connection: ScmConnection) => ScmAdapter;
@@ -224,7 +224,7 @@ export async function publishPlan(
  * updated plan. Returns the updated story, or null if it's gone.
  */
 export async function updateStoryAndPlan(
-  linear: LinearGateway,
+  linear: TrackerGateway,
   tx: RalphTransaction,
   run: RalphRun,
   story: RalphStory,
@@ -1050,7 +1050,7 @@ const bold = (issues: readonly WaitingIssue[]) =>
 
 /** The issue refs stored in `waiting_on` (with titles, read from Linear for outside issues). */
 async function waitingRefs(
-  linear: LinearGateway,
+  linear: TrackerGateway,
   issues: readonly WaitingIssue[],
   known: ReadonlyMap<string, string>,
 ): Promise<RalphWaitingOn["blockers"]> {

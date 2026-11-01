@@ -26,9 +26,10 @@ import {
 } from "@omniralph/shared";
 import type { IssueComment, IssueSummary, SessionStartedEvent } from "@omniralph/tracker";
 import { errorMessage, postActivity } from "@/lib/ralph/notify";
-import { linearConversation } from "@/lib/ralph/conversation";
+import { trackerConversation } from "@/lib/ralph/conversation";
 import { resolveRoute, routedRepository } from "@/lib/routing/resolve";
 import type { RalphDeps } from "@/lib/ralph/run";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/playbooks";
 import { jobRepository } from "@/lib/scm/adapters";
 import type { TriageRunContext } from "./apply";
@@ -36,10 +37,9 @@ import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
 
 export type SessionCreatedEvent = SessionStartedEvent;
 
-export type TriageDeps = Pick<
-  RalphDeps,
-  "db" | "organizationId" | "linear" | "dispatcher" | "adapterFor"
->;
+export type TriageDeps = Pick<RalphDeps, "db" | "organizationId" | "dispatcher" | "adapterFor"> & {
+  linear: LinearGateway;
+};
 
 export type StartTriageOutcome =
   /** A redelivered event: the session already has its triage run. */
@@ -224,7 +224,7 @@ export async function prepareTriage(
     const locked = lockedIssues(issue, children);
     if (locked.length > 0) {
       await end("stopped");
-      await postActivity(linearConversation(linear, sessionId), {
+      await postActivity(trackerConversation(linear, sessionId), {
         type: "response",
         body: lockedMessage(issue, locked),
       });
@@ -234,7 +234,7 @@ export async function prepareTriage(
     blockers = await loadBlockers(deps, [issue, ...children]);
   } catch (error) {
     await end("failed");
-    await postActivity(linearConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId), {
       type: "error",
       body: `I couldn't load the issue from Linear: ${errorMessage(error)}`,
     });
@@ -246,7 +246,7 @@ export async function prepareTriage(
     repository = await resolveRepository(deps, issue);
   } catch (error) {
     await end("failed");
-    await postActivity(linearConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId), {
       type: "error",
       body: `I couldn't read the repository this issue routes to: ${errorMessage(error)}`,
     });
@@ -333,14 +333,14 @@ export async function enqueueTriage(
     await setTriageRunJob(db, run.id, job.id);
   } catch (error) {
     await setTriageRunStatus(db, run.id, "failed");
-    await postActivity(linearConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId), {
       type: "error",
       body: `I couldn't queue the triage: ${errorMessage(error)}`,
     });
     return { status: "failed", error: errorMessage(error) };
   }
 
-  await postActivity(linearConversation(linear, sessionId), {
+  await postActivity(trackerConversation(linear, sessionId), {
     type: "thought",
     body: queuedMessage(
       issue,
@@ -378,7 +378,7 @@ export async function startTriage(
     if (existing) return { status: "exists", run: existing };
   }
   if (options.delegation) {
-    await postActivity(linearConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId), {
       type: "thought",
       body: needsRefiningMessage(options.delegation.identifier),
     });
@@ -402,7 +402,7 @@ export async function startTriage(
       });
   if (!created) {
     if (run.linearAgentSessionId === sessionId) return { status: "exists", run };
-    await postActivity(linearConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId), {
       type: "response",
       body: `**${issue.identifier}** is already being triaged in another session.`,
     });

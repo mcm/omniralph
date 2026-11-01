@@ -12,11 +12,12 @@ import {
   type LinearCredentials,
   type LinearOAuthConfig,
 } from "./oauth";
+import { TrackerNotConnectedError } from "../errors";
 
 /** Tokens are refreshed when they expire within this window. */
 export const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
-export class LinearNotConnectedError extends Error {
+export class LinearNotConnectedError extends TrackerNotConnectedError {
   constructor() {
     super(
       "The organization has no Linear workspace connected (Settings › Connections › Add connection)",

@@ -22,8 +22,7 @@ import {
   type GatheredAttachment,
 } from "@omniralph/ralph";
 import type { RalphAttachment } from "@omniralph/shared";
-import type { LinearGateway } from "@omniralph/tracker/linear";
-import type { IssueComment } from "@omniralph/tracker";
+import { hasCapability, type IssueComment, type TrackerGateway } from "@omniralph/tracker";
 
 /** Attachments listed in one payload at most. */
 const MAX_ATTACHMENTS_PER_PAYLOAD = 200;
@@ -49,14 +48,16 @@ function commentLabel(identifier: string, comment: IssueComment): string {
  * pending requests, as "Linear thread"), each shared or scoped to one story.
  * New ones are recorded on the run (`ralph_runs.attachments`), which the
  * download endpoint resolves IDs with. Comments that can't be read are
- * skipped (logged).
+ * skipped (logged). A tracker without the uploads capability has none.
  */
 export async function gatherRunAttachments(
-  linear: LinearGateway,
+  linear: TrackerGateway,
   tx: RalphTransaction,
   run: RalphRun,
   epic: Epic,
 ): Promise<RunAttachment[]> {
+  // Agents download attachments through the tracker's uploads: without them there's nothing to list.
+  if (!hasCapability(linear, "uploads")) return [];
   const comments = async (issueId: string) =>
     linear.getComments(issueId).catch((error: unknown) => {
       console.warn(`Reading the comments of ${issueId} for attachments failed`, error);

@@ -1,8 +1,7 @@
 import "server-only";
 import { getRun, type Database, type Job } from "@omniralph/db";
 import type { RalphActivity } from "@omniralph/shared";
-import type { ActivityContent } from "@omniralph/tracker";
-import type { LinearGateway } from "@omniralph/tracker/linear";
+import type { ActivityContent, TrackerGateway } from "@omniralph/tracker";
 import { conversationFor, type ChatSource } from "./conversation";
 import { FINISHED_RUN_STATUSES } from "./run";
 
@@ -26,7 +25,7 @@ export async function relayActivity(
   /** `linear` gives the gateway of an organization's workspace; `chat` posts chat runs (default: the chat bot). */
   deps: {
     db: Database;
-    linear: (organizationId: string) => Promise<LinearGateway>;
+    linear: (organizationId: string) => Promise<TrackerGateway>;
     chat?: ChatSource;
   },
   job: Pick<Job, "ralphRunId">,

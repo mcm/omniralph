@@ -27,7 +27,7 @@ import {
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { startTestRedis, testRedisAvailable, type TestRedis } from "@/lib/hot-state/testing";
-import type * as LinearClient from "@/lib/tracker/linear/client";
+import type * as TrackerClient from "@/lib/tracker/client";
 import type * as ReconcileCron from "./reconcile-cron";
 import type * as Run from "./run";
 import type * as Sinks from "@/lib/sinks";
@@ -47,15 +47,16 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => ({}) }));
-vi.mock("@/lib/tracker/linear/client", async (importOriginal) => {
-  const actual = await importOriginal<typeof LinearClient>();
+vi.mock("@/lib/tracker/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof TrackerClient>();
   return {
     ...actual,
-    getLinearGateway: async ({ organizationId }: { organizationId: string }) => {
-      if (!state.linearConnected.has(organizationId)) throw new actual.LinearNotConnectedError();
+    getTrackerGateway: async ({ organizationId }: { organizationId: string }) => {
+      if (!state.linearConnected.has(organizationId)) throw new actual.TrackerNotConnectedError();
       return {};
     },
-    getLinearGatewayOrDisconnected: async () => actual.disconnectedLinearGateway(),
+    getTrackerGatewayOrDisconnected: async () => actual.disconnectedTrackerGateway(),
+    lazyTrackerGateway: () => actual.disconnectedTrackerGateway(),
   };
 });
 vi.mock("@/lib/ralph/run", async (importOriginal) => {

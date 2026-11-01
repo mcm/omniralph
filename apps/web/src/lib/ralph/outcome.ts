@@ -27,8 +27,8 @@ import {
   type RalphStoryMetric,
 } from "@omniralph/shared";
 import { organizationPlaybooks } from "@/lib/playbooks";
-import type { LinearCreateIssueInput } from "@omniralph/tracker/linear";
-import { toIssuePriority, type IssueSummary } from "@omniralph/tracker";
+import type { CreateIssueInput, IssuePriority, IssueSummary } from "@omniralph/tracker";
+import { createIssueWithExtras, readIssuePlacement } from "@/lib/tracker/placement";
 import { jobStoryCaps, type StoryCaps } from "./coding";
 import { conversationFor } from "./conversation";
 import { runManualLabels } from "./epic-loader";
@@ -389,11 +389,9 @@ export async function fileFollowUps(
           parentId: parent.id,
           title: followUp.title,
           description: `${followUp.description}\n\n_${FOLLOW_UP_MARK} ${story.identifier}._`.trim(),
-          priority: toIssuePriority(target.priority),
+          priority: target.priority,
           ...(target.projectId && { projectId: target.projectId }),
           ...(target.projectName && { projectName: target.projectName }),
-          ...(target.projectMilestoneId && { projectMilestoneId: target.projectMilestoneId }),
-          ...(target.cycleId && { cycleId: target.cycleId }),
           ...(labels.length > 0 && { labels }),
         }));
       open.set(followUp.title.toLowerCase(), issue);
@@ -442,27 +440,18 @@ export async function fileFollowUps(
 }
 
 /**
- * Creates a follow-up. Linear may refuse the story's cycle (e.g. once it's
- * completed): then it retries once without it, and later follow-ups skip it.
+ * Creates a follow-up with the target's tracker-specific extras. When the
+ * tracker refuses one (Linear's completed cycle), it retries without it, and
+ * later follow-ups skip it.
  */
 async function createFollowUp(
   ctx: OutcomeContext,
   target: FollowUpTarget,
-  input: LinearCreateIssueInput,
+  input: CreateIssueInput,
 ): Promise<IssueSummary> {
-  try {
-    return await ctx.linear.createIssue(input);
-  } catch (error) {
-    if (!input.cycleId) throw error;
-    console.warn(
-      `${ctx.run.linearIdentifier}: could not file follow-up "${input.title}" in cycle ${input.cycleId}, retrying without it`,
-      error,
-    );
-    const { cycleId: _cycleId, ...withoutCycle } = input;
-    const issue = await ctx.linear.createIssue(withoutCycle);
-    target.cycleId = undefined;
-    return issue;
-  }
+  const { issue, extras } = await createIssueWithExtras(ctx.linear, input, target.extras);
+  target.extras = extras;
+  return issue;
 }
 
 /** What a story's follow-ups are filed with (`followUpTarget`). */
@@ -471,9 +460,9 @@ interface FollowUpTarget {
   /** The project: by ID when known (else by name). */
   projectId?: string;
   projectName?: string;
-  projectMilestoneId?: string;
-  cycleId?: string;
-  priority: number;
+  /** Tracker-specific fields copied as they are (Linear's milestone and cycle). */
+  extras: Record<string, string>;
+  priority: IssuePriority;
   /** Labels every follow-up gets: all of the story's. */
   labels: string[];
   manualLabel: string;
@@ -482,8 +471,8 @@ interface FollowUpTarget {
 }
 
 /**
- * What a story's follow-ups copy: its team, project, milestone, cycle, priority
- * and labels (read from Linear; when that fails, what the epic's children say,
+ * What a story's follow-ups copy: its team, project, priority, labels and the
+ * tracker's extras such as Linear's milestone and cycle (read from the tracker; when that fails, what the epic's children say,
  * else the epic's team and project). The manual label is the story's lane's
  * repository's.
  */
@@ -501,8 +490,7 @@ async function followUpTarget(
       : null;
   const [manualLabel = "manual"] = await runManualLabels(ctx.db, run);
   const where = { manualLabel, ...(repository && { repository: repository.fullPath }) };
-  const source = await ctx.linear.getRoutingFields(story.linearIssueId).then(
-    (fields) => fields.issue,
+  const source = await readIssuePlacement(ctx.linear, story.linearIssueId).catch(
     (error: unknown) => {
       console.warn(`${run.linearIdentifier}: could not read ${story.identifier}'s fields`, error);
       return null;
@@ -512,9 +500,8 @@ async function followUpTarget(
     return {
       teamId: source.teamId ?? own?.teamId ?? parent.teamId,
       ...(source.projectId && { projectId: source.projectId }),
-      ...(source.project && { projectName: source.project }),
-      ...(source.projectMilestoneId && { projectMilestoneId: source.projectMilestoneId }),
-      ...(source.cycle && { cycleId: source.cycle }),
+      ...(source.projectName && { projectName: source.projectName }),
+      extras: source.extras,
       priority: source.priority,
       labels: source.labels,
       ...where,
@@ -524,6 +511,7 @@ async function followUpTarget(
   return {
     teamId: from.teamId,
     ...(from.projectName && { projectName: from.projectName }),
+    extras: {},
     priority: own?.priority ?? 0,
     labels: own?.labels ?? [],
     ...where,

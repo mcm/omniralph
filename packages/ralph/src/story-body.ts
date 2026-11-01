@@ -112,7 +112,7 @@ export function storyRank(
   return legacyRalphPriority ?? NO_PRIORITY_RANK;
 }
 
-/** Linear priority for a PRD story priority (1 = highest): 1 Urgent, 2 High, 3 Medium, 4+ Low. */
-export function linearPriorityFor(prdPriority: number): number {
+/** Tracker priority for a PRD story priority (1 = highest): 1 Urgent, 2 High, 3 Medium, 4+ Low. */
+export function trackerPriorityFor(prdPriority: number): number {
   return Math.min(4, Math.max(1, Math.round(prdPriority)));
 }

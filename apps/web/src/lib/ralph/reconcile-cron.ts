@@ -5,20 +5,20 @@
  */
 import {
   listChatRunOrganizationIds,
-  listIntegratedOrganizationIds,
   listLanesByIds,
   listRunsByIds,
   type RalphRun,
   type RalphRunOrigin,
 } from "@omniralph/db";
+import type { TrackerGateway } from "@omniralph/tracker";
 import {
-  disconnectedLinearGateway,
-  getLinearGateway,
-  getLinearGatewayOrDisconnected,
-  LinearNotConnectedError,
-  lazyLinearGateway,
-} from "@/lib/tracker/linear/client";
-import type { LinearGateway } from "@omniralph/tracker/linear";
+  disconnectedTrackerGateway,
+  getTrackerGateway,
+  getTrackerGatewayOrDisconnected,
+  lazyTrackerGateway,
+  listTrackerOrganizationIds,
+  TrackerNotConnectedError,
+} from "@/lib/tracker/client";
 import { reconcileCi } from "./ci";
 import { reconcileCleanup, reconcileLane, startPendingCleanups } from "./cleanup";
 import { scheduleLane, scheduleRun } from "./due";
@@ -35,11 +35,11 @@ export interface ReconcileTotals {
 
 /**
  * Advances the due runs (`runIds`), organization by organization: with the
- * organization's Linear gateway, or a disconnected one for the chat runs of an
- * organization without Linear. Each advance reschedules its run (a failed one
+ * organization's tracker gateway, or a disconnected one for the chat runs of an
+ * organization without a tracker. Each advance reschedules its run (a failed one
  * keeps its safety check), then the lanes' pending cleanups start if the run's
  * jobs are through (an outcome hook that never ran). A run that's gone, and a
- * Linear run of an organization that disconnected Linear (the full pass skips
+ * tracker run of an organization that disconnected its tracker (the full pass skips
  * those too), leave the schedule. Failures are logged and counted.
  */
 export async function reconcileDueRuns(
@@ -89,8 +89,8 @@ export async function reconcileDueRuns(
 /**
  * Checks the due lanes' cleanup (`reconcileLane`: retries a failed one, deletes a kept
  * branch at its deadline, applies a cleanup job's outcome that was missed) and reschedules
- * each, with its organization's Linear gateway (loaded on its first use; a disconnected one
- * without Linear). A lane that's gone leaves the schedule; one that failed keeps its entry,
+ * each, with its organization's tracker gateway (loaded on its first use; a disconnected one
+ * without a tracker). A lane that's gone leaves the schedule; one that failed keeps its entry,
  * so the next invocation tries again. Failures are logged and counted.
  */
 export async function reconcileDueLanes(
@@ -104,14 +104,12 @@ export async function reconcileDueLanes(
   const found = new Set(lanes.map(({ lane }) => lane.id));
   for (const laneId of laneIds) if (!found.has(laneId)) await scheduleLane(laneId, null);
 
-  const gateways = new Map<string, LinearGateway>();
+  const gateways = new Map<string, TrackerGateway>();
   for (const { lane, run } of lanes) {
     const { organizationId } = run;
     let linear = gateways.get(organizationId);
     if (!linear) {
-      linear = lazyLinearGateway(() =>
-        getLinearGatewayOrDisconnected({ db: deps.db, organizationId }),
-      );
+      linear = lazyTrackerGateway({ db: deps.db, organizationId });
       gateways.set(organizationId, linear);
     }
     try {
@@ -128,35 +126,35 @@ export async function reconcileDueLanes(
 }
 
 /**
- * The Linear gateway for an organization's due runs, and the runs it can advance: the
+ * The tracker gateway for an organization's due runs, and the runs it can advance: the
  * connected workspace's for all of them, else a disconnected one for the chat runs (the
- * Linear runs leave the schedule).
+ * tracker runs leave the schedule).
  */
 async function dueRunsGateway(
   deps: Pick<RalphDeps, "db">,
   organizationId: string,
   runs: RalphRun[],
-): Promise<{ linear: LinearGateway; runs: RalphRun[] }> {
+): Promise<{ linear: TrackerGateway; runs: RalphRun[] }> {
   if (runs.every((run) => run.origin === "chat")) {
-    return { linear: await getLinearGatewayOrDisconnected({ db: deps.db, organizationId }), runs };
+    return { linear: await getTrackerGatewayOrDisconnected({ db: deps.db, organizationId }), runs };
   }
   try {
-    return { linear: await getLinearGateway({ db: deps.db, organizationId }), runs };
+    return { linear: await getTrackerGateway({ db: deps.db, organizationId }), runs };
   } catch (error) {
-    if (!(error instanceof LinearNotConnectedError)) throw error;
+    if (!(error instanceof TrackerNotConnectedError)) throw error;
   }
-  const linearRuns = runs.filter((run) => run.origin !== "chat");
-  for (const run of linearRuns) await scheduleRun(run.id, null);
+  const trackerRuns = runs.filter((run) => run.origin !== "chat");
+  for (const run of trackerRuns) await scheduleRun(run.id, null);
   return {
-    linear: disconnectedLinearGateway(),
+    linear: disconnectedTrackerGateway(),
     runs: runs.filter((run) => run.origin === "chat"),
   };
 }
 
 /**
- * Reconciles every organization with a Linear workspace connected (all its
+ * Reconciles every organization with a tracker connected (all its
  * runs, with that workspace's gateway), then the chat runs of organizations
- * without one (with a disconnected gateway: chat runs don't need Linear).
+ * without one (with a disconnected gateway: chat runs don't need a tracker).
  * The counts are summed over the organizations.
  */
 export async function reconcileAllOrganizations(
@@ -186,14 +184,14 @@ export async function reconcileAllOrganizations(
     totals.ci.failed += ci.failed;
   };
 
-  const withLinear = await listIntegratedOrganizationIds(db, "linear");
-  for (const organizationId of withLinear) {
+  const withTracker = await listTrackerOrganizationIds(db);
+  for (const organizationId of withTracker) {
     let linear;
     try {
-      linear = await getLinearGateway({ db, organizationId });
+      linear = await getTrackerGateway({ db, organizationId });
     } catch (error) {
       // Disconnected meanwhile.
-      if (error instanceof LinearNotConnectedError) continue;
+      if (error instanceof TrackerNotConnectedError) continue;
       console.error(`Reconciling the ralph runs of organization ${organizationId} failed`, error);
       totals.failed += 1;
       continue;
@@ -201,12 +199,12 @@ export async function reconcileAllOrganizations(
     await reconcile({ ...deps, organizationId, linear });
   }
 
-  const linearOrganizations = new Set(withLinear);
+  const trackerOrganizations = new Set(withTracker);
   for (const organizationId of await listChatRunOrganizationIds(db)) {
-    if (linearOrganizations.has(organizationId)) continue;
+    if (trackerOrganizations.has(organizationId)) continue;
     let linear;
     try {
-      linear = await getLinearGatewayOrDisconnected({ db, organizationId });
+      linear = await getTrackerGatewayOrDisconnected({ db, organizationId });
     } catch (error) {
       console.error(
         `Reconciling the chat ralph runs of organization ${organizationId} failed`,

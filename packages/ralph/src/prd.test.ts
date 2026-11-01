@@ -9,7 +9,7 @@ import {
 } from "./prd.js";
 import {
   buildStoryIssueBody,
-  linearPriorityFor,
+  trackerPriorityFor,
   parseStoryBody,
   storyRank,
   stripLegacyMetadata,
@@ -156,7 +156,7 @@ describe("story issue body", () => {
     expect(storyRank(4, 1)).toBe(4);
     expect(storyRank(0, 2)).toBe(2);
     expect(storyRank(0)).toBe(5);
-    expect([1, 2, 3, 4, 9].map(linearPriorityFor)).toEqual([1, 2, 3, 4, 4]);
+    expect([1, 2, 3, 4, 9].map(trackerPriorityFor)).toEqual([1, 2, 3, 4, 4]);
   });
 });
 

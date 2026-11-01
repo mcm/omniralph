@@ -1,5 +1,5 @@
 /**
- * Best-effort Linear writes of the ralph orchestrator: an activity or a story
+ * Best-effort tracker writes of the ralph orchestrator: an activity or a story
  * comment that fails to post is logged, never allowed to undo a run's state
  * change (cyralph treats them the same way).
  */
@@ -9,7 +9,7 @@ import type { PostOptions, RunConversation } from "./conversation";
 export const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
-/** Runs a Linear write, logging (not throwing) a failure. Returns whether it worked. */
+/** Runs a tracker write, logging (not throwing) a failure. Returns whether it worked. */
 export async function quietly(what: string, write: () => Promise<unknown>): Promise<boolean> {
   try {
     await write();

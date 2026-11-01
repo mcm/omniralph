@@ -34,8 +34,7 @@ import {
   RALPH_STORY_JOB_TYPE,
   type JobMessageDelivery,
 } from "@omniralph/shared";
-import type { ActivityContent } from "@omniralph/tracker";
-import type { LinearGateway } from "@omniralph/tracker/linear";
+import type { ActivityContent, TrackerGateway } from "@omniralph/tracker";
 import { conversationFor } from "./conversation";
 import { postActivity } from "./notify";
 
@@ -212,7 +211,7 @@ async function strand(
  * note for each.
  */
 export async function settleStrandedMessages(
-  linear: LinearGateway,
+  linear: TrackerGateway,
   tx: RalphTransaction,
   run: RalphRun,
   now = new Date(),
@@ -238,7 +237,7 @@ export interface JobMessageAcks {
  */
 export async function exchangeJobMessages(
   /** `linear` gives the gateway of an organization's workspace (each run's is told). */
-  deps: { db: Database; linear: (organizationId: string) => Promise<LinearGateway> },
+  deps: { db: Database; linear: (organizationId: string) => Promise<TrackerGateway> },
   agentId: string,
   runningJobIds: readonly string[],
   acks: JobMessageAcks,
@@ -266,7 +265,7 @@ export async function exchangeJobMessages(
     });
   }
   // One gateway per organization, fetched only when a note posts to Linear.
-  const gateways = new Map<string, Promise<LinearGateway>>();
+  const gateways = new Map<string, Promise<TrackerGateway>>();
   const linearOf = (organizationId: string) => () => {
     let gateway = gateways.get(organizationId);
     if (!gateway) {

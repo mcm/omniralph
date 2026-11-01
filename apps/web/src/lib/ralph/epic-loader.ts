@@ -28,8 +28,7 @@ import {
   type ParsedPrd,
 } from "@omniralph/ralph";
 import { getRepository, getTrackerLabels, type Database, type Repository } from "@omniralph/db";
-import { toIssuePriority, type IssueSummary } from "@omniralph/tracker";
-import type { LinearGateway } from "@omniralph/tracker/linear";
+import { toIssuePriority, type IssueSummary, type TrackerGateway } from "@omniralph/tracker";
 import { organizationPlaybooks, type PlaybookSource } from "@/lib/playbooks";
 import { storyCodingSettings } from "./coding";
 
@@ -144,7 +143,7 @@ export function epicIssue(issue: IssueSummary): EpicIssue {
 
 /** The children epic of `parent`: its sub-issues with their blockers. */
 async function loadChildrenEpic(
-  linear: LinearGateway,
+  linear: TrackerGateway,
   parent: IssueSummary,
   children: readonly IssueSummary[],
   options: EpicOptions,
@@ -167,7 +166,7 @@ async function loadChildrenEpic(
  * created issues.
  */
 export function materializePrd(
-  linear: LinearGateway,
+  linear: TrackerGateway,
   parent: IssueSummary,
   prd: ParsedPrd,
   manualLabel: string,
@@ -184,7 +183,7 @@ export function materializePrd(
  * only added for new issues. Returns the created issues, in plan order.
  */
 export async function createPlannedSubIssues(
-  linear: LinearGateway,
+  linear: TrackerGateway,
   parent: IssueSummary,
   plan: MaterializationPlan,
   manualLabel: string,
@@ -224,7 +223,7 @@ export async function createPlannedSubIssues(
 
 /** Loads the delegated issue `issueId` as an epic, materializing a PRD's stories first. */
 export async function loadEpic(
-  linear: LinearGateway,
+  linear: TrackerGateway,
   issueId: string,
   options: LoadEpicOptions = {},
 ): Promise<LoadedEpic> {
@@ -289,7 +288,7 @@ export async function loadEpic(
  * a `single` run. Never creates issues.
  */
 export async function reloadEpic(
-  linear: LinearGateway,
+  linear: TrackerGateway,
   run: { linearIssueId: string; kind: "children" | "prd" | "single"; mode?: "epic" | "request" },
   options: LoadEpicOptions = {},
 ): Promise<Epic> {

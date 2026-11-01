@@ -47,7 +47,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { attachmentMetadata, attachmentRef } from "@/lib/chat/attachments";
 import type { ChatConversationContext } from "@/lib/chat/bot";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import type { LinearGateway } from "@omniralph/tracker/linear";
+import type { WebhookDeps } from "@/lib/webhooks/ingest";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import type { ChatChannel } from "./conversation";
 import type { RalphDeps } from "./run";
@@ -57,6 +57,9 @@ vi.mock("server-only", () => ({}));
 /** A cleanup job: the `worktree.cleanup` RPC, or a legacy `ralph.cleanup` queued before it. */
 const isCleanupJob = (type: string) => type === "worktree.cleanup" || type === "ralph.cleanup";
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
+
+/** The tracker gateway the webhook hands its handlers (the strict one records every call). */
+type WebhookGateway = Awaited<ReturnType<NonNullable<WebhookDeps["linear"]>>>;
 
 const { handleWebhook } = await import("@/lib/webhooks/ingest");
 const { createChatAgentHandler } = await import("@/lib/chat/agent/handler");
@@ -94,7 +97,7 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
 
   /** A Linear gateway that records (and fails) any call: chat runs must not make one. */
   const strictLinear = () =>
-    new Proxy({} as LinearGateway, {
+    new Proxy({} as WebhookGateway, {
       get: (_target, prop) =>
         prop === "then"
           ? undefined

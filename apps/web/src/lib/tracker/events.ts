@@ -17,7 +17,7 @@ import { scmAdapterFor } from "@/lib/scm/adapters";
 import { isOwnTriageSession, startLabelTriage } from "@/lib/triage/label";
 import { handleTriageReply, type SessionPromptedEvent } from "@/lib/triage/reply";
 import { postActivity } from "@/lib/ralph/notify";
-import { linearConversation } from "@/lib/ralph/conversation";
+import { trackerConversation } from "@/lib/ralph/conversation";
 import { startTriage } from "@/lib/triage/start";
 import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
 import type { WorkItem } from "@/lib/work-items/tracker";
@@ -72,6 +72,9 @@ export async function acknowledgeTrackerEvent(
   }
 }
 
+/** The orchestrator's dependencies with a Linear gateway (triage still needs Linear's). */
+type LinearRalphDeps = RalphDeps & { linear: LinearGateway };
+
 const isActiveTriage = (run: TriageRun) =>
   (ACTIVE_TRIAGE_RUN_STATUSES as readonly string[]).includes(run.status);
 
@@ -90,7 +93,7 @@ export function stillNeedsRefiningMessage(identifier: string): string {
  * into it (Linear reusing Om's existing session on the issue), which builds a ready item
  * there and says what is still open otherwise.
  */
-async function startSession(event: SessionCreatedEvent, ralph: RalphDeps): Promise<void> {
+async function startSession(event: SessionCreatedEvent, ralph: LinearRalphDeps): Promise<void> {
   const { db, organizationId } = ralph;
   if (parseInstruction(event.commentBody).wantsTriage) {
     await startTriage(event, ralph);
@@ -119,7 +122,7 @@ async function startSession(event: SessionCreatedEvent, ralph: RalphDeps): Promi
   if (item.readiness !== "needs_refining") {
     await startRun(event, ralph);
   } else if (triage) {
-    await postActivity(linearConversation(ralph.linear, event.sessionId), {
+    await postActivity(trackerConversation(ralph.linear, event.sessionId, event.issueId), {
       type: "response",
       body: stillNeedsRefiningMessage(item.identifier),
     });
@@ -176,11 +179,13 @@ async function delegationIntoTriageSession(
 export async function handleTrackerEvent(
   event: HandledTrackerEvent,
   context: TrackerEventContext,
-  deps: Partial<Omit<RalphDeps, "db" | "organizationId">> = {},
+  deps: Partial<Omit<RalphDeps, "db" | "organizationId" | "linear">> & {
+    linear?: LinearGateway;
+  } = {},
 ): Promise<void> {
   const { db, organizationId } = context;
   const linear = deps.linear ?? (await getLinearGateway({ db, organizationId }));
-  const ralph: RalphDeps = {
+  const ralph: LinearRalphDeps = {
     db,
     organizationId,
     linear,

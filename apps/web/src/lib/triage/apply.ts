@@ -39,7 +39,7 @@ import { toIssuePriority, type IssueSummary } from "@omniralph/tracker";
 import type { LinearGateway } from "@omniralph/tracker/linear";
 import { createPlannedSubIssues, runManualLabels } from "@/lib/ralph/epic-loader";
 import { errorMessage, postActivity, quietly } from "@/lib/ralph/notify";
-import { linearConversation } from "@/lib/ralph/conversation";
+import { trackerConversation } from "@/lib/ralph/conversation";
 import { getDispatcher } from "@/lib/dispatch";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
@@ -365,7 +365,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
     const claimed = await finishTriageRunJob(db, run.id, job.id, "failed", read.result);
     if (!claimed) return { status: "ignored" };
     await failCompletedJob(db, job.id, read.problem);
-    await postActivity(linearConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId), {
       type: "error",
       body: `Triage didn't produce a usable PRD, so I changed nothing in Linear: ${read.problem}. Mention me with \`/triage\` to try again.`,
     });
@@ -378,7 +378,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
 
   const fail = async (error: unknown): Promise<ApplyTriageOutcome> => {
     await setTriageRunStatus(db, run.id, "failed");
-    await postActivity(linearConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId), {
       type: "error",
       body: `I couldn't apply the triage to Linear: ${errorMessage(error)}`,
     });
@@ -398,7 +398,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   const locked = lockedIssues(issue, children);
   if (locked.length > 0) {
     await setTriageRunStatus(db, run.id, "stopped");
-    await postActivity(linearConversation(linear, sessionId), {
+    await postActivity(trackerConversation(linear, sessionId), {
       type: "response",
       body: lockedMessage(issue, locked),
     });
@@ -478,7 +478,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   }
   // Before the final response: a later delegation to Om must be a change Linear acts on.
   await releaseTriageDelegation({ db, organizationId: run.organizationId, linear }, issue.id);
-  await postActivity(linearConversation(linear, sessionId), {
+  await postActivity(trackerConversation(linear, sessionId), {
     type: "response",
     body: appliedMessage(issue, triage, created, readiness, notes, reformat ? children.length : 0),
   });
@@ -526,7 +526,7 @@ export async function onTriageJobStarted(
   if (locked.length === 0) return { skip: false };
   if (!(await finishTriageRunJob(db, run.id, job.id, "stopped"))) return { skip: false };
   await skipJobAndClearDue(db, job, { reason: "The issue is in progress or done" });
-  await postActivity(linearConversation(linear, run.linearAgentSessionId), {
+  await postActivity(trackerConversation(linear, run.linearAgentSessionId, run.linearIssueId), {
     type: "response",
     body: lockedMessage(issue, locked),
   });
@@ -578,7 +578,7 @@ export async function onTriageJobFinishedWithoutResult(
     const jobDeps = deps ?? (await defaultDeps(db, run));
     const { linear } = jobDeps;
     await postActivity(
-      linearConversation(linear, run.linearAgentSessionId),
+      trackerConversation(linear, run.linearAgentSessionId, run.linearIssueId),
       status === "failed"
         ? {
             type: "error",
