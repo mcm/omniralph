@@ -5,6 +5,7 @@ import {
   getIntegration,
   getRunByIssue,
   getTrackerLabels,
+  setIntegrationFixLabels,
   setIntegrationStateMapping,
   type Database,
 } from "@omniralph/db";
@@ -67,6 +68,12 @@ export async function getWorkItemTracker(
         throw new TrackerNotConnectedError();
       }
     },
+    fixLabels: integration.fixLabels,
+    saveFixLabels: async (labels) => {
+      if (!(await setIntegrationFixLabels(db, integration.id, labels))) {
+        throw new TrackerNotConnectedError();
+      }
+    },
     hasActiveRun: activeRunCheck(db, organizationId),
     manualLabels: manualLabels(db, organizationId),
   });
@@ -74,9 +81,9 @@ export async function getWorkItemTracker(
 
 /**
  * The tracker over a gateway the caller already holds (a tracker webhook's or a
- * triage job's), with the organization's saved state mapping. When the integration row is
- * missing (gone since the gateway was made), the default mapping applies and saving a
- * mapping throws `TrackerNotConnectedError`.
+ * triage job's), with the organization's saved state mapping and fix labels. When the integration row is
+ * missing (gone since the gateway was made), the defaults apply and saving either
+ * throws `TrackerNotConnectedError`.
  */
 export async function workItemTrackerFor(options: {
   db: Database;
@@ -91,6 +98,12 @@ export async function workItemTrackerFor(options: {
     stateMapping: integration?.stateMapping ?? structuredClone(DEFAULT_TRACKER_STATE_MAPPING),
     saveStateMapping: async (mapping) => {
       if (!integration || !(await setIntegrationStateMapping(db, integration.id, mapping))) {
+        throw new TrackerNotConnectedError();
+      }
+    },
+    fixLabels: integration?.fixLabels,
+    saveFixLabels: async (labels) => {
+      if (!integration || !(await setIntegrationFixLabels(db, integration.id, labels))) {
         throw new TrackerNotConnectedError();
       }
     },

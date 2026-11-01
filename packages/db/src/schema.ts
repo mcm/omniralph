@@ -479,6 +479,14 @@ export const integrations = pgTable(
       .$type<TrackerStateMapping>()
       .notNull()
       .default(DEFAULT_TRACKER_STATE_MAPPING),
+    /**
+     * The labels that mark a work item as a Fix (matched ignoring case); any other work item
+     * is a Story. Never empty.
+     */
+    fixLabels: text("fix_labels")
+      .array()
+      .notNull()
+      .default(sql`ARRAY['Bug']::text[]`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

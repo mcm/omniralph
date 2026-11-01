@@ -834,6 +834,13 @@ or state may be in both. Members read the mapping, with every team's workflow st
 errors for an invalid one). Work items also carry `blockedBy` (open issues with a "blocks"
 relation to it; done and canceled ones left out) and `blocked`.
 
+Every work item has a kind: a **Fix** when it carries one of the connection's fix labels (matched
+ignoring case), else a **Story**. The fix labels default to `Bug`; admins change them in the "Fix
+label" card on the Linear connection page (Settings › Connections › Linear), beside the work item
+states. Members read them from `GET /api/ui/trackers/{integrationId}/fix-labels`; admins save them
+with `PUT` and `{ "fixLabels": ["Bug", "Regression"] }` (trimmed, duplicates dropped ignoring case;
+400 for a blank label or an empty list). A save is recorded in the connection's change history.
+
 ## Agents and concurrency
 
 Coding jobs are `coding` tasks in the `long` pool: they run on agents that accept the `coding`

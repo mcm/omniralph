@@ -424,6 +424,7 @@ export {
   getIntegrationByExternalId,
   getIntegrationById,
   getIntegrationWithCredentials,
+  setIntegrationFixLabels,
   setIntegrationStateMapping,
   consumeOAuthState,
   listIntegratedOrganizationIds,

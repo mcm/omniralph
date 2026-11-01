@@ -74,6 +74,24 @@ export const trackerLabelsSchema = z.strictObject({
 });
 export type TrackerLabelsView = z.infer<typeof trackerLabelsSchema>;
 
+/** Wire format of a tracker connection's fix labels: `/api/ui/trackers/{id}/fix-labels`. */
+
+/**
+ * The body of `PUT`: the labels that mark a work item as a Fix (matched ignoring case; any
+ * other work item is a Story). At least one, none blank.
+ */
+export const fixLabelsRequestSchema = z.strictObject({
+  fixLabels: labelListSchema("A fix label").min(1, "Add at least one fix label."),
+});
+
+/** `GET` and `PUT`: the connection's fix labels. */
+export const trackerFixLabelsSchema = z.object({
+  integrationId: z.string(),
+  organization: organizationRefSchema,
+  fixLabels: z.array(z.string()),
+});
+export type TrackerFixLabelsView = z.infer<typeof trackerFixLabelsSchema>;
+
 /**
  * A tracker provider's name as people read it, for general surfaces that name the
  * tracker a work item comes from.

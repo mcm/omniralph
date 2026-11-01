@@ -1,10 +1,8 @@
-import { getIntegrationById, withSettingsChanges } from "@omniralph/db";
-import { z } from "zod";
+import { withSettingsChanges } from "@omniralph/db";
 import { apiHandler, ApiRouteError } from "@/lib/api/handler";
-import { requireOrganizationAccess, type ScopedOrganization } from "@/lib/api/scope";
+import type { ScopedOrganization } from "@/lib/api/scope";
+import { TRACKER_NOT_FOUND, trackerFor } from "@/lib/api/tracker-access";
 import { stateMappingRequestSchema, type TrackerStateMappingView } from "@/lib/api/trackers";
-import type { Role } from "@/lib/auth/roles";
-import type { OrgUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { settingsActor, trackedConnection } from "@/lib/settings-history/sections";
 import { getWorkItemTracker } from "@/lib/work-items/get-tracker";
@@ -16,31 +14,6 @@ import {
 } from "@/lib/work-items/tracker";
 
 type Params = { integrationId: string };
-
-const NOT_FOUND = "That tracker connection doesn't exist.";
-
-/** The tracker of `integrationId` in any of the user's organizations, with at least `role`. */
-async function trackerFor(
-  user: OrgUser,
-  integrationId: string,
-  role: Role,
-): Promise<{ tracker: WorkItemTracker; organization: ScopedOrganization }> {
-  if (!z.uuid().safeParse(integrationId).success) throw ApiRouteError.notFound(NOT_FOUND);
-  const db = getDb();
-  const integration = await getIntegrationById(db, integrationId);
-  const organization = await requireOrganizationAccess(user, integration?.organizationId ?? null, {
-    role,
-    notFoundMessage: NOT_FOUND,
-  });
-  try {
-    const tracker = await getWorkItemTracker({ db, organizationId: organization.id });
-    if (tracker.integrationId !== integrationId) throw ApiRouteError.notFound(NOT_FOUND);
-    return { tracker, organization };
-  } catch (error) {
-    if (error instanceof TrackerNotConnectedError) throw ApiRouteError.notFound(NOT_FOUND);
-    throw error;
-  }
-}
 
 async function view(
   tracker: WorkItemTracker,
@@ -96,7 +69,8 @@ export const PUT = apiHandler<"member", typeof stateMappingRequestSchema, undefi
       if (error instanceof StateMappingError) {
         throw new ApiRouteError(400, error.message, "invalid_request", error.fieldErrors);
       }
-      if (error instanceof TrackerNotConnectedError) throw ApiRouteError.notFound(NOT_FOUND);
+      if (error instanceof TrackerNotConnectedError)
+        throw ApiRouteError.notFound(TRACKER_NOT_FOUND);
       throw error;
     }
   },

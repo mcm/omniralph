@@ -5,6 +5,7 @@
  * gateway; `getWorkItemTracker` (`./get-tracker.ts`) returns an organization's.
  */
 import type { TrackerStateMapping } from "@omniralph/db";
+import type { WorkItemKind } from "@omniralph/planning";
 import type { TrackerProvider } from "@omniralph/tracker";
 
 /** The trackers an adapter exists for. */
@@ -55,6 +56,8 @@ export interface WorkItem {
   project: { id: string | null; name: string } | null;
   /** Label names. */
   labels: string[];
+  /** A Fix when it carries one of the integration's fix labels, else a Story. */
+  kind: WorkItemKind;
   parentId: string | null;
   /** 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low. */
   priority: number;
@@ -319,6 +322,13 @@ export interface WorkItemTracker {
   getStateMapping(): Promise<TrackerStateMapping>;
   /** Validates and saves the mapping; throws `StateMappingError` with field errors. */
   setStateMapping(mapping: TrackerStateMapping): Promise<TrackerStateMapping>;
+  /** The labels that mark a work item as a Fix (matched ignoring case). */
+  getFixLabels(): Promise<string[]>;
+  /**
+   * Saves the fix labels, trimmed and without duplicates (ignoring case); throws
+   * `FixLabelsError` for a blank label or an empty list.
+   */
+  setFixLabels(labels: readonly string[]): Promise<string[]>;
 }
 
 export class WorkItemNotFoundError extends Error {
@@ -371,5 +381,13 @@ export class StateMappingError extends Error {
   constructor(readonly fieldErrors: Record<string, string>) {
     super(Object.values(fieldErrors)[0] ?? "This state mapping is invalid.");
     this.name = "StateMappingError";
+  }
+}
+
+/** Fix labels `setFixLabels` refused, with a message per field path. */
+export class FixLabelsError extends Error {
+  constructor(readonly fieldErrors: Record<string, string>) {
+    super(Object.values(fieldErrors)[0] ?? "These fix labels are invalid.");
+    this.name = "FixLabelsError";
   }
 }

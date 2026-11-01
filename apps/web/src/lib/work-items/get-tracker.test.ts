@@ -20,8 +20,8 @@ import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 
 vi.mock("server-only", () => ({}));
 
-const { getWorkItemTracker } = await import("./get-tracker");
-const { TrackerNotConnectedError } = await import("./tracker");
+const { getWorkItemTracker, workItemTrackerFor } = await import("./get-tracker");
+const { FixLabelsError, TrackerNotConnectedError } = await import("./tracker");
 
 const databaseAvailable = testDatabaseAvailable();
 const key = randomBytes(32);
@@ -124,6 +124,66 @@ describe.skipIf(!databaseAvailable)("getWorkItemTracker", () => {
       gateway: async () => fake,
     });
     expect(await reloaded.getStateMapping()).toEqual(mapping);
+  });
+
+  it("makes a work item with the default fix label, Bug, a Fix and others Stories", async () => {
+    await connect();
+    const fake = new FakeLinearGateway();
+    fake.add({ identifier: "ENG-1", title: "Crash", labels: ["Bug"] });
+    fake.add({ identifier: "ENG-2", title: "Lowercase", labels: ["bug", "ui"] });
+    fake.add({ identifier: "ENG-3", title: "Feature", labels: ["Enhancement"] });
+    fake.add({ identifier: "ENG-4", title: "Unlabelled" });
+    const tracker = await getWorkItemTracker({ db, organizationId, gateway: async () => fake });
+    expect(await tracker.getFixLabels()).toEqual(["Bug"]);
+    const kinds = Object.fromEntries(
+      (await tracker.findByIdentifiers(["ENG-1", "ENG-2", "ENG-3", "ENG-4"])).map((item) => [
+        item.identifier,
+        item.kind,
+      ]),
+    );
+    expect(kinds).toEqual({ "ENG-1": "fix", "ENG-2": "fix", "ENG-3": "story", "ENG-4": "story" });
+  });
+
+  it("saves custom fix labels on the integration, and kinds follow them everywhere", async () => {
+    await connect();
+    const fake = new FakeLinearGateway();
+    const bug = fake.add({ identifier: "ENG-1", title: "Old label", labels: ["Bug"] });
+    const defect = fake.add({ identifier: "ENG-2", title: "New label", labels: ["DEFECT"] });
+    const tracker = await getWorkItemTracker({ db, organizationId, gateway: async () => fake });
+    expect(await tracker.setFixLabels([" Defect ", "defect", "Regression"])).toEqual([
+      "Defect",
+      "Regression",
+    ]);
+    // The writer's own items follow at once.
+    expect((await tracker.get(defect.id)).kind).toBe("fix");
+    expect((await tracker.get(bug.id)).kind).toBe("story");
+    expect((await getIntegration(db, organizationId, "linear"))!.fixLabels).toEqual([
+      "Defect",
+      "Regression",
+    ]);
+    // A tracker read later, and one over a webhook's gateway, use the saved labels.
+    for (const reloaded of [
+      await getWorkItemTracker({ db, organizationId, gateway: async () => fake }),
+      await workItemTrackerFor({ db, organizationId, gateway: fake }),
+    ]) {
+      expect(await reloaded.getFixLabels()).toEqual(["Defect", "Regression"]);
+      expect((await reloaded.get(defect.id)).kind).toBe("fix");
+      expect((await reloaded.get(bug.id)).kind).toBe("story");
+    }
+  });
+
+  it("refuses a blank fix label or an empty list, saving nothing", async () => {
+    await connect();
+    const tracker = await getWorkItemTracker({
+      db,
+      organizationId,
+      gateway: async () => new FakeLinearGateway(),
+    });
+    await expect(tracker.setFixLabels(["Bug", " "])).rejects.toMatchObject({
+      fieldErrors: { "fixLabels.1": "A fix label can't be blank." },
+    });
+    await expect(tracker.setFixLabels([])).rejects.toBeInstanceOf(FixLabelsError);
+    expect((await getIntegration(db, organizationId, "linear"))!.fixLabels).toEqual(["Bug"]);
   });
 
   it("marks stories manual by the organization's manual labels", async () => {

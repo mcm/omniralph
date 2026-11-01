@@ -327,6 +327,7 @@ const CONNECTION_FIELDS: SettingsFields = {
   repositories: { label: "Reviewed repos" },
   ready: { label: "Ready to start" },
   needsRefining: { label: "Needs refining" },
+  fixLabels: { label: "Fix labels" },
 };
 
 async function readScmConnection(
@@ -372,6 +373,7 @@ async function readIntegration(
     credentials: await storedCredentialsDigest(db, integrationId),
     ready: ready.types,
     needsRefining: needsRefining.types,
+    fixLabels: integration.fixLabels,
     ...Object.fromEntries(
       Object.entries(teams).map(([team, states]) => [
         `team:${team}|States of team ${team}`,

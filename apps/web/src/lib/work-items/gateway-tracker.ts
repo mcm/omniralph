@@ -1,5 +1,6 @@
 import "server-only";
 import type { TrackerStateMapping } from "@omniralph/db";
+import { DEFAULT_FIX_LABELS, workItemKind } from "@omniralph/planning";
 import { DEFAULT_MANUAL_LABELS, isManualIssue, parsePrd } from "@omniralph/ralph";
 import {
   hasCapability,
@@ -30,6 +31,7 @@ import {
 } from "./readiness";
 import {
   LIST_CANDIDATES_MAX_LIMIT,
+  FixLabelsError,
   StateMappingError,
   WorkItemConflictError,
   WorkItemNotFoundError,
@@ -95,6 +97,10 @@ export interface GatewayWorkItemTrackerOptions {
   stateMapping: TrackerStateMapping;
   /** Saves a validated mapping (the integration's `state_mapping`). */
   saveStateMapping: (mapping: TrackerStateMapping) => Promise<void>;
+  /** The integration's saved fix labels. Default: `Bug`. */
+  fixLabels?: readonly string[];
+  /** Saves validated fix labels (the integration's `fix_labels`). */
+  saveFixLabels?: (labels: string[]) => Promise<void>;
   /**
    * Whether Omniralph is working on the issue right now (a ralph or triage run that isn't
    * over): `delegateToOmniralph` then opens no new session. Default: never.
@@ -117,6 +123,8 @@ export class GatewayWorkItemTracker implements WorkItemTracker {
   private readonly gateway: TrackerGateway;
   private mapping: TrackerStateMapping;
   private readonly saveStateMapping: (mapping: TrackerStateMapping) => Promise<void>;
+  private fixLabels: string[];
+  private readonly saveFixLabels: (labels: string[]) => Promise<void>;
   private readonly hasActiveRun: (issueId: string) => Promise<boolean>;
   private readonly manualLabels: () => Promise<string[]>;
   private viewer: Promise<Viewer> | undefined;
@@ -127,6 +135,12 @@ export class GatewayWorkItemTracker implements WorkItemTracker {
     this.integrationId = options.integrationId;
     this.mapping = options.stateMapping;
     this.saveStateMapping = options.saveStateMapping;
+    this.fixLabels = [...(options.fixLabels ?? DEFAULT_FIX_LABELS)];
+    this.saveFixLabels =
+      options.saveFixLabels ??
+      (async () => {
+        throw new Error("This tracker can't save fix labels.");
+      });
     this.hasActiveRun = options.hasActiveRun ?? (async () => false);
     this.manualLabels = options.manualLabels ?? (async () => [...DEFAULT_MANUAL_LABELS]);
   }
@@ -186,6 +200,7 @@ export class GatewayWorkItemTracker implements WorkItemTracker {
       team: { id: issue.teamId, key: issue.teamKey, name: issue.teamName ?? issue.teamKey },
       project: issue.projectName ? { id: issue.projectId ?? null, name: issue.projectName } : null,
       labels: [...issue.labels],
+      kind: workItemKind(issue.labels, this.fixLabels),
       parentId: issue.parentId ?? null,
       priority: issue.priority,
       readiness: readinessOf(this.mapping, {
@@ -548,5 +563,29 @@ export class GatewayWorkItemTracker implements WorkItemTracker {
     await this.saveStateMapping(normalized);
     this.mapping = normalized;
     return structuredClone(normalized);
+  }
+
+  async getFixLabels(): Promise<string[]> {
+    return [...this.fixLabels];
+  }
+
+  async setFixLabels(labels: readonly string[]): Promise<string[]> {
+    const errors: Record<string, string> = {};
+    const normalized: string[] = [];
+    const seen = new Set<string>();
+    labels.forEach((label, index) => {
+      const name = label.trim();
+      if (!name) {
+        errors[`fixLabels.${index}`] = "A fix label can't be blank.";
+      } else if (!seen.has(name.toLowerCase())) {
+        seen.add(name.toLowerCase());
+        normalized.push(name);
+      }
+    });
+    if (labels.length === 0) errors.fixLabels = "Add at least one fix label.";
+    if (Object.keys(errors).length > 0) throw new FixLabelsError(errors);
+    await this.saveFixLabels(normalized);
+    this.fixLabels = normalized;
+    return [...normalized];
   }
 }

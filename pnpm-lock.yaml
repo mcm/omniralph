@@ -144,6 +144,9 @@ importers:
       '@omniralph/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@omniralph/planning':
+        specifier: workspace:*
+        version: link:../../packages/planning
       '@omniralph/ralph':
         specifier: workspace:*
         version: link:../../packages/ralph
