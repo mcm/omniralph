@@ -563,7 +563,7 @@ it. The control panel never sets an agent's own version and can't ask it to upda
 
 1. When the target differs from the running version and isn't in the agent's failed list, the
    agent stops taking new jobs and lets running ones finish, for up to 2 hours. Heartbeats go on
-   meanwhile (jobs keep their tokens and Linear replies). Jobs still running after 2 hours are
+   meanwhile (jobs keep their tokens and tracker replies). Jobs still running after 2 hours are
    aborted; their leases lapse, so they're redelivered. When the drain ends, the agent works out
    the target again: if the pin or the organization's version changed meanwhile it installs the new
    target, or takes jobs again when there is nothing left to install.
@@ -665,7 +665,12 @@ under the new limit.
 Accepted task types and pool limits replace the former capabilities (`review`, `ralph`, `triage`)
 and their concurrency caps. A job can carry a minimum agent version (`jobs.min_agent_version`);
 agents older than that leave it queued. Every `@omniralph/agent` release (2.0.0 or later) runs
-every task type. The control panel sends each job's
+every task type, but jobs that use the tracker protocol need **2.1.0 or later**
+(`AGENT_VERSION_FOR_TRACKER`): every coding job (`ralph.*`), triage, and any run whose playbook
+turns on `toolSettings.trackerRead` (the `tracker_*` tools under `/api/agent/runs/{id}/tracker/*`
+and the `tracker:read` scope). 2.1.0 renamed the Linear names of the protocol to tracker names
+with no aliases ([ADR 0012](adr/0012-tracker-layer.md)), so an older agent leaves those jobs
+queued, Om's own runs included: update the agents along with the control panel. The control panel sends each job's
 prompt, tools and model with the job (its run spec), so changing a task needs no agent release.
 A task's setup and teardown commands (e.g. Semgrep feeding a review) run on the host, in the job's
 worktree, with whatever is on the agent's `PATH` and without the job tokens. See
@@ -684,17 +689,19 @@ is flagged but still sent: the agent decides).
 
 ## Coding work
 
-Om builds delegated Linear issues story by story (see [linear.md](linear.md)
-for the Linear side and [ADR 0003](adr/0003-ralph-orchestration.md) for the design). An agent
+Om builds delegated work items story by story from the organization's tracker (Linear today:
+see [linear.md](linear.md) for the Linear side, [trackers.md](trackers.md) for the tracker layer
+and [ADR 0003](adr/0003-ralph-orchestration.md) for the design). Coding jobs need agent 2.1.0 or
+later ([Central config](#central-config)). An agent
 runs these jobs for a run: `ralph.story` (a Claude session, the quality gates, commit and push),
 `ralph.request` (one Claude session for an @mention, a reply, review findings or a failed CI run,
 on the run's branch), `ralph.describe-pr` (a read-only session writing the PR/MR description), and
 the system RPCs `worktree.exec` (a manual story's approved preparation commands, no session) and
 `worktree.cleanup` (removes a closed PR/MR's or stopped run's worktree, and after a merge the local
 branch, no session). `ralph.prepare` and `ralph.cleanup` jobs queued before the upgrade still run.
-Running `ralph.story` and `ralph.request` sessions also take Linear replies live: the heartbeat
+Running `ralph.story` and `ralph.request` sessions also take tracker replies live: the heartbeat
 response carries them (`jobMessages`) and the agent acknowledges them in its next heartbeat.
-Jobs download the run's Linear attachments through the control panel and cache them in
+Jobs download the run's tracker attachments through the control panel and cache them in
 `<workspaceRoot>/.attachments/`.
 
 ### Coding runs
@@ -786,8 +793,8 @@ Every branch worktree gets a `pre-push` hook that rejects pushes to any branch b
 guardrail against mistakes, not a security boundary).
 
 After a lane's PR/MR merges, a `worktree.cleanup` system RPC on that lane's agent (the one that ran its jobs and holds its worktree) removes the branch worktree
-and deletes the local branch (keeping a branch with unmerged commits until someone answers in
-Linear); see [linear.md](linear.md#reviews-and-bot-requests-on-om-prsmrs). After a PR/MR closes
+and deletes the local branch (keeping a branch with unmerged commits until someone answers in the
+tracker); see [linear.md](linear.md#reviews-and-bot-requests-on-om-prsmrs). After a PR/MR closes
 without merging, or the run is stopped, the same RPC stashes uncommitted work and removes the
 worktree but keeps the local branch (a resumed run recreates the worktree from it; a local branch
 ahead of `origin` is never reset). Nothing deletes a branch on `origin`. A run whose story task
@@ -818,7 +825,7 @@ the agent isn't running a job for it, then
   checkout per concurrently running job.
 - Coding runs also keep one **branch worktree** per run under `<workspaceRoot>/.branches/`,
   including whatever the setup command installs (e.g. `node_modules`). They're removed after the
-  PR/MR merges; see [Branch worktrees](#branch-worktrees). Linear attachments are cached in
+  PR/MR merges; see [Branch worktrees](#branch-worktrees). Tracker attachments are cached in
   `<workspaceRoot>/.attachments/<EPIC>/` and not evicted.
 - Clone, fetch and worktree bookkeeping are serialized per repository with a lock file
   (`.locks/`), so two agent processes may share a workspace root, but don't point a manual checkout

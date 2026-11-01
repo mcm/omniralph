@@ -20,8 +20,8 @@ A playbook (`Playbook` in `packages/tasks/src/playbooks.ts`) has these fields:
 | `promptTemplate`                              | The user prompt, rendered for each run ([templates](#templates)).                                                                                                                                                                                                                                                                           |
 | `referenceDocs`                               | Named Markdown documents the run can read. A review renders `rubric/universal.md` and `rubric/languages/<language>.md` (for the diff's languages) as `{{rubric}}`, so a reviewer's rubric is its reference docs.                                                                                                                            |
 | `model`, `fallbackModel`                      | A Claude model ID, or null for the Claude Code default; the fallback is used when the model is overloaded. A review playbook sets neither: its review depth sets the model.                                                                                                                                                                 |
-| `tools`                                       | `builtin` (Claude Code tool names), `agent` (`post_activity`, `ask_permission`, `get_attachment`, and `ship` for coding only), `linear` (read-only Linear tools) and `mcpServers` (an installable's servers only).                                                                                                                          |
-| `toolSettings`                                | Narrow the tools: `shell` (`Bash`), `trackerRead` (the Linear tools), `network` (beyond the control panel).                                                                                                                                                                                                                                 |
+| `tools`                                       | `builtin` (Claude Code tool names), `agent` (`post_activity`, `ask_permission`, `get_attachment`, and `ship` for coding only), `tracker` (the read-only tracker tools `tracker_get_issue`, `tracker_list_comments`, `tracker_search_issues` and `tracker_get_document`) and `mcpServers` (an installable's servers only).                   |
+| `toolSettings`                                | Narrow the tools: `shell` (`Bash`), `trackerRead` (the tracker tools, with the `tracker:read` scope), `network` (beyond the control panel).                                                                                                                                                                                                 |
 | `requires`                                    | Installables and host tools its runs need ([derived requirements](#derived-requirements)).                                                                                                                                                                                                                                                  |
 | `setupCommands`, `teardownCommands`           | Commands run before and after the session ([below](#setup-and-teardown-commands)).                                                                                                                                                                                                                                                          |
 | `outputSchema`                                | A JSON schema of an object the output must match; query roles only, empty for a Markdown answer.                                                                                                                                                                                                                                            |
@@ -109,7 +109,7 @@ through a `PlaybookSource` (`getPlaybook`, `organizationPlaybooks` in
 
 A story or request playbook's `coding` holds everything about how its runs work, apart from the
 repository's own coding policy (on/off, work item match, extra instructions, open PR early, history
-rewrite, and responding to reviews and CI; see [Linear](linear.md#4-configure-routing)). Each field
+rewrite, and responding to reviews and CI; see [Linear](linear.md#4-configure-routing), the first tracker adapter). Each field
 it leaves out has its default (`CODING_DEFAULTS` in `packages/tasks/src/definitions.ts`), which is
 what the built-ins use:
 
@@ -167,15 +167,15 @@ They are served by the Playbooks API (`apps/web/src/app/api/ui/playbooks`), whic
 `deletePlaybook` in `apps/web/src/lib/playbooks/manage.ts`. Paths carry a `builtin:` ID
 URI-encoded (`builtin%3Areview-pr`).
 
-| Request                              | Who     | What it does                                                                                                                                                                                                                                  |
-| ------------------------------------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/ui/playbooks`              | Members | The built-ins, then the organization's own by name: `id`, `name`, `description`, `role`, `builtin`, `model` and `usedBy` (repo bindings, chat settings and playbooks naming it).                                                              |
-| `GET /api/ui/playbooks/{id}`         | Members | One playbook (`playbook`, `builtin`, `requirements`, `usedBy`, and `tokenBudgetLabel`: `No limit` for a null budget). Another organization's, or an unknown ID, is 404.                                                                       |
-| `GET /api/ui/playbooks/form-options` | Admins  | What the editor offers: the custom roles, the models the organization's non-revoked agents report, the built-in, agent and Linear tool names, the reported installables' MCP servers (`<package>:<server>`) and the PR description playbooks. |
-| `POST /api/ui/playbooks`             | Admins  | Creates one from the body (a playbook without `id`); answers `{ ok, id, detail, summary }` (its detail and list row).                                                                                                                         |
-| `PUT /api/ui/playbooks/{id}`         | Admins  | Replaces a custom playbook; answers `{ ok, id, detail, summary }`. A built-in is refused with 409 `builtin_read_only`.                                                                                                                        |
-| `POST /api/ui/playbooks/{id}/clone`  | Admins  | Copies a built-in or custom playbook into a new one named `<name> copy`; answers `{ ok, id, detail, summary }`. A built-in-only role can't be copied.                                                                                         |
-| `DELETE /api/ui/playbooks/{id}`      | Admins  | Deletes a custom playbook, unless it's [in use](#delete-refusals). A built-in is refused with 409 `builtin_read_only`.                                                                                                                        |
+| Request                              | Who     | What it does                                                                                                                                                                                                                                   |
+| ------------------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/ui/playbooks`              | Members | The built-ins, then the organization's own by name: `id`, `name`, `description`, `role`, `builtin`, `model` and `usedBy` (repo bindings, chat settings and playbooks naming it).                                                               |
+| `GET /api/ui/playbooks/{id}`         | Members | One playbook (`playbook`, `builtin`, `requirements`, `usedBy`, and `tokenBudgetLabel`: `No limit` for a null budget). Another organization's, or an unknown ID, is 404.                                                                        |
+| `GET /api/ui/playbooks/form-options` | Admins  | What the editor offers: the custom roles, the models the organization's non-revoked agents report, the built-in, agent and tracker tool names, the reported installables' MCP servers (`<package>:<server>`) and the PR description playbooks. |
+| `POST /api/ui/playbooks`             | Admins  | Creates one from the body (a playbook without `id`); answers `{ ok, id, detail, summary }` (its detail and list row).                                                                                                                          |
+| `PUT /api/ui/playbooks/{id}`         | Admins  | Replaces a custom playbook; answers `{ ok, id, detail, summary }`. A built-in is refused with 409 `builtin_read_only`.                                                                                                                         |
+| `POST /api/ui/playbooks/{id}/clone`  | Admins  | Copies a built-in or custom playbook into a new one named `<name> copy`; answers `{ ok, id, detail, summary }`. A built-in-only role can't be copied.                                                                                          |
+| `DELETE /api/ui/playbooks/{id}`      | Admins  | Deletes a custom playbook, unless it's [in use](#delete-refusals). A built-in is refused with 409 `builtin_read_only`.                                                                                                                         |
 
 Every save, clone and delete publishes the `playbooks` settings change event with the playbook as
 its subject. A playbook's role can't change on **Save** while anything
@@ -222,7 +222,7 @@ Every variable has a **source**:
 - **trigger**: data of the event that started the run, e.g. `repository`, `pr.number`, `pr.title`,
   `pr.body` (PR/MR triggers), `finding.title`, `finding.body` (`finding.*`), `dismissal.note`
   (`finding.dismissed`), `chat.context` (`chat.request`), `issue.title`, `issue.description`
-  (Linear triggers), `epic.prd`, `stories`, `requests` (coding triggers), `story.*`
+  (tracker triggers), `epic.prd`, `stories`, `requests` (coding triggers), `story.*`
   (`tracker.delegated` only), `reviewRun.tasks` (`run.invoked`).
 - **task type**: what the agent computes while preparing the run, e.g. `diff`, `plan`, `rubric`,
   `depth`, `repositoryRules`, `previousFindings`, `conventions` (review), `question`, `hunk`,
@@ -237,10 +237,10 @@ templates (`packages/tasks/src/builtin/`) are worked examples.
 ### Trust and fencing
 
 Each variable is **trusted** (IDs, numbers, names Omniralph controls) or **untrusted** (anything a
-person or a model outside the run wrote: PR bodies, diffs, findings, chat messages, Linear text,
+person or a model outside the run wrote: PR bodies, diffs, findings, chat messages, tracker text,
 setup command output). The renderer fences every untrusted value itself, in a code fence longer
 than any backtick run inside it (with the variable's info string, e.g. `diff` or `markdown`, or
-the setup command's **Fence**), or between `<tag>` lines for Linear text. A template can't forget
+the setup command's **Fence**), or between `<tag>` lines for tracker text. A template can't forget
 to fence user input and can't opt out, so write `{{pr.body}}` on its own line rather than inside
 your own fence. A playbook's `variableLimits` cut over-long values (marked `[… truncated]`)
 before fencing.
@@ -282,8 +282,10 @@ What a playbook's runs need from an agent is derived from it (`playbookRequireme
 one, also stored with its row on save and returned as `requirements` by `GET /api/ui/playbooks/{id}`):
 
 - **Minimum agent version**: the highest of the release that runs the role's task type (query
-  0.9.0, review 0.10.0, coding 0.11.0), 0.10.0 when it has setup or teardown commands, and any
-  later release a variable its template uses needs.
+  0.9.0, review 0.10.0, coding 0.11.0), 0.10.0 when it has setup or teardown commands, 2.1.0
+  (`AGENT_VERSION_FOR_TRACKER`) when it is a coding playbook or turns on
+  `toolSettings.trackerRead` (the tracker protocol, [ADR 0012](adr/0012-tracker-layer.md)), and
+  any later release a variable its template uses needs.
 - **Installables** and **host tools**: the playbook's `requires` (`requires.installables`, npm
   package names, and `requires.hostTools`, executable names the agents set paths for), plus every
   installable whose MCP servers its tools list as `<package>:<server>` (e.g.

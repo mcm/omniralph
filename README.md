@@ -1,6 +1,7 @@
 # Omniralph
 
-Self-hosted AI code review and Linear-driven builds for GitHub and GitLab.
+Self-hosted AI code review and tracker-driven builds for GitHub and GitLab. Linear is the first
+supported issue tracker ([docs/trackers.md](docs/trackers.md)).
 
 ## Capabilities
 
@@ -14,7 +15,7 @@ Agents run jobs for these **capabilities**. Each agent accepts task types (`quer
 
 All of them share the control panel, job dispatch, agents, repo cache and credential broker. Only
 `ralph` jobs can get write credentials (one repository, short-lived), and the control panel
-performs every code-host and Linear API call for all of them.
+performs every code-host and tracker API call for all of them.
 
 **Chat front door.** Connect a Slack workspace or Discord server under **Settings › Connections ›
 Add connection** and mention the bot in a channel: Om, Omniralph's AI, running in the control panel on
@@ -27,7 +28,7 @@ answers; everyone else is asked to link their chat account. See [docs/chat.md](d
 ## Organizations
 
 Everything in Omniralph belongs to an **organization**: code-host connections, repositories,
-review settings and rules, reviews, the Linear workspace, agents and their enrollments, settings
+review settings and rules, reviews, the tracker workspace (Linear), agents and their enrollments, settings
 (such as the agents' desired version), jobs and coding runs. Members of an organization share all
 of it; nobody outside it sees any of it, and its jobs only ever reach its own agents.
 
@@ -91,7 +92,8 @@ details.
   resolving threads, opening Om's PRs/MRs) as a typed operation. The UI (repositories, settings,
   reviews, coding runs, rules, agents, jobs) lives here.
 - **The control panel orchestrates coding runs.** Each story attempt is one `ralph.story` coding run; the control
-  panel selects the next story, applies job outcomes under a per-run lock, talks to Linear and
+  panel selects the next story, applies job outcomes under a per-run lock, talks to the tracker
+  (through the tracker-neutral `TrackerGateway`, [docs/trackers.md](docs/trackers.md)) and
   opens the PR/MR. A run sticks to one agent, which keeps the branch worktree warm. Stories and
   requests are coding runs of the repository's story and request tasks (built-in
   `builtin:implement-story` and `builtin:handle-request`), whose sessions push only through the
@@ -182,7 +184,8 @@ details.
 6. **Build Linear issues** (optional): create the Linear app, connect it under **Settings ›
    Connections › Add connection**, enable Om and its Linear routing on a repository and `coding` tasks
    on an agent, then delegate an epic to the app (or @mention it with a request)
-   → [docs/linear.md](docs/linear.md). Runs show up under **Coding tasks**. Replacing cyralph?
+   → [docs/linear.md](docs/linear.md). Runs show up under **Coding tasks**. Coding runs need
+   `@omniralph/agent` 2.1.0 or later. Replacing cyralph?
    Follow [docs/cutover-from-cyralph.md](docs/cutover-from-cyralph.md).
 7. **Chat in Slack or Discord** (optional): create the Slack app from its manifest and/or the
    Discord application, enable the AI Gateway, set the env vars, connect the workspace or server
@@ -202,6 +205,7 @@ details.
 | [deploy-control-panel.md](docs/deploy-control-panel.md)                                     | Vercel, deploying from GitHub Actions, Neon and migrations, KMS issuers, job dispatch, Cron                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | [deploy-agent.md](docs/deploy-agent.md)                                                     | Installing on Coder, enrolling, the agent's user (workspace user or an optional dedicated one) and pm2/tmux/systemd, self-update and rollback under pm2, local accepted task types, central config (per-pool concurrency), Om and its host prerequisites, branch worktrees, disk usage, re-enrollment                                                                                                                                                                                                                   |
 | [installables.md](docs/installables.md)                                                     | Writing an installable (the `omniralph` manifest, commands, MCP servers, caches), installing it on an agent, host tools and their negotiated paths, requiring them in tasks, locking a host down with `installables.allow` and `blockedExecPaths`                                                                                                                                                                                                                                                                       |
+| [trackers.md](docs/trackers.md)                                                             | The tracker-neutral layer (`@omniralph/tracker`): the `TrackerGateway` interface, optional capabilities and their fallbacks, mapping webhooks to events, registering a provider, the fakes for tests; how to add a tracker adapter                                                                                                                                                                                                                                                                                      |
 | [linear.md](docs/linear.md)                                                                 | The Linear app, connecting a workspace, Om's per-repository settings, routing issues (and stories) to repositories, delegating, replies and live messages, @mentions (request mode), review/`@bot`/CI follow-up and cleanup on Om PRs/MRs, attachments                                                                                                                                                                                                                                                                  |
 | [chat.md](docs/chat.md)                                                                     | The Slack app (manifest, distribution) and Discord application (bot, Message Content intent), the AI Gateway, connecting workspaces and servers, asking questions, Om from chat (starting requests, reply routing, guidance, PR/MR follow-ups), filing and delegating Linear issues (the confirmation card), code questions (`chat.ask`, its read-only sandbox and minimum agent version), access levels, account linking and opting out of automatic linking, the Discord Gateway cron and its Vercel plan requirement |
 | [cutover-from-cyralph.md](docs/cutover-from-cyralph.md)                                     | Mapping cyralph's `config.json` to Omniralph, the ordered switch-over checklist with checks, and rollback                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -212,7 +216,7 @@ details.
 | [evals/README.md](evals/README.md)                                                          | The review evals (`pnpm eval`): precision, recall and tokens per profile against a baseline                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | [ADR 0001: job dispatch](docs/adr/0001-job-dispatch.md)                                     | Superseded by ADR 0006: Postgres job state + Vercel Queues delivery through the proxy                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | [ADR 0002: agent auth](docs/adr/0002-agent-auth.md)                                         | GitHub App JWTs via KMS, agent enrollment, token rotation and reuse detection                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| [ADR 0003: coding-run orchestration](docs/adr/0003-ralph-orchestration.md)                  | One job per story, sticky agents, attempts vs deliveries, the run lock, Vercel Workflows deferred; addendum: request mode, lanes, live messages, PR follow-up, concurrency, self-update; addendum: run origin (Linear or chat) and `RunConversation`                                                                                                                                                                                                                                                                    |
+| [ADR 0003: coding-run orchestration](docs/adr/0003-ralph-orchestration.md)                  | One job per story, sticky agents, attempts vs deliveries, the run lock, Vercel Workflows deferred; addendum: request mode, lanes, live messages, PR follow-up, concurrency, self-update; addendum: run origin (tracker or chat) and `RunConversation`                                                                                                                                                                                                                                                                   |
 | [ADR 0004: organizations](docs/adr/0004-organizations.md)                                   | The tenancy model, per-org roles, invitations and email domains, job isolation, uniqueness rules                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | [ADR 0005: chat front door](docs/adr/0005-chat-front-door.md)                               | Chat SDK, our tables owning installations, the Discord Gateway cron, Om on the AI Gateway, tool tiers and access levels                                                                                                                                                                                                                                                                                                                                                                                                 |
 | [ADR 0006: Postgres job queue](docs/adr/0006-postgres-job-queue.md)                         | The `jobs` table as the queue: the claim query, the long-poll, leases renewed by the heartbeat, delayed retry, the cutover from Vercel Queues                                                                                                                                                                                                                                                                                                                                                                           |
@@ -221,20 +225,22 @@ details.
 | [ADR 0009: Ably wake signals](docs/adr/0009-ably-wake-signals.md)                           | Wake messages on dispatch instead of the claim long-poll: channels, subscribe-only JWTs on the heartbeat, the `claimable` fallback flag, agent modes, the cutover                                                                                                                                                                                                                                                                                                                                                       |
 | [ADR 0010: the harness becomes the agent](docs/adr/0010-harness-becomes-agent.md)           | The rename to `@omniralph/agent` and why there are no compatibility routes, `omniralph-agent import`, the 2.0.0 version floor, changesets for the old name during the freeze, "Om" as the AI's name                                                                                                                                                                                                                                                                                                                     |
 | [ADR 0011: machine settings live on the agent](docs/adr/0011-agent-local-settings.md)       | Slots, kinds, host tool paths, the allow-list and the version pin move to the agent's `settings.json` and its local page; version precedence, what the heartbeat reports, the dropped control panel routes and columns, and the page's auth model (127.0.0.1, per-start token cookie, Host and Origin checks)                                                                                                                                                                                                           |
+| [ADR 0012: the tracker layer](docs/adr/0012-tracker-layer.md)                               | `packages/tracker` with Linear as its first adapter, optional capabilities (sessions, delegation, documents, uploads) and their fallbacks, neutral webhook events, the renamed schema, protocol, playbook fields and trigger kinds, and breaking agent compatibility (2.1.0 floor)                                                                                                                                                                                                                                      |
 
 ## Layout
 
-| Path              | Package             | Purpose                                                      |
-| ----------------- | ------------------- | ------------------------------------------------------------ |
-| `apps/web`        | `@omniralph/web`    | Control panel UI, agent API, job claims, webhooks            |
-| `apps/agent`      | `@omniralph/agent`  | Agent host daemon (`bin: omniralph-agent`)                   |
-| `packages/engine` | `@omniralph/engine` | Review core: diff parsing, budgets, prompts, Claude provider |
-| `packages/scm`    | `@omniralph/scm`    | SCM adapter interface + GitHub and GitLab implementations    |
-| `packages/db`     | `@omniralph/db`     | Drizzle schema, migrations, typed queries                    |
-| `packages/ralph`  | `@omniralph/ralph`  | Coding loop logic: PRD parsing, story selection, prompts     |
-| `packages/shared` | `@omniralph/shared` | zod schemas and shared types                                 |
-| `packages/tasks`  | `@omniralph/tasks`  | Agent and task definitions, built-ins, templates, variables  |
-| `evals`           |                     | Review eval corpus and baseline (`pnpm eval`)                |
+| Path               | Package              | Purpose                                                                |
+| ------------------ | -------------------- | ---------------------------------------------------------------------- |
+| `apps/web`         | `@omniralph/web`     | Control panel UI, agent API, job claims, webhooks                      |
+| `apps/agent`       | `@omniralph/agent`   | Agent host daemon (`bin: omniralph-agent`)                             |
+| `packages/engine`  | `@omniralph/engine`  | Review core: diff parsing, budgets, prompts, Claude provider           |
+| `packages/scm`     | `@omniralph/scm`     | SCM adapter interface + GitHub and GitLab implementations              |
+| `packages/tracker` | `@omniralph/tracker` | Tracker gateway interface, neutral types, the Linear adapter and fakes |
+| `packages/db`      | `@omniralph/db`      | Drizzle schema, migrations, typed queries                              |
+| `packages/ralph`   | `@omniralph/ralph`   | Coding loop logic: PRD parsing, story selection, prompts               |
+| `packages/shared`  | `@omniralph/shared`  | zod schemas and shared types                                           |
+| `packages/tasks`   | `@omniralph/tasks`   | Agent and task definitions, built-ins, templates, variables            |
+| `evals`            |                      | Review eval corpus and baseline (`pnpm eval`)                          |
 
 ## Development
 
