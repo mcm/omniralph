@@ -104,7 +104,7 @@ function RunningNow({ attempts }: { attempts: AgentDetail["runningNow"] }) {
                 <RepoBadge host={attempt.repository.provider} name={attempt.repository.fullPath} />
               ) : null}
               {attempt.workItem ? (
-                <IssueBadge tracker="linear" id={attempt.workItem.identifier} />
+                <IssueBadge tracker={attempt.workItem.tracker} id={attempt.workItem.identifier} />
               ) : null}
               {attempt.step ? <MetaBadge text={attempt.step} /> : null}
             </span>

@@ -13,7 +13,7 @@ export type WorkItemOverride = typeof workItemOverrides.$inferSelect;
 export type WorkItemEvent = typeof workItemEvents.$inferSelect;
 export type WorkItemEventKind = WorkItemEvent["kind"];
 
-/** A work item of an organization: its tracker and its ID there (a Linear issue ID). */
+/** A work item of an organization: its tracker and its ID there (a tracker issue ID). */
 export interface WorkItemKey {
   organizationId: string;
   tracker: WorkItemTracker;
@@ -22,7 +22,7 @@ export interface WorkItemKey {
 
 /**
  * The work item's ID in URLs and `work_item` change events: its tracker and its ID there,
- * `linear-<issue id>`.
+ * `<tracker>-<issue id>`.
  */
 export function workItemUrlId(tracker: WorkItemTracker, externalId: string): string {
   return `${tracker}-${externalId}`;
@@ -198,7 +198,7 @@ export async function listWorkItemEvents(
 }
 
 /**
- * The newest run (by `created_at`) of each of the organization's Linear work items with
+ * The newest run (by `created_at`) of each of the organization's tracker work items with
  * these IDs: a coding (epic or request) run or a triage run, by its run ID (`/runs/{id}`).
  * Items without a run are left out.
  */

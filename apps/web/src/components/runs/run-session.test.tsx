@@ -40,7 +40,7 @@ function serve() {
 }
 
 function renderSession(kind: RunDetail["kind"] = "epic", live?: ReturnType<typeof fakeAbly>): void {
-  const view = <RunSession run={{ id: RUN_ID, kind }} />;
+  const view = <RunSession run={{ id: RUN_ID, kind, tracker: "linear", workItem: null }} />;
   render(
     <CurrentUserProvider user={testUser}>
       <QueryClientProvider client={createTestQueryClient()}>

@@ -15,11 +15,12 @@ function forbidden(error: string): Response {
 /**
  * Stores a session activity of a running job (Claude's text as a thought, a
  * tool call as an action) in `run_activities`. A ralph job's activity is also
- * relayed to its run's conversation (Linear agent session or chat thread), so
- * agents never hold Linear credentials; an activity of a finished ralph
- * run is stored but not relayed. Needs the job's own token (session or
- * legacy) with `run:activity`; the body is a `RalphActivity`. 502 when Linear
- * fails, after the activity is stored (the agent logs it and carries on).
+ * relayed to its run's conversation (the tracker's agent session or work item,
+ * or a chat thread), so agents never hold tracker credentials; an activity of
+ * a finished ralph run is stored but not relayed. Needs the job's own token
+ * (session or legacy) with `run:activity`; the body is a `RalphActivity`. 502
+ * `conversation_unavailable` when the relay fails, after the activity is
+ * stored (the agent logs it and carries on).
  */
 async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
   const principal = await requireJob(req, "run:activity");
@@ -49,8 +50,8 @@ async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
     );
     return Response.json({ forwarded: outcome.forwarded });
   } catch (error) {
-    console.error("relaying a ralph activity to Linear failed", error);
-    return Response.json({ error: "linear_unavailable" }, { status: 502 });
+    console.error("relaying a ralph activity to its run's conversation failed", error);
+    return Response.json({ error: "conversation_unavailable" }, { status: 502 });
   }
 }
 

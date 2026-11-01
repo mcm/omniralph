@@ -15,7 +15,7 @@ const NOT_FOUND = "That run doesn't exist.";
 /**
  * Answers a run's open question (members of its organization) with `{questionKey, optionId}`:
  * one of the options of the run detail's (or the Inbox item's) `question`. The answer reaches
- * the run as a reply in its Linear session or chat thread would, and the run goes on. Answers
+ * the run as a reply in its tracker conversation or chat thread would, and the run goes on. Answers
  * the run's detail. 409 "This question was already answered." when the key isn't open anymore,
  * 400 for an option the question doesn't offer.
  */

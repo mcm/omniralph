@@ -37,8 +37,8 @@ export const RUN_STATUSES = [
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
 export const RUN_ORIGINS = [
-  "linear",
-  "linear_mention",
+  "tracker",
+  "tracker_mention",
   "chat",
   "pr_webhook",
   "pr_mention",
@@ -113,8 +113,8 @@ export function unifiedRunStatus(kind: RunKind, sourceStatus: string): RunStatus
  */
 export const RUN_ORIGIN_MAP = {
   ralph: {
-    "tracker:epic": "linear",
-    "tracker:request": "linear_mention",
+    "tracker:epic": "tracker",
+    "tracker:request": "tracker_mention",
     "chat:epic": "chat",
     "chat:request": "chat",
   } satisfies Record<
@@ -354,6 +354,11 @@ export interface RunRepository {
 export interface RunListEntry extends RunIndexEntry {
   /** The work item's title, a PR/MR title, or an ask's question; null without one. */
   title: string | null;
+  /**
+   * The tracker an epic, request or triage run works in (its row's `tracker_provider`), known
+   * before its work item is; null for reviews and asks.
+   */
+  tracker: IntegrationProvider | null;
   /** The work item: its tracker, its ID there (null where the run didn't keep it), key, title and URL. */
   workItem: {
     tracker: IntegrationProvider;
@@ -426,6 +431,7 @@ async function attemptStats(
 
 interface Facts {
   title: string | null;
+  tracker: IntegrationProvider | null;
   workItem: RunListEntry["workItem"];
   branch: string | null;
   pullRequest: RunListEntry["pullRequest"];
@@ -478,6 +484,7 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
     facts.set(row.id, {
       // A chat run has no issue: what it was asked to do.
       title: row.tracker_title ?? row.first_request ?? row.tracker_identifier,
+      tracker: row.tracker_provider,
       workItem: row.tracker_identifier
         ? {
             tracker: row.tracker_provider,
@@ -546,6 +553,7 @@ async function reviewFacts(db: Queryable, ids: string[]): Promise<Map<string, Fa
     const time = times.get(row.id);
     facts.set(row.id, {
       title: row.title,
+      tracker: null,
       workItem: null,
       branch: null,
       pullRequest: { number: row.pr_number, url: null },
@@ -592,6 +600,7 @@ async function triageFacts(db: Queryable, ids: string[]): Promise<Map<string, Fa
     const stat = stats.get(row.id);
     facts.set(row.id, {
       title: row.title || row.identifier,
+      tracker: row.tracker_provider,
       workItem: row.identifier
         ? {
             tracker: row.tracker_provider,
@@ -635,6 +644,7 @@ async function askFacts(db: Queryable, ids: string[]): Promise<Map<string, Facts
   for (const row of result.rows) {
     facts.set(row.id, {
       title: row.question,
+      tracker: null,
       workItem: null,
       branch: null,
       pullRequest: null,
@@ -692,6 +702,7 @@ export async function loadRunListEntries(
     return {
       ...entry,
       title: facts?.title ?? null,
+      tracker: facts?.tracker ?? null,
       workItem: facts?.workItem ?? null,
       repository: (entry.repositoryId && repositoryById.get(entry.repositoryId)) || null,
       branch: facts?.branch ?? null,

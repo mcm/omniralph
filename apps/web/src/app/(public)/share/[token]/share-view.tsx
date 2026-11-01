@@ -1,5 +1,6 @@
 import { EmptyState, IssueBadge, Markdown, MetaBadge } from "@omniralph/ui";
 import { IconLinkOff } from "@tabler/icons-react";
+import { trackerLabel } from "@/lib/api/trackers";
 import { formatShareExpiry } from "@/lib/work-items/share-expiry";
 import { SHARE_LINK_GONE_MESSAGE } from "@/lib/work-items/share-links";
 import type { SharedWorkItemPage } from "@/lib/work-items/share-page";
@@ -18,7 +19,7 @@ export function ShareView({ token, page }: { token: string; page: SharedWorkItem
       return (
         <div className="or-card auth-card">
           <EmptyState
-            title="Couldn't load this work item from Linear."
+            title={`Couldn't load this work item from ${trackerLabel(page.tracker)}.`}
             headingLevel={1}
             description="Try again in a moment."
           />
@@ -30,7 +31,7 @@ export function ShareView({ token, page }: { token: string; page: SharedWorkItem
       return (
         <article className="share-page">
           <header className="share-head">
-            <IssueBadge tracker="linear" id={page.identifier} />
+            <IssueBadge tracker={page.tracker} id={page.identifier} />
             <h1 className="share-title">{page.title}</h1>
           </header>
           <div className="share-prd">
@@ -47,7 +48,7 @@ export function ShareView({ token, page }: { token: string; page: SharedWorkItem
                 {page.stories.map((story, index) => (
                   <li key={story.identifier ?? `story-${index}`} className="share-story">
                     {story.identifier ? (
-                      <IssueBadge tracker="linear" id={story.identifier} />
+                      <IssueBadge tracker={page.tracker} id={story.identifier} />
                     ) : null}
                     <span className="share-story-title">{story.title}</span>
                     {story.state ? <span className="share-muted">{story.state}</span> : null}

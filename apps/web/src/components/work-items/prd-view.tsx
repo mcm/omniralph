@@ -17,7 +17,7 @@ export const PRD_NOT_FOUND = "This work item doesn't exist or you can't see it."
 export const PRD_EMPTY = "No PRD yet";
 
 export interface PrdViewProps {
-  /** The work item's URL ID (`linear-<issue id>`). */
+  /** The work item's URL ID (`<tracker>-<issue id>`). */
   workItemId: string;
   /**
    * `editable`: Edit PRD swaps the rendered PRD for an editor, when the item allows it

@@ -2,6 +2,7 @@ import { TRIAGE_SIZES } from "@omniralph/shared";
 import { z } from "zod";
 import { RUN_STATUSES, organizationRefSchema, repositoryRefSchema } from "./runs";
 import { isoDate } from "./schemas";
+import { WORK_ITEM_TRACKERS } from "./work-item-matches";
 
 /** Wire formats of work items (`/api/ui/work-items`, and the Backlog's rows). */
 
@@ -21,9 +22,9 @@ export type WorkItemSource = z.infer<typeof workItemSourceSchema>;
 
 /** One work item of the Backlog (and Up next): typed references, never preformatted text. */
 export const workItemRowSchema = z.object({
-  /** The work item's URL ID: its tracker and its ID there (`linear-<issue id>`). */
+  /** The work item's URL ID: its tracker and its ID there (`<tracker>-<issue id>`). */
   id: z.string(),
-  tracker: z.literal("linear"),
+  tracker: z.enum(WORK_ITEM_TRACKERS),
   identifier: z.string(),
   title: z.string(),
   url: z.string(),
@@ -45,7 +46,7 @@ export type WorkItemRow = z.infer<typeof workItemRowSchema>;
 
 /**
  * A source's filter value (`?source=`): the tracker, the kind and the ID, e.g.
- * `linear:project:<id>` or `linear:team:<id>`.
+ * `<tracker>:project:<id>` or `<tracker>:team:<id>`.
  */
 export function workItemSourceValue(row: Pick<WorkItemRow, "tracker" | "source">): string {
   return `${row.tracker}:${row.source.kind}:${row.source.id}`;
@@ -236,7 +237,7 @@ export const workItemTargetSchema = z.object({
     name: z.string(),
   }),
   organization: organizationRefSchema,
-  tracker: z.literal("linear"),
+  tracker: z.enum(WORK_ITEM_TRACKERS),
   team: z.string(),
   project: z.string().nullable(),
 });

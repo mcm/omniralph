@@ -85,6 +85,9 @@ describe("webhook ignore reasons", () => {
     }
     expect(describeIgnoreReason("not_ralph", "github")).toBe("Om didn't open this pull request");
     expect(describeIgnoreReason("not_ralph", "gitlab")).toBe("Om didn't open this merge request");
+    expect(describeIgnoreReason("unknown_workspace", "linear")).toBe(
+      "This Linear workspace isn't connected to Omniralph",
+    );
   });
 
   it("keeps a failure's message short", () => {

@@ -15,7 +15,7 @@ export function inboxItemUrl(item: Pick<InboxItem, "tab" | "key">, origin: strin
 
 /**
  * The detail's ⋯ "More actions" entries, only those that apply: Open work item (its Backlog
- * page) and Open in Linear, View PRD (`onViewPrd`, when the item has a PRD to show), Open
+ * page) and Open in <tracker>, View PRD (`onViewPrd`, when the item has a PRD to show), Open
  * the run, Open merge request / Open pull request (a PR/MR ready for review), Open agent
  * (agent items, on Fleet) and Copy link.
  */

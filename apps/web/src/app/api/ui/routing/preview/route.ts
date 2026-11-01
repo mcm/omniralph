@@ -8,8 +8,8 @@ import { hitRoutingTestLimit, routeIssues, routingTrackerGateway } from "@/lib/r
  * Where work items route under the organization's saved rules (every member), and why:
  * `{ identifiers }` (1–50) answer one result each, in order, with the outcome, the repo and
  * its coding switch, the rule matched, the route's chain and, when Om already started one,
- * the work item's latest run and its `routed_by`. An issue Linear doesn't know is a
- * `not_found` result. 409 without a Linear workspace; one request counts once against the
+ * the work item's latest run and its `routed_by`. An issue the tracker doesn't know is a
+ * `not_found` result. 409 without a tracker connected; one request counts once against the
  * "Test where a work item would go" rate limit (429).
  */
 export const POST = apiHandler(
@@ -21,7 +21,7 @@ export const POST = apiHandler(
     const tracker = await routingTrackerGateway(
       db,
       organizationId,
-      "Connect Linear to preview where work items route.",
+      "Connect a tracker to preview where work items route.",
     );
     const rules = await listRoutingRules(db, organizationId);
     return {

@@ -15,7 +15,7 @@ const NOT_FOUND = "That delivery doesn't exist.";
  * delivery (no signature check or delivery-ID claim), and answers the replay's delivery
  * (`replayOfId`, `replayedBy`, the run it started). Any member of the delivery's
  * organization may; 10 a minute per user (429). 404 once it's pruned, 400 when its payload
- * wasn't kept or its connection or repo is gone, 409 while a Linear agent session's run is
+ * wasn't kept or its connection or repo is gone, 409 while a tracker agent session's run is
  * still active.
  */
 export const POST = apiHandler<"member", undefined, undefined, { id: string }>(

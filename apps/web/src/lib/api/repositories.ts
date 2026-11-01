@@ -496,8 +496,8 @@ export type CodingMatchCheck = z.infer<typeof codingMatchCheckSchema>;
 
 /**
  * `GET /api/ui/repositories/{id}/coding/tracker-options` (admins of the repo's organization):
- * the connected Linear workspace's teams, projects and labels the match editor offers, or why
- * there are none (`disconnected`: no workspace; `unavailable`: Linear didn't answer).
+ * the connected tracker workspace's teams, projects and labels the match editor offers, or why
+ * there are none (`disconnected`: no workspace; `unavailable`: the tracker didn't answer).
  */
 export const codingTrackerOptionsSchema = z.discriminatedUnion("status", [
   z.object({

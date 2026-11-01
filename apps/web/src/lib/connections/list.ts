@@ -86,7 +86,7 @@ export async function listConnections(
             name: linear.name,
             host: null,
             account: linear.name,
-            reposUsing: usage.linearMatchedRepos,
+            reposUsing: usage.matchedReposByTracker.get("linear") ?? 0,
             linkedAccounts: null,
           }),
         ]

@@ -316,7 +316,7 @@ describe.skipIf(!databaseAvailable)("POST /api/agent/jobs/{id}/activities", () =
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await activityRequest(jobId, await token(jobId), THOUGHT);
     expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ error: "linear_unavailable" });
+    expect(await res.json()).toEqual({ error: "conversation_unavailable" });
     // Stored all the same.
     expect(await stored(jobId)).toEqual([
       { type: "thought", body: "Reading the PRD.", parameter: null },

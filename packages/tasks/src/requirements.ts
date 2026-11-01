@@ -43,7 +43,7 @@ export const AGENT_VERSION_FOR_COMMANDS = "0.10.0";
  * `tracker:read` scope (`tools.tracker`, `toolSettings.trackerRead`) and the
  * ralph payloads' `trackerIssueId`, `trackerProvider` and `source: "tracker"`
  * (`TRACKER_PROTOCOL_MIN_AGENT_VERSION` in `@omniralph/shared`). Older agents
- * know only the Linear names, so runs that use any of it carry this version.
+ * know only the old provider-named ones, so runs that use any of it carry this version.
  */
 export const AGENT_VERSION_FOR_TRACKER = "2.1.0";
 

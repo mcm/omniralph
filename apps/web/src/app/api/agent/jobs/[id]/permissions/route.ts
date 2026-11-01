@@ -23,7 +23,8 @@ function forbidden(error: string): Response {
  * own token (session or legacy) with `run:activity`; the body is a
  * `RalphPermissionRequest`. The agent then polls
  * `GET …/permissions/{requestId}`. 410 when the ralph run is over (the request
- * is closed as expired and the agent denies the call); 502 when Linear fails.
+ * is closed as expired and the agent denies the call); 502
+ * `conversation_unavailable` when asking the run's conversation fails.
  */
 async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
   const principal = await requireJob(req, "run:activity");
@@ -61,8 +62,8 @@ async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
     }
     return Response.json({ status: "pending" });
   } catch (error) {
-    console.error("asking for a tool permission in Linear failed", error);
-    return Response.json({ error: "linear_unavailable" }, { status: 502 });
+    console.error("asking for a tool permission in the run's conversation failed", error);
+    return Response.json({ error: "conversation_unavailable" }, { status: 502 });
   }
 }
 

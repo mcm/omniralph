@@ -4,7 +4,7 @@ import { requireRepositoryAccess } from "@/lib/api/scope";
 import { getTrackerSettingsOptions } from "@/lib/tracker/settings-options";
 
 /**
- * The teams, projects and labels of the repo's organization's Linear workspace, for the
+ * The teams, projects and labels of the repo's organization's tracker workspace, for the
  * Coding card's match editor (admins of the repo's organization). A repo of any of the
  * user's organizations; no workspace answers `disconnected`, a failed load `unavailable`.
  */
@@ -23,7 +23,7 @@ export const GET = apiHandler<"member", undefined, undefined, { id: string }>(
         labels: options.labels,
       };
     } catch (error) {
-      console.error("Loading the Linear options for a work item match failed", error);
+      console.error("Loading the tracker options for a work item match failed", error);
       return { status: "unavailable" };
     }
   },

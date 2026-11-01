@@ -30,7 +30,7 @@ const bodySchema = routingRulesBodySchema.extend({
  * work item matches with `{ workItemMatch }` (one repository's unsaved match) applied,
  * without saving anything.
  * Answers the outcome, what the issue matched (`matched`, and `rule`), the route's chain and
- * the work item's latest run (`run`, with its repo); 404 for an issue Linear doesn't know, 409 without a Linear workspace, 429 past
+ * the work item's latest run (`run`, with its repo); 404 for an issue the tracker doesn't know, 409 without a tracker connected, 429 past
  * `ROUTING_TEST_LIMIT` a minute per user (shared with the routing preview).
  */
 export const POST = apiHandler(
@@ -41,7 +41,7 @@ export const POST = apiHandler(
     const tracker = await routingTrackerGateway(
       db,
       user.organization.id,
-      "Connect Linear to test where an issue would go.",
+      "Connect a tracker to test where a work item would go.",
     );
     return testRoutingRules(
       { db, organizationId: user.organization.id, tracker },

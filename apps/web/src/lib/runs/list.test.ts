@@ -87,6 +87,7 @@ describe("runRow titles", () => {
     updatedAt: new Date("2026-10-01T12:00:00Z"),
     createdAtKey: "2026-10-01T12:00:00.000000Z",
     title,
+    tracker: null,
     workItem: null,
     repository: null,
     branch: null,

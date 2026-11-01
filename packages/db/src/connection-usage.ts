@@ -1,6 +1,6 @@
 /**
  * What uses an organization's connections, for Settings' connection pages: the repos on each
- * code-host connection and on the Linear tracker, the deliveries that failed and weren't
+ * code-host connection and on each tracker, the deliveries that failed and weren't
  * replayed, and the chat identities linked per platform.
  */
 import { and, count, eq, gte, isNull, ne, sql } from "drizzle-orm";
@@ -9,14 +9,15 @@ import { chatIdentities, repositories, webhookEvents, workItemMatches } from "./
 import { WEBHOOK_EVENT_RETENTION_DAYS } from "./webhook-events.js";
 
 type Executor = Pick<Database, "select">;
+type WorkItemTrackerKind = (typeof workItemMatches.$inferSelect)["tracker"];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface ConnectionUsage {
   /** Connected (not disconnected) repos per code-host connection ID. */
   reposByScmConnection: Map<string, number>;
-  /** Connected repos with a work item match on the Linear tracker. */
-  linearMatchedRepos: number;
+  /** Connected repos with a work item match, per tracker. */
+  matchedReposByTracker: Map<WorkItemTrackerKind, number>;
   /**
    * Failed deliveries not yet replayed, per code-host connection or integration ID: rows
    * with outcome `failed`, received within the retention, that no row replays
@@ -64,16 +65,16 @@ export async function getConnectionUsage(
       )
       .groupBy(repositories.connectionId),
     db
-      .select({ repos: count() })
+      .select({ tracker: workItemMatches.tracker, repos: count() })
       .from(workItemMatches)
       .innerJoin(repositories, eq(repositories.id, workItemMatches.repositoryId))
       .where(
         and(
           eq(workItemMatches.organizationId, organizationId),
-          eq(workItemMatches.tracker, "linear"),
           isNull(repositories.disconnectedAt),
         ),
-      ),
+      )
+      .groupBy(workItemMatches.tracker),
     countUnreplayedFailedDeliveries(db, organizationId, now),
     db
       .select({ platform: chatIdentities.platform, accounts: count() })
@@ -85,7 +86,7 @@ export async function getConnectionUsage(
   ]);
   return {
     reposByScmConnection: new Map(repos.map((row) => [row.connectionId, Number(row.repos)])),
-    linearMatchedRepos: Number(matched[0]?.repos ?? 0),
+    matchedReposByTracker: new Map(matched.map((row) => [row.tracker, Number(row.repos)])),
     failedDeliveries,
     linkedAccounts: new Map(
       identities.flatMap(({ platform, accounts }) =>

@@ -74,7 +74,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     trust: "trusted",
     triggers: [...CODING_TRIGGERS, "tracker.triage"],
     description:
-      "Display name of the tracker the run's work items live in, e.g. `Linear`: use it wherever the prompt names the tracker.",
+      "Display name of the tracker the run's work items live in: use it wherever the prompt names the tracker.",
   },
   {
     name: "tracker.conventionsFile",
@@ -82,7 +82,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     trust: "trusted",
     triggers: ["tracker.triage"],
     description:
-      "The repository file that may hold the project's conventions for the tracker's issues (`LINEAR.md` for Linear).",
+      "The repository file that may hold the project's conventions for the tracker's issues (named after the tracker, e.g. `<TRACKER>.md`).",
   },
   {
     name: "repository",

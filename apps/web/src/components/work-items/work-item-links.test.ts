@@ -6,10 +6,11 @@ const links = (items: MenuItem[]) =>
   items.map((item) => (item === "separator" ? "—" : [item.label, item.href]));
 
 describe("workItemLinkMenuItems", () => {
-  it("pairs Open in Linear with the work item's Backlog page, which comes first", () => {
+  it("pairs Open in the tracker (Linear) with the work item's Backlog page, which comes first", () => {
     expect(
       links(
         workItemLinkMenuItems({
+          tracker: "linear",
           id: "linear-issue 42",
           url: "https://linear.app/acme/issue/TOOL-42",
         }),
@@ -21,10 +22,10 @@ describe("workItemLinkMenuItems", () => {
   });
 
   it("offers only the links it knows", () => {
-    expect(links(workItemLinkMenuItems({ id: null, url: "https://linear.app/x" }))).toEqual([
-      ["Open in Linear", "https://linear.app/x"],
-    ]);
-    expect(links(workItemLinkMenuItems({ id: "linear-1", url: null }))).toEqual([
+    expect(
+      links(workItemLinkMenuItems({ tracker: "linear", id: null, url: "https://linear.app/x" })),
+    ).toEqual([["Open in Linear", "https://linear.app/x"]]);
+    expect(links(workItemLinkMenuItems({ tracker: "linear", id: "linear-1", url: null }))).toEqual([
       ["Open work item", workItemHref("linear-1")],
     ]);
     expect(workItemLinkMenuItems(null)).toEqual([]);

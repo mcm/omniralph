@@ -78,7 +78,8 @@ export function runDetail(question: RunQuestion | null, overrides: Partial<RunDe
     id: "run-1",
     kind: "epic",
     status: "waiting",
-    origin: "linear",
+    origin: "tracker",
+    tracker: "linear",
     organization: { id: TEST_ORGANIZATION_ID, name: "Acme", role: "admin" },
     title: "Build the billing export",
     workItem: {

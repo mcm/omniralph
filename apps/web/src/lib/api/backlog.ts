@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { organizationRefSchema, scmProviderSchema } from "./runs";
+import { WORK_ITEM_TRACKERS } from "./work-item-matches";
 import { workItemRowSchema, workItemSourceSchema } from "./work-items";
 
 /** Wire formats of the Backlog endpoints under `/api/ui/backlog`. */
@@ -28,7 +29,7 @@ export const backlogScopeQuerySchema = z.object({ organization });
 export const backlogSourceOptionSchema = workItemSourceSchema.extend({
   /** The `source` query value. */
   value: z.string(),
-  tracker: z.literal("linear"),
+  tracker: z.enum(WORK_ITEM_TRACKERS),
 });
 
 /** A Repo filter option: a repo the listed items route to. */
@@ -54,7 +55,7 @@ export const backlogSchema = z.object({
   unavailable: z.array(
     z.object({
       organization: organizationRefSchema,
-      tracker: z.literal("linear"),
+      tracker: z.enum(WORK_ITEM_TRACKERS),
       reason: z.string(),
     }),
   ),

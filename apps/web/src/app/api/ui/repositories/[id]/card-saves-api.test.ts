@@ -49,7 +49,7 @@ import {
 } from "@/lib/api/repositories";
 import type { WorkItemMatchRow } from "@/lib/api/work-item-matches";
 import { assertRole, type Role } from "@/lib/auth/roles";
-import { TRACKER_NOT_CONNECTED } from "@/lib/repositories/work-item-match";
+import { trackerNotConnectedForMatch } from "@/lib/repositories/work-item-match";
 import { labelsInclude, setRoutingRules, teamIs } from "@/lib/routing/testing";
 
 vi.mock("server-only", () => ({}));
@@ -1181,7 +1181,7 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
       });
       expect(refused).toEqual({
         status: 409,
-        body: { error: TRACKER_NOT_CONNECTED, code: "tracker_not_connected" },
+        body: { error: trackerNotConnectedForMatch("Linear"), code: "tracker_not_connected" },
         changes: [],
       });
       // The saved match isn't a change: the rest of the card still saves, and it can be cleared.

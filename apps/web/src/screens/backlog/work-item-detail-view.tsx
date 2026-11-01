@@ -71,7 +71,7 @@ export const CHOOSE_A_REPO = "Choose a repo";
 export const NO_STORIES = "No stories yet";
 export const NO_ACTIVITY = "No activity yet";
 
-/** "Open SOC-412 in Linear": the ⋯ menu's link to the item's tracker. */
+/** "Open SOC-412 in <tracker>": the ⋯ menu's link to the item's tracker, by its name. */
 export function openInTracker(identifier: string, tracker: TrackerProvider): string {
   return `Open ${identifier} in ${trackerLabel(tracker)}`;
 }
@@ -80,7 +80,7 @@ export function openInTracker(identifier: string, tracker: TrackerProvider): str
 export function removeTitle(identifier: string): string {
   return `Remove ${identifier} from the backlog?`;
 }
-/** "It's canceled in Linear.": Remove from backlog…'s confirm, naming the item's tracker. */
+/** "It's canceled in <tracker>.": Remove from backlog…'s confirm, naming the item's tracker. */
 export function removeDescription(tracker: TrackerProvider): string {
   return `It's canceled in ${trackerLabel(tracker)}.`;
 }
@@ -289,7 +289,7 @@ function WorkItemDetailContent({
       <h2 id={`${item.id}-title`} className="or-backlog-detail__title">
         {item.title}
       </h2>
-      <BlockedByLine blockers={item.blockedBy} />
+      <BlockedByLine tracker={item.tracker} blockers={item.blockedBy} />
       <WorkItemRoutesLine
         tracker={item.tracker}
         route={item.route}

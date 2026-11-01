@@ -9,7 +9,7 @@ import type { Database } from "./client.js";
 
 type Queryable = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
-/** An issue of an organization (Linear issue IDs are per organization's workspace). */
+/** An issue of an organization (tracker issue IDs are per organization's workspace). */
 export interface TriageIssueRef {
   organizationId: string;
   trackerIssueId: string;
@@ -62,7 +62,7 @@ export async function triageSizesOf(
 }
 
 /**
- * The size of each of the organization's Linear issues (by Linear issue ID) from its newest
+ * The size of each of the organization's tracker issues (by tracker issue ID) from its newest
  * triage run with an outcome, in one query. Every asked issue is in the map: null when no
  * triage of it has an outcome, or the outcome has no valid size.
  */

@@ -8,7 +8,7 @@ import * as React from "react";
  * `next/link` with navigation feedback: while the page it opens loads, the link shows as
  * pending (globals.css dims and pulses it after a short delay, so a fast navigation doesn't
  * flicker). Every link of the panel uses it: sidebar items, breadcrumbs, tabs, row links.
- * A link out of the panel (Linear, GitHub, GitLab…) opens in a new tab (`externalLinkProps`).
+ * A link out of the panel (a tracker, GitHub, GitLab…) opens in a new tab (`externalLinkProps`).
  */
 export const Link = React.forwardRef<HTMLAnchorElement, React.ComponentProps<typeof NextLink>>(
   function Link(props, ref) {

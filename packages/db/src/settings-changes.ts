@@ -259,17 +259,17 @@ const list = (values: readonly string[]) =>
     sql`, `,
   );
 
-/** Origins of runs a tracker integration (Linear) triggers. */
+/** Origins of runs a tracker integration triggers. */
 const TRACKER_ORIGINS: readonly RunOrigin[] = [
-  "linear",
-  "linear_mention",
+  "tracker",
+  "tracker_mention",
   "triage_label",
   "triage_mention",
 ];
 
 /**
  * Runs whose trigger came through connection `id`: review runs of a code-host connection's
- * repositories, Linear-triggered runs of an integration's organization, and the asks and
+ * repositories, tracker-triggered runs of an integration's organization, and the asks and
  * coding runs of a chat connection's threads. Connection IDs are UUIDs of three tables, so
  * at most one branch matches.
  */

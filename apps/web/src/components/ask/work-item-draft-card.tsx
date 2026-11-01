@@ -37,7 +37,7 @@ function outcomeText(draft: AskWorkItemDraft): string | null {
 }
 
 /**
- * A work item Om drafted, labelled with its tracker's name ("Linear work item"): its title, team, project, labels,
+ * A work item Om drafted, labelled with its tracker's name ("<tracker> work item"): its title, team, project, labels,
  * priority, screenshots and description preview, with Create, Create and delegate and
  * Cancel while it's pending, then what came of it (the created work item's badge,
  * Cancelled, or expired), as Slack's card shows it.

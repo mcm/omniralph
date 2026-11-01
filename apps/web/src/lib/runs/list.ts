@@ -109,6 +109,7 @@ export function runRow(entry: RunListEntry, organization: ScopedOrganization): R
     title: title
       ? truncate(title, entry.kind === "ask" ? ASK_RUN_TITLE_MAX_LENGTH : RUN_TITLE_MAX_LENGTH)
       : fallbackTitle(entry),
+    tracker: entry.tracker,
     workItem: entry.workItem?.issueId
       ? {
           id: workItemUrlId(entry.workItem.tracker, entry.workItem.issueId),

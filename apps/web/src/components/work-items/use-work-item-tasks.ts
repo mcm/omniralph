@@ -40,7 +40,7 @@ function updateDetail(
 
 /**
  * Checks or unchecks a task (`PUT /api/ui/work-items/{id}/tasks`): the cached detail's
- * description shows it at once, then takes the description Linear saved (others' edits
+ * description shows it at once, then takes the description the tracker saved (others' edits
  * included) and its `updatedAt`. A failure puts the previous description back, with the
  * server's message in a toast.
  */

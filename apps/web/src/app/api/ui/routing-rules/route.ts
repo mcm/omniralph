@@ -8,7 +8,7 @@ import { settingsActor } from "@/lib/settings-history/sections";
 
 /**
  * Settings › Advanced › Routing rules (every member): the organization's rules in evaluation
- * order, the fields they can test, the Linear values the pickers offer (calls Linear), the
+ * order, the fields they can test, the tracker values the pickers offer (calls the tracker), the
  * repositories they can target and the rules' latest change.
  */
 export const GET = apiHandler({}, async ({ user }): Promise<RoutingRules> =>

@@ -1,5 +1,5 @@
 /**
- * The webhook delivery log (`webhook_events`): every verified code-host and Linear
+ * The webhook delivery log (`webhook_events`): every verified code-host and tracker
  * delivery that resolved to an organization, with its outcome, kept for
  * `WEBHOOK_EVENT_RETENTION_DAYS`. Recording a delivery publishes a `webhook_event`
  * change (the event's and its connection's IDs) on the organization's channel.
@@ -119,7 +119,7 @@ export async function recordWebhookEvent(db: Executor, input: NewWebhookEvent): 
 
 /**
  * Sets the outcome of a recorded delivery whose work finished after the response (a
- * Linear event's handler, a deferred `@bot` command): what it did, or why it failed.
+ * tracker event's handler, a deferred `@bot` command): what it did, or why it failed.
  */
 export async function updateWebhookEventOutcome(
   db: Executor,
@@ -330,7 +330,7 @@ export async function listWebhookEventReplays(
 
 /**
  * The organization of a delivery log's connection (any organization's: the caller checks
- * membership): a code-host connection, or a Linear integration. Null when there's none.
+ * membership): a code-host connection, or a tracker integration. Null when there's none.
  */
 export async function getWebhookEventSourceOrganizationId(
   db: Executor,
@@ -346,9 +346,7 @@ export async function getWebhookEventSourceOrganizationId(
       : await db
           .select({ organizationId: integrations.organizationId })
           .from(integrations)
-          .where(
-            and(eq(integrations.id, source.integrationId), eq(integrations.provider, "linear")),
-          )
+          .where(eq(integrations.id, source.integrationId))
           .limit(1);
   return row?.organizationId ?? null;
 }

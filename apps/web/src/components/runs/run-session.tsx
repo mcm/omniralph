@@ -1,6 +1,13 @@
 "use client";
 
-import { activityDate, Button, DetailsSection, IssueBadge, RepoBadge } from "@omniralph/ui";
+import {
+  activityDate,
+  Button,
+  DetailsSection,
+  IssueBadge,
+  MetaBadge,
+  RepoBadge,
+} from "@omniralph/ui";
 import { useId, type ReactNode } from "react";
 import type { RunDetail, RunSession as RunSessionData } from "@/lib/api/runs";
 import {
@@ -122,7 +129,13 @@ function Guidance({ session }: { session: RunSessionData }) {
   );
 }
 
-function Recommendations({ session }: { session: RunSessionData }) {
+function Recommendations({
+  session,
+  tracker,
+}: {
+  session: RunSessionData;
+  tracker: RunDetail["tracker"];
+}) {
   return (
     <ul className="or-run-session__list">
       {session.recommendations.map((recommendation) => (
@@ -136,11 +149,15 @@ function Recommendations({ session }: { session: RunSessionData }) {
           }
           meta={
             <>
-              <IssueBadge
-                tracker="linear"
-                id={recommendation.story.identifier}
-                href={recommendation.story.url ?? undefined}
-              />
+              {tracker ? (
+                <IssueBadge
+                  tracker={tracker}
+                  id={recommendation.story.identifier}
+                  href={recommendation.story.url ?? undefined}
+                />
+              ) : (
+                <MetaBadge text={recommendation.story.identifier} />
+              )}
               <span>{recommendation.story.title}</span>
               <Time at={recommendation.at} />
             </>
@@ -157,7 +174,11 @@ function Recommendations({ session }: { session: RunSessionData }) {
  * guidance, Om's recommendations and the progress log. Empty subsections are left out, and
  * the section is left out when every one is empty (or while it loads). A live query.
  */
-export function RunSession({ run }: { run: Pick<RunDetail, "id" | "kind"> }) {
+export function RunSession({
+  run,
+}: {
+  run: Pick<RunDetail, "id" | "kind" | "tracker" | "workItem">;
+}) {
   const id = useId();
   const query = useRunSession(run.id, { enabled: hasSession(run) });
   if (!hasSession(run) || query.isPending) return null;
@@ -190,7 +211,9 @@ export function RunSession({ run }: { run: Pick<RunDetail, "id" | "kind"> }) {
       />
     ),
     guidance: () => <Guidance session={session} />,
-    recommendations: () => <Recommendations session={session} />,
+    recommendations: () => (
+      <Recommendations session={session} tracker={run.tracker ?? run.workItem?.tracker ?? null} />
+    ),
     progressLog: () => <pre className="or-run-session__log or-mono">{session.progressLog}</pre>,
   };
   return (

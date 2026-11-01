@@ -53,7 +53,7 @@ export function isFallbackPolling(client: QueryClient): boolean {
  * realtime connection is up; while it's down (or realtime is off) mounted queries poll at
  * `FALLBACK_POLL_INTERVAL`, which is the state a new client starts in. Queries refetch
  * when the tab regains focus or the network reconnects, and are always stale so a mount
- * refetches. Queries that call an external API (Linear, GitHub, GitLab) opt out with
+ * refetches. Queries that call an external API (a tracker or code host) opt out with
  * `refetchInterval: false` and refresh explicitly. Mutations never retry (they may not be
  * idempotent).
  */

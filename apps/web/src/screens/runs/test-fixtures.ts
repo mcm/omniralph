@@ -16,7 +16,8 @@ export function runRow(overrides: Partial<RunRow> = {}): RunRow {
     id: "11111111-1111-4111-8111-111111111111",
     kind: "epic",
     status: "completed",
-    origin: "linear",
+    origin: "tracker",
+    tracker: "linear",
     organization: { id: TEST_ORGANIZATION_ID, name: "Acme", role: "admin" },
     title: "Customer portal billing export",
     workItem: {

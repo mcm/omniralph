@@ -36,6 +36,7 @@ describe("BlockedByLine", () => {
     render(
       <UiProvider linkComponent={TestLink}>
         <BlockedByLine
+          tracker="linear"
           blockers={[
             {
               identifier: "SOC-398",
@@ -69,7 +70,7 @@ describe("BlockedByLine", () => {
   });
 
   it("renders nothing without blockers", () => {
-    const { container } = render(<BlockedByLine blockers={[]} />);
+    const { container } = render(<BlockedByLine tracker="linear" blockers={[]} />);
     expect(container.innerHTML).toBe("");
   });
 });
