@@ -31,7 +31,7 @@ import {
 import type { RoutingQuery } from "@omniralph/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import { ROUTED_BY_SELECTION } from "@/lib/ralph/repository-selection";
 import { createRouter, MAX_ROUTE_HOPS, resolveRoute, type RouteDeps } from "./resolve";
 

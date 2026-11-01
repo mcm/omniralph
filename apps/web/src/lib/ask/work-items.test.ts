@@ -41,14 +41,16 @@ describe("workItemIdentifiers", () => {
 });
 
 describe("lib/ask", () => {
-  it("imports nothing from @/lib/linear", () => {
+  it("imports nothing from the Linear adapter", () => {
     const dir = import.meta.dirname;
     const files = readdirSync(dir).filter((f) => f.endsWith(".ts"));
     expect(files.length).toBeGreaterThan(0);
     for (const file of files) {
       const source = readFileSync(join(dir, file), "utf8");
-      expect(source, file).not.toMatch(/from\s+["']@\/lib\/linear\//);
-      expect(source, file).not.toMatch(/import\(\s*["']@\/lib\/linear\//);
+      expect(source, file).not.toMatch(/from\s+["'](@\/lib\/tracker|@omniralph\/tracker)\/linear/);
+      expect(source, file).not.toMatch(
+        /import\(\s*["'](@\/lib\/tracker|@omniralph\/tracker)\/linear/,
+      );
     }
   });
 });

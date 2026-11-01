@@ -22,12 +22,14 @@ import {
   prdEpic,
   singleIssueEpic,
   type Epic,
+  type EpicIssue,
   type EpicOptions,
   type MaterializationPlan,
   type ParsedPrd,
 } from "@omniralph/ralph";
 import { getRepository, getTrackerLabels, type Database, type Repository } from "@omniralph/db";
-import type { IssueSummary, LinearGateway } from "@/lib/linear/gateway";
+import { toIssuePriority, type IssueSummary } from "@omniralph/tracker";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import { organizationPlaybooks, type PlaybookSource } from "@/lib/playbooks";
 import { storyCodingSettings } from "./coding";
 
@@ -132,6 +134,14 @@ async function epicOptionsFor(
   };
 }
 
+/**
+ * The issue as an epic is built from it. A tracker that suggests no branch name for
+ * it gets the identifier's (`eng-12`).
+ */
+export function epicIssue(issue: IssueSummary): EpicIssue {
+  return { ...issue, branchName: issue.branchName ?? issue.identifier.toLowerCase() };
+}
+
 /** The children epic of `parent`: its sub-issues with their blockers. */
 async function loadChildrenEpic(
   linear: LinearGateway,
@@ -140,9 +150,12 @@ async function loadChildrenEpic(
   options: EpicOptions,
 ): Promise<Epic> {
   const stories = await Promise.all(
-    children.map(async (issue) => ({ issue, blockers: await linear.getBlockers(issue.id) })),
+    children.map(async (issue) => ({
+      issue: epicIssue(issue),
+      blockers: await linear.getBlockers(issue.id),
+    })),
   );
-  return childrenEpic(parent, stories, options);
+  return childrenEpic(epicIssue(parent), stories, options);
 }
 
 /**
@@ -191,7 +204,7 @@ export async function createPlannedSubIssues(
       parentId: parent.id,
       title: planned.title,
       description: planned.description,
-      priority: planned.priority,
+      priority: toIssuePriority(planned.priority),
       subIssueSortOrder: planned.subIssueSortOrder,
       ...(parent.projectName && { projectName: parent.projectName }),
       ...(planned.manual && { labels: [manualLabel] }),
@@ -248,7 +261,7 @@ export async function loadEpic(
 
   const prd = parsePrd(issue.description);
   if (prd && options.materialize === false) {
-    return { epic: prdEpic(issue, prd), root: issue, kind: "prd", materialized: 0 };
+    return { epic: prdEpic(epicIssue(issue), prd), root: issue, kind: "prd", materialized: 0 };
   }
   if (prd) {
     const epicOptions = await epicOptionsFor(options, issue);
@@ -267,7 +280,7 @@ export async function loadEpic(
     return { epic, root: issue, kind: "prd", materialized: created.length };
   }
 
-  return { epic: singleIssueEpic(issue), root: issue, kind: "single", materialized: 0 };
+  return { epic: singleIssueEpic(epicIssue(issue)), root: issue, kind: "single", materialized: 0 };
 }
 
 /**
@@ -281,10 +294,10 @@ export async function reloadEpic(
   options: LoadEpicOptions = {},
 ): Promise<Epic> {
   const issue = await linear.getIssue(run.linearIssueId);
-  if (run.kind === "single") return singleIssueEpic(issue);
+  if (run.kind === "single") return singleIssueEpic(epicIssue(issue));
   const children = await linear.getChildren(issue.id);
   // A mention's PRD whose stories were never created: its PRD stories, for context.
   const prd = run.mode === "request" && children.length === 0 ? parsePrd(issue.description) : null;
-  if (prd) return prdEpic(issue, prd);
+  if (prd) return prdEpic(epicIssue(issue), prd);
   return loadChildrenEpic(linear, issue, children, await epicOptionsFor(options, issue));
 }

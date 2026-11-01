@@ -23,13 +23,13 @@ import {
 } from "@omniralph/db";
 import { isStopRequest, parseInstruction } from "@omniralph/ralph";
 import { TriageRunResult, type TriageOutcome } from "@omniralph/shared";
-import type { LinearWebhookEvent } from "@/lib/linear/webhook";
+import type { SessionPromptedEvent as TrackerSessionPromptedEvent } from "@omniralph/tracker";
 import { postActivity, quietly } from "@/lib/ralph/notify";
 import { linearConversation } from "@/lib/ralph/conversation";
 import { removeTriageLabelQuietly } from "./label";
 import { enqueueTriage, prepareTriage, type StartTriageOutcome, type TriageDeps } from "./start";
 
-export type SessionPromptedEvent = Extract<LinearWebhookEvent, { kind: "session_prompted" }>;
+export type SessionPromptedEvent = TrackerSessionPromptedEvent;
 
 export type TriageReplyOutcome =
   /** The run was stopped (`canceled`: its job was asked to cancel). */

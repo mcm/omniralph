@@ -40,8 +40,9 @@ import {
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
-import type { IssueSummary } from "@/lib/linear/gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import { linearRun } from "@/lib/testing/linear-run";
+import type { IssueSummary } from "@omniralph/tracker";
 import { setRoutingRules, teamIs } from "@/lib/routing/testing";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { ralphJobPayload } from "./coding";
@@ -49,7 +50,7 @@ import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { stopRun } from "./reply";
 import { retryRalphRun, type RalphRetryTarget } from "./retry";
 import { MAX_ITERATIONS_PER_RUN } from "./run";
-import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
+import { startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
@@ -136,10 +137,11 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
     const sessionId = `retry-session-${sessionSeq}`;
     await startRun(
       {
-        kind: "session_created",
         sessionId,
         issueId,
-        commentBody: body ?? `${AGENT_SESSION_MARKER}.`,
+        ...(body
+          ? { kind: "issue_mentioned" as const, commentBody: body }
+          : { kind: "issue_delegated" as const }),
       },
       deps(),
     );

@@ -78,7 +78,7 @@ import {
 import type { ScmAdapter } from "@omniralph/scm";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
-import type { LinearGateway } from "@/lib/linear/gateway";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import { notifyRunThread } from "./chat-notify";
 import {
   conversationFor,

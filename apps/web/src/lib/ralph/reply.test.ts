@@ -50,9 +50,10 @@ import {
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { handleLinearEvent } from "@/lib/linear/events";
-import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
-import type { IssueSummary } from "@/lib/linear/gateway";
+import { handleTrackerEvent } from "@/lib/tracker/events";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import { linearRun } from "@/lib/testing/linear-run";
+import type { IssuePriority, IssueSummary } from "@omniralph/tracker";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { ralphJobPayload } from "./coding";
@@ -61,7 +62,7 @@ import { exchangeJobMessages } from "./messages";
 import { askPermission, expirePermission, readPermission } from "./permissions";
 import { handleReply, type ReplyResult } from "./reply";
 import { MAX_ITERATIONS_PER_RUN, runDedupeKey } from "./run";
-import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
+import { startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
@@ -154,10 +155,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
   async function delegate(issueId: string): Promise<LinearRun> {
     sessionSeq += 1;
     const sessionId = `reply-session-${sessionSeq}`;
-    await startRun(
-      { kind: "session_created", sessionId, issueId, commentBody: `${AGENT_SESSION_MARKER}.` },
-      deps(),
-    );
+    await startRun({ kind: "issue_delegated", sessionId, issueId }, deps());
     return linearRun((await getRunBySession(db, sessionId))!);
   }
 
@@ -1014,7 +1012,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
           title: "Epic",
           description: EPIC_DESCRIPTION,
         });
-        const story = (identifier: string, title: string, priority: number, more = {}) =>
+        const story = (identifier: string, title: string, priority: IssuePriority, more = {}) =>
           linear.add({ identifier, title, parentId: epic.id, priority, ...more });
         const alpha = story("ENG-2", "Alpha", 1);
         const bucket = story("ENG-3", "Create the bucket", 2, {
@@ -1233,7 +1231,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
   it("is wired to session_prompted webhooks", async () => {
     twoStoryEpic();
     const run = await delegate("issue-1");
-    await handleLinearEvent(
+    await handleTrackerEvent(
       { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "", signal: "stop" },
       { db, organizationId: orgId, workspaceId: "org-1" },
       { linear, dispatcher, adapterFor: () => scm.asAdapter() },

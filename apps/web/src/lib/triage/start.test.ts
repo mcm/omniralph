@@ -1,5 +1,4 @@
 import { randomBytes } from "node:crypto";
-import { InvalidInputLinearError } from "@linear/sdk";
 import {
   closeDb,
   connectRepository,
@@ -30,10 +29,11 @@ import {
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { handleLinearEvent } from "@/lib/linear/events";
-import { AGENT_SESSION_MARKER } from "@/lib/ralph/start";
+import { handleTrackerEvent } from "@/lib/tracker/events";
+import { AGENT_SESSION_MARKER } from "@omniralph/tracker/linear";
 import { WorkItemNotFoundError } from "@/lib/work-items/tracker";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { TrackerNotFoundError, type WorkflowStateType } from "@omniralph/tracker";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import { releaseTriageDelegation } from "./label";
 import type { TriageDeps } from "./start";
 import { startTriage, type SessionCreatedEvent } from "./start";
@@ -63,20 +63,23 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
     adapterFor: () => fakeAdapter,
   });
 
+  /** A new session: a mention, or a delegation without a comment or with Linear's system note. */
   const mention = (
     issueId: string,
     commentBody = "@omniralph /triage",
-    overrides: Partial<SessionCreatedEvent> = {},
+    overrides: Partial<Omit<SessionCreatedEvent, "kind">> = {},
   ): SessionCreatedEvent => {
     sessionSeq += 1;
-    return {
-      kind: "session_created",
+    const fields = {
       sessionId: `triage-session-${sessionSeq}`,
       issueId,
       commentBody,
       creatorName: "Steve",
       ...overrides,
     };
+    return fields.commentBody && !fields.commentBody.includes(AGENT_SESSION_MARKER)
+      ? { ...fields, kind: "issue_mentioned", commentBody: fields.commentBody }
+      : { ...fields, kind: "issue_delegated" };
   };
 
   beforeAll(async () => {
@@ -168,7 +171,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
 
     const event = mention(issue.id, "@omniralph /triage it's for the API");
     // Through the webhook handler: `/triage` goes to triage, not to ralph.
-    await handleLinearEvent(
+    await handleTrackerEvent(
       event,
       { db, organizationId: orgId, workspaceId: "ws-1" },
       {
@@ -401,7 +404,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
   it("sends a mention without /triage to ralph", async () => {
     const issue = linear.add({ identifier: "OPS-3", title: "Ralph", teamKey: "OPS" });
     const event = mention(issue.id, "@omniralph /ralph");
-    await handleLinearEvent(
+    await handleTrackerEvent(
       event,
       { db, organizationId: orgId, workspaceId: "ws-1" },
       {
@@ -427,7 +430,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       commentBody: undefined,
       promptContext: `<issue identifier="OPS-4"><title>Run /triage on new issues</title></issue>`,
     });
-    await handleLinearEvent(
+    await handleTrackerEvent(
       event,
       { db, organizationId: orgId, workspaceId: "ws-1" },
       {
@@ -446,7 +449,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       });
 
     const handle = (event: SessionCreatedEvent) =>
-      handleLinearEvent(
+      handleTrackerEvent(
         event,
         { db, organizationId: orgId, workspaceId: "ws-1" },
         {
@@ -456,7 +459,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
         },
       );
 
-    const ready = (identifier: string, stateType: string, stateName: string) =>
+    const ready = (identifier: string, stateType: WorkflowStateType, stateName: string) =>
       linear.add({
         identifier,
         title: "Priorities",
@@ -493,7 +496,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       ).toHaveLength(1);
     });
 
-    it.each([
+    it.each<[string, WorkflowStateType]>([
       ["Todo", "unstarted"],
       ["In Progress", "started"],
     ])("starts a run for a %s item", async (stateName, stateType) => {
@@ -575,12 +578,12 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
         return { run, sessionId };
       };
       const reopened = (issueId: string, sessionId: string): SessionCreatedEvent => ({
-        kind: "session_created",
+        kind: "issue_delegated",
         sessionId,
         issueId,
       });
       const prompted = (sessionId: string, body = "") =>
-        handleLinearEvent(
+        handleTrackerEvent(
           { kind: "session_prompted", sessionId, body },
           { db, organizationId: orgId, workspaceId: "ws-1" },
           {
@@ -631,7 +634,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       it("starts a run for an empty prompt once the issue is delegated to Om, then routes replies to it", async () => {
         const issue = ready("ENG-53", "unstarted", "Todo");
         const { run, sessionId } = await triaged(issue.id);
-        await linear.delegateIssue(issue.id, linear.viewer.id);
+        await linear.delegation.delegateIssue(issue.id, linear.viewer.id);
 
         await prompted(sessionId);
 
@@ -650,7 +653,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       it("ignores an empty prompt when the issue isn't delegated to Om", async () => {
         const issue = ready("ENG-54", "unstarted", "Todo");
         const { sessionId } = await triaged(issue.id);
-        await linear.delegateIssue(issue.id, "other-agent");
+        await linear.delegation.delegateIssue(issue.id, "other-agent");
 
         await prompted(sessionId);
 
@@ -659,7 +662,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
 
       it("keeps Om as the delegate when releasing it while a coding run of the issue is active", async () => {
         const issue = ready("ENG-55", "unstarted", "Todo");
-        await linear.delegateIssue(issue.id, linear.viewer.id);
+        await linear.delegation.delegateIssue(issue.id, linear.viewer.id);
         await handle(delegation(issue.id));
         expect(await db.select().from(ralphRuns)).toHaveLength(1);
 
@@ -673,11 +676,11 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       const logged = vi.spyOn(console, "error").mockImplementation(() => {});
       const load = linear.getIssue.bind(linear);
       let failed = false;
-      // Linear answers an issue it can't see with an invalid input error.
+      // The tracker can't see the issue.
       linear.getIssue = async (id: string) => {
         if (!failed) {
           failed = true;
-          throw new InvalidInputLinearError({ message: "Entity not found" });
+          throw new TrackerNotFoundError("issue", id);
         }
         return load(id);
       };

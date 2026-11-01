@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type * as LinearClient from "@/lib/linear/client";
+import type * as LinearClient from "@/lib/tracker/linear/client";
 
 vi.mock("server-only", () => ({}));
 
@@ -18,7 +18,7 @@ vi.mock("@omniralph/db", () => ({
   listIntegratedOrganizationIds: async () => state.organizations,
   listChatRunOrganizationIds: async () => state.chatOrganizations,
 }));
-vi.mock("@/lib/linear/client", async (importOriginal) => {
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => {
   const original = await importOriginal<typeof LinearClient>();
   return {
     ...original,

@@ -21,17 +21,17 @@ import { linearConversation } from "@/lib/ralph/conversation";
 import { startTriage } from "@/lib/triage/start";
 import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
 import type { WorkItem } from "@/lib/work-items/tracker";
-import { getLinearGateway } from "./client";
-import type { LinearGateway } from "./gateway";
-import type { LinearWebhookEvent } from "./webhook";
+import { getLinearGateway } from "./linear/client";
+import type { LinearGateway } from "@omniralph/tracker/linear";
+import type { HandledTrackerEvent } from "@omniralph/tracker";
 
-export type HandledLinearEvent = Exclude<LinearWebhookEvent, { kind: "ignored" }>;
+export type { HandledTrackerEvent } from "@omniralph/tracker";
 
-export interface LinearEventContext {
+export interface TrackerEventContext {
   db: Database;
   /** The organization that connected the workspace: the event only touches its runs and repositories. */
   organizationId: string;
-  /** The Linear workspace the event came from. */
+  /** The tracker workspace the event came from. */
   workspaceId: string;
 }
 
@@ -43,17 +43,17 @@ export interface LinearEventContext {
 export const ACKNOWLEDGE_REFRESH_TIMEOUT_MS = 2_000;
 
 /**
- * Posts what Linear needs before the webhook responds: a new agent session
- * must get an activity within 10 seconds, so it is acknowledged with a
- * thought right away (without waiting long for a token refresh). Failures
+ * Posts what the tracker needs before the webhook responds: a new agent session
+ * must get an activity within 10 seconds (Linear's limit), so it is acknowledged
+ * with a thought right away (without waiting long for a token refresh). Failures
  * are logged; the event is still handled.
  */
-export async function acknowledgeLinearEvent(
-  event: HandledLinearEvent,
-  context: LinearEventContext,
+export async function acknowledgeTrackerEvent(
+  event: HandledTrackerEvent,
+  context: TrackerEventContext,
   linear?: LinearGateway,
 ): Promise<void> {
-  if (event.kind !== "session_created") return;
+  if (event.kind !== "issue_delegated" && event.kind !== "issue_mentioned") return;
   try {
     const gateway =
       linear ??
@@ -62,13 +62,13 @@ export async function acknowledgeLinearEvent(
         organizationId: context.organizationId,
         refreshTimeoutMs: ACKNOWLEDGE_REFRESH_TIMEOUT_MS,
       }));
-    await gateway.createActivity(
+    await gateway.sessions.createActivity(
       event.sessionId,
       { type: "thought", body: ACKNOWLEDGEMENT },
       { ephemeral: true },
     );
   } catch (error) {
-    console.error(`Acknowledging Linear agent session ${event.sessionId} failed`, error);
+    console.error(`Acknowledging agent session ${event.sessionId} failed`, error);
   }
 }
 
@@ -155,7 +155,7 @@ async function delegationIntoTriageSession(
   }
   if (!issue.delegateId || issue.delegateId !== viewer.id) return null;
   return {
-    kind: "session_created",
+    kind: "issue_delegated",
     sessionId: event.sessionId,
     issueId: issue.id,
     issueIdentifier: issue.identifier,
@@ -163,18 +163,19 @@ async function delegationIntoTriageSession(
 }
 
 /**
- * Acts on a verified, deduplicated Linear event after the webhook response:
- * a new agent session starts a ralph run or triage (`startSession`); the
- * A triage label (`coding:triage`) added to an issue starts triage; an issue's state change (or
+ * Acts on a verified, deduplicated tracker event after the webhook response:
+ * a delegation or a mention (a new agent session) starts a ralph run or triage
+ * (`startSession`); a triage request (the `coding:triage` label added to an issue) starts
+ * triage; an issue's state change (or
  * removal) advances the runs waiting on it or building it (and, when it is
  * completed, cleans up its runs' merged PRs/MRs), then starts triage when the
  * same update added the label; a reply in an agent
  * session is the run's guidance (or, in a triage session, an answer to triage's
  * open questions).
  */
-export async function handleLinearEvent(
-  event: HandledLinearEvent,
-  context: LinearEventContext,
+export async function handleTrackerEvent(
+  event: HandledTrackerEvent,
+  context: TrackerEventContext,
   deps: Partial<Omit<RalphDeps, "db" | "organizationId">> = {},
 ): Promise<void> {
   const { db, organizationId } = context;
@@ -187,13 +188,14 @@ export async function handleLinearEvent(
     adapterFor: deps.adapterFor ?? scmAdapterFor,
     ...(deps.chat && { chat: deps.chat }),
   };
-  if (event.kind === "session_created") await startSession(event, ralph);
-  else if (event.kind === "session_prompted") {
+  if (event.kind === "issue_delegated" || event.kind === "issue_mentioned") {
+    await startSession(event, ralph);
+  } else if (event.kind === "session_prompted") {
     const delegation = await delegationIntoTriageSession(event, ralph);
     if (delegation) await startSession(delegation, ralph);
     // Triage sessions' replies go to triage; every other session is ralph's.
     else if (!(await handleTriageReply(event, ralph))) await handleReply(event, ralph);
-  } else if (event.kind === "triage_label_added") await startLabelTriage(event, ralph);
+  } else if (event.kind === "triage_requested") await startLabelTriage(event, ralph);
   else {
     // Done: the issue's merged PRs/MRs are cleaned up (logged, never failing the delivery).
     if (event.stateType === "completed" && !event.removed) {
@@ -203,7 +205,7 @@ export async function handleLinearEvent(
     if (event.triageLabelId) {
       await startLabelTriage(
         {
-          kind: "triage_label_added",
+          kind: "triage_requested",
           issueId: event.issueId,
           identifier: event.identifier,
           labelId: event.triageLabelId,

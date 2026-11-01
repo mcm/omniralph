@@ -1,5 +1,5 @@
-import "server-only";
-import { FakeLinearGateway } from "./fake-gateway";
+import type { WorkflowStateType } from "../types.js";
+import { FakeLinearGateway } from "./fake-gateway.js";
 
 /**
  * Whether the panel reads Linear settings options from the fixture workspace instead of
@@ -44,17 +44,18 @@ export function fixtureLinearGateway(): FakeLinearGateway {
     { id: "fixture-user-1", name: "Ada Lovelace" },
     { id: "fixture-user-2", name: "Grace Hopper" },
   ];
-  linear.workflowStates = [
+  const states: Array<[string, WorkflowStateType]> = [
     ["Backlog", "backlog"],
     ["Todo", "unstarted"],
     ["In Progress", "started"],
     ["In Review", "started"],
     ["Done", "completed"],
     ["Canceled", "canceled"],
-  ].map(([name, type], position) => ({
+  ];
+  linear.workflowStates = states.map(([name, type], position) => ({
     id: `fixture-state-${position}`,
-    name: name!,
-    type: type!,
+    name,
+    type,
     position,
   }));
   // Work items for the Backlog: ready, needing refinement, and one blocked by work in progress.

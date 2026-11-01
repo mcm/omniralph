@@ -4,7 +4,8 @@ import {
   updateIntegrationCredentials,
   type Database,
 } from "@omniralph/db";
-import { SdkLinearGateway, type LinearGateway } from "./gateway";
+import { TRACKER_CAPABILITIES, type TrackerCapability } from "@omniralph/tracker";
+import { isLinearUploadUrl, SdkLinearGateway, type LinearGateway } from "@omniralph/tracker/linear";
 import {
   linearOAuthConfig,
   refreshCredentials,
@@ -118,19 +119,56 @@ export async function getLinearGateway(options: LinearGatewayOptions): Promise<L
 }
 
 /**
+ * A gateway (the `linear` provider, with every capability) whose every call goes
+ * through `call`: a core operation by its name, a capability's operation as
+ * `[capability, name]`. Not a thenable, so it can be returned from async functions.
+ */
+function forwardingGateway(
+  call: (path: [string] | [string, string], args: unknown[]) => Promise<unknown>,
+): LinearGateway {
+  const capability = (name: string) =>
+    new Proxy(
+      {},
+      {
+        get: (_target, prop) =>
+          prop === "then"
+            ? undefined
+            : prop === "isUploadUrl" && name === "uploads"
+              ? isLinearUploadUrl
+              : (...args: unknown[]) => call([name, String(prop)], args),
+      },
+    );
+  const capabilities = new Map(TRACKER_CAPABILITIES.map((name) => [name, capability(name)]));
+  return new Proxy({} as LinearGateway, {
+    get: (_target, prop) => {
+      if (prop === "then") return undefined;
+      if (prop === "provider") return "linear";
+      const operations = capabilities.get(prop as TrackerCapability);
+      if (operations) return operations;
+      return (...args: unknown[]) => call([String(prop)], args);
+    },
+  });
+}
+
+/** The operation at `path` on the gateway. */
+function operationOf(gateway: LinearGateway, path: [string] | [string, string]) {
+  const [first, second] = path;
+  const owner: Record<string, unknown> =
+    second === undefined
+      ? (gateway as unknown as Record<string, unknown>)
+      : (gateway[first as TrackerCapability] as unknown as Record<string, unknown>);
+  const method = owner[second ?? first] as (...args: unknown[]) => unknown;
+  return { owner, method };
+}
+
+/**
  * A gateway whose every call fails with `LinearNotConnectedError`, for code
  * that writes to Linear best-effort (e.g. stopping a run from the control
  * panel while no workspace is connected).
  */
 export function disconnectedLinearGateway(): LinearGateway {
-  return new Proxy({} as LinearGateway, {
-    // Not a thenable, so it can be returned from async functions.
-    get: (_target, prop) =>
-      prop === "then"
-        ? undefined
-        : async () => {
-            throw new LinearNotConnectedError();
-          },
+  return forwardingGateway(async () => {
+    throw new LinearNotConnectedError();
   });
 }
 
@@ -149,16 +187,9 @@ export function lazyLinearGateway(load: () => Promise<LinearGateway>): LinearGat
     });
     return loading;
   };
-  return new Proxy({} as LinearGateway, {
-    // Not a thenable, so it can be returned from async functions.
-    get: (_target, prop) =>
-      prop === "then"
-        ? undefined
-        : async (...args: unknown[]) => {
-            const loaded = await gateway();
-            const method = loaded[prop as keyof LinearGateway] as (...a: unknown[]) => unknown;
-            return method.apply(loaded, args);
-          },
+  return forwardingGateway(async (path, args) => {
+    const { owner, method } = operationOf(await gateway(), path);
+    return method.apply(owner, args);
   });
 }
 

@@ -52,7 +52,7 @@ process.env.LINEAR_CLIENT_SECRET = "secret-1";
 
 const { GET: connect } = await import("./connect/route");
 const { GET: callback } = await import("./callback/route");
-const { LINEAR_OAUTH_STATE_PURPOSE, STATE_COOKIE } = await import("@/lib/linear/oauth");
+const { LINEAR_OAUTH_STATE_PURPOSE, STATE_COOKIE } = await import("@/lib/tracker/linear/oauth");
 const { createSignedState } = await import("@/lib/auth/signed-state");
 
 const createOAuthState = (userId: string, organizationId = ORG_ID) =>

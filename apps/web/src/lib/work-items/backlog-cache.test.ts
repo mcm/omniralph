@@ -25,7 +25,7 @@ import {
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { startTestRedis, testRedisAvailable, type TestRedis } from "@/lib/hot-state/testing";
 import { closeRedis, getRedis } from "@/lib/hot-state";
-import { signBody } from "@/lib/linear/webhook";
+import { signBody } from "@omniralph/tracker/linear";
 import type { OrganizationBacklog } from "./backlog";
 import {
   affectsBacklog,
@@ -41,7 +41,7 @@ vi.mock("@/lib/auth/session", () => ({}));
 
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 
-const { handleLinearWebhook } = await import("@/lib/linear/ingest");
+const { handleLinearWebhook } = await import("@/lib/tracker/linear/ingest");
 const { saveCodingCard } = await import("@/lib/repositories/cards");
 const { saveRoutingRules } = await import("@/lib/routing/rules");
 

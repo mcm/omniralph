@@ -38,8 +38,9 @@ import {
 } from "@/lib/api/inbox";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
-import type { LinearGateway } from "@/lib/linear/gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import { linearRun } from "@/lib/testing/linear-run";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import type { ChangeMessage } from "@/lib/live/publisher";
 import { withLiveChanges } from "@/lib/live/request";
 
@@ -62,7 +63,7 @@ vi.mock("@/lib/auth/session", () => ({
     ),
 }));
 vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => state.dispatcher }));
-vi.mock("@/lib/linear/client", async (importOriginal) => ({
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getLinearGatewayOrDisconnected: async () => state.linear,
 }));

@@ -11,7 +11,7 @@ import {
   linearOAuthConfig,
   linearRedirectUri,
   STATE_COOKIE,
-} from "@/lib/linear/oauth";
+} from "@/lib/tracker/linear/oauth";
 
 /**
  * Settings › Connections › Add connection › Linear › Connect: sends an admin to Linear's consent

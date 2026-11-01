@@ -14,8 +14,8 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { HandledLinearEvent, LinearEventContext } from "@/lib/linear/events";
-import { signBody } from "@/lib/linear/webhook";
+import type { HandledTrackerEvent, TrackerEventContext } from "@/lib/tracker/events";
+import { signBody } from "@omniralph/tracker/linear";
 
 vi.mock("server-only", () => ({}));
 const state = vi.hoisted(() => ({
@@ -26,11 +26,11 @@ const state = vi.hoisted(() => ({
   deferred: [] as Array<() => Promise<void>>,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@/lib/linear/events", () => ({
-  acknowledgeLinearEvent: async (event: HandledLinearEvent) => {
+vi.mock("@/lib/tracker/events", () => ({
+  acknowledgeTrackerEvent: async (event: HandledTrackerEvent) => {
     state.acknowledged.push(event.kind);
   },
-  handleLinearEvent: async (event: HandledLinearEvent, context: LinearEventContext) => {
+  handleTrackerEvent: async (event: HandledTrackerEvent, context: TrackerEventContext) => {
     state.handled.push({
       event,
       context: { organizationId: context.organizationId, workspaceId: context.workspaceId },
@@ -50,7 +50,7 @@ const SECRET = "linear-webhook-secret";
 process.env.LINEAR_WEBHOOK_SECRET = SECRET;
 
 const { POST } = await import("./route");
-const { handleLinearWebhook, linearDeliveryKey } = await import("@/lib/linear/ingest");
+const { handleLinearWebhook, linearDeliveryKey } = await import("@/lib/tracker/linear/ingest");
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -129,15 +129,15 @@ describe.skipIf(!databaseAvailable)("POST /api/webhooks/linear", () => {
   it("accepts a created session and hands it to the handler after responding", async () => {
     const res = await deliver(createdPayload());
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "accepted", kind: "session_created" });
+    expect(await res.json()).toEqual({ status: "accepted", kind: "issue_delegated" });
     // Acknowledged before the response, handled after it.
-    expect(state.acknowledged).toEqual(["session_created"]);
+    expect(state.acknowledged).toEqual(["issue_delegated"]);
     expect(state.handled).toEqual([]);
     await flush();
     expect(state.handled).toEqual([
       {
         event: {
-          kind: "session_created",
+          kind: "issue_delegated",
           sessionId: "session-1",
           issueId: "issue-1",
           issueIdentifier: "TOOL-1",
@@ -166,7 +166,7 @@ describe.skipIf(!databaseAvailable)("POST /api/webhooks/linear", () => {
       updatedFrom: { stateId: "s-old" },
       data: { id: "issue-9", identifier: "TOOL-9", state: { type: "completed" } },
     });
-    expect(await issue.json()).toEqual({ status: "accepted", kind: "issue_state" });
+    expect(await issue.json()).toEqual({ status: "accepted", kind: "issue_state_changed" });
     const comment = await deliver({
       type: "Comment",
       action: "create",
@@ -177,7 +177,7 @@ describe.skipIf(!databaseAvailable)("POST /api/webhooks/linear", () => {
     await flush();
     expect(state.handled.map((h) => (h.event as { kind: string }).kind)).toEqual([
       "session_prompted",
-      "issue_state",
+      "issue_state_changed",
     ]);
     // Ignored events aren't recorded as deliveries.
     expect(await state.db.select().from(webhookDeliveries)).toHaveLength(2);
@@ -222,7 +222,7 @@ describe.skipIf(!databaseAvailable)("POST /api/webhooks/linear", () => {
     });
     await flush();
     expect(state.handled).toHaveLength(1);
-    expect(state.acknowledged).toEqual(["session_created"]);
+    expect(state.acknowledged).toEqual(["issue_delegated"]);
     const rows = await state.db.select().from(webhookDeliveries);
     expect(rows).toMatchObject([{ provider: "linear", deliveryId: id, repositoryId: null }]);
   });
@@ -303,7 +303,7 @@ describe.skipIf(!databaseAvailable)("POST /api/webhooks/linear", () => {
         },
       );
       expect(Date.now() - started).toBeLessThan(1_000);
-      expect(await res.json()).toEqual({ status: "accepted", kind: "session_created" });
+      expect(await res.json()).toEqual({ status: "accepted", kind: "issue_delegated" });
       expect(consoleError).toHaveBeenCalledWith(expect.stringMatching(/timed out/));
 
       const running = Promise.all(deferred.map((task) => task()));

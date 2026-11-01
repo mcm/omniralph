@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { RUN_KINDS } from "@/lib/api/runs";
-import { linearEventName } from "@/lib/linear/ingest";
+import { linearEventName } from "@/lib/tracker/linear/ingest";
 import { webhookEventName } from "@/lib/webhooks/ingest";
 import { WEBHOOK_IGNORE_REASONS } from "@/lib/webhooks/reasons";
 import { deliveryEventLabel, deliveryOutcomeText, OTHER_EVENT } from "./deliveries";

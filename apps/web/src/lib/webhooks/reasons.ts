@@ -32,7 +32,7 @@ export const WEBHOOK_IGNORE_REASONS = {
   not_in_finding_thread: () => "The question isn't in a thread of one of Om's findings",
   run_finished: () => "Om's run for this is already over",
   help: () => "Om replied with the list of commands",
-  // Linear (`lib/linear/ingest.ts` and `classifyWebhook`).
+  // Trackers (`lib/tracker/linear/ingest.ts` and the adapters' webhook parsers).
   unknown_workspace: () => "This Linear workspace isn't connected to Omniralph",
   issue_without_id: () => "The issue event has no issue ID",
   issue_unchanged: () => "The issue changed, but not its state or triage label",

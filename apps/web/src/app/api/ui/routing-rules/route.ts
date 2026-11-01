@@ -2,7 +2,7 @@ import { apiHandler } from "@/lib/api/handler";
 import type { RoutingRules, SavedRoutingRules } from "@/lib/api/routing-rules";
 import { activeOrganization } from "@/lib/api/scope";
 import { getDb } from "@/lib/db";
-import { linearRoutingRulesSchema } from "@/lib/linear/routing-fields";
+import { linearRoutingRulesSchema } from "@/lib/tracker/linear/routing-fields";
 import { loadRoutingRules, saveRoutingRules } from "@/lib/routing/rules";
 import { settingsActor } from "@/lib/settings-history/sections";
 

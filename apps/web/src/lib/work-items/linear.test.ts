@@ -1,14 +1,15 @@
 import { DEFAULT_TRACKER_STATE_MAPPING, type TrackerStateMapping } from "@omniralph/db";
 import { describe, expect, it, vi } from "vitest";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
-import type { LinearGateway, WorkflowState } from "@/lib/linear/gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import type { LinearGateway } from "@omniralph/tracker/linear";
+import type { WorkflowState, WorkflowStateType } from "@omniralph/tracker";
 import { describeWorkItemTrackerContract, type WorkItemTrackerAgent } from "./contract";
 
 vi.mock("server-only", () => ({}));
 
 const { LinearWorkItemTracker, LINEAR_STATE_TYPES, stateCategoryOf } = await import("./linear");
 const { WORK_ITEM_STATES, WorkItemNotFoundError } = await import("./tracker");
-const { fixtureLinearGateway } = await import("@/lib/linear/fixture-gateway");
+const { fixtureLinearGateway } = await import("@omniralph/tracker/linear/testing");
 
 const TYPE_OF_CATEGORY = { triage: "triage", ...LINEAR_STATE_TYPES } as const;
 
@@ -24,7 +25,7 @@ const statesFor = (prefix: string): WorkflowState[] =>
   ].map(([name, type], position) => ({
     id: `${prefix}-state-${position}`,
     name: name!,
-    type: type!,
+    type: type as WorkflowStateType,
     position,
   }));
 

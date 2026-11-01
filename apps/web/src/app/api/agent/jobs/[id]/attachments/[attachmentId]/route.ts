@@ -3,7 +3,7 @@ import { MAX_ATTACHMENT_BYTES, RalphAttachmentId } from "@omniralph/shared";
 import { requireJob } from "@/lib/agent-auth/verify";
 import { jobIdParam, notFound } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
-import { getLinearGateway, LinearNotConnectedError } from "@/lib/linear/client";
+import { getLinearGateway, LinearNotConnectedError } from "@/lib/tracker/linear/client";
 import { runAttachment } from "@/lib/runs/attachments";
 import { liveRoute } from "@/lib/live/request";
 
@@ -62,7 +62,7 @@ async function get(req: Request, ctx: AttachmentRouteContext): Promise<Response>
   let download;
   try {
     const linear = await getLinearGateway({ db, organizationId: attachment.organizationId });
-    download = await linear.downloadUpload(attachment.url, req.signal);
+    download = await linear.uploads.downloadUpload(attachment.url, req.signal);
   } catch (error) {
     if (error instanceof LinearNotConnectedError) {
       return failed(503, "the run's organization has no Linear workspace connected");

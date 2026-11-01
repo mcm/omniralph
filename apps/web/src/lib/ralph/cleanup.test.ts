@@ -42,15 +42,16 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { PlaybookCoding } from "@omniralph/tasks";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { handleLinearEvent } from "@/lib/linear/events";
-import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
+import { handleTrackerEvent } from "@/lib/tracker/events";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import { linearRun } from "@/lib/testing/linear-run";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { handleWebhook } from "@/lib/webhooks/ingest";
 import { cleanupDedupeKey, reconcileCleanup, startCleanup } from "./cleanup";
 import { cleanupLabel } from "./display";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { handleReply } from "./reply";
-import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
+import { startRun, type StartRunDeps } from "./start";
 import { bindCodingPlaybook } from "./testing";
 
 vi.mock("server-only", () => ({}));
@@ -247,10 +248,9 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     const sessionId = `session-${n}`;
     await startRun(
       {
-        kind: "session_created",
+        kind: "issue_delegated",
         sessionId,
         issueId: epic.id,
-        commentBody: `${AGENT_SESSION_MARKER}.`,
         creatorName: "Steve",
       },
       deps(),
@@ -287,8 +287,8 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
   const actionOf = (job: Job) => RalphCleanupPayload.parse(job.payload).action;
 
   const issueDone = (issueId: string) =>
-    handleLinearEvent(
-      { kind: "issue_state", issueId, stateType: "completed", removed: false },
+    handleTrackerEvent(
+      { kind: "issue_state_changed", issueId, stateType: "completed", removed: false },
       { db, organizationId: orgId, workspaceId: "org-1" },
       { linear, dispatcher, adapterFor: () => scm.asAdapter() },
     );

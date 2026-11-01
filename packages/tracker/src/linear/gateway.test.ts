@@ -1,10 +1,10 @@
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-vi.mock("server-only", () => ({}));
-
-const { SdkLinearGateway, LinearMutationError } = await import("./gateway");
+import { trackerCapabilities } from "../capabilities.js";
+import { TrackerInvalidInputError, TrackerNotFoundError } from "../types.js";
+import { LinearMutationError, SdkLinearGateway } from "./gateway.js";
 
 const API = "https://api.linear.app/graphql";
 
@@ -37,6 +37,7 @@ const server = setupServer(
 
 beforeAll(() => server.listen({ onUnhandledFrame: "error" }));
 afterEach(() => {
+  server.resetHandlers();
   calls.length = 0;
   resolvers = {};
 });
@@ -68,7 +69,7 @@ function issueNode(id: string, overrides: Record<string, unknown> = {}) {
 describe("SdkLinearGateway reads", () => {
   it("authenticates with the OAuth token and reads the organization", async () => {
     resolvers.Organization = () => ({ organization: { id: "org-1", name: "Acme" } });
-    expect(await gateway().getOrganization()).toEqual({ id: "org-1", name: "Acme" });
+    expect(await gateway().getWorkspace()).toEqual({ id: "org-1", name: "Acme" });
     expect(calls[0]?.authorization).toBe("Bearer lin_oauth_token");
   });
 
@@ -109,7 +110,7 @@ describe("SdkLinearGateway reads", () => {
             pageInfo: { hasNextPage: true, endCursor: "c1" },
           },
     });
-    expect(await gateway().listIssueLabels()).toEqual([
+    expect(await gateway().listLabels()).toEqual([
       { id: "l1", name: "ralph", teamId: null },
       { id: "l3", name: "Backend", teamId: "t1" },
     ]);
@@ -418,7 +419,7 @@ describe("SdkLinearGateway reads", () => {
         issue: { identifier: "TOOL-1" },
       },
     });
-    expect(await gateway().getDocument("abc")).toEqual({
+    expect(await gateway().documents.getDocument("abc")).toEqual({
       id: "abc",
       title: "Design",
       content: "# Design",
@@ -441,7 +442,7 @@ describe("SdkLinearGateway reads", () => {
         issue: null,
       },
     });
-    expect(await gateway().getDocument("d")).toEqual({
+    expect(await gateway().documents.getDocument("d")).toEqual({
       id: "d",
       title: "Empty",
       content: "",
@@ -961,7 +962,7 @@ describe("SdkLinearGateway writes", () => {
 
     it("delegates an issue", async () => {
       resolvers.UpdateIssue = () => ({ issueUpdate: { success: true } });
-      await gateway().delegateIssue("1", "app-user");
+      await gateway().delegation.delegateIssue("1", "app-user");
       expect(updates()).toEqual([{ id: "1", input: { delegateId: "app-user" } }]);
     });
 
@@ -997,15 +998,15 @@ describe("SdkLinearGateway agent sessions", () => {
   it("creates every activity type with ephemeral flags and signals", async () => {
     resolvers.CreateAgentActivity = () => ({ agentActivityCreate: { success: true } });
     const gw = gateway();
-    await gw.createActivity("s1", { type: "thought", body: "Thinking" });
-    await gw.createActivity(
+    await gw.sessions.createActivity("s1", { type: "thought", body: "Thinking" });
+    await gw.sessions.createActivity(
       "s1",
       { type: "action", action: "Read", parameter: "src/a.ts", result: "ok" },
       { ephemeral: true },
     );
-    await gw.createActivity("s1", { type: "response", body: "PR: https://x" });
-    await gw.createActivity("s1", { type: "error", body: "Failed" });
-    await gw.createActivity(
+    await gw.sessions.createActivity("s1", { type: "response", body: "PR: https://x" });
+    await gw.sessions.createActivity("s1", { type: "error", body: "Failed" });
+    await gw.sessions.createActivity(
       "s1",
       { type: "elicitation", body: "Run it?" },
       { signal: "select", signalMetadata: { options: [{ value: "Run it" }] } },
@@ -1032,7 +1033,7 @@ describe("SdkLinearGateway agent sessions", () => {
     resolvers.CreateAgentSessionOnIssue = () => ({
       agentSessionCreateOnIssue: { success: true, agentSession: { id: "session-9" } },
     });
-    expect(await gateway().createAgentSessionOnIssue("TOOL-1")).toBe("session-9");
+    expect(await gateway().sessions.createSessionOnIssue("TOOL-1")).toBe("session-9");
     expect(calls[0]?.variables).toEqual({ input: { issueId: "TOOL-1" } });
   });
 
@@ -1040,7 +1041,7 @@ describe("SdkLinearGateway agent sessions", () => {
     resolvers.CreateAgentSessionOnIssue = () => ({
       agentSessionCreateOnIssue: { success: true, agentSession: null },
     });
-    await expect(gateway().createAgentSessionOnIssue("TOOL-1")).rejects.toBeInstanceOf(
+    await expect(gateway().sessions.createSessionOnIssue("TOOL-1")).rejects.toBeInstanceOf(
       LinearMutationError,
     );
   });
@@ -1048,11 +1049,11 @@ describe("SdkLinearGateway agent sessions", () => {
   it("updates the session plan and adds external URLs", async () => {
     resolvers.UpdateAgentSession = () => ({ agentSessionUpdate: { success: true } });
     const gw = gateway();
-    await gw.updateSessionPlan("s1", [
+    await gw.sessions.updatePlan("s1", [
       { content: "TOOL-1: First", status: "completed" },
       { content: "TOOL-2: Second", status: "inProgress" },
     ]);
-    await gw.addSessionExternalUrl("s1", "Pull request", "https://github.com/acme/app/pull/1");
+    await gw.sessions.addExternalUrl("s1", "Pull request", "https://github.com/acme/app/pull/1");
     expect(calls.map((c) => c.variables)).toEqual([
       {
         id: "s1",
@@ -1087,10 +1088,10 @@ describe("SdkLinearGateway.downloadUpload", () => {
       }),
       http.get(`${UPLOAD}-missing`, () => new HttpResponse(null, { status: 401 })),
     );
-    const ok = await gateway().downloadUpload(UPLOAD);
+    const ok = await gateway().uploads.downloadUpload(UPLOAD);
     expect(ok).toMatchObject({ ok: true, status: 200, contentType: "image/png", contentLength: 7 });
     expect(await new Response(ok.body).text()).toBe("PNGDATA");
-    expect(await gateway().downloadUpload(`${UPLOAD}-missing`)).toMatchObject({
+    expect(await gateway().uploads.downloadUpload(`${UPLOAD}-missing`)).toMatchObject({
       ok: false,
       status: 401,
       body: null,
@@ -1099,10 +1100,10 @@ describe("SdkLinearGateway.downloadUpload", () => {
   });
 
   it("never sends the token anywhere but Linear's uploads", async () => {
-    await expect(gateway().downloadUpload("https://example.com/x.png")).rejects.toThrow(
+    await expect(gateway().uploads.downloadUpload("https://example.com/x.png")).rejects.toThrow(
       "not a Linear upload URL",
     );
-    await expect(gateway().downloadUpload(`${UPLOAD}?signature=x`)).rejects.toThrow(
+    await expect(gateway().uploads.downloadUpload(`${UPLOAD}?signature=x`)).rejects.toThrow(
       "not a Linear upload URL",
     );
   });
@@ -1130,7 +1131,7 @@ describe("SdkLinearGateway.uploadFile", () => {
         return new HttpResponse(null, { status: 200 });
       }),
     );
-    const url = await gateway().uploadFile({
+    const url = await gateway().uploads.uploadFile({
       filename: "shot.png",
       contentType: "image/png",
       data: new TextEncoder().encode("PNGDATA"),
@@ -1157,11 +1158,79 @@ describe("SdkLinearGateway.uploadFile", () => {
     });
     server.use(http.put(SIGNED, () => new HttpResponse(null, { status: 403 })));
     await expect(
-      gateway().uploadFile({
+      gateway().uploads.uploadFile({
         filename: "a.png",
         contentType: "image/png",
         data: new Uint8Array(1),
       }),
     ).rejects.toThrow("403");
+  });
+});
+
+describe("SdkLinearGateway as a tracker gateway", () => {
+  it("is the linear provider with every optional capability", () => {
+    expect(gateway().provider).toBe("linear");
+    expect(trackerCapabilities(gateway())).toEqual({
+      sessions: true,
+      delegation: true,
+      documents: true,
+      uploads: true,
+    });
+  });
+
+  it("recognizes only unsigned Linear upload URLs as uploads", () => {
+    const { uploads } = gateway();
+    expect(uploads.isUploadUrl("https://uploads.linear.app/org/a1/b2")).toBe(true);
+    expect(uploads.isUploadUrl("https://uploads.linear.app/org/a1/b2?signature=x")).toBe(false);
+    expect(uploads.isUploadUrl("https://example.com/org/a1/b2")).toBe(false);
+  });
+});
+
+describe("SdkLinearGateway errors", () => {
+  const invalidInput = (message: string) =>
+    server.use(
+      http.post(API, () =>
+        HttpResponse.json({ errors: [{ message, extensions: { type: "invalid input" } }] }),
+      ),
+    );
+
+  it("answers an unknown issue or document with TrackerNotFoundError", async () => {
+    invalidInput("Entity not found");
+    const issue = await gateway()
+      .getIssue("TOOL-404")
+      .catch((error: unknown) => error);
+    expect(issue).toBeInstanceOf(TrackerNotFoundError);
+    expect(issue).toMatchObject({ entity: "issue", ref: "TOOL-404" });
+    await expect(gateway().getRoutingFields("TOOL-404")).rejects.toBeInstanceOf(
+      TrackerNotFoundError,
+    );
+    await expect(gateway().documents.getDocument("nope")).rejects.toMatchObject({
+      name: "TrackerNotFoundError",
+      entity: "document",
+    });
+  });
+
+  it("answers other input Linear refuses with TrackerInvalidInputError", async () => {
+    invalidInput("A label with this name already exists");
+    const error = await gateway()
+      .createLabel("team-1", "bug")
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(TrackerInvalidInputError);
+    expect((error as Error).message).toContain("already exists");
+  });
+
+  it("passes other Linear errors through", async () => {
+    server.use(
+      http.post(API, () =>
+        HttpResponse.json({
+          errors: [{ message: "Boom", extensions: { type: "internal error" } }],
+        }),
+      ),
+    );
+    const error = await gateway()
+      .getIssue("TOOL-1")
+      .catch((e: unknown) => e);
+    expect(error).not.toBeInstanceOf(TrackerNotFoundError);
+    expect(error).not.toBeInstanceOf(TrackerInvalidInputError);
   });
 });

@@ -42,8 +42,9 @@ import { runDetailSchema, type RunDetail, type RunQuestion } from "@/lib/api/run
 import { inboxItemSchema } from "@/lib/api/inbox";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
-import type { LinearGateway } from "@/lib/linear/gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import { linearRun } from "@/lib/testing/linear-run";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import type { ChangeMessage } from "@/lib/live/publisher";
 import { withLiveChanges } from "@/lib/live/request";
 import type * as Adapters from "@/lib/scm/adapters";
@@ -68,7 +69,7 @@ vi.mock("@/lib/auth/session", () => ({
     ),
 }));
 vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => state.dispatcher }));
-vi.mock("@/lib/linear/client", async (importOriginal) => ({
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getLinearGatewayOrDisconnected: async () => state.linear,
 }));
@@ -96,7 +97,7 @@ process.env.APP_URL ??= "https://omniralph.example.com";
 const runDetail = await import("@/app/api/ui/runs/[id]/route");
 const runAnswer = await import("@/app/api/ui/runs/[id]/answer/route");
 const { loadInboxFeed } = await import("@/lib/inbox/feed");
-const { disconnectedLinearGateway } = await import("@/lib/linear/client");
+const { disconnectedLinearGateway } = await import("@/lib/tracker/linear/client");
 const { readRunPermission } = await import("@/lib/runs/permissions");
 
 const databaseAvailable = testDatabaseAvailable();

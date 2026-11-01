@@ -24,8 +24,7 @@ import {
   type TriageOutcome,
   type TriageRepository,
 } from "@omniralph/shared";
-import type { IssueComment, IssueSummary } from "@/lib/linear/gateway";
-import type { LinearWebhookEvent } from "@/lib/linear/webhook";
+import type { IssueComment, IssueSummary, SessionStartedEvent } from "@omniralph/tracker";
 import { errorMessage, postActivity } from "@/lib/ralph/notify";
 import { linearConversation } from "@/lib/ralph/conversation";
 import { resolveRoute, routedRepository } from "@/lib/routing/resolve";
@@ -35,7 +34,7 @@ import { jobRepository } from "@/lib/scm/adapters";
 import type { TriageRunContext } from "./apply";
 import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
 
-export type SessionCreatedEvent = Extract<LinearWebhookEvent, { kind: "session_created" }>;
+export type SessionCreatedEvent = SessionStartedEvent;
 
 export type TriageDeps = Pick<
   RalphDeps,

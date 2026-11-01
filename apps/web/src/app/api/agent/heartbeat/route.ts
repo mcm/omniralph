@@ -37,7 +37,7 @@ import { readAgentOrganization } from "@/lib/agents/organization";
 import { hasDueJob, renewJobsDue } from "@/lib/dispatch/due";
 import { hotStateEnabled } from "@/lib/hot-state";
 import { getDb } from "@/lib/db";
-import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
+import { getLinearGatewayOrDisconnected } from "@/lib/tracker/linear/client";
 import { exchangeJobMessages } from "@/lib/ralph/messages";
 import { liveRoute } from "@/lib/live/request";
 

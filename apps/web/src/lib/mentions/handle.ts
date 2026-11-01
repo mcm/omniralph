@@ -21,8 +21,8 @@ import {
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
 import { FEEDBACK_REASON_LABELS, REVIEW_DEPTHS } from "@omniralph/shared";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/client";
-import type { LinearGateway } from "@/lib/linear/gateway";
+import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/tracker/linear/client";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import {
   addPullRequestCommentRequest,
   findRalphPullRequest,

@@ -23,9 +23,9 @@ import {
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { handleLinearEvent, type HandledLinearEvent } from "@/lib/linear/events";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
-import type { IssueSummary } from "@/lib/linear/gateway";
+import { handleTrackerEvent, type HandledTrackerEvent } from "@/lib/tracker/events";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import type { IssueSummary } from "@omniralph/tracker";
 import { onTriageJobCompleted, onTriageJobFinishedWithoutResult } from "./apply";
 import {
   isOwnTriageSession,
@@ -118,8 +118,8 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
     adapterFor: () => fakeAdapter,
   });
 
-  const handle = (event: HandledLinearEvent) =>
-    handleLinearEvent(
+  const handle = (event: HandledTrackerEvent) =>
+    handleTrackerEvent(
       event,
       { db, organizationId: orgId, workspaceId: "ws-1" },
       {
@@ -145,7 +145,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
   };
 
   const labelEvent = (issue: IssueSummary, labelId: string): TriageLabelEvent => ({
-    kind: "triage_label_added",
+    kind: "triage_requested",
     issueId: issue.id,
     identifier: issue.identifier,
     labelId,
@@ -201,7 +201,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
     expect(linear.labelChanges).toEqual([]);
 
     // Linear's webhook for the session triage opened doesn't start a ralph run.
-    await handle({ kind: "session_created", sessionId: "session-1", issueId: issue.id });
+    await handle({ kind: "issue_delegated", sessionId: "session-1", issueId: issue.id });
     expect(await db.select().from(ralphRuns)).toEqual([]);
     expect(await db.select().from(jobs)).toHaveLength(1);
   });
@@ -212,7 +212,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
     const wake = vi.spyOn(await import("@/lib/ralph/reconcile"), "wakeRunsForIssue");
 
     await handle({
-      kind: "issue_state",
+      kind: "issue_state_changed",
       issueId: issue.id,
       identifier: issue.identifier,
       stateType: "backlog",
@@ -230,7 +230,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
 
     // A second combined update while the run is active doesn't start another triage.
     await handle({
-      kind: "issue_state",
+      kind: "issue_state_changed",
       issueId: issue.id,
       stateType: "unstarted",
       removed: false,
@@ -245,7 +245,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
     const { issue, labelId } = await labeledIssue({ stateType: "started" });
 
     await handle({
-      kind: "issue_state",
+      kind: "issue_state_changed",
       issueId: issue.id,
       identifier: issue.identifier,
       stateType: "started",
@@ -397,7 +397,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
 
   it("frees the issue and removes the label when Linear won't open a session", async () => {
     const { issue, labelId } = await labeledIssue();
-    linear.failures.set("createAgentSessionOnIssue", new Error("forbidden"));
+    linear.failures.set("createSessionOnIssue", new Error("forbidden"));
     vi.spyOn(console, "error").mockImplementationOnce(() => {});
 
     expect(await startLabelTriage(labelEvent(issue, labelId), deps())).toEqual({

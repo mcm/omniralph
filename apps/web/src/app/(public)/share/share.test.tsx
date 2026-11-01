@@ -18,8 +18,8 @@ import {
 import { eq } from "drizzle-orm";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type * as LinearClient from "@/lib/linear/client";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import type * as LinearClient from "@/lib/tracker/linear/client";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import nextConfig from "../../../../next.config";
 
 vi.mock("server-only", () => ({}));
@@ -40,7 +40,7 @@ vi.mock("next/headers", () => ({
     },
   }),
 }));
-vi.mock("@/lib/linear/client", async (importOriginal) => {
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => {
   const actual = await importOriginal<typeof LinearClient>();
   return {
     ...actual,

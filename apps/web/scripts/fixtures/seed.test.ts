@@ -30,7 +30,7 @@ import { TriageRunResult } from "@omniralph/shared";
 import { eq, isNotNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { storedPlaybookInput } from "@/lib/playbooks";
-import { linearRoutingRulesSchema } from "@/lib/linear/routing-fields";
+import { linearRoutingRulesSchema } from "@/lib/tracker/linear/routing-fields";
 import { FIXTURE_IDS } from "./ids";
 import { FIXTURE_ENCRYPTION_KEY, seedFixtures } from "./seed";
 

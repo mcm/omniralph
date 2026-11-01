@@ -571,8 +571,8 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
 
   function watchDelegations(): Array<{ issueId: string; rows: string[] }> {
     const seen: Array<{ issueId: string; rows: string[] }> = [];
-    const delegateIssue = linear.delegateIssue.bind(linear);
-    linear.delegateIssue = async (issueId: string, delegateId: string) => {
+    const delegateIssue = linear.delegation.delegateIssue;
+    linear.delegation.delegateIssue = async (issueId: string, delegateId: string | null) => {
       const rows = await db.select().from(chatLinearDelegations);
       seen.push({ issueId, rows: rows.map((r) => `${r.threadId}:${r.linearIssueId}`) });
       return delegateIssue(issueId, delegateId);

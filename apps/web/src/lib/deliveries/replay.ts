@@ -13,15 +13,15 @@ import {
 import type { ScmAdapter } from "@omniralph/scm";
 import { ApiRouteError } from "@/lib/api/handler";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { getLinearGateway } from "@/lib/linear/client";
+import { getLinearGateway } from "@/lib/tracker/linear/client";
 import {
-  acknowledgeLinearEvent,
-  handleLinearEvent,
-  type HandledLinearEvent,
-} from "@/lib/linear/events";
-import type { LinearGateway } from "@/lib/linear/gateway";
-import { replayLinearDelivery } from "@/lib/linear/ingest";
-import { classifyWebhook, type LinearWebhookEvent } from "@/lib/linear/webhook";
+  acknowledgeTrackerEvent,
+  handleTrackerEvent,
+  type HandledTrackerEvent,
+} from "@/lib/tracker/events";
+import { type LinearGateway, classifyWebhook } from "@omniralph/tracker/linear";
+import { replayLinearDelivery } from "@/lib/tracker/linear/ingest";
+import type { TrackerEvent } from "@omniralph/tracker";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { replayWebhookDelivery } from "@/lib/webhooks/ingest";
 
@@ -135,18 +135,25 @@ async function replayLinear(
     deps.linear ? deps.linear(organizationId) : getLinearGateway({ db, organizationId });
   let gateway: LinearGateway | undefined;
   const withGateway = async () => (gateway ??= await loadGateway());
-  let event: LinearWebhookEvent = classifyWebhook(payload);
-  if (event.kind === "session_created" || event.kind === "session_prompted") {
+  let event: TrackerEvent = classifyWebhook(payload);
+  if (
+    event.kind === "issue_delegated" ||
+    event.kind === "issue_mentioned" ||
+    event.kind === "session_prompted"
+  ) {
     event =
       (await inNewSessionIfFinished(deps, organizationId, event, payload, withGateway)) ?? event;
   }
   return replayLinearDelivery(
     {
       db,
-      acknowledge: async (e: HandledLinearEvent, context) =>
-        acknowledgeLinearEvent(e, context, await withGateway()),
-      handle: async (e: HandledLinearEvent, context) =>
-        handleLinearEvent(e, context, { linear: await withGateway(), dispatcher: deps.dispatcher }),
+      acknowledge: async (e: HandledTrackerEvent, context) =>
+        acknowledgeTrackerEvent(e, context, await withGateway()),
+      handle: async (e: HandledTrackerEvent, context) =>
+        handleTrackerEvent(e, context, {
+          linear: await withGateway(),
+          dispatcher: deps.dispatcher,
+        }),
     },
     {
       integration,
@@ -159,7 +166,10 @@ async function replayLinear(
   );
 }
 
-type SessionEvent = Extract<HandledLinearEvent, { kind: "session_created" | "session_prompted" }>;
+type SessionEvent = Extract<
+  HandledTrackerEvent,
+  { kind: "issue_delegated" | "issue_mentioned" | "session_prompted" }
+>;
 
 /**
  * An agent-session event of a run: 409 while the run is active; once it finished, the
@@ -200,7 +210,7 @@ async function inNewSessionIfFinished(
   }
   let sessionId: string;
   try {
-    sessionId = await (await gateway()).createAgentSessionOnIssue(issueId);
+    sessionId = await (await gateway()).sessions.createSessionOnIssue(issueId);
   } catch (error) {
     console.error(`Opening an agent session on ${issueId} to replay a delivery failed`, error);
     throw new ApiRouteError(
@@ -209,15 +219,18 @@ async function inNewSessionIfFinished(
       "linear_failed",
     );
   }
-  if (event.kind === "session_created") return { ...event, sessionId };
-  return {
-    kind: "session_created",
+  if (event.kind !== "session_prompted") return { ...event, sessionId };
+  // The reply becomes the new session's request, as a mention's comment; an empty one
+  // (a signal) a delegation.
+  const fields = {
     sessionId,
     issueId,
     issueIdentifier: run.identifier ?? payloadIdentifier(payload),
-    commentBody: event.body || undefined,
     creatorName: event.authorName,
   };
+  return event.body.trim()
+    ? { kind: "issue_mentioned", ...fields, commentBody: event.body }
+    : { kind: "issue_delegated", ...fields };
 }
 
 /** The issue's identifier in an agent-session payload (`agentSession.issue.identifier`). */

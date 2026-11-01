@@ -1,7 +1,7 @@
 import { apiHandler, ApiRouteError } from "@/lib/api/handler";
 import type { CodingTrackerOptions } from "@/lib/api/repositories";
 import { requireRepositoryAccess } from "@/lib/api/scope";
-import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
+import { getLinearSettingsOptions } from "@/lib/tracker/linear/settings-options";
 
 /**
  * The teams, projects and labels of the repo's organization's Linear workspace, for the

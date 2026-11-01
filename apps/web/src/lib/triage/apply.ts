@@ -34,8 +34,9 @@ import {
 } from "@omniralph/ralph";
 import { QueryRunResult, RunSpecJobPayload, TriageRunResult } from "@omniralph/shared";
 import { z } from "zod";
-import { getLinearGateway } from "@/lib/linear/client";
-import type { IssueSummary, LinearGateway } from "@/lib/linear/gateway";
+import { getLinearGateway } from "@/lib/tracker/linear/client";
+import { toIssuePriority, type IssueSummary } from "@omniralph/tracker";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import { createPlannedSubIssues, runManualLabels } from "@/lib/ralph/epic-loader";
 import { errorMessage, postActivity, quietly } from "@/lib/ralph/notify";
 import { linearConversation } from "@/lib/ralph/conversation";
@@ -336,7 +337,7 @@ export async function reformatSubIssues(
       parentId: issue.id,
       title: VALIDATION_STORY_TITLE,
       description: VALIDATION_STORY_BODY,
-      priority: priorities.length > 0 ? Math.max(...priorities) : 3,
+      priority: toIssuePriority(priorities.length > 0 ? Math.max(...priorities) : 3),
       ...(orders.length > 0 && { subIssueSortOrder: Math.max(...orders) + 1 }),
       ...(issue.projectName && { projectName: issue.projectName }),
     });

@@ -2,7 +2,7 @@
 import { eq } from "drizzle-orm";
 import { insertPlaybook, repositories, type Database } from "@omniralph/db";
 import { getBuiltinPlaybook, type Playbook, type PlaybookCoding } from "@omniralph/tasks";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 
 /**
  * Binds `repositoryId` to a copy of its built-in story (or request) playbook with `coding`
@@ -46,7 +46,7 @@ export async function bindBuiltinPlaybooks(db: Database, repositoryId: string): 
 
 /**
  * The ralph orchestrator's Linear workspace for tests (`RalphDeps.linear`): a fake one, for
- * tests of modules that don't import from `@/lib/linear/` themselves (the chat).
+ * tests of modules that don't import from `@/lib/tracker/` or `@omniralph/tracker` themselves (the chat).
  */
 export function fakeRalphLinear(): FakeLinearGateway {
   return new FakeLinearGateway();

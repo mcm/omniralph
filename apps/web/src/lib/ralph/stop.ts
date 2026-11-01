@@ -2,7 +2,7 @@ import "server-only";
 import { getRun, type Database } from "@omniralph/db";
 import type { ActionResult } from "@/lib/action-result";
 import { getDispatcher } from "@/lib/dispatch";
-import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
+import { getLinearGatewayOrDisconnected } from "@/lib/tracker/linear/client";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { stopRun } from "./reply";
 

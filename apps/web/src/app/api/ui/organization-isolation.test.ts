@@ -93,8 +93,8 @@ import {
   ORGANIZATION_SCOPE_COOKIE,
 } from "@/lib/auth/routes";
 import type { RoutingPreview } from "@/lib/api/routing-rules";
-import type * as LinearClient from "@/lib/linear/client";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import type * as LinearClient from "@/lib/tracker/linear/client";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import type * as Adapters from "@/lib/scm/adapters";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { CANCEL_REQUESTED_WARNING } from "@/lib/jobs/cancel";
@@ -110,7 +110,7 @@ vi.mock("@/lib/dispatch", () => ({
   }),
 }));
 // Disconnecting revokes tokens at Linear and Slack: never in tests.
-vi.mock("@/lib/linear/oauth", async (importOriginal) => ({
+vi.mock("@/lib/tracker/linear/oauth", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   revokeToken: async () => {},
 }));
@@ -143,7 +143,7 @@ vi.mock("next/headers", () => ({
   }),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@/lib/linear/client", async (importOriginal) => {
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => {
   const actual = await importOriginal<typeof LinearClient>();
   return {
     ...actual,

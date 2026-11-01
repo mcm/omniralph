@@ -88,7 +88,7 @@
       }
     },
     {
-      "files": ["src/lib/linear/**", "src/lib/ralph/conversation.ts", "src/**/*.test.{ts,tsx}"],
+      "files": ["src/lib/tracker/**", "src/lib/ralph/conversation.ts", "src/**/*.test.{ts,tsx}"],
       "rules": {
         "ralph-conversation/no-direct-session-write": "off"
       }

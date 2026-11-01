@@ -39,10 +39,10 @@ import {
 import { backlogKeys, queryKeys } from "@/lib/api/keys";
 import { workItemRowSchema, type WorkItemRow } from "@/lib/api/work-items";
 import { assertRole, type Role } from "@/lib/auth/roles";
-import type * as LinearClient from "@/lib/linear/client";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
-import type { IssueSummary, WorkflowState } from "@/lib/linear/gateway";
-import { signBody } from "@/lib/linear/webhook";
+import type * as LinearClient from "@/lib/tracker/linear/client";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import type { IssueSummary, WorkflowState } from "@omniralph/tracker";
+import { signBody } from "@omniralph/tracker/linear";
 import { parseChangeEvent } from "@/lib/live/events";
 import { createLiveInvalidator } from "@/lib/live/invalidations";
 
@@ -73,7 +73,7 @@ vi.mock("@/lib/auth/session", () => ({
       role,
     ),
 }));
-vi.mock("@/lib/linear/client", async (importOriginal) => {
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => {
   const actual = await importOriginal<typeof LinearClient>();
   return {
     ...actual,
@@ -103,7 +103,7 @@ const upNext = await import("./up-next/route");
 const { dropBacklogCache, resetBacklogCache } = await import("@/lib/work-items/backlog-cache");
 const { BACKLOG_CANDIDATE_CAP, TRACKER_UNAVAILABLE_REASON } =
   await import("@/lib/work-items/backlog");
-const { handleLinearWebhook } = await import("@/lib/linear/ingest");
+const { handleLinearWebhook } = await import("@/lib/tracker/linear/ingest");
 const { changeMessage } = await import("@/lib/live/publisher");
 
 type Handler = (
@@ -318,7 +318,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       { id: "mapped-started", name: "In Progress", type: "started", position: 3 },
     ];
     mapped.workflowStatesByTeam.set("team-mapped", states);
-    const base = { teamId: "team-mapped", stateType: "unstarted" };
+    const base = { teamId: "team-mapped", stateType: "unstarted" as const };
     mapped.add({
       ...base,
       identifier: "MAP-1",

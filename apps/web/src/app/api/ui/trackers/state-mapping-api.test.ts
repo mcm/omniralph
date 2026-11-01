@@ -21,8 +21,9 @@ import {
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { trackerStateMappingSchema, type TrackerStateMappingView } from "@/lib/api/trackers";
 import { assertRole, type Role } from "@/lib/auth/roles";
-import type * as LinearClient from "@/lib/linear/client";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import type * as LinearClient from "@/lib/tracker/linear/client";
+import type { WorkflowState, WorkflowStateType } from "@omniralph/tracker";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 
 vi.mock("server-only", () => ({}));
 
@@ -41,7 +42,7 @@ vi.mock("@/lib/auth/session", () => ({
       role,
     ),
 }));
-vi.mock("@/lib/linear/client", async (importOriginal) => {
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => {
   const actual = await importOriginal<typeof LinearClient>();
   return {
     ...actual,
@@ -112,10 +113,10 @@ describe.skipIf(!databaseAvailable)("tracker state mapping endpoints", () => {
       ["Doing", "started"],
       ["Shipped", "completed"],
       ["Dropped", "canceled"],
-    ].map(([name, type], position) => ({
+    ].map(([name, type], position): WorkflowState => ({
       id: `b-${position}`,
       name: name!,
-      type: type!,
+      type: type as WorkflowStateType,
       position,
     })),
   );

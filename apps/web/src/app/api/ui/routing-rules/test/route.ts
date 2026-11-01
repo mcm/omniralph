@@ -3,7 +3,7 @@ import { apiHandler } from "@/lib/api/handler";
 import type { RoutingTestResult } from "@/lib/api/routing-rules";
 import { getDb } from "@/lib/db";
 import { workItemMatchInputSchema } from "@/lib/api/work-item-matches";
-import { linearRoutingRulesSchema } from "@/lib/linear/routing-fields";
+import { linearRoutingRulesSchema } from "@/lib/tracker/linear/routing-fields";
 import {
   hitRoutingTestLimit,
   routingLinearGateway,

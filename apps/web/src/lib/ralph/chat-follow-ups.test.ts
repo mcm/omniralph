@@ -47,7 +47,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { attachmentMetadata, attachmentRef } from "@/lib/chat/attachments";
 import type { ChatConversationContext } from "@/lib/chat/bot";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import type { LinearGateway } from "@/lib/linear/gateway";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import type { ChatChannel } from "./conversation";
 import type { RalphDeps } from "./run";

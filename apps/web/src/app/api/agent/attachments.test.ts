@@ -18,7 +18,7 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 
 const RALPH_SCOPES: JobTokenScope[] = [
   "credentials:read",
@@ -33,7 +33,7 @@ const state = vi.hoisted(() => ({
   linear: undefined as unknown as FakeLinearGateway,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@/lib/linear/client", async (original) => ({
+vi.mock("@/lib/tracker/linear/client", async (original) => ({
   ...(await original<Record<string, unknown>>()),
   getLinearGateway: async () => state.linear,
 }));
@@ -115,7 +115,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/jobs/{id}/attachments/{attac
 
   beforeEach(() => {
     state.linear = new FakeLinearGateway();
-    state.linear.uploads.set(UPLOAD, { contentType: "image/png", body: "PNGDATA" });
+    state.linear.uploadedFiles.set(UPLOAD, { contentType: "image/png", body: "PNGDATA" });
   });
 
   /** A run that knows the upload as `ID` and `OTHER`, and a running story job listing `listed`. */
@@ -247,12 +247,15 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/jobs/{id}/attachments/{attac
   it("rejects error statuses, HTML pages and files over 25 MB", async () => {
     const jobId = await newJob();
     const jobToken = await token(jobId);
-    state.linear.uploads.set(UPLOAD, { contentType: "image/png", body: "", status: 401 });
+    state.linear.uploadedFiles.set(UPLOAD, { contentType: "image/png", body: "", status: 401 });
     let res = await downloadRequest(jobId, ID, jobToken);
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: "download_failed", reason: "HTTP 401" });
 
-    state.linear.uploads.set(UPLOAD, { contentType: "text/html", body: "<html>sign in</html>" });
+    state.linear.uploadedFiles.set(UPLOAD, {
+      contentType: "text/html",
+      body: "<html>sign in</html>",
+    });
     res = await downloadRequest(jobId, ID, jobToken);
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({
@@ -260,7 +263,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/jobs/{id}/attachments/{attac
       reason: "got an HTML page instead of the file",
     });
 
-    state.linear.uploads.set(UPLOAD, {
+    state.linear.uploadedFiles.set(UPLOAD, {
       contentType: "image/png",
       body: new Uint8Array(25 * 1024 * 1024 + 1),
     });

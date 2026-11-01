@@ -22,7 +22,8 @@ import {
   type GatheredAttachment,
 } from "@omniralph/ralph";
 import type { RalphAttachment } from "@omniralph/shared";
-import type { LinearGateway, IssueComment } from "@/lib/linear/gateway";
+import type { LinearGateway } from "@omniralph/tracker/linear";
+import type { IssueComment } from "@omniralph/tracker";
 
 /** Attachments listed in one payload at most. */
 const MAX_ATTACHMENTS_PER_PAYLOAD = 200;

@@ -2,7 +2,7 @@
   "name": "@omniralph/tracker",
   "version": "0.0.0",
   "private": true,
-  "description": "Issue tracker gateway interface with neutral types, optional capabilities and an in-memory fake",
+  "description": "Issue tracker gateway interface with neutral types, optional capabilities, the Linear adapter and in-memory fakes",
   "type": "module",
   "exports": {
     ".": {
@@ -14,6 +14,16 @@
       "@omniralph/source": "./src/testing/index.ts",
       "types": "./dist/testing/index.d.ts",
       "default": "./dist/testing/index.js"
+    },
+    "./linear": {
+      "@omniralph/source": "./src/linear/index.ts",
+      "types": "./dist/linear/index.d.ts",
+      "default": "./dist/linear/index.js"
+    },
+    "./linear/testing": {
+      "@omniralph/source": "./src/linear/testing.ts",
+      "types": "./dist/linear/testing.d.ts",
+      "default": "./dist/linear/testing.js"
     }
   },
   "files": [
@@ -24,5 +34,11 @@
     "typecheck": "tsrs --noEmit",
     "lint": "oxlint",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "@linear/sdk": "^97.0.0"
+  },
+  "devDependencies": {
+    "msw": "^3.0.2"
   }
 }

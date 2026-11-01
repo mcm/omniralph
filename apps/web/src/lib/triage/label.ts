@@ -15,8 +15,8 @@ import {
   type Database,
   type TriageRun,
 } from "@omniralph/db";
-import type { LinearGateway } from "@/lib/linear/gateway";
-import { isTriageLabel, type LinearWebhookEvent } from "@/lib/linear/webhook";
+import type { LinearGateway } from "@omniralph/tracker/linear";
+import { isTriageLabel, type TriageRequestedEvent } from "@omniralph/tracker";
 import { errorMessage, quietly } from "@/lib/ralph/notify";
 import {
   startTriage,
@@ -25,7 +25,7 @@ import {
   type TriageDeps,
 } from "./start";
 
-export type TriageLabelEvent = Extract<LinearWebhookEvent, { kind: "triage_label_added" }>;
+export type TriageLabelEvent = TriageRequestedEvent;
 
 export type StartLabelTriageOutcome =
   /** The issue has a queued or running triage already: nothing else happens. */
@@ -88,7 +88,7 @@ export async function releaseTriageDelegation(
     if (await getRunByIssue(deps.db, deps.organizationId, issue.id, { activeOnly: true })) {
       return false;
     }
-    await deps.linear.delegateIssue(issue.id, null);
+    await deps.linear.delegation.delegateIssue(issue.id, null);
     return true;
   } catch (error) {
     console.error(`Removing Om as the delegate of ${issueId} after triage failed`, error);
@@ -120,7 +120,7 @@ export async function startLabelTriage(
 
   let sessionId: string;
   try {
-    sessionId = await linear.createAgentSessionOnIssue(event.issueId);
+    sessionId = await linear.sessions.createSessionOnIssue(event.issueId);
   } catch (error) {
     await setTriageRunStatus(db, run.id, "failed");
     console.error(`Opening an agent session on ${event.identifier ?? event.issueId} failed`, error);
@@ -135,7 +135,7 @@ export async function startLabelTriage(
 
   const outcome = await startTriage(
     {
-      kind: "session_created",
+      kind: "issue_delegated",
       sessionId,
       issueId: event.issueId,
       issueIdentifier: event.identifier,

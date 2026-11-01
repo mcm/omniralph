@@ -1,5 +1,4 @@
 import "server-only";
-import { InvalidInputLinearError } from "@linear/sdk";
 import {
   listLatestIssueRuns,
   listRoutingRules,
@@ -10,10 +9,11 @@ import {
 import { ApiRouteError } from "@/lib/api/handler";
 import type { RoutingPreviewItem, RoutingTestResult } from "@/lib/api/routing-rules";
 import type { WorkItemMatchInput } from "@/lib/api/work-item-matches";
-import { getLinearGateway, LinearNotConnectedError } from "@/lib/linear/client";
-import { fixtureLinearEnabled, fixtureLinearGateway } from "@/lib/linear/fixture-gateway";
-import type { LinearGateway, RoutingIssue } from "@/lib/linear/gateway";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
+import { getLinearGateway, LinearNotConnectedError } from "@/lib/tracker/linear/client";
+import { fixtureLinearEnabled, fixtureLinearGateway } from "@omniralph/tracker/linear/testing";
+import { TrackerNotFoundError } from "@omniralph/tracker";
+import type { LinearGateway, RoutingIssue } from "@omniralph/tracker/linear";
+import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { describeQuery } from "./describe";
 import { createRouter, type RouteDeps, type RouteWorkItemMatch } from "./resolve";
@@ -190,7 +190,7 @@ async function loadIssue(
   try {
     return await linear.getRoutingFields(identifier);
   } catch (error) {
-    if (error instanceof InvalidInputLinearError) return null;
+    if (error instanceof TrackerNotFoundError) return null;
     throw error;
   }
 }

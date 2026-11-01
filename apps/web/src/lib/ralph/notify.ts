@@ -3,7 +3,7 @@
  * comment that fails to post is logged, never allowed to undo a run's state
  * change (cyralph treats them the same way).
  */
-import type { ActivityContent } from "@/lib/linear/gateway";
+import type { ActivityContent } from "@omniralph/tracker";
 import type { PostOptions, RunConversation } from "./conversation";
 
 export const errorMessage = (error: unknown) =>

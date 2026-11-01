@@ -17,12 +17,8 @@ import {
   type RalphRun,
 } from "@omniralph/db";
 import type { Adapter, StateAdapter } from "chat";
-import type {
-  ActivityContent,
-  ActivityOptions,
-  LinearGateway,
-  PlanStep,
-} from "@/lib/linear/gateway";
+import type { ActivityContent, ActivityOptions, PlanStep } from "@omniralph/tracker";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import { recordChatRunEvent, type ChatRunEventKind } from "@/lib/chat/run-events";
 import { repositoryWebUrl } from "@/lib/repositories/web-url";
 import { inlineCode } from "@/lib/review/sanitize";
@@ -104,7 +100,7 @@ export class LinearConversation implements RunConversation {
     const { notice: _notice, event: _event, ...activity } = options ?? {};
     await (
       await this.client()
-    ).createActivity(
+    ).sessions.createActivity(
       this.sessionId,
       content,
       Object.keys(activity).length > 0 ? activity : undefined,
@@ -112,11 +108,11 @@ export class LinearConversation implements RunConversation {
   }
 
   async updatePlan(plan: PlanStep[]): Promise<void> {
-    await (await this.client()).updateSessionPlan(this.sessionId, plan);
+    await (await this.client()).sessions.updatePlan(this.sessionId, plan);
   }
 
   async addLink(label: string, url: string): Promise<void> {
-    await (await this.client()).addSessionExternalUrl(this.sessionId, label, url);
+    await (await this.client()).sessions.addExternalUrl(this.sessionId, label, url);
   }
 }
 

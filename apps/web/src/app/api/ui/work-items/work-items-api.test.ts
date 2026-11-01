@@ -35,13 +35,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { workItemDetailSchema, type WorkItemDetail } from "@/lib/api/work-items";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import type * as LinearClient from "@/lib/linear/client";
-import { handleLinearEvent } from "@/lib/linear/events";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
-import type { IssueSummary } from "@/lib/linear/gateway";
-import { handleLinearWebhook } from "@/lib/linear/ingest";
-import { signBody } from "@/lib/linear/webhook";
-import { AGENT_SESSION_MARKER } from "@/lib/ralph/start";
+import type * as LinearClient from "@/lib/tracker/linear/client";
+import { handleTrackerEvent } from "@/lib/tracker/events";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import type { IssueSummary } from "@omniralph/tracker";
+import { handleLinearWebhook } from "@/lib/tracker/linear/ingest";
+import { signBody, AGENT_SESSION_MARKER } from "@omniralph/tracker/linear";
 
 vi.mock("server-only", () => ({}));
 
@@ -67,7 +66,7 @@ vi.mock("@/lib/auth/session", () => ({
       role,
     ),
 }));
-vi.mock("@/lib/linear/client", async (importOriginal) => {
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => {
   const actual = await importOriginal<typeof LinearClient>();
   return {
     ...actual,
@@ -505,7 +504,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
           db,
           secret: SECRET,
           handle: (event, context) =>
-            handleLinearEvent(event, context, {
+            handleTrackerEvent(event, context, {
               linear: acme,
               dispatcher: new PostgresDispatcher({ db }),
               adapterFor: () => fakeAdapter,

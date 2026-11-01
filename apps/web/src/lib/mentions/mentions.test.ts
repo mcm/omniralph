@@ -41,7 +41,8 @@ import {
 } from "@omniralph/db/testing";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import { linearRun } from "@/lib/testing/linear-run";
 import { reviewDetailView } from "@/lib/reviews/history";
 import type * as Adapters from "@/lib/scm/adapters";
 

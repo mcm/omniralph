@@ -44,7 +44,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { revokeAgent } from "@/lib/agent-auth/revoke";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import { linearRun } from "@/lib/testing/linear-run";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { ralphJobPayload } from "./coding";
@@ -56,7 +57,7 @@ import {
 } from "./messages";
 import { handleReply } from "./reply";
 import { NOTHING_TO_DO, PASSED_TO_RUNNING_JOB } from "./requests";
-import { AGENT_SESSION_MARKER, startRun, type StartRunDeps, type StartOutcome } from "./start";
+import { startRun, type StartRunDeps, type StartOutcome } from "./start";
 
 vi.mock("server-only", () => ({}));
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
@@ -170,10 +171,11 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     const sessionId = `session-${sessionSeq}`;
     const outcome = await startRun(
       {
-        kind: "session_created",
         sessionId,
         issueId,
-        commentBody: body ?? `${AGENT_SESSION_MARKER}.`,
+        ...(body
+          ? { kind: "issue_mentioned" as const, commentBody: body }
+          : { kind: "issue_delegated" as const }),
         creatorName: "Steve",
       },
       deps(),

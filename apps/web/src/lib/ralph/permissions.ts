@@ -26,7 +26,8 @@ import {
   type PermissionAnswer,
 } from "@omniralph/ralph";
 import type { RalphPermissionAnswer, RalphPermissionRequest } from "@omniralph/shared";
-import type { ActivityContent, LinearGateway } from "@/lib/linear/gateway";
+import type { ActivityContent } from "@omniralph/tracker";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import { conversationFor, type ChatSource } from "./conversation";
 import { postActivity } from "./notify";
 import { FINISHED_RUN_STATUSES } from "./run";

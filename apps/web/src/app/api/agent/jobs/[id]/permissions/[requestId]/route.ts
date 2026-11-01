@@ -2,7 +2,7 @@ import { answerRunPermissionRequest, getJobForAgent } from "@omniralph/db";
 import { requireJob } from "@/lib/agent-auth/verify";
 import { jobIdParam, notFound } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
-import { getLinearGateway } from "@/lib/linear/client";
+import { getLinearGateway } from "@/lib/tracker/linear/client";
 import { expirePermission } from "@/lib/ralph/permissions";
 import { readRunPermission } from "@/lib/runs/permissions";
 import { liveRoute } from "@/lib/live/request";
