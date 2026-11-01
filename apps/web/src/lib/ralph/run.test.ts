@@ -1802,6 +1802,67 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect((await getRun(db, run.id))?.status).toBe("completed");
   });
 
+  it("waits while a relation added mid-run breaks the dependency rules, and goes on once it's removed", async () => {
+    const other = tracker.add({ identifier: "OPS-20", title: "Other epic", teamKey: "OPS" });
+    const outsideTask = tracker.add({
+      identifier: "OPS-21",
+      title: "Their task",
+      teamKey: "OPS",
+      parentId: other.id,
+    });
+    const epic = tracker.add({ identifier: "ENG-200", title: "Epic" });
+    tracker.add({ identifier: "ENG-201", title: "First", parentId: epic.id, priority: 1 });
+    const second = tracker.add({
+      identifier: "ENG-202",
+      title: "Second",
+      parentId: epic.id,
+      priority: 2,
+    });
+    const run = await delegate(epic.id);
+
+    // While the first story runs, someone blocks the second on a task in another epic.
+    await tracker.createBlocksRelation(outsideTask.id, second.id);
+    expect((await work(run.id)).story.identifier).toBe("ENG-201");
+    expect(await activeJobs(run.id)).toEqual([]);
+    const message =
+      "ENG-202 is blocked by OPS-21: OPS-21 is a task in another epic, OPS-20. " +
+      "Block ENG-202 on OPS-20 instead.";
+    expect(await getRun(db, run.id)).toMatchObject({
+      status: "waiting",
+      waitingOn: { blockers: [], manual: [], relations: [message] },
+    });
+    const elicitations = () => tracker.bodies(run.trackerSessionId, "elicitation");
+    expect(elicitations().at(-1)).toContain("**ENG-200** is paused");
+    expect(elicitations().at(-1)).toContain(`- ${message}`);
+
+    // Advancing again (the reconcile cron, say) checks again and says nothing new.
+    const posted = elicitations().length;
+    await advanceRun(run.id, deps());
+    expect(elicitations()).toHaveLength(posted);
+    expect(await activeJobs(run.id)).toEqual([]);
+
+    // "start anyway" doesn't get past it.
+    await handleTrackerEvent(
+      { kind: "session_prompted", sessionId: run.trackerSessionId, body: "start anyway" },
+      { db, organizationId: orgId, workspaceId: "org-1" },
+      { tracker, dispatcher },
+    );
+    expect(tracker.bodies(run.trackerSessionId, "response").at(-1)).toContain(
+      "I won't start this: this relation breaks the dependency rules.",
+    );
+    expect(await getRun(db, run.id)).toMatchObject({ status: "waiting", ignoreBlockers: false });
+
+    // Blocking on the other epic instead is allowed: the next advance goes on.
+    tracker.blocks.delete(second.id);
+    await tracker.createBlocksRelation(other.id, epic.id);
+    await tracker.setIssueState(other.id, { type: "completed" });
+    await advanceRun(run.id, deps());
+    expect(storyPayload(await activeJob(run.id))).toMatchObject({
+      story: { identifier: "ENG-202" },
+    });
+    expect(await getRun(db, run.id)).toMatchObject({ status: "running", waitingOn: null });
+  });
+
   it("sets a blocked story aside without retrying and carries on with the others", async () => {
     const epic = tracker.add({ identifier: "ENG-40", title: "Epic" });
     tracker.add({ identifier: "ENG-41", title: "Needs a key", parentId: epic.id, priority: 1 });

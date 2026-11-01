@@ -111,6 +111,9 @@ export async function actOnInboxItem(
       const run = runOf(item);
       const started = await startEpicAnyway(await ralphDeps(db, organization.id), run, actor.name);
       if (started.status === "gone") throw ApiRouteError.notFound(ITEM_HANDLED_MESSAGE);
+      if (started.status === "refused") {
+        throw new ApiRouteError(400, started.message, "relations");
+      }
       return result({ runId: run });
     }
     case "resume":

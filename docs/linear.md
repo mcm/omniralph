@@ -806,6 +806,38 @@ changes. On the work item page, Start epic is disabled with the same reason, and
 `POST /api/ui/work-items/{id}/start` refuses it (400, `feature`). The check is `featureToRun`
 (`apps/web/src/lib/ralph/feature.ts`, over `workItemRole` from `@omniralph/planning`).
 
+### Dependency rules
+
+Blocks relations follow epic boundaries, so each epic can ship on its own:
+
+- A task in an epic may be blocked only by an epic (other than its own), a standalone task, or a
+  task in its own epic.
+- An epic may be blocked only by epics or standalone tasks (not by its own tasks).
+- A standalone task (no parent) counts as an epic of one.
+- Nothing may be blocked by a feature.
+
+When a task waits for a task in another epic, block it on that epic instead. Om checks the work a
+run would build: the epic's own blockers and those of its open tasks (a delegated task is checked
+with its whole epic), or the standalone task's. Canceled blockers and tasks already done don't
+count. Only the blocked side of a relation is read, so a relation that breaks the rules from
+another epic's side is caught when that epic starts.
+
+- **At start.** A delegation, a `/coding` mention or a `/coding` reply on work with a relation
+  breaking the rules is answered in the session with each bad relation and its fix ("ENG-82 is
+  blocked by OPS-91: OPS-91 is a task in another epic, OPS-90. Block ENG-82 on OPS-90 instead.");
+  nothing is created and no state changes. On the work item page, Start epic is disabled with
+  the same reason, and `POST /api/ui/work-items/{id}/start` refuses it (400, `relations`).
+- **Start anyway.** The `start anyway` reply and the Inbox's Start anyway (400, `relations`) are
+  refused the same way. They still ignore valid outside blockers, as before.
+- **Mid-run.** Relations can change while a run goes on, so before choosing each next story a
+  running epic checks again. A violation sets the run waiting (`waiting_on.relations` lists the
+  messages) with an elicitation naming each bad relation. It checks again whenever it next
+  advances (a reply, `/continue`, an `Issue` webhook or the reconcile cron) and goes on once the
+  relations are fixed.
+
+The rules are `dependencyViolations` in `@omniralph/planning`; `relationViolations`
+(`apps/web/src/lib/ralph/relations.ts`) reads the relations and roles from the tracker.
+
 ## Work item tracker and readiness
 
 Code that creates, updates, triages or cancels a work item goes through the tracker-neutral

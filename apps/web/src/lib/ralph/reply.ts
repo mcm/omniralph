@@ -46,6 +46,7 @@ import {
   updateRun,
   updateStory,
   type RalphRun,
+  type TrackerRun,
   type RalphTransaction,
   getMainLane,
   isTrackerRun,
@@ -72,6 +73,7 @@ import type {
 } from "@omniralph/tracker";
 import { conversationFor } from "./conversation";
 import { featureMessage, featureToRun, type FeatureFound } from "./feature";
+import { relationsMessage, relationViolations } from "./relations";
 import { mainBranch } from "./lanes";
 import { loadEpic, runEpicOptions } from "./epic-loader";
 import { answerCleanup, cleanUpStoppedRun } from "./cleanup";
@@ -121,7 +123,12 @@ export type ReplyKind =
    * `/coding` on a mention's run of a feature (or a task directly under one), or when the
    * tracker couldn't be read to tell: refused.
    */
-  | "feature";
+  | "feature"
+  /**
+   * `/coding` on a mention's run, or `start anyway` on an epic, whose work has a blocks
+   * relation breaking the dependency rules (or couldn't be checked): refused.
+   */
+  | "relations";
 
 export interface ReplyResult {
   kind: ReplyKind;
@@ -186,6 +193,9 @@ export async function handleReply(
       });
       return { kind: "feature" };
     }
+    if (await refusedForRelations(deps, run, issueId, "switch to coding", "Reply `/coding`")) {
+      return { kind: "relations" };
+    }
     let found: Awaited<ReturnType<typeof withOpenQuestions>>;
     try {
       found = await withOpenQuestions(deps, issueId);
@@ -208,6 +218,21 @@ export async function handleReply(
       });
       return { kind: "open_questions" };
     }
+  }
+  // `start anyway` ignores the epic's outside blockers, never a relation breaking the rules.
+  if (
+    run.mode === "epic" &&
+    isTrackerRun(run) &&
+    isStartAnywayRequest(body) &&
+    (await refusedForRelations(
+      deps,
+      run,
+      run.trackerIssueId,
+      "start anyway",
+      "Reply `start anyway`",
+    ))
+  ) {
+    return { kind: "relations" };
   }
   const handled = await lockRun(deps.db, run.id, async (tx, current) => {
     if (current.status === "failed") return null;
@@ -617,4 +642,33 @@ async function answerPreparation(
       body: `I'll run the preparation of ${story}${busy ? " once the current job finishes" : ""}, if its commands and \`${await mainBranch(tx, run)}\` haven't changed.`,
     },
   };
+}
+
+/**
+ * Posts why the work a run of `issueId` would build can't go on when one of its blocks
+ * relations breaks the dependency rules, or when they couldn't be read (`retry` says how to
+ * try again); true then.
+ */
+async function refusedForRelations(
+  deps: RalphDeps,
+  run: TrackerRun<RalphRun>,
+  issueId: string,
+  action: string,
+  retry: string,
+): Promise<boolean> {
+  try {
+    const violations = await relationViolations(deps.tracker, issueId);
+    if (violations.length === 0) return false;
+    await postActivity(conversationFor(run, deps), {
+      type: "response",
+      body: relationsMessage(violations, `${retry.replace("Reply", "reply")} again`),
+    });
+  } catch (error) {
+    console.error(`Checking the relations of ${issueId} failed`, error);
+    await postActivity(conversationFor(run, deps), {
+      type: "error",
+      body: `I couldn't load the issue's relations from ${trackerName(run.trackerProvider)}, so I didn't ${action}: ${error instanceof Error ? error.message : String(error)}. ${retry} again to retry.`,
+    });
+  }
+  return true;
 }

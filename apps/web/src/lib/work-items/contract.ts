@@ -238,6 +238,7 @@ export function describeWorkItemTrackerContract(
         ["delegateToOmniralph", (t: WorkItemTracker, ref: string) => t.delegateToOmniralph(ref)],
         ["stories", (t: WorkItemTracker, ref: string) => t.stories(ref)],
         ["feature", (t: WorkItemTracker, ref: string) => t.feature(ref)],
+        ["relationViolations", (t: WorkItemTracker, ref: string) => t.relationViolations(ref)],
         ["comments", (t: WorkItemTracker, ref: string) => t.comments(ref)],
       ])("%s throws WorkItemNotFoundError", async (_name, change) => {
         await expect(change(tracker, h.missingRef)).rejects.toBeInstanceOf(WorkItemNotFoundError);
@@ -913,6 +914,44 @@ export function describeWorkItemTrackerContract(
         });
         await h.seed({ teamId: teamA, title: "Dropped", state: "canceled", parentId: story.id });
         expect(await tracker.feature(epic.id)).toBeNull();
+      });
+    });
+
+    describe("relationViolations", () => {
+      it("names a task of the item's epic blocked by a task in another epic, and allows the fix", async () => {
+        const other = await h.seed({ teamId: teamA, title: "Other epic", state: "todo" });
+        const otherTask = await h.seed({
+          teamId: teamA,
+          title: "Their task",
+          state: "todo",
+          parentId: other.id,
+        });
+        const epic = await h.seed({ teamId: teamA, title: "Epic", state: "todo" });
+        const task = await h.seed({
+          teamId: teamA,
+          title: "Task",
+          state: "todo",
+          parentId: epic.id,
+        });
+        expect(await tracker.relationViolations(epic.id)).toEqual([]);
+
+        await h.block(otherTask.id, task.id);
+        const expected = [
+          expect.objectContaining({
+            blocker: { id: otherTask.id, identifier: otherTask.identifier },
+            blocked: { id: task.id, identifier: task.identifier },
+            reason: "task-in-other-epic",
+            blockOn: { id: other.id, identifier: other.identifier },
+          }),
+        ];
+        expect(await tracker.relationViolations(epic.identifier)).toEqual(expected);
+        // The task's own check covers its epic.
+        expect(await tracker.relationViolations(task.id)).toEqual(expected);
+
+        await h.block(other.id, epic.id);
+        const standalone = await h.seed({ teamId: teamA, title: "Alone", state: "todo" });
+        await h.block(standalone.id, task.id);
+        expect(await tracker.relationViolations(other.id)).toEqual([]);
       });
     });
 

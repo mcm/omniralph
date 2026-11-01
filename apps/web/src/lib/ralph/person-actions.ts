@@ -2,7 +2,8 @@
  * What a person does to an epic from Omniralph's Inbox besides retrying it (`retry.ts`):
  *
  * - Start anyway: an epic waiting on blockers outside it ignores them from now on, as the
- *   "start anyway" reply does (`ignoreBlockers`, shared with `reply.ts`).
+ *   "start anyway" reply does (`ignoreBlockers`, shared with `reply.ts`). Never while one of
+ *   its blocks relations breaks the dependency rules: those aren't blockers to ignore.
  * - Done or Skip on a manual story: its work item goes to the done or canceled state through
  *   the work item tracker, then the run advances as after the tracker's own state change
  *   (the story becomes `completed`, or `canceled`: done without work).
@@ -12,6 +13,7 @@
 import {
   getRun,
   getStory,
+  isTrackerRun,
   lockRun,
   updateRun,
   type RalphRun,
@@ -21,6 +23,7 @@ import { trackerName } from "@/lib/tracker/adapters";
 import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
 import { conversationFor } from "./conversation";
 import { errorMessage, postActivity } from "./notify";
+import { relationsStartReason, relationViolations } from "./relations";
 import { advanceRun, type AdvanceResult, type RalphDeps } from "./run";
 
 /** The note after "start anyway", from a reply or from Omniralph. */
@@ -53,18 +56,42 @@ async function advanceAfter(
 export type StartAnywayResult =
   | { status: "started"; run: RalphRun; advanced: AdvanceResult | null }
   /** The run is gone, or no longer an epic waiting on outside blockers. */
-  | { status: "gone" };
+  | { status: "gone" }
+  /**
+   * A blocks relation of the epic or its tasks breaks the dependency rules, or they couldn't
+   * be read: nothing changed (`message` says why).
+   */
+  | { status: "refused"; message: string };
 
-/** Starts an epic waiting on outside blockers anyway, for `startedBy`. */
+/** Whether "Start anyway" applies: an epic waiting, not ignoring its blockers yet. */
+const startsAnyway = (run: RalphRun) =>
+  run.mode === "epic" && run.status === "waiting" && !run.ignoreBlockers;
+
+/**
+ * Starts an epic waiting on outside blockers anyway, for `startedBy`; refused while a blocks
+ * relation of the epic or its tasks breaks the dependency rules.
+ */
 export async function startEpicAnyway(
   deps: RalphDeps,
   runId: string,
   startedBy: string | undefined,
 ): Promise<StartAnywayResult> {
-  const run = await lockRun(deps.db, runId, async (tx, current) => {
-    if (current.mode !== "epic" || current.status !== "waiting" || current.ignoreBlockers) {
-      return null;
+  const current = await getRun(deps.db, runId);
+  if (!current || !isTrackerRun(current) || !startsAnyway(current)) return { status: "gone" };
+  try {
+    const violations = await relationViolations(deps.tracker, current.trackerIssueId);
+    if (violations.length > 0) {
+      return { status: "refused", message: relationsStartReason(violations) };
     }
+  } catch (error) {
+    console.error(`Checking the relations of ${current.trackerIdentifier} failed`, error);
+    return {
+      status: "refused",
+      message: `Couldn't read ${current.trackerIdentifier}'s relations from ${trackerName(current.trackerProvider)}: ${errorMessage(error)}`,
+    };
+  }
+  const run = await lockRun(deps.db, runId, async (tx, current) => {
+    if (!startsAnyway(current)) return null;
     return ignoreBlockers(tx, current);
   });
   if (!run) return { status: "gone" };

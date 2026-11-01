@@ -502,6 +502,41 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/inbox/items/{key}", () => {
     expect(await act(key, { action: "start_anyway" })).toMatchObject({ status: 404 });
   });
 
+  it("Start anyway is refused while a relation of the epic breaks the dependency rules", async () => {
+    const epic = linear.add({ identifier: "ENG-72", title: "Epic", description: "Build it." });
+    const story = linear.add({ identifier: "ENG-73", title: "Story", parentId: epic.id });
+    const other = linear.add({ identifier: "OPS-3", title: "Other epic" });
+    const otherTask = linear.add({ identifier: "OPS-4", title: "Their task", parentId: other.id });
+    await linear.createBlocksRelation(otherTask.id, story.id);
+    const run = await newRun({
+      trackerIssueId: epic.id,
+      trackerIdentifier: "ENG-72",
+      trackerUrl: "https://linear.app/acme/issue/ENG-72/epic",
+    });
+    await upsertStories(db, run.id, [
+      { trackerIssueId: story.id, identifier: "ENG-73", title: "Story" },
+    ]);
+    await updateRun(db, run.id, {
+      status: "waiting",
+      waitingOn: {
+        blockers: [{ id: otherTask.id, identifier: "OPS-4", title: "Their task" }],
+        manual: [],
+      },
+    });
+    const key = `blocked:${run.id}:${otherTask.id}`;
+    expect(await act(key, { action: "start_anyway" })).toMatchObject({
+      status: 400,
+      body: {
+        error:
+          "This relation breaks the dependency rules. ENG-73 is blocked by OPS-4: OPS-4 is a " +
+          "task in another epic, OPS-3. Block ENG-73 on OPS-3 instead.",
+        code: "relations",
+      },
+    });
+    expect(await getRun(db, run.id)).toMatchObject({ status: "waiting", ignoreBlockers: false });
+    expect(await queuedJobs(run.id)).toEqual([]);
+  });
+
   it("Resume retries a stopped epic", async () => {
     const { run, key } = await stoppedEpic();
     let result!: Awaited<ReturnType<typeof act>>;

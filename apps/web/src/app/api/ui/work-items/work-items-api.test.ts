@@ -602,6 +602,34 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
       expect((await call(startRoute.POST, urlId(blocked), { method: "POST" })).status).toBe(200);
       expect(acme.delegateOf(blocked.id)).toBe(acme.viewer.id);
     });
+    it("refuses work whose relations break the dependency rules, with Start disabled for the same reason", async () => {
+      const other = ready("Other epic", { identifier: "ENG-910" });
+      const otherTask = ready("Their task", { identifier: "ENG-911", parentId: other.id });
+      const epic = ready("Epic", { identifier: "ENG-912" });
+      const task = ready("Task", { identifier: "ENG-913", parentId: epic.id });
+      acme.blocks.set(task.id, [otherTask.id]);
+      const reason =
+        "This relation breaks the dependency rules. ENG-913 is blocked by ENG-911: ENG-911 is a " +
+        "task in another epic, ENG-910. Block ENG-913 on ENG-910 instead.";
+
+      const shown = await detail(epic);
+      expect(shown.actions.start).toBe(false);
+      expect(shown.startRefusal).toBe(reason);
+      expect(await call(startRoute.POST, urlId(epic), { method: "POST" })).toEqual({
+        status: 400,
+        body: expect.objectContaining({ error: reason, code: "relations" }),
+      });
+      expect(acme.delegateOf(epic.id)).toBeUndefined();
+      expect(await kinds(epic)).toEqual([]);
+
+      // Blocked on the other epic instead, it starts.
+      acme.blocks.set(task.id, [other.id]);
+      const fixed = await detail(epic);
+      expect(fixed.actions.start).toBe(true);
+      expect(fixed.startRefusal).toBeUndefined();
+      expect((await call(startRoute.POST, urlId(epic), { method: "POST" })).status).toBe(200);
+      expect(acme.delegateOf(epic.id)).toBe(acme.viewer.id);
+    });
     it("refuses a feature, with Start disabled for the same reason, and starts its epic and a task", async () => {
       const feature = ready("Feature", { identifier: "ENG-900" });
       const epic = ready("Epic", { identifier: "ENG-901", parentId: feature.id });

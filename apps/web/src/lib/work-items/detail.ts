@@ -15,6 +15,7 @@ import {
 import { isManualIssue } from "@omniralph/ralph";
 import type { WorkItemActions, WorkItemDetail, WorkItemRoute } from "@/lib/api/work-items";
 import { featureStartReason } from "@/lib/ralph/feature";
+import { relationsStartReason } from "@/lib/ralph/relations";
 import { matchesWorkItem, specificity } from "@/lib/routing/match";
 import { siblingIssueUrl } from "@/lib/tracker/adapters";
 import { createRouter, type RouteOutcome } from "@/lib/routing/resolve";
@@ -116,7 +117,7 @@ export function workItemActions(input: {
   group: WorkItemDetail["group"];
   run: WorkItemDetail["run"];
   triageRunning: boolean;
-  /** Why it can't be started whatever its state (a feature), if so. */
+  /** Why it can't be started whatever its state (a feature, or relations breaking the rules), if so. */
   startRefusal?: string;
 }): WorkItemActions {
   const hasRun = input.run !== null;
@@ -133,17 +134,20 @@ export function workItemActions(input: {
 
 /**
  * Why Start epic is refused for a feature (a work item holding epics, or a task directly
- * under one); undefined otherwise, or when the tracker can't tell (Start then refuses it).
+ * under one), or for work whose blocks relations break the dependency rules; undefined
+ * otherwise, or when the tracker can't tell (Start then refuses it).
  */
-async function featureRefusal(
+async function startRefusalFor(
   tracker: WorkItemTracker,
   item: Pick<WorkItem, "id" | "identifier">,
 ): Promise<string | undefined> {
   try {
     const feature = await tracker.feature(item.id);
-    return feature ? featureStartReason(feature) : undefined;
+    if (feature) return featureStartReason(feature);
+    const violations = await tracker.relationViolations(item.id);
+    return violations.length > 0 ? relationsStartReason(violations) : undefined;
   } catch (error) {
-    console.warn(`Checking whether ${item.identifier} is a feature failed`, error);
+    console.warn(`Checking whether ${item.identifier} may start failed`, error);
     return undefined;
   }
 }
@@ -196,7 +200,7 @@ export async function loadWorkItemDetail(
   const group = groupFor(item);
   const triageRunning = activeTriage !== null;
   const startRefusal =
-    group === "ready" && run === null ? await featureRefusal(tracker, item) : undefined;
+    group === "ready" && run === null ? await startRefusalFor(tracker, item) : undefined;
   return {
     id: workItemUrlId(item.tracker, item.id),
     tracker: item.tracker,

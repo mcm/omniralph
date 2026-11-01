@@ -5,7 +5,7 @@
  * gateway; `getWorkItemTracker` (`./get-tracker.ts`) returns an organization's.
  */
 import type { TrackerStateMapping } from "@omniralph/db";
-import type { WorkItemKind } from "@omniralph/planning";
+import type { DependencyViolation, WorkItemKind } from "@omniralph/planning";
 import type { TrackerProvider } from "@omniralph/tracker";
 import type { FeatureFound } from "@/lib/ralph/feature";
 
@@ -312,6 +312,11 @@ export interface WorkItemTracker {
    * or the parent of a task directly under one. Null when it would build an epic or a task.
    */
   feature(ref: WorkItemRef): Promise<FeatureFound | null>;
+  /**
+   * The blocks relations of the work a run of the item would build (its epic and the epic's
+   * open tasks, or the standalone task) that break the dependency rules; empty when none do.
+   */
+  relationViolations(ref: WorkItemRef): Promise<DependencyViolation[]>;
   /** The item's comments, oldest first. */
   comments(ref: WorkItemRef): Promise<WorkItemComment[]>;
   /**
