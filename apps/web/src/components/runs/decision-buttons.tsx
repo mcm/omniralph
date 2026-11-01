@@ -1,8 +1,14 @@
 "use client";
 
 import { Button, Menu } from "@omniralph/ui";
-import { IconChevronDown, IconExternalLink, IconFileText } from "@tabler/icons-react";
+import {
+  IconChevronDown,
+  IconExternalLink,
+  IconFileText,
+  IconPlayerPlay,
+} from "@tabler/icons-react";
 import { Fragment, useState, type ReactNode } from "react";
+import { useStartWorkItem } from "@/components/work-items/use-work-item-actions";
 import { ViewPrdSheet } from "@/components/work-items/view-prd-sheet";
 import type { InboxAction, InboxItem, InboxItemAction } from "@/lib/api/inbox";
 import { useKeyShortcuts, useShortcut, type ShortcutId } from "@/lib/shortcuts";
@@ -15,9 +21,16 @@ import {
   type InboxDecision,
   type InboxLink,
   type InboxPrd,
+  type InboxStart,
 } from "./decisions";
 import { RunDetailOverlayProvider, useRunDetailOverlay } from "./run-detail-overlay";
-import { useInboxDecision, useInboxDecisionPending } from "./use-inbox-decision";
+import { useScopeParam } from "@/screens/scope";
+import {
+  inboxDecisionKey,
+  removeFromInbox,
+  useInboxDecision,
+  useInboxDecisionPending,
+} from "./use-inbox-decision";
 import "./decision-buttons.css";
 
 /** The shortcut of each decision with a key (a question's Send answer has none). */
@@ -40,7 +53,8 @@ type PostedAction = Exclude<InboxItemAction, "snooze" | "restore">;
 
 /**
  * An Inbox item's calls to action (`inboxCtas`), in one row: what's next first and the only
- * lavender one (Open PR/MR for a PR waiting on review, Review PRD for a ready PRD, the
+ * lavender one (Open PR/MR for a PR waiting on review, Start epic for a ready PRD
+ * without open questions (Review PRD with some), the
  * clearing decision otherwise), then the other ways forward (Open run, View PRD), then
  * Dismiss and Snooze, quiet. Snooze opens a menu of 1 hour, Tomorrow and Next week. A
  * decision posts and the item leaves its feed at once; while it is pending, the item's
@@ -98,6 +112,9 @@ function Ctas({
           const shortcut = (bindShortcuts && STEP_SHORTCUTS.prd) || null;
           return <PrdButton key={cta.step} cta={cta} shortcut={shortcut} />;
         }
+        if (cta.type === "start") {
+          return <StartButton key={cta.step} item={item} cta={cta} pending={pending} />;
+        }
         if (cta.type === "link") {
           const shortcut = (bindShortcuts && STEP_SHORTCUTS[cta.step]) || null;
           return <LinkButton key={cta.step} cta={cta} shortcut={shortcut} />;
@@ -127,6 +144,37 @@ function Ctas({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Start epic: starts the work item's run (`useStartWorkItem`); the item leaves the Inbox at
+ * once, and comes back with the server's message if the start is refused.
+ */
+function StartButton({
+  item,
+  cta,
+  pending,
+}: {
+  item: InboxItem;
+  cta: InboxStart;
+  pending: boolean;
+}) {
+  const scope = useScopeParam();
+  const start = useStartWorkItem({
+    mutationKey: inboxDecisionKey(item.key),
+    optimistic: (cache) => removeFromInbox(cache, scope, item.key, [item.tab]),
+    invalidate: (keys) => [keys.inbox.all, keys.runs.all],
+  });
+  return (
+    <Button
+      variant={cta.variant}
+      icon={IconPlayerPlay}
+      disabled={pending}
+      onClick={() => start.mutate(cta.workItem)}
+    >
+      {cta.label}
+    </Button>
   );
 }
 

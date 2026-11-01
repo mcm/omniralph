@@ -368,7 +368,7 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
         finding(oldPass!.id, "low", "open"),
       ]);
     // Triage: a PRD nobody started (an item), one whose run started since, one unchanged,
-    // one with open questions (left Needs refining, so not ready).
+    // one with open questions (an item too: a person reviews its PRD first).
     const triage = async (
       name: string,
       outcome: string,
@@ -592,6 +592,7 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
         `stopped:${ids.stopped}:<at>`,
         `prd_ready:${ids.prd}:${ids.prdJob}`,
         `prd_ready:${ids.prdNoSize}:${ids.prdNoSizeJob}`,
+        `prd_ready:${ids.prdQuestions}:${ids.prdQuestionsJob}`,
         `pr:${ids.prReadyLane}:approved`,
         `failed:${ids.failed}:${ids.failedAttempt2}`,
         `failed:${ids.failedReview}:none`,
@@ -631,11 +632,16 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       kind: "prd_ready",
       jobId: ids.prdJob,
       outcome: "prd",
+      openQuestions: 0,
       size: "XL",
     });
     expect(byKind.get(`prd_ready:${ids.prdNoSize}`)?.facts).toMatchObject({
       outcome: "reformat",
       size: null,
+    });
+    expect(byKind.get(`prd_ready:${ids.prdQuestions}`)?.facts).toMatchObject({
+      outcome: "prd",
+      openQuestions: 1,
     });
     const failedRun = items.find((i) => i.key.startsWith(`failed:${ids.failed}`))!;
     expect(failedRun.facts).toEqual({

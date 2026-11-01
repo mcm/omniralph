@@ -126,6 +126,7 @@ function itemFields(
   | "reviewState"
   | "review"
   | "size"
+  | "openQuestions"
   | "version"
 > {
   const { facts } = item;
@@ -142,6 +143,7 @@ function itemFields(
     reviewState: null,
     review: null,
     size: null,
+    openQuestions: 0,
     version: null,
   };
   const prName = row?.pullRequest
@@ -208,14 +210,16 @@ function itemFields(
       };
     case "prd_ready": {
       const identifier = row?.workItem?.identifier ?? "The work item";
-      return {
-        ...base,
-        size: facts.size,
-        reason:
-          facts.outcome === "prd"
-            ? `Triage wrote a PRD for ${identifier}. It's ready for a person to start.`
-            : `Triage reformatted the PRD of ${identifier}. It's ready for a person to start.`,
-      };
+      const { openQuestions } = facts;
+      const wrote =
+        facts.outcome === "prd"
+          ? `Triage wrote a PRD for ${identifier}.`
+          : `Triage reformatted the PRD of ${identifier}.`;
+      const next =
+        openQuestions === 0
+          ? "It's ready for a person to start."
+          : `It left ${openQuestions === 1 ? "1 open question" : `${openQuestions} open questions`} for a person to answer.`;
+      return { ...base, size: facts.size, openQuestions, reason: `${wrote} ${next}` };
     }
     case "pr_waiting": {
       const { lane, review } = facts;

@@ -259,6 +259,24 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       })
       .returning();
     ids.prd = prd!.id;
+    // A PRD triage wrote that left two open questions for a person.
+    const [questions] = await db
+      .insert(triageRuns)
+      .values({
+        organizationId: state.orgId,
+        trackerIssueId: "triage-questions",
+        trackerSessionId: "triage-session-questions",
+        trigger: "label",
+        status: "completed",
+        lastResult: {
+          summary: "s",
+          error: null,
+          outcome: { outcome: "prd", size: "S", openQuestions: ["Which currency?", "Who signs?"] },
+        },
+        updatedAt: ago(20),
+      })
+      .returning();
+    ids.questions = questions!.id;
   }, 180_000);
 
   afterAll(async () => {
@@ -277,7 +295,12 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
 
   it("lists Needs you with typed references, reasons and actions", async () => {
     const items = await feed();
-    expect(items.map((i) => i.kind).sort()).toEqual(["manual_story", "pr_waiting", "prd_ready"]);
+    expect(items.map((i) => i.kind).sort()).toEqual([
+      "manual_story",
+      "pr_waiting",
+      "prd_ready",
+      "prd_ready",
+    ]);
     expect(byKind(items, "manual_story")).toEqual({
       key: `manual_story:${ids.story}`,
       tab: "needs-you",
@@ -304,11 +327,25 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       reviewState: null,
       review: null,
       size: null,
+      openQuestions: 0,
       version: null,
     });
-    expect(byKind(items, "prd_ready")).toMatchObject({
-      run: { id: ids.prd, kind: "triage", status: "completed" },
+    const prd = (runId: string) => items.find((item) => item.run?.id === runId);
+    expect(prd(ids.prd!)).toMatchObject({
+      kind: "prd_ready",
       size: "M",
+      openQuestions: 0,
+      reason: expect.stringMatching(
+        /^Triage wrote a PRD for .+\. It's ready for a person to start\.$/,
+      ),
+      actions: ["done", "snooze"],
+    });
+    expect(prd(ids.questions!)).toMatchObject({
+      kind: "prd_ready",
+      openQuestions: 2,
+      reason: expect.stringMatching(
+        /^Triage wrote a PRD for .+\. It left 2 open questions for a person to answer\.$/,
+      ),
       actions: ["done", "snooze"],
     });
     expect(byKind(items, "pr_waiting")).toMatchObject({
@@ -381,10 +418,12 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
     expect((await feed(undefined, alice)).map((i) => i.kind).sort()).toEqual([
       "pr_waiting",
       "prd_ready",
+      "prd_ready",
     ]);
     expect((await feed(undefined, bob)).map((i) => i.kind).sort()).toEqual([
       "manual_story",
       "pr_waiting",
+      "prd_ready",
       "prd_ready",
     ]);
     for (const user of [alice, bob]) {
@@ -400,7 +439,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
     }
     state.user = alice;
     expect((await call(counts.GET)).body).toEqual({
-      needsYou: 2,
+      needsYou: 3,
       problems: 2,
       running: 2,
       questions: 0,

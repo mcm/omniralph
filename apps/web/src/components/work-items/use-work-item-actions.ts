@@ -1,7 +1,11 @@
 "use client";
 
 import type { QueryKey } from "@tanstack/react-query";
-import { useApiMutation, type MutationCache } from "@/components/use-api-mutation";
+import {
+  useApiMutation,
+  type Invalidation,
+  type MutationCache,
+} from "@/components/use-api-mutation";
 import type { Backlog, BacklogCounts, BacklogUpNext } from "@/lib/api/backlog";
 import { api } from "@/lib/api/client";
 import { backlogKeys } from "@/lib/api/keys";
@@ -97,12 +101,19 @@ function updateDetail(
  * its run as a delegation in the tracker does. Before the server answers, the item leaves the
  * Backlog list, Up next and the counts, and the detail stops offering Start; a failure (409
  * when a run exists, 400 unless Ready to start) puts everything back with the server's
- * message. Shared by Up next and the work item detail.
+ * message. Shared by Up next, the work item detail and the Inbox, which passes `also`: its
+ * own mutation key, optimistic change (the item leaves its feed) and keys to invalidate.
  */
-export function useStartWorkItem() {
+export function useStartWorkItem(also?: {
+  mutationKey: QueryKey;
+  optimistic: (cache: MutationCache) => Promise<void>;
+  invalidate: (keys: MutationCache["keys"]) => Invalidation[];
+}) {
   return useApiMutation<MutationResult, WorkItemActionTarget>({
+    mutationKey: also?.mutationKey,
     mutationFn: (target, { organizationId }) => postAction(target, "start", organizationId),
     optimistic: async (target, cache) => {
+      await also?.optimistic(cache);
       await updateBacklogRows(cache, (row) => (row.id === target.id ? null : row));
       // Only a Ready to start item starts (the server refuses any other).
       await cache.set<BacklogCounts>(countsPrefix(cache), (previous) =>
@@ -115,7 +126,11 @@ export function useStartWorkItem() {
         actions: { ...detail.actions, start: false, triage: false, move: false, changeRepo: false },
       }));
     },
-    invalidate: (keys, target) => [backlogKeys(keys).all, backlogKeys(keys).detail(target.id)],
+    invalidate: (keys, target) => [
+      backlogKeys(keys).all,
+      backlogKeys(keys).detail(target.id),
+      ...(also?.invalidate(keys) ?? []),
+    ],
     success: (_data, target) => `Om is starting ${target.identifier}`,
   });
 }

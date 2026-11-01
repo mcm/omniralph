@@ -76,8 +76,22 @@ describe("inboxCtas", () => {
     });
   });
 
-  it("a ready PRD leads with Review PRD, then its work item's page", () => {
+  it("a ready PRD without open questions leads with Start epic, then Review PRD", () => {
     expect(ctas(itemOf("prd_ready"))).toEqual([
+      ["Start epic", "primary"],
+      ["Review PRD", "outline"],
+      ["Open work item", "outline", "/backlog/linear-story-42"],
+      ["Dismiss", "ghost"],
+      ["Snooze", "ghost"],
+    ]);
+    const start = inboxCtas(itemOf("prd_ready")).find((cta) => cta.type === "start");
+    expect(start).toMatchObject({
+      workItem: { id: "linear-story-42", identifier: "TOOL-42", group: "ready" },
+    });
+  });
+
+  it("a PRD with open questions leads with Review PRD and offers no Start epic", () => {
+    expect(ctas(itemOf("prd_ready", { openQuestions: 2 }))).toEqual([
       ["Review PRD", "primary"],
       ["Open work item", "outline", "/backlog/linear-story-42"],
       ["Dismiss", "ghost"],

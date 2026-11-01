@@ -40,6 +40,7 @@ export function inboxItem(overrides: Partial<InboxItem> = {}): InboxItem {
     reviewState: null,
     review: null,
     size: null,
+    openQuestions: 0,
     version: null,
     ...overrides,
   };
