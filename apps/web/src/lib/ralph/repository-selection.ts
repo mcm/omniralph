@@ -138,7 +138,7 @@ export async function answerRepositorySelection(
   offered: readonly string[],
   text: string,
 ): Promise<RepositoryAnswer> {
-  // A Linear elicitation: a chat run is given its repository when it starts.
+  // A tracker elicitation: a chat run is given its repository when it starts.
   if (!isTrackerRun(run)) return { status: "ignored" };
   const candidates = await selectionCandidates(deps, run, offered);
   const repository = matchSelection(text, candidates);
@@ -210,7 +210,7 @@ export async function awaitRepository(
   run: RalphRun,
 ): Promise<RalphRun | { failed: string }> {
   if (run.status === "waiting" && repositorySelectionOf(run)) return run;
-  // Only a Linear run asks: a chat run is given its repository when it starts.
+  // Only a tracker run asks: a chat run is given its repository when it starts.
   if (!isTrackerRun(run)) return { failed: "This run has no repository to build in." };
   const candidates = await listRalphRepositories(tx, run.organizationId);
   if (candidates.length === 0) {

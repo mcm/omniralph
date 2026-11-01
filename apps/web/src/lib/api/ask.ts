@@ -125,7 +125,7 @@ export const askFileSchema = z.object({
 });
 
 export const askWorkItemSchema = z.object({
-  tracker: z.literal("linear"),
+  tracker: z.enum(WORK_ITEM_TRACKERS),
   identifier: z.string(),
   url: z.string(),
   runId: z.string().nullable(),
@@ -213,7 +213,7 @@ export const askRequestDraftSchema = z.object({
       run: z.object({ id: z.string(), url: z.string() }).nullable(),
       /** The work item Add to backlog created. */
       workItem: z
-        .object({ tracker: z.literal("linear"), identifier: z.string(), url: z.string() })
+        .object({ tracker: z.enum(WORK_ITEM_TRACKERS), identifier: z.string(), url: z.string() })
         .nullable(),
     })
     .nullable(),

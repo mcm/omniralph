@@ -15,7 +15,8 @@ import { z } from "zod";
 import type { RunMessageState, RunSession } from "@/lib/api/runs";
 import type { ScopedOrganization } from "@/lib/api/scope";
 import { describeAttempt } from "@omniralph/shared";
-import { attemptLabelBase, storyIssueUrl } from "./detail";
+import { siblingIssueUrl } from "@/lib/tracker/adapters";
+import { attemptLabelBase } from "./detail";
 import { runRow } from "./list";
 
 /** `{at, id}` of the last message of a page, as an opaque base64url string. */
@@ -106,7 +107,12 @@ export async function loadRunSession(
     guidance: session.guidance,
     recommendations: session.recommendations.map(({ story, ...recommendation }) => ({
       ...recommendation,
-      story: { ...story, url: storyIssueUrl(row.workItem?.url ?? null, story.identifier) },
+      story: {
+        ...story,
+        url: row.workItem
+          ? siblingIssueUrl(row.workItem.tracker, row.workItem.url, story.identifier)
+          : null,
+      },
     })),
     progressLog: session.progressLog,
   };

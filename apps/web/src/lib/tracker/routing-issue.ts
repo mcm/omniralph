@@ -8,6 +8,7 @@ import type {
   RoutingIssue,
   RoutingIssueFields,
   TrackerGateway,
+  TrackerProvider,
 } from "@omniralph/tracker";
 import { trackerExtras } from "./adapters";
 
@@ -22,6 +23,11 @@ export type RoutingSource = TrackerGateway | RoutingRead;
 /** A routing read, not a gateway (a gateway has its provider; a lazy one answers any method). */
 function isRoutingRead(source: RoutingSource): source is RoutingRead {
   return typeof (source as Partial<TrackerGateway>).provider !== "string";
+}
+
+/** The source's tracker provider, or undefined for a routing read (which doesn't say). */
+export function routingSourceProvider(source: RoutingSource): TrackerProvider | undefined {
+  return isRoutingRead(source) ? undefined : source.provider;
 }
 
 /** An issue's routing field values and its parent's. */

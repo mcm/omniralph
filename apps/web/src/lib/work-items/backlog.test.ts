@@ -79,6 +79,7 @@ describe("candidateFilters", () => {
   it("has one filter per work item match of a repo with Coding on: team, project or no project, labels", () => {
     expect(
       candidateFilters({
+        tracker: "linear",
         repositories,
         matches: [
           match("api", { project: "Portal" }),
@@ -97,6 +98,7 @@ describe("candidateFilters", () => {
   it("has one filter per routing rule of a repo with Coding on: its Team is, else every team", () => {
     expect(
       candidateFilters({
+        tracker: "linear",
         repositories,
         matches: [],
         rules: [
@@ -108,6 +110,7 @@ describe("candidateFilters", () => {
     ).toEqual([{ teamKey: "SOC" }, { teamKey: "MOD" }]);
     expect(
       candidateFilters({
+        tracker: "linear",
         repositories,
         matches: [match("api"), match("web", { team: "MOD" })],
         rules: [
@@ -121,6 +124,7 @@ describe("candidateFilters", () => {
   it("leaves out a filter another one covers, and repeats none", () => {
     expect(
       candidateFilters({
+        tracker: "linear",
         repositories,
         matches: [
           match("api", { labels: ["backend"] }),
@@ -144,6 +148,7 @@ describe("candidateFilters", () => {
   it("is empty without matches or rules of repos with Coding on", () => {
     expect(
       candidateFilters({
+        tracker: "linear",
         repositories,
         matches: [match("docs")],
         rules: [{ repositoryId: "docs", query: labels("x") }],

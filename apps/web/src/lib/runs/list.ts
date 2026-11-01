@@ -111,8 +111,8 @@ export function runRow(entry: RunListEntry, organization: ScopedOrganization): R
       : fallbackTitle(entry),
     workItem: entry.workItem?.issueId
       ? {
-          id: workItemUrlId("linear", entry.workItem.issueId),
-          tracker: "linear",
+          id: workItemUrlId(entry.workItem.tracker, entry.workItem.issueId),
+          tracker: entry.workItem.tracker,
           identifier: entry.workItem.identifier,
           url: webUrl(entry.workItem.url),
         }

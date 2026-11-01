@@ -20,6 +20,7 @@ const match = (fields: Partial<WorkItemMatchFields> = {}): WorkItemMatchFields =
 });
 
 const item = (fields: Partial<WorkItemValues> = {}): WorkItemValues => ({
+  tracker: "linear",
   team: "SOC",
   project: null,
   labels: [],

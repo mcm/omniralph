@@ -28,6 +28,7 @@ import type {
 } from "@/lib/api/runs";
 import type { ScopedOrganization } from "@/lib/api/scope";
 import { organizationPlaybooks } from "@/lib/playbooks";
+import { siblingIssueUrl } from "@/lib/tracker/adapters";
 import { reviewTaskNames } from "@/lib/review/post";
 import { changeRequestWebUrl } from "@/lib/repositories/web-url";
 import { describeAttempt, type AttemptLabelContext } from "@omniralph/shared";
@@ -44,12 +45,6 @@ import {
 
 const ms = (from: Date | null, to: Date | null) =>
   from && to ? Math.max(0, to.getTime() - from.getTime()) : null;
-
-/** A story's Linear URL, from its epic's (same workspace): `https://linear.app/<ws>/issue/<id>`. */
-export function storyIssueUrl(runUrl: string | null, identifier: string): string | null {
-  const workspace = runUrl?.match(/^(https:\/\/linear\.app\/[^/]+)\/issue\//)?.[1];
-  return workspace ? `${workspace}/issue/${identifier}` : null;
-}
 
 function laneView(lane: RunLaneEntry): RunLane {
   const { repository, pullRequest } = lane;
@@ -128,14 +123,14 @@ function ralphKindFacts(
     row.status === "waiting" && facts.waitingOn
       ? {
           blockers: facts.waitingOn.blockers.map((b) => ({
-            tracker: "linear" as const,
+            tracker: facts.trackerProvider,
             identifier: b.identifier,
-            url: storyIssueUrl(facts.trackerIssueUrl, b.identifier),
+            url: siblingIssueUrl(facts.trackerProvider, facts.trackerIssueUrl, b.identifier),
           })),
           manual: facts.waitingOn.manual.map((m) => ({
-            tracker: "linear" as const,
+            tracker: facts.trackerProvider,
             identifier: m.identifier,
-            url: storyIssueUrl(facts.trackerIssueUrl, m.identifier),
+            url: siblingIssueUrl(facts.trackerProvider, facts.trackerIssueUrl, m.identifier),
           })),
         }
       : null;
@@ -170,9 +165,9 @@ function ralphKindFacts(
         kind: "story",
         id: story.id,
         workItem: {
-          tracker: "linear",
+          tracker: facts.trackerProvider,
           identifier: story.identifier,
-          url: storyIssueUrl(facts.trackerIssueUrl, story.identifier),
+          url: siblingIssueUrl(facts.trackerProvider, facts.trackerIssueUrl, story.identifier),
         },
         title: story.title,
         status: story.status,

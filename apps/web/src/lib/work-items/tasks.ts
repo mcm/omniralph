@@ -1,17 +1,18 @@
 import "server-only";
 import { ApiRouteError } from "@/lib/api/handler";
 import type { WorkItemTaskBody, WorkItemTaskResult } from "@/lib/api/work-items";
+import { trackerName } from "@/lib/tracker/adapters";
 import { trackerCall, type ResolvedWorkItem } from "./item";
 import { locateTask, parseTaskList, setTaskChecked } from "./task-list";
-import { WorkItemConflictError } from "./tracker";
+import { WorkItemConflictError, type TrackerKind } from "./tracker";
 
 /** The task the person toggled isn't in the description any more (or is there twice). */
 export const taskGoneMessage = (identifier: string) =>
   `That task changed in ${identifier}. Reload to see the current list.`;
 
-/** Linear kept changing under the toggle (both tries were stale). */
-export const taskConflictMessage = (identifier: string) =>
-  `${identifier} changed in Linear while saving. Try again.`;
+/** The tracker kept changing under the toggle (both tries were stale). */
+export const taskConflictMessage = (identifier: string, tracker: TrackerKind) =>
+  `${identifier} changed in ${trackerName(tracker)} while saving. Try again.`;
 
 /**
  * Checks or unchecks one task of a work item's description and writes it to the tracker.
@@ -41,16 +42,24 @@ export async function setWorkItemTask(
       await tracker.update(item.id, { description }, { ifUpdatedAt: item.updatedAt });
     } catch (error) {
       if (!(error instanceof WorkItemConflictError)) {
-        return trackerCall(`Saving a task of ${item.identifier}`, () => Promise.reject(error));
+        return trackerCall(tracker, `Saving a task of ${item.identifier}`, () =>
+          Promise.reject(error),
+        );
       }
       if (attempt > 0) {
-        throw new ApiRouteError(409, taskConflictMessage(item.identifier), "conflict");
+        throw new ApiRouteError(
+          409,
+          taskConflictMessage(item.identifier, tracker.kind),
+          "conflict",
+        );
       }
       const id = item.id;
-      item = await trackerCall(`Reading ${item.identifier}`, () => tracker.get(id));
+      item = await trackerCall(tracker, `Reading ${item.identifier}`, () => tracker.get(id));
       continue;
     }
-    const saved = await trackerCall(`Reading ${item.identifier}`, () => tracker.get(item.id));
+    const saved = await trackerCall(tracker, `Reading ${item.identifier}`, () =>
+      tracker.get(item.id),
+    );
     return { description, updatedAt: saved.updatedAt };
   }
 }
@@ -58,5 +67,7 @@ export async function setWorkItemTask(
 /** Mark done: moves a work item to its team's first Done state. */
 export async function markWorkItemDone(resolved: ResolvedWorkItem): Promise<void> {
   const { item, tracker } = resolved;
-  await trackerCall(`Marking ${item.identifier} done`, () => tracker.setState(item.id, "done"));
+  await trackerCall(tracker, `Marking ${item.identifier} done`, () =>
+    tracker.setState(item.id, "done"),
+  );
 }

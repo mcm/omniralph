@@ -373,7 +373,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
     const unknown = await test("ENG-404", []);
     expect(unknown).toEqual({
       status: 404,
-      body: { error: unknownIssueMessage("ENG-404"), code: "not_found" },
+      body: { error: unknownIssueMessage("ENG-404", "Linear"), code: "not_found" },
     });
     state.linear = null;
     expect((await test("ENG-1", [])).status).toBe(409);

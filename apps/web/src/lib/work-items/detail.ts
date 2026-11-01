@@ -15,6 +15,7 @@ import {
 import { isManualIssue } from "@omniralph/ralph";
 import type { WorkItemActions, WorkItemDetail, WorkItemRoute } from "@/lib/api/work-items";
 import { matchesWorkItem, specificity } from "@/lib/routing/match";
+import { siblingIssueUrl } from "@/lib/tracker/adapters";
 import { createRouter, type RouteOutcome } from "@/lib/routing/resolve";
 import { ACTIVITY_LIMIT, workItemActivity } from "./activity";
 import { organizationBacklog } from "./backlog";
@@ -41,12 +42,6 @@ export function workItemSource(item: Pick<WorkItem, "project" | "team">): WorkIt
     : { kind: "team", id: item.team.id, name: item.team.key };
 }
 
-/** A blocker's tracker URL, from the item's (same workspace): `https://linear.app/<ws>/issue/<id>`. */
-export function siblingIssueUrl(itemUrl: string, identifier: string): string | null {
-  const workspace = itemUrl.match(/^(https:\/\/linear\.app\/[^/]+)\/issue\//)?.[1];
-  return workspace ? `${workspace}/issue/${identifier}` : null;
-}
-
 /**
  * How an item routes, as the detail's routes line reads it: the outcome, the repo, and what
  * decided it (`via`: a member's choice, a rule, a parent or source, or a work item match's
@@ -64,6 +59,7 @@ export async function workItemRoute(deps: {
     createRouter({
       db,
       organizationId,
+      provider: tracker.kind,
       tracker: {
         routingIssue: async (ref) => {
           const fields = await tracker.routingFields(ref);
@@ -95,7 +91,11 @@ export async function workItemRoute(deps: {
   if (route.workItemMatch && own) {
     const fields = own.issue;
     const winner = matches
-      .filter((m) => m.repositoryId === repository.id && matchesWorkItem(m, fields))
+      .filter(
+        (m) =>
+          m.repositoryId === repository.id &&
+          matchesWorkItem(m, { ...fields, tracker: item.tracker }),
+      )
       .sort((a, b) => specificity(b) - specificity(a))[0];
     if (winner && winner.project !== null && !winner.withoutProject && fields.project) {
       return { ...base, via: { kind: "project", label: `${fields.project} project` } };
@@ -176,7 +176,7 @@ export async function loadWorkItemDetail(
   const group = groupFor(item);
   const triageRunning = activeTriage !== null;
   return {
-    id: workItemUrlId("linear", item.id),
+    id: workItemUrlId(item.tracker, item.id),
     tracker: item.tracker,
     identifier: item.identifier,
     title: item.title,
@@ -192,10 +192,10 @@ export async function loadWorkItemDetail(
     description: item.description,
     updatedAt: item.updatedAt,
     blockedBy: item.blockedBy.map((blocker) => {
-      const backlogId = workItemUrlId("linear", blocker.ref);
+      const backlogId = workItemUrlId(item.tracker, blocker.ref);
       return {
         identifier: blocker.identifier,
-        url: siblingIssueUrl(item.url, blocker.identifier),
+        url: siblingIssueUrl(item.tracker, item.url, blocker.identifier),
         backlogId: listed.has(backlogId) ? backlogId : null,
       };
     }),

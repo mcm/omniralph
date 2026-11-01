@@ -236,7 +236,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing/preview", () => {
     expect(unknown).toEqual({
       identifier: "ENG-404",
       outcome: "not_found",
-      message: unknownIssueMessage("ENG-404"),
+      message: unknownIssueMessage("ENG-404", "Linear"),
     } satisfies RoutingPreviewItem);
     expect(known).toMatchObject({ identifier: "ENG-1", outcome: "repository" });
   });

@@ -58,13 +58,13 @@ export const CHAT_PLATFORM_NAMES: Record<RalphChatThreadRef["platform"], string>
 
 export interface RalphRunRow {
   id: string;
-  /** Where the run came from: a Linear issue, or a chat thread. */
+  /** Where the run came from: a tracker issue, or a chat thread. */
   origin: "tracker" | "chat";
-  /** The Linear issue's (null for a chat run). */
+  /** The tracker issue's (null for a chat run). */
   trackerIdentifier: string | null;
   trackerTitle: string | null;
   trackerUrl: string | null;
-  /** A chat run's thread (null for a Linear run, or once the thread is gone). */
+  /** A chat run's thread (null for a tracker run, or once the thread is gone). */
   chatThread: RalphChatThreadRef | null;
   /** Null while a person is asked which repository to use. */
   repository: RalphRepositoryRef | null;
@@ -164,7 +164,7 @@ export function ralphMessageState(message: {
     : "undelivered";
 }
 
-/** A Linear reply or mention sent to a running job's live session. */
+/** A tracker reply or mention sent to a running job's live session. */
 export interface RalphMessageView {
   id: string;
   kind: "guidance" | "request";
@@ -191,7 +191,7 @@ export interface RalphJobView {
   finishedAt: string | null;
 }
 
-/** How a run's epic was built from its Linear issue, in words. */
+/** How a run's epic was built from its tracker issue, in words. */
 export const RUN_KIND_LABELS: Record<RalphRunDetailView["kind"], string> = {
   children: "Sub-issues",
   prd: "PRD",
@@ -239,13 +239,13 @@ export function chatChannelLabel(channelId: string): string {
 }
 
 /**
- * What the pages call a run: its Linear identifier, or for a chat run its
+ * What the pages call a run: its tracker identifier, or for a chat run its
  * platform and channel (`Slack C0123`), or `Ask` for a web chat's.
  */
 export function runSourceLabel(
   run: Pick<RalphRunRow, "origin" | "trackerIdentifier" | "chatThread">,
 ): string {
-  if (run.origin === "tracker") return run.trackerIdentifier ?? "Linear issue";
+  if (run.origin === "tracker") return run.trackerIdentifier ?? "Work item";
   if (!run.chatThread) return "Chat";
   const { platform, channelId } = run.chatThread;
   // A web chat's channel is its organization: nothing to show.
@@ -261,16 +261,6 @@ export function shortSha(sha: string): string {
 /** Text cut to `max` characters, marked as cut. */
 export function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
-
-/**
- * The Linear URL of another issue of the run's workspace, derived from the
- * run's own issue URL (`https://linear.app/<workspace>/issue/<ID>/…`); null
- * when that URL is unknown.
- */
-export function trackerIssueUrl(runUrl: string | null, identifier: string): string | null {
-  const match = runUrl?.match(/^(https:\/\/linear\.app\/[^/]+)\/issue\//);
-  return match ? `${match[1]}/issue/${identifier}` : null;
 }
 
 /** A lane's cleanup for the run detail page. */
@@ -321,6 +311,8 @@ export function ralphRunFailure(
     | "jobs"
     | "maxAttemptsPerStory"
   >,
+  /** The run's tracker's name as people read it. */
+  tracker = "the tracker",
 ): RalphRunFailure {
   const change = run.repository?.provider === "gitlab" ? "MR" : "PR";
   const failedJob = run.jobs.find((job) => job.status === "failed" || job.status === "expired");
@@ -330,7 +322,7 @@ export function ralphRunFailure(
       story: null,
       job: failedJob ?? null,
       resume: `Fix the cause, then reply in the ${
-        run.origin === "chat" ? "chat thread" : "Linear agent session"
+        run.origin === "chat" ? "chat thread" : `${tracker} agent session`
       } to retry the ${change} step.`,
     };
   }
@@ -352,12 +344,12 @@ export function ralphRunFailure(
   const restart =
     run.origin === "chat"
       ? "ask Omniralph again in the chat thread to start a new run"
-      : `delegate ${run.trackerIdentifier ?? "the issue"} to Omniralph again in Linear to start a new run`;
+      : `delegate ${run.trackerIdentifier ?? "the issue"} to Omniralph again in ${tracker} to start a new run`;
   const resume =
     run.status === "failed"
       ? `A failed run can't be resumed. ${fix}, then ${restart}: it picks up this run's branches, ${change}s, guidance and progress.`
       : run.status === "stopped"
-        ? `${fix}, then reply in the ${run.origin === "chat" ? "chat thread" : "Linear agent session"} to resume the run.`
+        ? `${fix}, then reply in the ${run.origin === "chat" ? "chat thread" : `${tracker} agent session`} to resume the run.`
         : `${fix}; the run goes on by itself.`;
   return { title, story, job: job ?? null, resume };
 }

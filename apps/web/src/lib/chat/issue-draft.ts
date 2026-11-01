@@ -55,6 +55,8 @@ import type { ChatActor } from "./identity";
  */
 
 export const ISSUE_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+// Action IDs keep their values from before the tracker layer: buttons of cards already posted to
+// chat platforms carry them, and a click on one must still reach `handleIssueDraftAction`.
 export const CREATE_ISSUE_ACTION = "linear_issue_create";
 export const CREATE_AND_DELEGATE_ISSUE_ACTION = "linear_issue_create_delegate";
 export const CANCEL_ISSUE_ACTION = "linear_issue_cancel";

@@ -9,6 +9,7 @@ import {
   type Repository,
 } from "@omniralph/db";
 import type { WorkItemRow } from "@/lib/api/work-items";
+import { trackerName } from "@/lib/tracker/adapters";
 import { dropBacklogCache } from "./backlog-cache";
 import { getWorkItemTracker } from "./get-tracker";
 import { groupFor } from "./group";
@@ -17,6 +18,7 @@ import {
   WorkItemProjectNotFoundError,
   type WorkItem,
   type WorkItemTracker,
+  type TrackerKind,
 } from "./tracker";
 
 /**
@@ -85,14 +87,18 @@ export type CreateWorkItemResult =
 export const TITLE_REQUIRED_MESSAGE = "Give the work item a title.";
 export const TITLE_TOO_LONG_MESSAGE = `Keep the title to ${WORK_ITEM_TITLE_MAX} characters.`;
 export const REPOSITORY_NOT_FOUND_MESSAGE = "That repo doesn't exist.";
-export const TRACKER_NOT_CONNECTED_MESSAGE = "Connect Linear to add work items.";
-export const CREATE_FAILED_MESSAGE = "Linear didn't answer. Try again in a moment.";
-export const TRIAGE_FAILED_MESSAGE =
-  "Om couldn't start triage because Linear didn't answer. Use Triage now to try again.";
+export const trackerNotConnectedMessage = (tracker: TrackerKind) =>
+  `Connect ${trackerName(tracker)} to add work items.`;
+export const createFailedMessage = (tracker: TrackerKind) =>
+  `${trackerName(tracker)} didn't answer. Try again in a moment.`;
+export const triageFailedMessage = (tracker: TrackerKind) =>
+  `Om couldn't start triage because ${trackerName(tracker)} didn't answer. Use Triage now to try again.`;
 export const noWorkItemMatchMessage = (repo: string) => `${repo} doesn't pick up work items yet.`;
 export const codingOffMessage = (repo: string) => `Coding is off for ${repo}.`;
-export const unknownTeamMessage = (team: string) => `Linear has no team ${team}.`;
-export const unknownProjectMessage = (project: string) => `Linear has no project ${project}.`;
+export const unknownTeamMessage = (tracker: TrackerKind, team: string) =>
+  `${trackerName(tracker)} has no team ${team}.`;
+export const unknownProjectMessage = (tracker: TrackerKind, project: string) =>
+  `${trackerName(tracker)} has no project ${project}.`;
 
 /** A repo by its name, the last segment of its path (`customer-portal`). */
 const repoName = (repository: Pick<Repository, "fullPath">) =>
@@ -128,7 +134,7 @@ export async function createWorkItem(
   if (!repository.codingEnabled)
     return failure("coding_off", codingOffMessage(repoName(repository)));
   const match = await getWorkItemMatch(db, organizationId, repository.id);
-  if (!match || match.tracker !== "linear") {
+  if (!match) {
     return failure("no_work_item_match", noWorkItemMatchMessage(repoName(repository)));
   }
 
@@ -138,9 +144,13 @@ export async function createWorkItem(
   let tracker: WorkItemTracker;
   try {
     tracker = await getTracker(organizationId);
+    // A match for another tracker than the connected one picks up nothing.
+    if (tracker.kind !== match.tracker) {
+      return failure("no_work_item_match", noWorkItemMatchMessage(repoName(repository)));
+    }
     const teamKey = match.team.toLowerCase();
     const team = (await tracker.teams()).find((t) => t.key.toLowerCase() === teamKey);
-    if (!team) return failure("tracker_failed", unknownTeamMessage(match.team));
+    if (!team) return failure("tracker_failed", unknownTeamMessage(match.tracker, match.team));
     item = await tracker.create({
       teamId: team.id,
       ...(!match.withoutProject && match.project !== null && { projectName: match.project }),
@@ -150,13 +160,13 @@ export async function createWorkItem(
     });
   } catch (error) {
     if (error instanceof TrackerNotConnectedError) {
-      return failure("tracker_not_connected", TRACKER_NOT_CONNECTED_MESSAGE);
+      return failure("tracker_not_connected", trackerNotConnectedMessage(match.tracker));
     }
     if (error instanceof WorkItemProjectNotFoundError) {
-      return failure("tracker_failed", unknownProjectMessage(error.projectName));
+      return failure("tracker_failed", unknownProjectMessage(match.tracker, error.projectName));
     }
     console.error(`Creating a work item for repository ${repository.id} failed`, error);
-    return failure("tracker_failed", CREATE_FAILED_MESSAGE);
+    return failure("tracker_failed", createFailedMessage(match.tracker));
   }
 
   const key = { organizationId, tracker: item.tracker, externalId: item.id };
@@ -213,6 +223,6 @@ export async function createWorkItem(
         : { kind: "team", id: item.team.id, name: item.team.key },
     },
     triage,
-    ...(triage === "failed" && { triageError: TRIAGE_FAILED_MESSAGE }),
+    ...(triage === "failed" && { triageError: triageFailedMessage(item.tracker) }),
   };
 }

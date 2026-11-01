@@ -1,5 +1,5 @@
 /**
- * Starts a ralph run for a new Linear agent session (ported from cyralph's
+ * Starts a ralph run for a new tracker session (ported from cyralph's
  * `SessionManager.onCreated` and the start of `EpicEngine.run`): tells a
  * delegation from a mention, loads (and materializes) the epic, routes it to a
  * repository (or, when routing finds none, asks which to use and waits for the
@@ -37,8 +37,14 @@ import {
   SHIP_REQUEST_TEXT,
   type Epic,
 } from "@omniralph/ralph";
+import { trackerName } from "@/lib/tracker/adapters";
 import { bumpAgentHeartbeat } from "@/lib/agents/heartbeat-cache";
-import type { ActivityContent, IssueSummary, SessionStartedEvent } from "@omniralph/tracker";
+import type {
+  ActivityContent,
+  IssueSummary,
+  SessionStartedEvent,
+  TrackerProvider,
+} from "@omniralph/tracker";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { createRouter, routedRepository, type Router } from "@/lib/routing/resolve";
 import { blockedLabelsMessage, blockingLabels, organizationBlockedLabels } from "./blocked-labels";
@@ -145,7 +151,7 @@ export function openQuestionsMessage(
 /**
  * Before an epic-mode run starts: the issue whose description (or, for a
  * sub-issue, whose parent epic's description) still has open questions. Null
- * when neither has any. Throws when Linear can't be read, so callers refuse
+ * when neither has any. Throws when the tracker can't be read, so callers refuse
  * rather than start a PRD whose questions went unchecked.
  */
 export async function withOpenQuestions(
@@ -159,9 +165,13 @@ export async function withOpenQuestions(
   return hasOpenQuestions(parent.description) ? { issue: parent, epic: true } : null;
 }
 
-/** The error posted when the open-questions check can't read Linear. */
-export function openQuestionsCheckFailedMessage(error: unknown, then: string): string {
-  return `I couldn't check the issue for open questions in Linear, so I didn't start: ${message(error)}. ${then}`;
+/** The error posted when the open-questions check can't read the tracker (`provider`'s). */
+export function openQuestionsCheckFailedMessage(
+  error: unknown,
+  then: string,
+  provider: TrackerProvider,
+): string {
+  return `I couldn't check the issue for open questions in ${trackerName(provider)}, so I didn't start: ${message(error)}. ${then}`;
 }
 
 /** Refuses an epic-mode start while open questions remain (posting why); null when it may start. */
@@ -176,7 +186,11 @@ async function refuseOpenQuestions(
     console.error(`Checking open questions of ${event.issueId} failed`, error);
     await post(deps, event, {
       type: "error",
-      body: openQuestionsCheckFailedMessage(error, "Delegate or mention me again to retry."),
+      body: openQuestionsCheckFailedMessage(
+        error,
+        "Delegate or mention me again to retry.",
+        deps.tracker.provider,
+      ),
     });
     return { status: "load_failed", error: message(error) };
   }
@@ -192,7 +206,7 @@ async function refuseOpenQuestions(
  * Refuses a new run of an issue that routes to a repository with coding off, or that carries
  * (itself, or through its epic) one of the organization's blocked labels, whichever repository
  * it routes to (posting why). Otherwise every repository may be picked when it's unrouted.
- * Throws when Linear can't be read.
+ * Throws when the tracker can't be read.
  */
 async function refuseUnbuildable(
   deps: RalphDeps,
@@ -455,7 +469,7 @@ async function askForRepositoryFirst(
 /**
  * The chat thread that delegated the issue (`delegate_tracker_issue`, or the
  * issue card's **Create and delegate**) within the last hour, taken so only
- * this run is tied to it. Null for a mention, or a delegation made in Linear.
+ * this run is tied to it. Null for a mention, or a delegation made in the tracker.
  */
 async function delegatingThread(
   tx: RalphTransaction,
@@ -538,7 +552,7 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
   } catch (error) {
     await post(deps, event, {
       type: "error",
-      body: `I couldn't load the issue from Linear: ${message(error)}`,
+      body: `I couldn't load the issue from ${trackerName(deps.tracker.provider)}: ${message(error)}`,
     });
     return { status: "load_failed", error: message(error) };
   }
@@ -615,7 +629,7 @@ async function startNewRun(
   } catch (error) {
     await post(deps, event, {
       type: "error",
-      body: `I couldn't load the issue from Linear: ${message(error)}`,
+      body: `I couldn't load the issue from ${trackerName(deps.tracker.provider)}: ${message(error)}`,
     });
     return { status: "load_failed", error: message(error) };
   }
@@ -641,7 +655,7 @@ async function startNewRun(
   } catch (error) {
     await post(deps, event, {
       type: "error",
-      body: `I couldn't load the issue from Linear: ${message(error)}`,
+      body: `I couldn't load the issue from ${trackerName(deps.tracker.provider)}: ${message(error)}`,
     });
     return { status: "load_failed", error: message(error) };
   }
@@ -742,7 +756,7 @@ async function startNewRun(
       body: leftBehindNote(note, chosen.repository.fullPath),
     });
   }
-  // Request mode changes nothing in Linear; it just does what the mention asks.
+  // Request mode changes nothing in the tracker; it just does what the mention asks.
   if (epicMode && !["started", "completed", "canceled"].includes(root.stateType)) {
     try {
       await tracker.setIssueState(root.id, { type: "started" });

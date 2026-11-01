@@ -1,6 +1,6 @@
 /**
  * Blocked labels (the organization's `tracker.labels` setting, default `under-review` and
- * `blocked`): Linear labels that keep Om off a work item. A new run of an issue carrying one
+ * `blocked`): tracker labels that keep Om off a work item. A new run of an issue carrying one
  * (or whose epic carries one) is refused, whichever repo it routes to: routing applies them
  * before any repo or playbook is chosen.
  */

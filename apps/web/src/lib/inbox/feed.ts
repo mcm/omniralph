@@ -23,7 +23,7 @@ import type { ScopedOrganization } from "@/lib/api/scope";
 import { isRerunnable } from "@/lib/jobs/rerun-kind";
 import { changeRequestWebUrl } from "@/lib/repositories/web-url";
 import { describeAttempt, type AttemptLabelContext } from "@omniralph/shared";
-import { storyIssueUrl } from "@/lib/runs/detail";
+import { siblingIssueUrl } from "@/lib/tracker/adapters";
 import { runRow } from "@/lib/runs/list";
 import { questionView } from "@/lib/runs/question";
 import {
@@ -152,10 +152,10 @@ function itemFields(
         ...base,
         title: story.title,
         workItem: {
-          tracker: "linear",
-          id: workItemUrlId("linear", story.trackerIssueId),
+          tracker: story.trackerProvider,
+          id: workItemUrlId(story.trackerProvider, story.trackerIssueId),
           identifier: story.identifier,
-          url: storyIssueUrl(entry?.workItem?.url ?? null, story.identifier),
+          url: siblingIssueUrl(story.trackerProvider, entry?.workItem?.url, story.identifier),
         },
         epic: row?.workItem ?? null,
         reason: runReason({

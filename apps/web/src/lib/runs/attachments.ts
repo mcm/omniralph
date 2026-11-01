@@ -1,5 +1,5 @@
 /**
- * The Linear uploads a run may download through the control panel
+ * The tracker uploads a run may download through the control panel
  * (`GET /api/agent/jobs/{id}/attachments/{attachmentId}`).
  */
 import "server-only";
@@ -12,14 +12,14 @@ const RalphPayloadAttachments = z.object({
   attachments: z.array(z.object({ id: z.string() })).default([]),
 });
 
-/** The attachments a run-spec job's trigger context lists, with their Linear upload URLs. */
+/** The attachments a run-spec job's trigger context lists, with their tracker upload URLs. */
 const TriggerAttachments = z.object({
   attachments: z
     .array(z.object({ id: RalphAttachmentId, url: z.url(), title: z.string().optional() }))
     .default([]),
 });
 
-/** A Linear upload listed for a run, and the organization whose Linear workspace serves it. */
+/** A tracker upload listed for a run, and the organization whose tracker workspace serves it. */
 export interface RunAttachment {
   url: string;
   organizationId: string;

@@ -7,11 +7,11 @@ import { scmAdapterFor } from "@/lib/scm/adapters";
 import { stopRun } from "./reply";
 
 /**
- * Stops a ralph run of `organizationId` the way the Linear stop reply does (the logic behind
+ * Stops a ralph run of `organizationId` the way the tracker's stop reply does (the logic behind
  * `POST /api/ui/runs/{id}/stop`): the run becomes `stopped`, its queued job is canceled and a
  * running one is asked to cancel (it stops after its agent's next heartbeat), and the agent
- * session is told who stopped it. Linear writes are best-effort, so this works while the
- * organization has no workspace connected. Guidance in Linear resumes the run.
+ * session is told who stopped it. Tracker writes are best-effort, so this works while the
+ * organization has no workspace connected. Guidance in the tracker resumes the run.
  */
 export async function stopRalphRun(
   db: Database,

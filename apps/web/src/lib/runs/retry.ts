@@ -16,6 +16,7 @@ import {
   listReviewRunReviews,
 } from "@omniralph/db";
 import { CHAT_ASK_JOB_TYPE, RALPH_REQUEST_JOB_TYPE, TRIAGE_RUN_JOB_TYPE } from "@omniralph/shared";
+import { trackerName } from "@/lib/tracker/adapters";
 import { ApiRouteError } from "@/lib/api/handler";
 import type { RunDetail, RunRetryResult, RunRetryTarget } from "@/lib/api/runs";
 import type { ScopedOrganization } from "@/lib/api/scope";
@@ -184,11 +185,12 @@ async function retryTriage(
   retriedBy: string | undefined,
 ): Promise<void> {
   const last = detail.attempts.find((a) => a.type === TRIAGE_RUN_JOB_TYPE) ?? null;
+  const tracker = await getTrackerGatewayOrDisconnected({ db, organizationId: run.organizationId });
   const result = await retryTriageRun(
     {
       db,
       organizationId: run.organizationId,
-      tracker: await getTrackerGatewayOrDisconnected({ db, organizationId: run.organizationId }),
+      tracker,
       dispatcher: getDispatcher(),
       adapterFor: scmAdapterFor,
     },
@@ -220,7 +222,7 @@ async function retryTriage(
     case "load_failed":
       throw new ApiRouteError(
         502,
-        `Couldn't load the work item from Linear: ${result.error}`,
+        `Couldn't load the work item from ${trackerName(tracker.provider)}: ${result.error}`,
         "tracker_failed",
       );
     case "failed":

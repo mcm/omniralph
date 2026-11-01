@@ -1,5 +1,5 @@
 /**
- * Task lists in a work item's description (GitHub/Linear markdown checkboxes): `- [ ] Do it`,
+ * Task lists in a work item's description (markdown checkboxes): `- [ ] Do it`,
  * `* [x] Done`, `+ [ ]` and `1. [ ]`, also nested and inside block quotes. Lines in fenced
  * code blocks are never tasks. Shared by the checklist (client) and the toggle endpoint
  * (server), so both count the same tasks in the same order.

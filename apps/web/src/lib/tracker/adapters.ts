@@ -45,6 +45,19 @@ export function trackerPromptInfo(provider: TrackerProvider): {
   return { name: trackerName(provider), conventionsFile: trackerConventionsFile(provider) };
 }
 
+/**
+ * The URL of another issue of the workspace `issueUrl` belongs to (e.g. a story's, from its
+ * epic's); null when the URL is unknown or the provider can't derive one.
+ */
+export function siblingIssueUrl(
+  provider: TrackerProvider,
+  issueUrl: string | null | undefined,
+  identifier: string,
+): string | null {
+  if (!issueUrl || !knownProvider(provider)) return null;
+  return ADAPTERS[provider].siblingIssueUrl(issueUrl, identifier);
+}
+
 /** The optional capabilities the provider's gateways have (none for an unknown one). */
 export function trackerProviderCapabilities(
   provider: TrackerProvider,

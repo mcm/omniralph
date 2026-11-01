@@ -212,7 +212,7 @@ export class GatewayWorkItemTracker implements WorkItemTracker {
 
   /**
    * The triage label the team can use: its own or the workspace's, under either
-   * name (Linear, for one, won't create a team label a workspace label already
+   * name (a tracker may not create a team label a workspace label already
    * has the name of). Created on the team as `coding:triage` when there is none.
    */
   private async triageLabel(teamId: string): Promise<IssueLabel> {

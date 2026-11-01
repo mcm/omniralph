@@ -101,7 +101,7 @@ const list = await import("./route");
 const counts = await import("./counts/route");
 const upNext = await import("./up-next/route");
 const { dropBacklogCache, resetBacklogCache } = await import("@/lib/work-items/backlog-cache");
-const { BACKLOG_CANDIDATE_CAP, TRACKER_UNAVAILABLE_REASON } =
+const { BACKLOG_CANDIDATE_CAP, trackerUnavailableReason } =
   await import("@/lib/work-items/backlog");
 const { handleLinearWebhook } = await import("@/lib/tracker/linear/ingest");
 const { changeMessage } = await import("@/lib/live/publisher");
@@ -543,7 +543,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       {
         organization: { id: orgs.Broken, name: "Broken", role: "member" },
         tracker: "linear",
-        reason: TRACKER_UNAVAILABLE_REASON,
+        reason: trackerUnavailableReason("linear"),
       },
     ]);
     expect(JSON.stringify(backlog)).not.toContain("secret detail");

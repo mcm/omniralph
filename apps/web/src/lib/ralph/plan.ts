@@ -1,5 +1,5 @@
 /**
- * The Linear agent-session plan of a ralph run: one step per story, in
+ * The tracker agent-session plan of a ralph run: one step per story, in
  * sub-issue order (ported from cyralph's `planFor`).
  */
 import type { RalphStory, RalphStoryStatus } from "@omniralph/db";

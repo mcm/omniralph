@@ -18,6 +18,8 @@ import type { Backlog, BacklogCounts, BacklogQuery, BacklogUpNext } from "@/lib/
 import { workItemSourceValue, type WorkItemRow } from "@/lib/api/work-items";
 import type { ScopedOrganization } from "@/lib/api/scope";
 import { createRouter, type RouteWorkItemMatch } from "@/lib/routing/resolve";
+import { trackerName } from "@/lib/tracker/adapters";
+import { DEFAULT_TRACKER_PROVIDER, getConnectedTrackerProvider } from "@/lib/tracker/client";
 import { cachedBacklog } from "./backlog-cache";
 import { getWorkItemTracker } from "./get-tracker";
 import { groupFor } from "./group";
@@ -27,6 +29,7 @@ import {
   type ListCandidatesInput,
   type WorkItem,
   type WorkItemRouting,
+  type TrackerKind,
   type WorkItemTracker,
 } from "./tracker";
 
@@ -115,6 +118,8 @@ function covers(wide: CandidateFilter, narrow: CandidateFilter): boolean {
  * one already covers is left out.
  */
 export function candidateFilters(input: {
+  /** The connected tracker: matches for another one find nothing. */
+  tracker: TrackerKind;
   repositories: readonly Pick<Repository, "id" | "codingEnabled">[];
   matches: readonly RouteWorkItemMatch[];
   rules: readonly Pick<RoutingRule, "repositoryId" | "query">[];
@@ -122,7 +127,7 @@ export function candidateFilters(input: {
   const coding = new Set(input.repositories.filter((r) => r.codingEnabled).map((r) => r.id));
   const filters: CandidateFilter[] = [];
   for (const match of input.matches) {
-    if (!coding.has(match.repositoryId) || match.tracker !== "linear") continue;
+    if (!coding.has(match.repositoryId) || match.tracker !== input.tracker) continue;
     filters.push(matchFilter(match));
   }
   for (const rule of input.rules) {
@@ -204,7 +209,7 @@ export async function loadOrganizationBacklog(deps: {
     listWorkItemMatches(db, organizationId),
     listRoutingRules(db, organizationId),
   ]);
-  const filters = candidateFilters({ repositories, matches, rules });
+  const filters = candidateFilters({ tracker: tracker.kind, repositories, matches, rules });
   if (filters.length === 0) return { entries: [], truncated: false, picksUp: false };
 
   const { items: candidates, truncated } = await readCandidates(tracker, filters);
@@ -217,7 +222,7 @@ export async function loadOrganizationBacklog(deps: {
   const ids = listed.map(({ item }) => item.id);
   const [runs, choices, sizes, triaging] = await Promise.all([
     listLatestIssueRuns(db, organizationId, ids),
-    listWorkItemOverrides(db, organizationId, "linear", ids),
+    listWorkItemOverrides(db, organizationId, tracker.kind, ids),
     latestTriageSizes(db, organizationId, ids),
     listActiveTriageIssueIds(db, organizationId, ids),
   ]);
@@ -232,6 +237,7 @@ export async function loadOrganizationBacklog(deps: {
   const router = await createRouter({
     db,
     organizationId,
+    provider: tracker.kind,
     // A candidate's fields came with its page; anything else (a follow-up's source) is read.
     tracker: {
       routingIssue: async (ref) => prefetched.get(ref) ?? tracker.routingFields(ref),
@@ -250,7 +256,7 @@ export async function loadOrganizationBacklog(deps: {
         const repository = "repository" in route ? route.repository : null;
         return {
           row: {
-            id: workItemUrlId("linear", item.id),
+            id: workItemUrlId(item.tracker, item.id),
             tracker: item.tracker,
             identifier: item.identifier,
             title: item.title,
@@ -298,7 +304,8 @@ export function organizationBacklog(deps: {
 }
 
 /** Shown when an organization's tracker couldn't be read. */
-export const TRACKER_UNAVAILABLE_REASON = "Linear didn't answer. Try again in a moment.";
+export const trackerUnavailableReason = (tracker: TrackerKind) =>
+  `${trackerName(tracker)} didn't answer. Try again in a moment.`;
 
 /** The Backlog of every organization in scope, in list order, before filters. */
 interface ScopedBacklog {
@@ -328,17 +335,23 @@ async function loadScope(
     ((organizationId: string) => getWorkItemTracker({ db: deps.db, organizationId }));
   const results = await Promise.all(
     organizations.map(async (organization) => {
+      let tracker: WorkItemTracker | undefined;
       try {
         const backlog = await organizationBacklog({
           db: deps.db,
           organizationId: organization.id,
-          tracker: () => getTracker(organization.id),
+          tracker: async () => (tracker = await getTracker(organization.id)),
         });
         return { organization, backlog };
       } catch (error) {
         if (error instanceof TrackerNotConnectedError) return { organization, backlog: null };
         console.error(`Loading the Backlog of organization ${organization.id} failed`, error);
-        return { organization, backlog: null, failed: true };
+        // A tracker that failed before answering is the organization's connected one.
+        const kind =
+          tracker?.kind ??
+          (await getConnectedTrackerProvider(deps.db, organization.id)) ??
+          DEFAULT_TRACKER_PROVIDER;
+        return { organization, backlog: null, failed: kind };
       }
     }),
   );
@@ -355,11 +368,11 @@ async function loadScope(
       name: result.organization.name,
       role: result.organization.role,
     };
-    if ("failed" in result) {
+    if ("failed" in result && result.failed) {
       scoped.unavailable.push({
         organization,
-        tracker: "linear",
-        reason: TRACKER_UNAVAILABLE_REASON,
+        tracker: result.failed,
+        reason: trackerUnavailableReason(result.failed),
       });
     }
     if (!result.backlog) continue;
@@ -378,7 +391,7 @@ async function loadScope(
  * (`no_work_item_match`); else `ready`.
  */
 function backlogSetup(
-  results: ReadonlyArray<{ backlog: OrganizationBacklog | null; failed?: boolean }>,
+  results: ReadonlyArray<{ backlog: OrganizationBacklog | null; failed?: TrackerKind }>,
 ): Backlog["setup"] {
   const connected = results.filter((result) => result.backlog !== null || result.failed);
   if (connected.length === 0) return "no_tracker";

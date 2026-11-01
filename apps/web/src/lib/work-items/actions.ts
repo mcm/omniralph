@@ -10,10 +10,11 @@ import {
   type WorkItemEventKind,
 } from "@omniralph/db";
 import { ApiRouteError } from "@/lib/api/handler";
+import { trackerName } from "@/lib/tracker/adapters";
 import { latestWorkItemRun, isActiveRunStatus } from "./detail";
 import { groupFor } from "./group";
 import { trackerCall, type ResolvedWorkItem } from "./item";
-import { WorkItemConflictError } from "./tracker";
+import { WorkItemConflictError, type TrackerKind } from "./tracker";
 
 /**
  * The work item actions of the detail's toolbar and ⋯ menu. Each goes through the tracker
@@ -30,8 +31,8 @@ export interface WorkItemActor {
 
 export const alreadyTriagingMessage = (identifier: string) =>
   `Om is already triaging ${identifier}.`;
-export const prdConflictMessage = (identifier: string) =>
-  `${identifier} changed in Linear since you opened it.`;
+export const prdConflictMessage = (identifier: string, tracker: TrackerKind) =>
+  `${identifier} changed in ${trackerName(tracker)} since you opened it.`;
 export const runWorkingMessage = (identifier: string) =>
   `Om is working on ${identifier}. Edit the PRD when the run stops.`;
 export const hasRunMessage = (identifier: string) => `Om already has a run for ${identifier}.`;
@@ -56,7 +57,7 @@ function record(
 
 /**
  * Start epic: delegates the item to Om, whose agent session webhook starts the run as a
- * delegation made in Linear does (a blocked item's run waits for its blockers). Only a Ready
+ * delegation made in the tracker does (a blocked item's run waits for its blockers). Only a Ready
  * to start item without a run (409 with one, 400 otherwise).
  */
 export async function startWorkItem(
@@ -69,7 +70,9 @@ export async function startWorkItem(
     throw new ApiRouteError(409, hasRunMessage(item.identifier), "run_exists");
   }
   if (groupFor(item) !== "ready") throw new ApiRouteError(400, NOT_READY_MESSAGE, "not_ready");
-  await trackerCall(`Delegating ${item.identifier}`, () => tracker.delegateToOmniralph(item.id));
+  await trackerCall(tracker, `Delegating ${item.identifier}`, () =>
+    tracker.delegateToOmniralph(item.id),
+  );
   await record(db, resolved, actor, "started");
 }
 
@@ -83,7 +86,9 @@ export async function triageWorkItem(
   if (await getActiveTriageRun(db, organization.id, item.id)) {
     throw new ApiRouteError(409, alreadyTriagingMessage(item.identifier), "triage_running");
   }
-  await trackerCall(`Starting triage of ${item.identifier}`, () => tracker.startTriage(item.id));
+  await trackerCall(tracker, `Starting triage of ${item.identifier}`, () =>
+    tracker.startTriage(item.id),
+  );
   await record(db, resolved, actor, "triage_requested");
 }
 
@@ -111,12 +116,16 @@ export async function saveWorkItemPrd(
     );
   } catch (error) {
     if (error instanceof WorkItemConflictError) {
-      throw new ApiRouteError(409, prdConflictMessage(item.identifier), "conflict");
+      throw new ApiRouteError(409, prdConflictMessage(item.identifier, tracker.kind), "conflict");
     }
-    return trackerCall(`Saving the PRD of ${item.identifier}`, () => Promise.reject(error));
+    return trackerCall(tracker, `Saving the PRD of ${item.identifier}`, () =>
+      Promise.reject(error),
+    );
   }
   await record(db, resolved, actor, "prd_edited");
-  const saved = await trackerCall(`Reading ${item.identifier}`, () => tracker.get(item.id));
+  const saved = await trackerCall(tracker, `Reading ${item.identifier}`, () =>
+    tracker.get(item.id),
+  );
   return { updatedAt: saved.updatedAt };
 }
 
@@ -163,7 +172,7 @@ export async function moveWorkItemToNeedsRefining(
   actor: WorkItemActor,
 ): Promise<void> {
   const { item, tracker } = resolved;
-  await trackerCall(`Moving ${item.identifier} to Needs refining`, () =>
+  await trackerCall(tracker, `Moving ${item.identifier} to Needs refining`, () =>
     tracker.setState(item.id, { readiness: "needs_refining" }),
   );
   await record(db, resolved, actor, "moved_to_needs_refining");
@@ -176,6 +185,6 @@ export async function cancelWorkItem(
   actor: WorkItemActor,
 ): Promise<void> {
   const { item, tracker } = resolved;
-  await trackerCall(`Canceling ${item.identifier}`, () => tracker.cancel(item.id));
+  await trackerCall(tracker, `Canceling ${item.identifier}`, () => tracker.cancel(item.id));
   await record(db, resolved, actor, "canceled");
 }

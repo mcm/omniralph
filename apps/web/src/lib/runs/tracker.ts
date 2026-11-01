@@ -121,7 +121,7 @@ export async function serveRunTrackerTool(
     const reason = error instanceof Error ? error.message : String(error);
     // The tool reads what this tracker doesn't have (e.g. documents).
     if (error instanceof TrackerCapabilityError) return failed(404, "tracker_not_found", reason);
-    // Linear, for one, answers a read of an unknown issue (its comments, say) with an invalid input error.
+    // A tracker may answer a read of an unknown issue (its comments, say) with an invalid input error.
     if (error instanceof TrackerNotFoundError || error instanceof TrackerInvalidInputError) {
       return failed(404, "tracker_not_found", reason);
     }

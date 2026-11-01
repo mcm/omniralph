@@ -1,6 +1,6 @@
 /**
- * Loads a delegated Linear issue as a ralph epic (ported from cyralph's
- * `src/linear/epic-loader.ts`; the pure builders live in `@omniralph/ralph`):
+ * Loads a delegated tracker issue as a ralph epic (ported from cyralph's
+ * epic loader; the pure builders live in `@omniralph/ralph`):
  *
  *  1. The issue has sub-issues         -> `children`: each sub-issue is a story. Only
  *                                         canceled ones (an epic turned back into a plain
@@ -38,7 +38,7 @@ export interface LoadedEpic {
   root: IssueSummary;
   /** `prd` when this load created the epic's sub-issues from its PRD, else the epic's kind. */
   kind: "children" | "prd" | "single";
-  /** Linear issue ID of the delegated story, when a sub-issue of an epic was delegated. */
+  /** Tracker issue ID of the delegated story, when a sub-issue of an epic was delegated. */
   focusStoryId?: string;
   /** Sub-issues created from the PRD during this load. */
   materialized: number;
@@ -283,7 +283,7 @@ export async function loadEpic(
 }
 
 /**
- * Re-reads a run's stories from Linear: the epic issue's sub-issues (in
+ * Re-reads a run's stories from the tracker: the epic issue's sub-issues (in
  * request mode, its PRD's stories while it has none), or the issue itself for
  * a `single` run. Never creates issues.
  */

@@ -264,9 +264,9 @@ export async function exchangeJobMessages(
       }
     });
   }
-  // One gateway per organization, fetched only when a note posts to Linear.
+  // One gateway per organization, fetched only when a note posts to the tracker.
   const gateways = new Map<string, Promise<TrackerGateway>>();
-  const linearOf = (organizationId: string) => () => {
+  const trackerOf = (organizationId: string) => () => {
     let gateway = gateways.get(organizationId);
     if (!gateway) {
       gateway = deps.tracker(organizationId);
@@ -275,7 +275,7 @@ export async function exchangeJobMessages(
     return gateway;
   };
   for (const note of notes) {
-    const tracker = linearOf(note.run.organizationId);
+    const tracker = trackerOf(note.run.organizationId);
     await postActivity(conversationFor(note.run, { tracker }), note.content);
   }
   const pending = await listUndeliveredJobMessages(deps.db, runningJobIds);

@@ -31,8 +31,13 @@ import {
   type RoutingRule,
   type WorkItemMatchFields,
 } from "@omniralph/db";
-import type { RoutingIssueFields } from "@omniralph/tracker";
-import { readRoutingIssue, type RoutingSource } from "@/lib/tracker/routing-issue";
+import type { RoutingIssueFields, TrackerProvider } from "@omniralph/tracker";
+import { DEFAULT_TRACKER_PROVIDER } from "@/lib/tracker/client";
+import {
+  readRoutingIssue,
+  routingSourceProvider,
+  type RoutingSource,
+} from "@/lib/tracker/routing-issue";
 import { ROUTING_FIELDS, ROUTING_FIELD_TYPES, routingValues } from "@/lib/routing/fields";
 import { describeRule } from "./describe";
 import { evaluateQuery } from "./evaluate";
@@ -86,16 +91,26 @@ export interface RouteDeps {
   organizationId: string;
   /** The tracker the issues are read from. */
   tracker: RoutingSource;
+  /**
+   * The tracker's provider, which work item matches and saved repo choices are on (default:
+   * the gateway's, else the default tracker's).
+   */
+  provider?: TrackerProvider;
   /** Rules to route by instead of the saved ones, in order (Settings › Advanced › Routing rules' unsaved list). */
   rules?: readonly Pick<RoutingRule, "repositoryId" | "query">[];
   /** Work item matches to route by instead of the saved ones (an unsaved match applied). */
   matches?: readonly RouteWorkItemMatch[];
   /**
-   * Saved repo choices ("Change repo…") read beforehand for a page of issues: Linear issue ID
+   * Saved repo choices ("Change repo…") read beforehand for a page of issues: tracker issue ID
    * to the chosen repository ID, null for an issue without one. An issue not in it is looked
    * up.
    */
   choices?: ReadonlyMap<string, string | null>;
+}
+
+/** The provider of the tracker `deps` route issues of. */
+export function routeProvider(deps: Pick<RouteDeps, "tracker" | "provider">): TrackerProvider {
+  return deps.provider ?? routingSourceProvider(deps.tracker) ?? DEFAULT_TRACKER_PROVIDER;
 }
 
 /** A repository's work item match, as routing reads it. */
@@ -130,6 +145,7 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
     return repository ? [{ match, repository }] : [];
   });
   const memo = new Map<string, Promise<RouteOutcome>>();
+  const provider = routeProvider(deps);
 
   const outcome = (repository: Repository, by: string, rule?: number): RoutedOutcome =>
     repository.codingEnabled
@@ -153,7 +169,7 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
     let best: typeof matches = [];
     let bestSpecificity = -1;
     for (const candidate of matches) {
-      if (!matchesWorkItem(candidate.match, issue)) continue;
+      if (!matchesWorkItem(candidate.match, { ...issue, tracker: provider })) continue;
       const value = specificity(candidate.match);
       if (value > bestSpecificity) {
         best = [candidate];
@@ -226,7 +242,7 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
       : (
           await getWorkItemOverride(deps.db, {
             organizationId: deps.organizationId,
-            tracker: "linear",
+            tracker: provider,
             externalId: issueId,
           })
         )?.repositoryId;

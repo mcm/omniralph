@@ -7,6 +7,11 @@ export type TrackerProvider = "linear";
 
 export const TRACKER_PROVIDERS = ["linear"] as const satisfies readonly TrackerProvider[];
 
+/** Whether `value` names a tracker provider (e.g. a provider read from stored text). */
+export function isTrackerProvider(value: unknown): value is TrackerProvider {
+  return (TRACKER_PROVIDERS as readonly unknown[]).includes(value);
+}
+
 /**
  * The kind of a workflow state, which orchestration decides on (a state's name
  * is the tracker's or the team's own). Adapters map their tracker's states onto

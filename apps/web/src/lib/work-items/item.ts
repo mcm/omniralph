@@ -5,9 +5,11 @@ import {
   type Database,
   type WorkItemKey,
 } from "@omniralph/db";
+import { isTrackerProvider } from "@omniralph/tracker";
 import { ApiRouteError } from "@/lib/api/handler";
 import { membership, type ScopedOrganization } from "@/lib/api/scope";
 import type { OrgUser } from "@/lib/auth/session";
+import { trackerName } from "@/lib/tracker/adapters";
 import { getWorkItemTracker } from "./get-tracker";
 import {
   TrackerNotConnectedError,
@@ -18,20 +20,22 @@ import {
 } from "./tracker";
 
 /**
- * Finding a work item by its URL ID (`linear-<issue id>`) for the item endpoints: the item
- * belongs to the organization whose tracker has it (a Linear workspace is connected to one
+ * Finding a work item by its URL ID (`<tracker>-<issue id>`) for the item endpoints: the item
+ * belongs to the organization whose tracker has it (a tracker workspace is connected to one
  * organization), and only members of that organization may see it.
  */
 
 export const WORK_ITEM_NOT_FOUND_MESSAGE = "That work item doesn't exist.";
 
 /** Shown when the tracker failed while reading or changing an item. */
-export const TRACKER_FAILED_MESSAGE = "Linear didn't answer. Try again in a moment.";
+export const trackerFailedMessage = (tracker: TrackerKind) =>
+  `${trackerName(tracker)} didn't answer. Try again in a moment.`;
 
 /** A work item URL ID's tracker and the item's ID there, or null when it isn't one. */
 export function parseWorkItemId(id: string): { tracker: TrackerKind; externalId: string } | null {
-  const match = /^linear-([A-Za-z0-9_-]{1,100})$/.exec(id);
-  return match ? { tracker: "linear", externalId: match[1]! } : null;
+  const match = /^([a-z]+)-([A-Za-z0-9_-]{1,100})$/.exec(id);
+  if (!match || !isTrackerProvider(match[1])) return null;
+  return { tracker: match[1], externalId: match[2]! };
 }
 
 /** A work item a member opened: its organization, tracker and current state. */
@@ -78,7 +82,9 @@ export async function resolveWorkItem(
       .map(({ id: orgId, name, role }) => ({ id: orgId, name, role }));
     const active = { id: user.organization.id, name: user.organization.name, role: user.role };
     const connected = await Promise.all(
-      others.map(async (org) => ((await getIntegration(deps.db, org.id, "linear")) ? org : null)),
+      others.map(async (org) =>
+        (await getIntegration(deps.db, org.id, parsed.tracker)) ? org : null,
+      ),
     );
     candidates = [active, ...connected.filter((org) => org !== null)];
   }
@@ -104,12 +110,18 @@ export async function resolveWorkItem(
       failure ??= error;
     }
   }
-  if (failure) throw new ApiRouteError(502, TRACKER_FAILED_MESSAGE, "tracker_failed");
+  if (failure) {
+    throw new ApiRouteError(502, trackerFailedMessage(parsed.tracker), "tracker_failed");
+  }
   throw ApiRouteError.notFound(WORK_ITEM_NOT_FOUND_MESSAGE);
 }
 
-/** Runs a tracker call of an action: a failure answers 502 (an unknown item 404). */
-export async function trackerCall<T>(what: string, call: () => Promise<T>): Promise<T> {
+/** Runs a call to `tracker` for an action: a failure answers 502 (an unknown item 404). */
+export async function trackerCall<T>(
+  tracker: Pick<WorkItemTracker, "kind">,
+  what: string,
+  call: () => Promise<T>,
+): Promise<T> {
   try {
     return await call();
   } catch (error) {
@@ -118,6 +130,6 @@ export async function trackerCall<T>(what: string, call: () => Promise<T>): Prom
       throw ApiRouteError.notFound(WORK_ITEM_NOT_FOUND_MESSAGE);
     }
     console.error(`${what} failed`, error);
-    throw new ApiRouteError(502, TRACKER_FAILED_MESSAGE, "tracker_failed");
+    throw new ApiRouteError(502, trackerFailedMessage(tracker.kind), "tracker_failed");
   }
 }

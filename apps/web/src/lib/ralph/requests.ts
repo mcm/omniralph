@@ -1,12 +1,12 @@
 /**
- * Requests from the Linear thread (ported from cyralph's request mode:
+ * Requests from the tracker thread (ported from cyralph's request mode:
  * `parseInstruction`, `onCreated`, `runRequestOnly`, `runRequests` and
  * `adoptPullRequests`). A request is a `ralph_messages` row of kind `request`
  * without a job (`listPendingRequests`), for a lane (null: the main lane).
  *
  * - A mention runs in request mode: its requests run as `ralph.request` jobs
  *   (one Claude session per lane, main lane first), with no story loop, no
- *   Linear state changes and no blockers; then the run completes with what
+ *   tracker state changes and no blockers; then the run completes with what
  *   they said. `/coding` switches the run to epic mode.
  * - In epic mode, a reply is guidance and a pending request: the next story
  *   takes it (as guidance), and when no story runs (the epic is done, or
@@ -53,7 +53,8 @@ import {
   linkPullRequestToIssue,
   postableText,
   sessionLinkLabel,
-  type LinearLink,
+  trackerLink,
+  type TrackerLink,
   type PublishedLane,
 } from "./publish";
 import type { RalphDeps } from "./run";
@@ -85,7 +86,7 @@ export async function addInstruction(
     author?: string | null;
     wantsLoop: boolean;
     ship?: boolean;
-    /** Where it came from: a Linear reply or mention, or chat. */
+    /** Where it came from: a tracker reply or mention, or chat. */
     trigger: RalphMessageTrigger;
   },
   applyGuidance: (tx: RalphTransaction, run: RalphRun, text: string) => Promise<void>,
@@ -264,10 +265,12 @@ export async function applyRequestJob(
           ],
         }),
       });
-      const epic: LinearLink = {
-        identifier: payload.data.epic.identifier,
-        title: payload.data.epic.title,
-        url: payload.data.epic.url,
+      const epic: TrackerLink = {
+        ...trackerLink(run, {
+          identifier: payload.data.epic.identifier,
+          title: payload.data.epic.title,
+          url: payload.data.epic.url,
+        }),
         ...(!isTrackerRun(run) && { fromChat: true }),
       };
       if (result.pullRequest) {
@@ -315,7 +318,7 @@ function shipNote(result: RalphRequestResult, branch: string): string {
   return commit ? `${commit}.` : `Nothing new to commit or push on \`${branch}\`.`;
 }
 
-/** Records a lane's PR/MR and adds it to the agent session and the Linear issue. */
+/** Records a lane's PR/MR and adds it to the agent session and the tracker issue. */
 async function recordPullRequest(
   deps: RalphDeps,
   tx: RalphTransaction,
@@ -370,7 +373,7 @@ export async function applyPullRequestAction(
   run: RalphRun,
   lane: RalphLane,
   action: RalphPullRequestAction,
-  epic: LinearLink,
+  epic: TrackerLink,
 ): Promise<string | null> {
   let term = "pull request";
   const verb = { open: "open", update: "update", ready: "mark ready" }[action.action];

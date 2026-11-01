@@ -6,6 +6,7 @@
  * `review_run_id`, `triage_run_id`, `chat_thread_run_id`).
  */
 import { sql, type SQL } from "drizzle-orm";
+import type { IntegrationProvider } from "./integrations.js";
 import type { Database } from "./client.js";
 import type {
   jobStatus,
@@ -353,8 +354,9 @@ export interface RunRepository {
 export interface RunListEntry extends RunIndexEntry {
   /** The work item's title, a PR/MR title, or an ask's question; null without one. */
   title: string | null;
-  /** The work item: its Linear issue ID (null where the run didn't keep it), key, title and URL. */
+  /** The work item: its tracker, its ID there (null where the run didn't keep it), key, title and URL. */
   workItem: {
+    tracker: IntegrationProvider;
     issueId: string | null;
     identifier: string;
     title: string | null;
@@ -439,6 +441,7 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
     db.execute<{
       id: string;
       mode: "epic" | "request";
+      tracker_provider: IntegrationProvider;
       tracker_issue_id: string | null;
       tracker_identifier: string | null;
       tracker_title: string | null;
@@ -451,7 +454,7 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
       story_current: string | null;
       first_request: string | null;
     }>(sql`
-      select r.id, r.mode, r.tracker_issue_id, r.tracker_identifier, r.tracker_title, r.tracker_url,
+      select r.id, r.mode, r.tracker_provider, r.tracker_issue_id, r.tracker_identifier, r.tracker_title, r.tracker_url,
         l.branch, l.pr_number, l.pr_url,
         (select m.text from ralph_messages m where m.run_id = r.id and m.kind = 'request'
           order by m.created_at, m.id limit 1) as first_request,
@@ -477,6 +480,7 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
       title: row.tracker_title ?? row.first_request ?? row.tracker_identifier,
       workItem: row.tracker_identifier
         ? {
+            tracker: row.tracker_provider,
             issueId: row.tracker_issue_id,
             identifier: row.tracker_identifier,
             title: row.tracker_title,
@@ -560,16 +564,17 @@ async function triageFacts(db: Queryable, ids: string[]): Promise<Map<string, Fa
   const facts = new Map<string, Facts>();
   if (ids.length === 0) return facts;
   const [result, stats] = await Promise.all([
-    // The issue as the newest attempt that read it saw it (the run keeps only Linear's ID).
+    // The issue as the newest attempt that read it saw it (the run keeps only the tracker's ID).
     db.execute<{
       id: string;
+      tracker_provider: IntegrationProvider;
       tracker_issue_id: string;
       identifier: string | null;
       title: string | null;
       url: string | null;
       branch: string | null;
     }>(sql`
-      select t.id, t.tracker_issue_id, i.issue ->> 'identifier' as identifier, i.issue ->> 'title' as title,
+      select t.id, t.tracker_provider, t.tracker_issue_id, i.issue ->> 'identifier' as identifier, i.issue ->> 'title' as title,
         i.issue ->> 'url' as url, i.branch
       from triage_runs t
       left join lateral (
@@ -589,6 +594,7 @@ async function triageFacts(db: Queryable, ids: string[]): Promise<Map<string, Fa
       title: row.title || row.identifier,
       workItem: row.identifier
         ? {
+            tracker: row.tracker_provider,
             issueId: row.tracker_issue_id,
             identifier: row.identifier,
             title: row.title || null,

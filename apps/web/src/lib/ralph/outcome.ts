@@ -26,6 +26,7 @@ import {
   type RalphFollowUp,
   type RalphStoryMetric,
 } from "@omniralph/shared";
+import { trackerName } from "@/lib/tracker/adapters";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import type { CreateIssueInput, IssuePriority, IssueSummary } from "@omniralph/tracker";
 import { createIssueWithExtras, readIssuePlacement } from "@/lib/tracker/placement";
@@ -203,7 +204,7 @@ async function applyStoryResult(
 
   // A single issue stays open for review: its run's PR/MR is what finishes it.
   if (run.kind !== "single") {
-    await quietly(`Completing ${story.identifier} in Linear`, () =>
+    await quietly(`Completing ${story.identifier} in the tracker`, () =>
       tracker.setIssueState(story.trackerIssueId, { type: "completed" }),
     );
     const lane = await storyLane(tx, run, story);
@@ -356,7 +357,7 @@ export async function fileFollowUps(
     console.warn(`${run.trackerIdentifier}: could not read the epic to file follow-ups`, error);
     await postActivity(conversationFor(run, ctx), {
       type: "thought",
-      body: `I couldn't file the follow-ups of **${story.identifier}** in Linear: ${followUps.map((f) => `"${f.title}"`).join(", ")}.`,
+      body: `I couldn't file the follow-ups of **${story.identifier}** in ${trackerName(run.trackerProvider)}: ${followUps.map((f) => `"${f.title}"`).join(", ")}.`,
     });
     return;
   }
@@ -430,7 +431,9 @@ export async function fileFollowUps(
         `(labelled \`${manualLabel}\`): I won't work ${forPerson.length === 1 ? "it" : "them"}.`,
     );
   }
-  if (failed.length > 0) lines.push(`I couldn't file ${failed.join(", ")} in Linear.`);
+  if (failed.length > 0) {
+    lines.push(`I couldn't file ${failed.join(", ")} in ${trackerName(run.trackerProvider)}.`);
+  }
   if (lines.length > 0) {
     await postActivity(conversationFor(run, ctx), {
       type: "thought",
@@ -441,7 +444,7 @@ export async function fileFollowUps(
 
 /**
  * Creates a follow-up with the target's tracker-specific extras. When the
- * tracker refuses one (Linear's completed cycle), it retries without it, and
+ * tracker refuses one (e.g. a completed cycle), it retries without it, and
  * later follow-ups skip it.
  */
 async function createFollowUp(
@@ -460,7 +463,7 @@ interface FollowUpTarget {
   /** The project: by ID when known (else by name). */
   projectId?: string;
   projectName?: string;
-  /** Tracker-specific fields copied as they are (Linear's milestone and cycle). */
+  /** Tracker-specific fields copied as they are (e.g. a milestone and cycle). */
   extras: Record<string, string>;
   priority: IssuePriority;
   /** Labels every follow-up gets: all of the story's. */
@@ -472,7 +475,7 @@ interface FollowUpTarget {
 
 /**
  * What a story's follow-ups copy: its team, project, priority, labels and the
- * tracker's extras such as Linear's milestone and cycle (read from the tracker; when that fails, what the epic's children say,
+ * tracker's extras such as a milestone and cycle (read from the tracker; when that fails, what the epic's children say,
  * else the epic's team and project). The manual label is the story's lane's
  * repository's.
  */

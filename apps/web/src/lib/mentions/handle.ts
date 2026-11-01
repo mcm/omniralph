@@ -20,6 +20,7 @@ import {
 } from "@omniralph/ralph";
 import type { RepoRef, ScmAdapter } from "@omniralph/scm";
 import { FEEDBACK_REASON_LABELS, REVIEW_DEPTHS } from "@omniralph/shared";
+import { trackerName } from "@/lib/tracker/adapters";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { lazyTrackerGateway } from "@/lib/tracker/client";
 import type { TrackerGateway } from "@omniralph/tracker";
@@ -106,7 +107,7 @@ function helpText(handle: string): string {
  * thread (or the conversation). On a PR/MR ralph opened, `@bot fix [text]`
  * and other text outside finding threads become requests for its ralph run
  * (`requestRalph`); so does other text in a finding's thread when the run is
- * followed in a Linear agent session, carrying the finding's whole review. `review`, `dismiss`, `fix`, questions in a finding's
+ * followed in a tracker session, carrying the finding's whole review. `review`, `dismiss`, `fix`, questions in a finding's
  * thread and ralph requests need write access to the repository
  * (`ScmAdapter.hasWriteAccess`); others get a polite refusal.
  * Every reply goes through the output sanitizer.
@@ -154,7 +155,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
 
   /**
    * Hands a request to the PR/MR's ralph run and says so in the thread, with
-   * a link to the Linear issue (if any). From a finding's thread it carries
+   * a link to the tracker issue (if any). From a finding's thread it carries
    * the finding and the rest of its review, as the review itself would.
    */
   const requestRalph = async (
@@ -191,7 +192,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       term,
     });
     const { run } = result;
-    // A run from chat has no Linear issue: it's followed in its chat thread.
+    // A run from chat has no tracker issue: it's followed in its chat thread.
     const tracker = isTrackerRun(run) ? run : null;
     const issue = !tracker
       ? ""
@@ -201,7 +202,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
     const hosts = tracker?.trackerUrl ? [new URL(tracker.trackerUrl).hostname] : [];
     if (result.status === "run_over") {
       const again = tracker
-        ? `Delegate ${tracker.trackerIdentifier} to me in Linear again to pick it back up.`
+        ? `Delegate ${tracker.trackerIdentifier} to me in ${trackerName(tracker.trackerProvider)} again to pick it back up.`
         : "Ask for it again in the chat thread it came from to pick it back up.";
       await respond(
         `Sorry @${author}, the coding task${issue} is over, so I can't work on this ${term}. ${again}`,
@@ -215,7 +216,9 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
         : result.status === "live"
           ? " right away"
           : "";
-    const follow = tracker ? "Follow along in Linear." : "Follow along in its chat thread.";
+    const follow = tracker
+      ? `Follow along in ${trackerName(tracker.trackerProvider)}.`
+      : "Follow along in its chat thread.";
     await respond(
       `On it, @${author}: I passed this to the coding task${issue}, which will work on it${when} and push the changes here. ${follow}`,
       hosts,
@@ -328,7 +331,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       if (!(await adapter.hasWriteAccess(repo, author))) {
         return refuse("ask me about findings");
       }
-      // In a review thread of a ralph PR/MR followed in a Linear agent session:
+      // In a review thread of a ralph PR/MR followed in a tracker session:
       // routed to that session with the review's context, like the review itself.
       const ralph = repository.codingEnabled ? await ralphLane() : null;
       if (ralph && isTrackerRun(ralph.run) && ralph.run.status !== "failed") {
