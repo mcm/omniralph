@@ -365,7 +365,11 @@ export const TriageAgentOutput = z.object({
           .string()
           .describe("The story body, ending with a `## Acceptance Criteria` checklist."),
         priority: TrackerPriority,
-        blockedBy: z.array(z.string()).describe("Ids of the sibling sub-issues it is blocked by."),
+        blockedBy: z
+          .array(z.string())
+          .describe(
+            "Ids of the sibling sub-issues, and identifiers of work items outside the issue, it is blocked by.",
+          ),
       }),
     )
     .describe(

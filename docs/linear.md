@@ -835,6 +835,15 @@ another epic's side is caught when that epic starts.
   advances (a reply, `/continue`, an `Issue` webhook or the reconcile cron) and goes on once the
   relations are fixed.
 
+Om keeps the relations it writes itself within the rules:
+
+- **Triage.** A reformat's `blockedBy` may name work items outside the epic. A task in another
+  epic is written as a relation from that epic instead (none from the task); an epic or a
+  standalone task is kept as is; the issue's own epic, a feature, a task of a feature or a
+  reference that isn't a work item is left out and listed under "Ignored sub-issue updates".
+  New epics' stories only block each other.
+- **Follow-ups** are filed as sub-issues of the story's epic, so their relations stay inside it.
+
 The rules are `dependencyViolations` in `@omniralph/planning`; `relationViolations`
 (`apps/web/src/lib/ralph/relations.ts`) reads the relations and roles from the tracker.
 

@@ -40,7 +40,14 @@ import {
 } from "@omniralph/shared";
 import { z } from "zod";
 import { getTrackerGateway } from "@/lib/tracker/client";
-import { toIssuePriority, type IssueSummary, type TrackerGateway } from "@omniralph/tracker";
+import {
+  toIssuePriority,
+  TrackerNotFoundError,
+  type IssueSummary,
+  type TrackerGateway,
+} from "@omniralph/tracker";
+import { dependencyViolations } from "@omniralph/planning";
+import { PlannedItems } from "@/lib/ralph/relations";
 import { createPlannedSubIssues, runManualLabels } from "@/lib/ralph/epic-loader";
 import { errorMessage, postActivity, quietly } from "@/lib/ralph/notify";
 import { trackerConversation } from "@/lib/ralph/conversation";
@@ -279,10 +286,47 @@ interface SubIssueReformat {
 }
 
 /**
+ * The work item a sub-issue's blocker `ref` from outside its epic resolves to under the
+ * dependency rules: an epic or a standalone task as it is, a task in another epic as that
+ * epic. A ref that isn't a work item, the sub-issue's own epic, a feature (or a task of
+ * one) is ignored, with why. Throws when the tracker can't be read.
+ */
+async function outsideBlocker(
+  items: PlannedItems,
+  child: IssueSummary,
+  ref: string,
+): Promise<{ blocker: IssueSummary } | { ignored: string }> {
+  let issue: IssueSummary;
+  try {
+    issue = await items.issue(ref);
+  } catch (error) {
+    if (error instanceof TrackerNotFoundError) {
+      return { ignored: `blocker \`${ref}\` of ${child.identifier} isn't a work item` };
+    }
+    throw error;
+  }
+  const blocked = await items.item(child.id);
+  const [violation] = dependencyViolations(blocked, [await items.item(issue.id)]);
+  if (!violation) return { blocker: issue };
+  if (violation.blockOn) {
+    const epic = await items.item(violation.blockOn.id);
+    if (epic.role !== "feature") return { blocker: await items.issue(epic.id) };
+    return {
+      ignored: `blocker ${issue.identifier} of ${child.identifier} is a task in ${epic.identifier}, a feature, so it breaks the dependency rules`,
+    };
+  }
+  // The violation without its fix: the relation is left out.
+  const why = violation.message.slice(0, violation.message.length - violation.fix.length).trim();
+  return { ignored: `blocker ${issue.identifier} breaks the dependency rules: ${why}` };
+}
+
+/**
  * Applies a reformat's `subIssueUpdates` to `issue`'s Backlog/Todo
  * sub-issues: title, body and priority, plus the "blocks" relations they
- * lack (existing ones are kept). Updates for an issue that isn't a sub-issue
- * of `issue`, or one in another state, are ignored and reported. An epic
+ * lack (existing ones are kept). A blocker outside the epic follows the
+ * dependency rules (`outsideBlocker`): a task in another epic is replaced by
+ * that epic, and one the rules don't allow is ignored. Updates for an issue
+ * that isn't a sub-issue of `issue`, or one in another state, are ignored and reported. An epic
  * without a validation sub-issue gets one, blocked by every other
  * non-canceled sub-issue. Nothing is ever canceled, deleted or reparented.
  */
@@ -298,6 +342,7 @@ export async function reformatSubIssues(
     byRef.set(child.identifier, child);
   }
   const done: SubIssueReformat = { reformatted: [], relations: 0, validation: null, ignored: [] };
+  const items = new PlannedItems(tracker);
 
   for (const update of updates) {
     const child = byRef.get(update.id);
@@ -318,11 +363,15 @@ export async function reformatSubIssues(
 
     const existing = new Set((await tracker.getBlockers(child.id)).map((b) => b.id));
     for (const ref of update.blockedBy) {
-      const blocker = byRef.get(ref);
-      if (!blocker || blocker.id === child.id) {
-        done.ignored.push(`blocker \`${ref}\` of ${child.identifier} isn't a sibling sub-issue`);
+      const sibling = byRef.get(ref);
+      if (sibling?.id === child.id) continue;
+      const found = sibling ? { blocker: sibling } : await outsideBlocker(items, child, ref);
+      if ("ignored" in found) {
+        done.ignored.push(found.ignored);
         continue;
       }
+      const { blocker } = found;
+      if (blocker.id === child.id) continue;
       if (existing.has(blocker.id) || blocker.stateType === "canceled") continue;
       await tracker.createBlocksRelation(blocker.id, child.id);
       existing.add(blocker.id);
