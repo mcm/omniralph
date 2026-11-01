@@ -1,5 +1,19 @@
 # @omniralph/agent
 
+## 2.1.0
+
+### Minor Changes
+
+- [#115](https://github.com/mcm/omniralph/pull/115) [`4ee8e1a`](https://github.com/mcm/omniralph/commit/4ee8e1afd355ac92b0f74a5e08c8633fd07c085d) Thanks [@omniralph](https://github.com/apps/omniralph)! - Name the tracker in story and request prompts from the job's new `trackerName` (the `tracker.name` prompt variable) instead of saying "Linear".
+
+- [#115](https://github.com/mcm/omniralph/pull/115) [`98a48cf`](https://github.com/mcm/omniralph/commit/98a48cf521e2c13acbcecfd5275554229b11e6ac) Thanks [@omniralph](https://github.com/apps/omniralph)! - The agent speaks the tracker-neutral protocol: the read-only tools are `tracker_get_issue`, `tracker_list_comments`, `tracker_search_issues` and `tracker_get_document` (served under `/api/agent/runs/{id}/tracker/*` with the `tracker:read` scope), playbooks list them under `tools.tracker` and turn them on with `toolSettings.trackerRead`, and ralph payloads carry `trackerIssueId`, `trackerProvider` and `source: "tracker"`. This release and the control panel ship together: older agents don't claim runs that use the tracker protocol.
+
+- [#115](https://github.com/mcm/omniralph/pull/115) [`1a21627`](https://github.com/mcm/omniralph/commit/1a216273699ca76164c69540316c2b88891e9d4d) Thanks [@omniralph](https://github.com/apps/omniralph)! - Rename the Linear trigger kinds to tracker trigger kinds: `linear.delegated`, `linear.triage` and `linear.mention` are now `tracker.delegated`, `tracker.triage` and `tracker.mention`.
+
+### Patch Changes
+
+- [#115](https://github.com/mcm/omniralph/pull/115) [`134d321`](https://github.com/mcm/omniralph/commit/134d321daee16de4956b13bab102e2d6446e6c57) Thanks [@omniralph](https://github.com/apps/omniralph)! - Move finding Linear uploads in text out of the bundled ralph package into the Linear tracker adapter; the agent's attachment handling is unchanged.
+
 ## 2.0.2
 
 ### Patch Changes
