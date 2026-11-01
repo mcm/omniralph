@@ -27,7 +27,8 @@ import {
   type RalphStoryMetric,
 } from "@omniralph/shared";
 import { organizationPlaybooks } from "@/lib/playbooks";
-import type { CreateIssueInput, IssueSummary } from "@/lib/linear/gateway";
+import type { LinearCreateIssueInput } from "@omniralph/tracker/linear";
+import { toIssuePriority, type IssueSummary } from "@omniralph/tracker";
 import { jobStoryCaps, type StoryCaps } from "./coding";
 import { conversationFor } from "./conversation";
 import { runManualLabels } from "./epic-loader";
@@ -388,7 +389,7 @@ export async function fileFollowUps(
           parentId: parent.id,
           title: followUp.title,
           description: `${followUp.description}\n\n_${FOLLOW_UP_MARK} ${story.identifier}._`.trim(),
-          priority: target.priority,
+          priority: toIssuePriority(target.priority),
           ...(target.projectId && { projectId: target.projectId }),
           ...(target.projectName && { projectName: target.projectName }),
           ...(target.projectMilestoneId && { projectMilestoneId: target.projectMilestoneId }),
@@ -447,7 +448,7 @@ export async function fileFollowUps(
 async function createFollowUp(
   ctx: OutcomeContext,
   target: FollowUpTarget,
-  input: CreateIssueInput,
+  input: LinearCreateIssueInput,
 ): Promise<IssueSummary> {
   try {
     return await ctx.linear.createIssue(input);

@@ -17,8 +17,8 @@ import {
   getLinearGatewayOrDisconnected,
   LinearNotConnectedError,
   lazyLinearGateway,
-} from "@/lib/linear/client";
-import type { LinearGateway } from "@/lib/linear/gateway";
+} from "@/lib/tracker/linear/client";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import { reconcileCi } from "./ci";
 import { reconcileCleanup, reconcileLane, startPendingCleanups } from "./cleanup";
 import { scheduleLane, scheduleRun } from "./due";

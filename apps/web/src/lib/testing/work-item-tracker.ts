@@ -1,10 +1,10 @@
 /**
  * A work item tracker for tests of modules that reach trackers only through
  * `WorkItemTracker` (the chat, Ask): the Linear adapter over a fake workspace,
- * so those tests import nothing from `@/lib/linear/`.
+ * so those tests import nothing from `@/lib/tracker/` or `@omniralph/tracker`.
  */
 import { DEFAULT_TRACKER_STATE_MAPPING } from "@omniralph/db";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import { LinearWorkItemTracker } from "@/lib/work-items/linear";
 
 export interface FakeWorkItemTracker {

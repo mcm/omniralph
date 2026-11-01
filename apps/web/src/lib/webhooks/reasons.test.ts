@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { TRACKER_IGNORE_REASONS } from "@omniralph/tracker";
 import { describe, expect, it } from "vitest";
 import {
   describeIgnoreReason,
@@ -19,8 +20,10 @@ const SOURCES: Array<{ file: string; patterns: RegExp[] }> = [
       /reason: "([a-z_]+)"/g,
     ],
   },
-  { file: "../linear/ingest.ts", patterns: [/reasonCode: "([a-z_]+)"/g, /reason: "([a-z_]+)"/g] },
-  { file: "../linear/webhook.ts", patterns: [/code: "([a-z_]+)"/g] },
+  {
+    file: "../tracker/linear/ingest.ts",
+    patterns: [/reasonCode: "([a-z_]+)"/g, /reason: "([a-z_]+)"/g],
+  },
 ];
 
 function codesIn(file: string, patterns: RegExp[]): string[] {
@@ -38,6 +41,10 @@ describe("webhook ignore reasons", () => {
       for (const code of used) {
         expect(isWebhookIgnoreReason(code), `${code} (${file}) has no sentence`).toBe(true);
       }
+    }
+    // The tracker webhook parsers' reasons.
+    for (const code of TRACKER_IGNORE_REASONS) {
+      expect(isWebhookIgnoreReason(code), `${code} (tracker) has no sentence`).toBe(true);
     }
     // The ones the PRD lists, plus Om's own reviews.
     for (const code of [

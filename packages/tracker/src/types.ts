@@ -39,6 +39,15 @@ export function isWorkflowStateType(value: string): value is WorkflowStateType {
  */
 export type IssuePriority = 0 | 1 | 2 | 3 | 4;
 
+export function isIssuePriority(value: unknown): value is IssuePriority {
+  return value === 0 || value === 1 || value === 2 || value === 3 || value === 4;
+}
+
+/** A priority on the common scale; anything off it (or none) is 0, No priority. */
+export function toIssuePriority(value: number | null | undefined): IssuePriority {
+  return isIssuePriority(value) ? value : 0;
+}
+
 /** Someone who made something in the tracker (an issue's creator). */
 export interface TrackerPerson {
   id: string;

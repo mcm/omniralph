@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import { ChatConversation, conversationFor, LinearConversation } from "./conversation";
 import { postActivity } from "./notify";
 
@@ -84,7 +84,7 @@ describe("conversationFor", () => {
 describe("postActivity", () => {
   it("logs a failed post instead of throwing", async () => {
     const linear = new FakeLinearGateway();
-    vi.spyOn(linear, "createActivity").mockRejectedValue(new Error("Linear is down"));
+    vi.spyOn(linear.sessions, "createActivity").mockRejectedValue(new Error("Linear is down"));
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const posted = await postActivity(conversationFor(linearRun, { linear }), {
       type: "error",

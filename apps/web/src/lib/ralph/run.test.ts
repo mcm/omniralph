@@ -74,8 +74,9 @@ import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { revokeAgent } from "@/lib/agent-auth/revoke";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { handleLinearEvent } from "@/lib/linear/events";
-import { FakeLinearGateway, linearRun } from "@/lib/linear/fake-gateway";
+import { handleTrackerEvent } from "@/lib/tracker/events";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import { linearRun } from "@/lib/testing/linear-run";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { taskSink } from "@/lib/sinks";
 import { describePrPayload, ralphJobPayload } from "./coding";
@@ -96,7 +97,7 @@ import {
 import type * as Tasks from "@omniralph/tasks";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { advanceRun, laneAgentId, MAX_ITERATIONS_PER_RUN, runDedupeKey } from "./run";
-import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
+import { startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
 /** Built-in playbooks some tests change (the resolver reads built-ins through `getBuiltinPlaybook`). */
@@ -246,10 +247,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const sessionId = `session-${sessionSeq}`;
     await startRun(
       {
-        kind: "session_created",
+        kind: "issue_delegated",
         sessionId,
         issueId,
-        commentBody: `${AGENT_SESSION_MARKER}.`,
       },
       deps(),
     );
@@ -875,7 +875,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const sessionId = `session-${sessionSeq}`;
       await startRun(
         {
-          kind: "session_created",
+          kind: "issue_mentioned",
           sessionId,
           issueId: epic.id,
           commentBody: "@omniralph rename the badge",
@@ -1066,7 +1066,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     }
 
     const replyTo = (run: LinearRun, body: string) =>
-      handleLinearEvent(
+      handleTrackerEvent(
         { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
         { db, organizationId: orgId, workspaceId: "org-1" },
         { linear, dispatcher, adapterFor: () => scm.asAdapter() },
@@ -1542,7 +1542,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       );
       expect(await activeJobs(run.id)).toEqual([]);
 
-      await handleLinearEvent(
+      await handleTrackerEvent(
         { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "retry" },
         { db, organizationId: orgId, workspaceId: "org-1" },
         { linear, dispatcher, adapterFor: () => scm.asAdapter() },
@@ -1559,7 +1559,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         const sessionId = `session-${sessionSeq}`;
         await startRun(
           {
-            kind: "session_created",
+            kind: "issue_mentioned",
             sessionId,
             issueId: epic.id,
             commentBody: "@omniralph rename the badge",
@@ -1773,8 +1773,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     await linear.setIssueState(outside.id, { type: "completed" });
-    await handleLinearEvent(
-      { kind: "issue_state", issueId: outside.id, removed: false },
+    await handleTrackerEvent(
+      { kind: "issue_state_changed", issueId: outside.id, removed: false },
       { db, organizationId: orgId, workspaceId: "org-1" },
       { linear, dispatcher },
     );
@@ -2054,7 +2054,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(await getRun(db, run.id)).toMatchObject({ status: "waiting" });
 
     // `/continue` gives it fresh rounds and clears its metric history.
-    await handleLinearEvent(
+    await handleTrackerEvent(
       { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "/continue" },
       { db, organizationId: orgId, workspaceId: "org-1" },
       { linear, dispatcher, adapterFor: () => scm.asAdapter() },
@@ -2099,8 +2099,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     // Unrelated events and a repeat change nothing.
     const event = (issueId: string) =>
-      handleLinearEvent(
-        { kind: "issue_state", issueId, removed: false },
+      handleTrackerEvent(
+        { kind: "issue_state_changed", issueId, removed: false },
         { db, organizationId: orgId, workspaceId: "org-1" },
         { linear, dispatcher },
       );
@@ -2149,8 +2149,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     );
 
     await linear.setIssueState(manual.id, { type: "completed" });
-    await handleLinearEvent(
-      { kind: "issue_state", issueId: manual.id, removed: false },
+    await handleTrackerEvent(
+      { kind: "issue_state_changed", issueId: manual.id, removed: false },
       { db, organizationId: orgId, workspaceId: "org-1" },
       { linear, dispatcher },
     );
@@ -2370,8 +2370,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
         // Someone does ENG-3 by hand: its dependent runs and the epic finishes.
         await linear.setIssueState(t.s2.id, { type: "completed" });
-        await handleLinearEvent(
-          { kind: "issue_state", issueId: t.s2.id, removed: false },
+        await handleTrackerEvent(
+          { kind: "issue_state_changed", issueId: t.s2.id, removed: false },
           { db, organizationId: orgId, workspaceId: "org-1" },
           { linear, dispatcher },
         );
@@ -2598,7 +2598,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     }
 
     const reply = (run: LinearRun, body: string) =>
-      handleLinearEvent(
+      handleTrackerEvent(
         { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
         { db, organizationId: orgId, workspaceId: "org-1" },
         { linear, dispatcher, adapterFor: () => scm.asAdapter() },
@@ -2801,7 +2801,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           "Which repository should I work in for this issue?",
         );
 
-        await handleLinearEvent(
+        await handleTrackerEvent(
           { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "group/app" },
           { db, organizationId: orgId, workspaceId: "org-1" },
           { linear, dispatcher, adapterFor: () => scm.asAdapter() },
@@ -3081,7 +3081,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     }
 
     const reply = (run: LinearRun, body: string) =>
-      handleLinearEvent(
+      handleTrackerEvent(
         { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
         { db, organizationId: orgId, workspaceId: "org-1" },
         { linear, dispatcher, adapterFor: () => scm.asAdapter() },

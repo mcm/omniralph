@@ -1,7 +1,7 @@
 import "server-only";
 import type { Database } from "@omniralph/db";
 import { getDispatcher } from "@/lib/dispatch";
-import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
+import { getLinearGatewayOrDisconnected } from "@/lib/tracker/linear/client";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 

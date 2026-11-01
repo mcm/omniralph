@@ -32,9 +32,9 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JobDispatcher } from "@/lib/dispatch";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import type { HandledLinearEvent, LinearEventContext } from "@/lib/linear/events";
-import { handleLinearWebhook } from "@/lib/linear/ingest";
-import { signBody } from "@/lib/linear/webhook";
+import type { HandledTrackerEvent, TrackerEventContext } from "@/lib/tracker/events";
+import { handleLinearWebhook } from "@/lib/tracker/linear/ingest";
+import { signBody } from "@omniralph/tracker/linear";
 import type { ChangeMessage } from "@/lib/live/publisher";
 import { withLiveChanges } from "@/lib/live/request";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
@@ -578,7 +578,7 @@ describe.skipIf(!databaseAvailable)("webhook delivery log", () => {
   });
 
   describe("Linear", () => {
-    let handler: (event: HandledLinearEvent, context: LinearEventContext) => Promise<void>;
+    let handler: (event: HandledTrackerEvent, context: TrackerEventContext) => Promise<void>;
 
     beforeEach(() => {
       handler = async () => undefined;
@@ -619,7 +619,7 @@ describe.skipIf(!databaseAvailable)("webhook delivery log", () => {
     it("records a session that started a run, with the run the handler created", async () => {
       let runId = "";
       handler = async (event) => {
-        if (event.kind !== "session_created") return;
+        if (event.kind !== "issue_delegated") return;
         const { run } = await createRun(db, {
           organizationId: orgId,
           linearIssueId: event.issueId,
@@ -635,7 +635,7 @@ describe.skipIf(!databaseAvailable)("webhook delivery log", () => {
       const delivery = randomUUID();
       expect(await (await sendLinear(session("created", "s-1"), { delivery })).json()).toEqual({
         status: "accepted",
-        kind: "session_created",
+        kind: "issue_delegated",
       });
       expect(await onlyEvent()).toMatchObject({
         provider: "linear",

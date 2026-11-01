@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RuleGroupType } from "react-querybuilder";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
+import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
 import {
   coerceValue,
   draftsOf,

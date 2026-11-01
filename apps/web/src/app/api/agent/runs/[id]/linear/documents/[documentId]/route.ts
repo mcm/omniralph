@@ -12,7 +12,7 @@ async function get(req: Request, ctx: DocumentRouteContext): Promise<Response> {
   const documentId = LinearEntityId.safeParse((await ctx.params).documentId);
   if (!documentId.success) return notFound();
   return serveRunLinearTool(req, ctx, "linear_get_document", async (linear) => ({
-    document: runLinearDocument(await linear.getDocument(documentId.data)),
+    document: runLinearDocument(await linear.documents.getDocument(documentId.data)),
   }));
 }
 

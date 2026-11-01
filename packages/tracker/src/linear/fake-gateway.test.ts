@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FakeLinearGateway } from "./fake-gateway";
+import { FakeLinearGateway } from "./fake-gateway.js";
 
 describe("FakeLinearGateway triage methods", () => {
   it("updates title, description and priority, reflected in getIssue", async () => {
@@ -41,8 +41,8 @@ describe("FakeLinearGateway triage methods", () => {
     const linear = new FakeLinearGateway();
     const issue = linear.add({ title: "T" });
 
-    const first = await linear.createAgentSessionOnIssue(issue.identifier);
-    const second = await linear.createAgentSessionOnIssue(issue.id);
+    const first = await linear.sessions.createSessionOnIssue(issue.identifier);
+    const second = await linear.sessions.createSessionOnIssue(issue.id);
 
     expect(first).not.toBe(second);
     expect(linear.sessionsCreated).toEqual([
@@ -58,15 +58,15 @@ describe("FakeLinearGateway triage methods", () => {
       "updateIssue",
       "addIssueLabels",
       "removeIssueLabel",
-      "createAgentSessionOnIssue",
+      "createSessionOnIssue",
     ]) {
       linear.failures.set(method, new Error(`${method} down`));
     }
     await expect(linear.updateIssue(issue.id, { title: "X" })).rejects.toThrow("updateIssue down");
     await expect(linear.addIssueLabels(issue.id, ["l"])).rejects.toThrow("addIssueLabels down");
     await expect(linear.removeIssueLabel(issue.id, "l")).rejects.toThrow("removeIssueLabel down");
-    await expect(linear.createAgentSessionOnIssue(issue.id)).rejects.toThrow(
-      "createAgentSessionOnIssue down",
+    await expect(linear.sessions.createSessionOnIssue(issue.id)).rejects.toThrow(
+      "createSessionOnIssue down",
     );
     expect((await linear.getIssue(issue.id)).title).toBe("T");
   });
@@ -88,7 +88,7 @@ describe("FakeLinearGateway teams and delegation", () => {
     const linear = new FakeLinearGateway();
     const existing = linear.add({ title: "Existing" });
 
-    await linear.delegateIssue(existing.identifier, "app-user");
+    await linear.delegation.delegateIssue(existing.identifier, "app-user");
     const created = await linear.createIssue({
       teamId: "team-1",
       title: "New",
@@ -111,14 +111,16 @@ describe("FakeLinearGateway teams and delegation", () => {
     }
     await expect(linear.listTeams()).rejects.toThrow("listTeams down");
     await expect(linear.getViewer()).rejects.toThrow("getViewer down");
-    await expect(linear.delegateIssue(issue.id, "app-user")).rejects.toThrow("delegateIssue down");
+    await expect(linear.delegation.delegateIssue(issue.id, "app-user")).rejects.toThrow(
+      "delegateIssue down",
+    );
     expect(linear.delegations).toEqual([]);
   });
 
   it("rejects delegating an unknown issue", async () => {
-    await expect(new FakeLinearGateway().delegateIssue("nope", "app-user")).rejects.toThrow(
-      "No issue nope",
-    );
+    await expect(
+      new FakeLinearGateway().delegation.delegateIssue("nope", "app-user"),
+    ).rejects.toThrow("No issue nope");
   });
 });
 
@@ -148,11 +150,11 @@ describe("FakeLinearGateway read tools", () => {
       url: "https://linear.app/acme/document/design-abc123",
       updatedAt: "2026-10-01T00:00:00.000Z",
     };
-    linear.documents.set(document.id, document);
+    linear.documentsById.set(document.id, document);
 
-    expect(await linear.getDocument("doc-1")).toEqual(document);
-    expect(await linear.getDocument("abc123")).toEqual(document);
-    await expect(linear.getDocument("nope")).rejects.toThrow(/No document/);
+    expect(await linear.documents.getDocument("doc-1")).toEqual(document);
+    expect(await linear.documents.getDocument("abc123")).toEqual(document);
+    await expect(linear.documents.getDocument("nope")).rejects.toThrow(/No document/);
   });
 });
 
@@ -170,12 +172,12 @@ describe("FakeLinearGateway lists", () => {
       { id: "p2", name: "Two" },
     ];
 
-    expect((await linear.listIssueLabels()).map((l) => l.name)).toEqual(["a", "b", "c", "d", "e"]);
+    expect((await linear.listLabels()).map((l) => l.name)).toEqual(["a", "b", "c", "d", "e"]);
     expect(await linear.listProjects()).toEqual(linear.projects);
     expect(linear.pageRequests).toEqual([
-      { method: "listIssueLabels", after: 0 },
-      { method: "listIssueLabels", after: 2 },
-      { method: "listIssueLabels", after: 4 },
+      { method: "listLabels", after: 0 },
+      { method: "listLabels", after: 2 },
+      { method: "listLabels", after: 4 },
       { method: "listProjects", after: 0 },
     ]);
   });
@@ -188,7 +190,7 @@ describe("FakeLinearGateway lists", () => {
 
   it("fails each list on demand", async () => {
     const linear = new FakeLinearGateway();
-    for (const method of ["listIssueLabels", "listProjects"] as const) {
+    for (const method of ["listLabels", "listProjects"] as const) {
       linear.failures.set(method, new Error(method));
       await expect(linear[method]()).rejects.toThrow(method);
     }

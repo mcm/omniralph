@@ -29,9 +29,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import type { RoutingTestResult } from "@/lib/api/routing-rules";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import type * as LinearClient from "@/lib/linear/client";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
-import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "@/lib/ralph/start";
+import type * as LinearClient from "@/lib/tracker/linear/client";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import { startRun, type StartRunDeps } from "@/lib/ralph/start";
+import { AGENT_SESSION_MARKER } from "@omniralph/tracker/linear";
 import { labelsInclude, setRoutingRules } from "@/lib/routing/testing";
 import { ROUTING_TEST_LIMIT, unknownIssueMessage } from "@/lib/routing/test-issue";
 
@@ -61,7 +62,7 @@ vi.mock("@/lib/auth/session", () => ({
       role,
     ),
 }));
-vi.mock("@/lib/linear/client", async (importOriginal) => {
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => {
   const actual = await importOriginal<typeof LinearClient>();
   return {
     ...actual,
@@ -424,7 +425,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
       const issue = linear.issues.values().find((i) => i.identifier === identifier)!;
       const outcome = await startRun(
         {
-          kind: "session_created",
+          kind: "issue_delegated",
           sessionId,
           issueId: issue.id,
           commentBody: `${AGENT_SESSION_MARKER}. Delegated by Steve.`,

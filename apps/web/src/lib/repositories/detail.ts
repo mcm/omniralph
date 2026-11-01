@@ -29,7 +29,7 @@ import { WORK_ITEM_TRACKERS } from "@/lib/api/work-item-matches";
 import { hasRole } from "@/lib/auth/roles";
 import { organizationAgentVersion } from "@/lib/agents/desired-version";
 import { agentRow } from "@/lib/agents/rows";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
+import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
 import type { SettingsSection } from "@/lib/live/events";
 import {
   listPlaybooks,

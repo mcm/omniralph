@@ -1,6 +1,6 @@
 import type { RoutingCondition, RoutingGroup } from "@omniralph/shared";
 import { describe, expect, it } from "vitest";
-import { LINEAR_ROUTING_FIELD_TYPES } from "@/lib/linear/routing-fields";
+import { LINEAR_ROUTING_FIELD_TYPES } from "@/lib/tracker/linear/routing-fields";
 import { evaluateCondition, evaluateQuery, type RoutingFieldValues } from "./evaluate";
 
 const values: RoutingFieldValues = {

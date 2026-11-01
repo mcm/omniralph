@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth/session";
 import { connectingWithHistory, settingsActor } from "@/lib/settings-history/sections";
 import { readSignedState } from "@/lib/auth/signed-state";
 import { getDb } from "@/lib/db";
-import { SdkLinearGateway } from "@/lib/linear/gateway";
+import { SdkLinearGateway } from "@omniralph/tracker/linear";
 import {
   exchangeCode,
   LINEAR_CALLBACK_PATH,
@@ -14,7 +14,7 @@ import {
   linearOAuthConfig,
   linearRedirectUri,
   STATE_COOKIE,
-} from "@/lib/linear/oauth";
+} from "@/lib/tracker/linear/oauth";
 import { liveRoute } from "@/lib/live/request";
 import {
   connectedPath,
@@ -73,7 +73,7 @@ async function get(request: NextRequest) {
   let saved;
   try {
     const credentials = await exchangeCode(config, { code, redirectUri: linearRedirectUri() });
-    const workspace = await new SdkLinearGateway(credentials.accessToken).getOrganization();
+    const workspace = await new SdkLinearGateway(credentials.accessToken).getWorkspace();
     const existing = await getIntegration(db, organizationId, "linear");
     saved = await connectingWithHistory(
       db,

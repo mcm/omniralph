@@ -11,25 +11,25 @@ import {
   type Database,
 } from "@omniralph/db";
 import { DeliveryLog, type DeliveryResult } from "@/lib/webhooks/delivery-log";
-import type { HandledLinearEvent, LinearEventContext } from "./events";
+import type { TrackerEvent } from "@omniralph/tracker";
 import {
   classifyWebhook,
   DELIVERY_HEADER,
   SIGNATURE_HEADER,
   verifyWebhook,
-  type LinearWebhookEvent,
-} from "./webhook";
+} from "@omniralph/tracker/linear";
+import type { HandledTrackerEvent, TrackerEventContext } from "../events";
 
 export interface LinearWebhookDeps {
   db: Database;
   /** `LINEAR_WEBHOOK_SECRET`; deliveries are rejected when it's unset. */
   secret: string | undefined;
-  handle: (event: HandledLinearEvent, context: LinearEventContext) => Promise<void>;
+  handle: (event: HandledTrackerEvent, context: TrackerEventContext) => Promise<void>;
   /**
    * Runs before the response (after the delivery is claimed), e.g. the
    * acknowledgement Linear needs within 10 seconds of a new agent session.
    */
-  acknowledge?: (event: HandledLinearEvent, context: LinearEventContext) => Promise<void>;
+  acknowledge?: (event: HandledTrackerEvent, context: TrackerEventContext) => Promise<void>;
   /**
    * Runs the handler after the response is sent (the route passes Next.js
    * `after`). Defaults to running it before responding.
@@ -59,7 +59,7 @@ export function linearDeliveryKey(deliveryId: string | null | undefined, rawBody
 }
 
 type Outcome =
-  | { status: "accepted"; kind: HandledLinearEvent["kind"] }
+  | { status: "accepted"; kind: HandledTrackerEvent["kind"] }
   | { status: "duplicate" }
   | { status: "ignored"; reason: string };
 
@@ -157,7 +157,7 @@ export async function replayLinearDelivery(
   input: {
     integration: { id: string; organizationId: string; externalId: string };
     payload: Record<string, unknown>;
-    event: LinearWebhookEvent;
+    event: TrackerEvent;
     deliveryId: string | null;
     replayOfId: string;
     replayedBy: string;
@@ -194,7 +194,7 @@ export async function replayLinearDelivery(
 export async function processVerifiedLinearDelivery(
   deps: LinearWebhookDeps,
   input: {
-    event: HandledLinearEvent;
+    event: HandledTrackerEvent;
     integration: { organizationId: string; externalId: string };
     deliveryId: string;
     log: DeliveryLog;
@@ -215,7 +215,7 @@ export async function processVerifiedLinearDelivery(
     return Response.json({ error: "internal_error" }, { status: 500 });
   }
 
-  const context: LinearEventContext = {
+  const context: TrackerEventContext = {
     db,
     organizationId: integration.organizationId,
     workspaceId: integration.externalId,
@@ -265,10 +265,12 @@ export async function processVerifiedLinearDelivery(
   return reply({ status: "accepted", kind: event.kind });
 }
 
-function initialResult(event: HandledLinearEvent): DeliveryResult {
+function initialResult(event: HandledTrackerEvent): DeliveryResult {
   return {
     outcome:
-      event.kind === "session_created" || event.kind === "triage_label_added"
+      event.kind === "issue_delegated" ||
+      event.kind === "issue_mentioned" ||
+      event.kind === "triage_requested"
         ? "started_run"
         : "updated_run",
   };
@@ -282,10 +284,14 @@ function initialResult(event: HandledLinearEvent): DeliveryResult {
 async function linearEventResult(
   db: Database,
   organizationId: string,
-  event: HandledLinearEvent,
+  event: HandledTrackerEvent,
 ): Promise<DeliveryResult> {
   const outcome = initialResult(event).outcome as "started_run" | "updated_run";
-  if (event.kind === "session_created" || event.kind === "session_prompted") {
+  if (
+    event.kind === "issue_delegated" ||
+    event.kind === "issue_mentioned" ||
+    event.kind === "session_prompted"
+  ) {
     const ralph = await getRunBySession(db, event.sessionId);
     if (ralph?.organizationId === organizationId) {
       return { outcome, run: { id: ralph.id, kind: ralph.mode } };
@@ -296,7 +302,7 @@ async function linearEventResult(
     }
     return { outcome: "ignored", reasonCode: "no_run" };
   }
-  if (event.kind === "triage_label_added") {
+  if (event.kind === "triage_requested") {
     const triage = await getActiveTriageRun(db, organizationId, event.issueId);
     return triage ? { outcome, run: { id: triage.id, kind: "triage" } } : { outcome };
   }

@@ -1,16 +1,16 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { InvalidInputLinearError } from "@linear/sdk";
+import { TrackerInvalidInputError } from "@omniralph/tracker";
 import { agents, closeDb, createDb, jobs, type Database, organizations } from "@omniralph/db";
 import type { JobTokenScope } from "@omniralph/shared";
 import type * as Tasks from "@omniralph/tasks";
-import type * as LinearClient from "@/lib/linear/client";
+import type * as LinearClient from "@/lib/tracker/linear/client";
 import {
   createTestDatabase,
   testDatabaseAvailable,
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 
 const SESSION_SCOPES: JobTokenScope[] = [
   "credentials:read",
@@ -30,7 +30,7 @@ const state = vi.hoisted(() => ({
   gatewaysByOrg: new Map<string, FakeLinearGateway>(),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@/lib/linear/client", async (original) => {
+vi.mock("@/lib/tracker/linear/client", async (original) => {
   const client = await original<typeof LinearClient>();
   return {
     ...client,
@@ -264,7 +264,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/linear/*", () => {
   });
 
   it("refuses tools the run's agent doesn't list, and tasks without linearRead", async () => {
-    state.linear.documents.set("doc-1", {
+    state.linear.documentsById.set("doc-1", {
       id: "doc-1",
       title: "D",
       content: "",
@@ -309,7 +309,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/linear/*", () => {
   });
 
   it("reads a document by ID", async () => {
-    state.linear.documents.set("doc-1", {
+    state.linear.documentsById.set("doc-1", {
       id: "doc-1",
       title: "Design",
       content: "# Design",
@@ -397,7 +397,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/runs/{id}/linear/*", () => {
     expect(await res.json()).toMatchObject({ error: "linear_not_connected" });
 
     state.notConnected = false;
-    state.linear.failures.set("getIssue", new InvalidInputLinearError());
+    state.linear.failures.set("getIssue", new TrackerInvalidInputError("Entity not found"));
     res = await call.issue(jobId, "ENG-1", session);
     expect(res.status).toBe(404);
     expect(await res.json()).toMatchObject({ error: "linear_not_found" });

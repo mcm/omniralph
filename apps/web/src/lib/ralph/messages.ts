@@ -34,7 +34,8 @@ import {
   RALPH_STORY_JOB_TYPE,
   type JobMessageDelivery,
 } from "@omniralph/shared";
-import type { ActivityContent, LinearGateway } from "@/lib/linear/gateway";
+import type { ActivityContent } from "@omniralph/tracker";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import { conversationFor } from "./conversation";
 import { postActivity } from "./notify";
 

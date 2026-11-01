@@ -32,7 +32,7 @@ import type { ScopedOrganization } from "@/lib/api/scope";
 import { hasRole } from "@/lib/auth/roles";
 import { getDispatcher } from "@/lib/dispatch";
 import { rerunJob } from "@/lib/jobs/rerun";
-import { getLinearGatewayOrDisconnected } from "@/lib/linear/client";
+import { getLinearGatewayOrDisconnected } from "@/lib/tracker/linear/client";
 import { finishManualStory, startEpicAnyway } from "@/lib/ralph/person-actions";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { retryRun } from "@/lib/runs/retry";

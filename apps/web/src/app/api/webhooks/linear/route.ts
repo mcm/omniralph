@@ -1,7 +1,7 @@
 import { after } from "next/server";
 import { getDb } from "@/lib/db";
-import { acknowledgeLinearEvent, handleLinearEvent } from "@/lib/linear/events";
-import { handleLinearWebhook } from "@/lib/linear/ingest";
+import { acknowledgeTrackerEvent, handleTrackerEvent } from "@/lib/tracker/events";
+import { handleLinearWebhook } from "@/lib/tracker/linear/ingest";
 import { liveDeferred, liveRoute } from "@/lib/live/request";
 
 /**
@@ -13,8 +13,8 @@ async function post(req: Request): Promise<Response> {
   return handleLinearWebhook(req, {
     db: getDb(),
     secret: process.env.LINEAR_WEBHOOK_SECRET,
-    acknowledge: acknowledgeLinearEvent,
-    handle: handleLinearEvent,
+    acknowledge: acknowledgeTrackerEvent,
+    handle: handleTrackerEvent,
     defer: (task) => after(liveDeferred(task)),
   });
 }

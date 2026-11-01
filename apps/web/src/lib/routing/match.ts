@@ -5,7 +5,7 @@
  * item, the most specific one wins (`specificity`); a tie asks.
  */
 import type { WorkItemMatchFields } from "@omniralph/db";
-import type { RoutingIssueFields } from "@/lib/linear/gateway";
+import type { RoutingIssueFields } from "@omniralph/tracker/linear";
 
 /** A work item's fields a match tests: the team's key, the project's name and label names. */
 export type WorkItemValues = Pick<RoutingIssueFields, "team" | "project" | "labels">;

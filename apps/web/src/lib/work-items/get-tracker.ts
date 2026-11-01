@@ -8,9 +8,13 @@ import {
   setIntegrationStateMapping,
   type Database,
 } from "@omniralph/db";
-import { getLinearGateway, lazyLinearGateway, LinearNotConnectedError } from "@/lib/linear/client";
-import { fixtureLinearEnabled, fixtureLinearGateway } from "@/lib/linear/fixture-gateway";
-import type { LinearGateway } from "@/lib/linear/gateway";
+import {
+  getLinearGateway,
+  lazyLinearGateway,
+  LinearNotConnectedError,
+} from "@/lib/tracker/linear/client";
+import { fixtureLinearEnabled, fixtureLinearGateway } from "@omniralph/tracker/linear/testing";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import { LinearWorkItemTracker } from "./linear";
 import { TrackerNotConnectedError, type WorkItemTracker } from "./tracker";
 

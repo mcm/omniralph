@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
+import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
 import { describeQuery, describeRule } from "./describe";
 
 describe("describeRule", () => {

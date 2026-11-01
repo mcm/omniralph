@@ -1,12 +1,14 @@
 /**
- * Linear webhook verification and event classification (ported from cyralph).
+ * Linear webhook verification and event classification (ported from cyralph):
+ * deliveries become neutral {@link TrackerEvent}s.
  *
  * Linear signs the raw request body with HMAC-SHA256 (hex) in the
  * `linear-signature` header and includes `webhookTimestamp` (ms) in the
  * payload for replay protection.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { WebhookIgnoreReason } from "@/lib/webhooks/reasons";
+import { isTriageLabel, type TrackerEvent } from "../events.js";
+import { isWorkflowStateType } from "../types.js";
 
 export const SIGNATURE_HEADER = "linear-signature";
 export const DELIVERY_HEADER = "linear-delivery";
@@ -53,79 +55,18 @@ export function verifyWebhook(
   return { ok: true, payload: record };
 }
 
-export type LinearWebhookEvent =
-  | {
-      kind: "session_created";
-      sessionId: string;
-      issueId: string;
-      issueIdentifier?: string;
-      /** Linear's formatted context for the agent (issue, comments, guidance). */
-      promptContext?: string;
-      /** The comment that started the session (a mention), if any. */
-      commentBody?: string;
-      creatorName?: string;
-    }
-  | {
-      kind: "session_prompted";
-      sessionId: string;
-      issueId?: string;
-      body: string;
-      /** e.g. `stop` when the user pressed Stop. */
-      signal?: string;
-      authorName?: string;
-    }
-  | {
-      /** An issue changed workflow state (or was removed); may unblock waiting runs. */
-      kind: "issue_state";
-      issueId: string;
-      identifier?: string;
-      /** Workflow state type from the payload, when present (`completed`, `canceled`, …). */
-      stateType?: string;
-      removed: boolean;
-      /**
-       * The same update also added a triage label (a bulk edit, or
-       * moving and labelling at once): triage starts after the state change.
-       */
-      triageLabelId?: string;
-    }
-  | {
-      /** An issue update added a triage label (`coding:triage`): triage the issue. */
-      kind: "triage_label_added";
-      issueId: string;
-      identifier?: string;
-      labelId: string;
-    }
-  | {
-      kind: "ignored";
-      /** The delivery log's reason code. */
-      code: LinearIgnoreReason;
-      /** What the webhook answers. */
-      reason: string;
-    };
-
-/** Why `classifyWebhook` ignores an event (each has a sentence in `lib/webhooks/reasons.ts`). */
-export type LinearIgnoreReason = Extract<
-  WebhookIgnoreReason,
-  | "issue_without_id"
-  | "issue_unchanged"
-  | "unsupported_event"
-  | "no_agent_session"
-  | "agent_session_without_issue"
->;
-
-/** The label that asks for triage (matched ignoring case). */
-export const TRIAGE_LABEL = "coding:triage";
-
-/** Every name of the triage label, current first: workspaces may still use the old one. */
-export const TRIAGE_LABEL_NAMES = [TRIAGE_LABEL, "ralph:triage"] as const;
-
 /**
- * A label that asks for triage: `coding:triage`, or the label's name from
- * before the rename to Coding, which workspaces may still use.
+ * Linear always fills `agentSession.comment.body`; for a delegation (not an
+ * @mention) it holds a system note containing this marker (cyralph and Cyrus
+ * tell the two apart the same way).
  */
-const TRIAGE_LABEL_NAME = /^(coding|ralph):triage$/i;
+export const AGENT_SESSION_MARKER = "This thread is for an agent session";
 
-export const isTriageLabel = (name: string) => TRIAGE_LABEL_NAME.test(name);
+/** Whether a new agent session's comment is an @mention (not a delegation's system note). */
+function isMentionComment(body: string | undefined): body is string {
+  const trimmed = body?.trim();
+  return !!trimmed && !trimmed.includes(AGENT_SESSION_MARKER);
+}
 
 function obj(v: unknown): Record<string, unknown> {
   return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
@@ -159,7 +100,7 @@ function addedTriageLabel(payload: Record<string, unknown>): string | undefined 
   return label ? str(label.id) : undefined;
 }
 
-function classifyIssueWebhook(payload: Record<string, unknown>): LinearWebhookEvent {
+function classifyIssueWebhook(payload: Record<string, unknown>): TrackerEvent {
   const data = obj(payload.data);
   const issueId = str(data.id);
   if (!issueId)
@@ -169,7 +110,7 @@ function classifyIssueWebhook(payload: Record<string, unknown>): LinearWebhookEv
   if (!removed && !stateChanged) {
     const labelId = addedTriageLabel(payload);
     if (labelId) {
-      return { kind: "triage_label_added", issueId, identifier: str(data.identifier), labelId };
+      return { kind: "triage_requested", issueId, identifier: str(data.identifier), labelId };
     }
     return {
       kind: "ignored",
@@ -178,17 +119,23 @@ function classifyIssueWebhook(payload: Record<string, unknown>): LinearWebhookEv
     };
   }
   const triageLabelId = removed ? undefined : addedTriageLabel(payload);
+  const stateType = str(obj(data.state).type);
   return {
-    kind: "issue_state",
+    kind: "issue_state_changed",
     issueId,
     identifier: str(data.identifier),
-    stateType: str(obj(data.state).type),
+    ...(stateType && isWorkflowStateType(stateType) && { stateType }),
     removed,
     ...(triageLabelId ? { triageLabelId } : {}),
   };
 }
 
-export function classifyWebhook(payload: Record<string, unknown>): LinearWebhookEvent {
+/**
+ * A verified delivery as a neutral event: a new agent session is a delegation or a
+ * mention, a reply in one is a prompt, an issue update is a state change or a triage
+ * request; anything else is ignored with the delivery log's reason.
+ */
+export function classifyWebhook(payload: Record<string, unknown>): TrackerEvent {
   if (payload.type === "Issue") return classifyIssueWebhook(payload);
   if (payload.type !== "AgentSessionEvent") {
     return { kind: "ignored", code: "unsupported_event", reason: `type ${String(payload.type)}` };
@@ -207,15 +154,17 @@ export function classifyWebhook(payload: Record<string, unknown>): LinearWebhook
         code: "agent_session_without_issue",
         reason: "agent session without an issue",
       };
-    return {
-      kind: "session_created",
+    const fields = {
       sessionId,
       issueId,
       issueIdentifier: str(issue.identifier),
       promptContext: str(payload.promptContext),
-      commentBody: str(obj(session.comment).body),
       creatorName: str(obj(session.creator).name),
     };
+    const commentBody = str(obj(session.comment).body);
+    return isMentionComment(commentBody)
+      ? { kind: "issue_mentioned", ...fields, commentBody }
+      : { kind: "issue_delegated", ...fields, commentBody };
   }
   if (payload.action === "prompted") {
     const activity = obj(payload.agentActivity);

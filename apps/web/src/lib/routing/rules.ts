@@ -12,8 +12,8 @@ import type { RoutingRuleInput } from "@omniralph/shared";
 import { ApiRouteError } from "@/lib/api/handler";
 import type { ScopedOrganization } from "@/lib/api/scope";
 import type { RoutingRuleRow, RoutingRules, SavedRoutingRules } from "@/lib/api/routing-rules";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
-import { getLinearSettingsOptions } from "@/lib/linear/settings-options";
+import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
+import { getLinearSettingsOptions } from "@/lib/tracker/linear/settings-options";
 import { loadSettingsHistory } from "@/lib/settings-history/history";
 import { trackedRoutingRules } from "@/lib/settings-history/sections";
 

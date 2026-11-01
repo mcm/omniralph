@@ -38,8 +38,7 @@ import {
   type Epic,
 } from "@omniralph/ralph";
 import { bumpAgentHeartbeat } from "@/lib/agents/heartbeat-cache";
-import type { ActivityContent, IssueSummary } from "@/lib/linear/gateway";
-import type { LinearWebhookEvent } from "@/lib/linear/webhook";
+import type { ActivityContent, IssueSummary, SessionStartedEvent } from "@omniralph/tracker";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { createRouter, routedRepository, type Router } from "@/lib/routing/resolve";
 import { blockedLabelsMessage, blockingLabels, organizationBlockedLabels } from "./blocked-labels";
@@ -66,24 +65,16 @@ import { scheduleRunByStatus, scheduleRunSafetyCheck } from "./due";
 import { advanceRun, FINISHED_RUN_STATUSES, syncStories, type RalphDeps } from "./run";
 import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
 
-export type SessionCreatedEvent = Extract<LinearWebhookEvent, { kind: "session_created" }>;
+export type SessionCreatedEvent = SessionStartedEvent;
 
 export type StartRunDeps = RalphDeps;
-
-/**
- * Linear always fills `agentSession.comment.body`; for a delegation (not an
- * @mention) it holds a system note containing this marker (cyralph and Cyrus
- * tell the two apart the same way).
- */
-export const AGENT_SESSION_MARKER = "This thread is for an agent session";
 
 /** The acknowledgement posted before the webhook responds. */
 export const ACKNOWLEDGEMENT = "On it…";
 
 /** Whether a new agent session comes from a mention rather than a delegation. */
-export function isMention(event: Pick<SessionCreatedEvent, "commentBody">): boolean {
-  const body = event.commentBody?.trim();
-  return !!body && !body.includes(AGENT_SESSION_MARKER);
+export function isMention(event: Pick<SessionCreatedEvent, "kind">): boolean {
+  return event.kind === "issue_mentioned";
 }
 
 export type StartOutcome =

@@ -24,10 +24,10 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import { BUILTIN_PLAYBOOK_SOURCE } from "@/lib/playbooks";
 import { jobHooks } from "@/lib/sinks";
-import type { IssueSummary } from "@/lib/linear/gateway";
+import type { IssueSummary } from "@omniralph/tracker";
 import { loadEpic } from "@/lib/ralph/epic-loader";
 import {
   applyTriageJob,
@@ -43,7 +43,7 @@ vi.mock("server-only", () => ({}));
 
 /** The gateway the sink's hooks get (they load the organization's own). */
 const gateway = vi.hoisted(() => ({ current: null as unknown }));
-vi.mock("@/lib/linear/client", () => ({ getLinearGateway: async () => gateway.current }));
+vi.mock("@/lib/tracker/linear/client", () => ({ getLinearGateway: async () => gateway.current }));
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -593,12 +593,12 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
   describe("a delegation that triage ran in", () => {
     it("removes Om as the delegate once the PRD is applied, before the final response", async () => {
       const issue = addIssue();
-      await linear.delegateIssue(issue.id, linear.viewer.id);
+      await linear.delegation.delegateIssue(issue.id, linear.viewer.id);
       const { job, sessionId } = await completedJob(issue, result());
       const delegationsBefore = linear.delegations.length;
       let delegateWhenResponding: string | undefined = "unset";
-      const createActivity = linear.createActivity.bind(linear);
-      linear.createActivity = async (...args) => {
+      const createActivity = linear.sessions.createActivity;
+      linear.sessions.createActivity = async (...args) => {
         if (args[1].type === "response") delegateWhenResponding = linear.delegateOf(issue.id);
         return createActivity(...args);
       };
@@ -615,7 +615,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
 
     it("keeps another agent's delegation", async () => {
       const issue = addIssue();
-      await linear.delegateIssue(issue.id, "other-agent");
+      await linear.delegation.delegateIssue(issue.id, "other-agent");
       const { job } = await completedJob(issue, result());
 
       await applyTriageJob(deps(), job);

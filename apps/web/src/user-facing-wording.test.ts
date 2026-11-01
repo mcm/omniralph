@@ -24,7 +24,7 @@ const SCANNED = [
   "apps/web/src/lib/navigation.ts",
   // Linear, GitHub/GitLab and chat messages.
   "apps/web/src/lib/chat",
-  "apps/web/src/lib/linear",
+  "apps/web/src/lib/tracker",
   "apps/web/src/lib/mentions",
   "apps/web/src/lib/ralph",
   "apps/web/src/lib/review",
@@ -34,6 +34,8 @@ const SCANNED = [
   "apps/web/src/lib/sinks",
   "apps/web/src/lib/triage",
   "packages/ralph/src",
+  // The tracker gateway and its adapters' messages (e.g. the Linear webhook's).
+  "packages/tracker/src",
   // Built-in playbooks: their descriptions and prompts are served by the Playbooks API.
   "packages/tasks/src/builtin",
   // The agent's local page.
@@ -102,7 +104,7 @@ const RALPH_ALLOWED: Allowed[] = [
   },
   {
     text: /^ralph:triage$/g,
-    files: ["apps/web/src/lib/linear/webhook.ts"],
+    files: ["packages/tracker/src/events.ts"],
     reason: "the triage label's old name, which workspaces may still have and the web UI reuses",
   },
 ];
@@ -256,7 +258,7 @@ describe("user-facing wording", () => {
     expect(files).toContain("apps/web/src/screens/repos/repo-detail-view.tsx");
     expect(files).toContain("apps/web/src/screens/repos/agents-card.tsx");
     expect(files).toContain("apps/web/src/components/connection-health.tsx");
-    expect(files).toContain("apps/web/src/lib/linear/webhook.ts");
+    expect(files).toContain("packages/tracker/src/linear/webhook.ts");
     expect(files).toContain("apps/agent/ui/src/shell.tsx");
     expect(files).toContain("apps/agent/ui/src/app.tsx");
     expect(files.some((file) => file.endsWith(".test.ts"))).toBe(false);

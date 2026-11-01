@@ -23,7 +23,7 @@ import {
 import { UnsavedChangesProvider } from "@/components/unsaved-changes";
 import type { RoutingRuleRow, RoutingRules } from "@/lib/api/routing-rules";
 import type { SettingsHistoryEntry } from "@/lib/api/settings-history";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
+import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
 import {
   DEFAULT_RULES,
   ROUTING_RULES_CONFLICT,

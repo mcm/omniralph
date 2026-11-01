@@ -47,14 +47,14 @@ import {
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted, onReviewForRalph } from "./jobs";
 import { ralphJobPayload } from "./coding";
 import { bindCodingPlaybook } from "./testing";
 import { exchangeJobMessages } from "./messages";
 import { respondToReview } from "./pull-request-requests";
-import { AGENT_SESSION_MARKER, startRun, type StartRunDeps } from "./start";
+import { startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
@@ -225,10 +225,9 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     const sessionId = `session-${sessionSeq}`;
     await startRun(
       {
-        kind: "session_created",
+        kind: "issue_delegated",
         sessionId,
         issueId: epic.id,
-        commentBody: `${AGENT_SESSION_MARKER}.`,
         creatorName: "Steve",
       },
       deps(),
@@ -601,10 +600,9 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     const sessionId = `session-${sessionSeq}`;
     await startRun(
       {
-        kind: "session_created",
+        kind: "issue_delegated",
         sessionId,
         issueId: epic.id,
-        commentBody: `${AGENT_SESSION_MARKER}.`,
         creatorName: "Steve",
       },
       deps(),

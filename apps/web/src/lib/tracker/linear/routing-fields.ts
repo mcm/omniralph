@@ -5,7 +5,7 @@ import {
   type RoutingOperator,
 } from "@omniralph/shared";
 import type { RoutingFieldValues, RoutingIssueValue } from "@/lib/routing/evaluate";
-import type { RoutingIssue, RoutingIssueFields } from "./gateway";
+import type { RoutingIssue, RoutingIssueFields } from "@omniralph/tracker/linear";
 
 /**
  * The Linear issue fields routing rules test (Settings › Advanced › Routing rules), under Linear's own names.

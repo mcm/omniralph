@@ -63,7 +63,9 @@ vi.mock("@/lib/auth/session", async () => {
 });
 vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => ({}) }));
 // No Linear workspace is connected.
-vi.mock("@/lib/linear/settings-options", () => ({ getLinearSettingsOptions: async () => null }));
+vi.mock("@/lib/tracker/linear/settings-options", () => ({
+  getLinearSettingsOptions: async () => null,
+}));
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
 

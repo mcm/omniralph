@@ -16,11 +16,14 @@ import {
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { trackerCapabilities } from "@omniralph/tracker";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import type { LinearCredentials } from "./oauth";
 
 vi.mock("server-only", () => ({}));
 
-const { getLinearGateway, LinearNotConnectedError } = await import("./client");
+const { disconnectedLinearGateway, getLinearGateway, lazyLinearGateway, LinearNotConnectedError } =
+  await import("./client");
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -112,21 +115,21 @@ describe.skipIf(!databaseAvailable)("getLinearGateway", () => {
 
   it("uses a token that is valid for more than 5 minutes as is", async () => {
     await install({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: minutes(6) });
-    await (await gateway()).getOrganization();
+    await (await gateway()).getWorkspace();
     expect(token.requests).toHaveLength(0);
     expect(graphqlAuth).toEqual(["Bearer access-1"]);
   });
 
   it("never refreshes a token without expiry or refresh token", async () => {
     await install({ accessToken: "legacy" });
-    await (await gateway()).getOrganization();
+    await (await gateway()).getWorkspace();
     expect(token.requests).toHaveLength(0);
     expect(graphqlAuth).toEqual(["Bearer legacy"]);
   });
 
   it("refreshes a token within 5 minutes of expiry and persists it", async () => {
     await install({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: minutes(4) });
-    await (await gateway()).getOrganization();
+    await (await gateway()).getWorkspace();
     expect(token.requests).toHaveLength(1);
     expect(token.requests[0]?.get("refresh_token")).toBe("refresh-1");
     expect(graphqlAuth).toEqual(["Bearer access-2"]);
@@ -141,7 +144,7 @@ describe.skipIf(!databaseAvailable)("getLinearGateway", () => {
     await install({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: minutes(-1) });
     token.delayMs = 50;
     const gateways = await Promise.all([gateway(), gateway(), gateway()]);
-    await Promise.all(gateways.map((g) => g.getOrganization()));
+    await Promise.all(gateways.map((g) => g.getWorkspace()));
     expect(token.requests).toHaveLength(1);
     expect(graphqlAuth).toEqual(["Bearer access-2", "Bearer access-2", "Bearer access-2"]);
     expect(await stored()).toMatchObject({ accessToken: "access-2", refreshToken: "refresh-2" });
@@ -159,7 +162,7 @@ describe.skipIf(!databaseAvailable)("getLinearGateway", () => {
         gateway(),
         other.getLinearGateway({ db: otherDb, organizationId, key, config, now: () => NOW }),
       ]);
-      await Promise.all([a.getOrganization(), b.getOrganization()]);
+      await Promise.all([a.getWorkspace(), b.getWorkspace()]);
     } finally {
       await closeDb(otherDb);
     }
@@ -183,11 +186,11 @@ describe.skipIf(!databaseAvailable)("getLinearGateway", () => {
       refreshTimeoutMs: 50,
     });
     expect(Date.now() - started).toBeLessThan(400);
-    await fast.getOrganization();
+    await fast.getWorkspace();
     expect(graphqlAuth).toEqual(["Bearer access-1"]);
     // The refresh finishes in the background, and later callers share it.
     const later = await gateway();
-    await later.getOrganization();
+    await later.getWorkspace();
     expect(token.requests).toHaveLength(1);
     expect(graphqlAuth).toEqual(["Bearer access-1", "Bearer access-2"]);
     expect(await stored()).toMatchObject({ accessToken: "access-2", refreshToken: "refresh-2" });
@@ -204,7 +207,7 @@ describe.skipIf(!databaseAvailable)("getLinearGateway", () => {
         now: () => NOW,
         refreshTimeoutMs: 5_000,
       })
-    ).getOrganization();
+    ).getWorkspace();
     expect(graphqlAuth).toEqual(["Bearer access-2"]);
   });
 
@@ -221,7 +224,7 @@ describe.skipIf(!databaseAvailable)("getLinearGateway", () => {
       now: () => NOW,
       refreshTimeoutMs: 5_000,
     });
-    await g.getOrganization();
+    await g.getWorkspace();
     expect(graphqlAuth).toEqual(["Bearer access-1"]);
     expect(await stored()).toEqual(before);
   });
@@ -237,7 +240,7 @@ describe.skipIf(!databaseAvailable)("getLinearGateway", () => {
       now: () => NOW,
       refreshTimeoutMs: 10,
     });
-    await g.getOrganization();
+    await g.getWorkspace();
     expect(graphqlAuth).toEqual(["Bearer access-2"]);
   });
 
@@ -247,5 +250,56 @@ describe.skipIf(!databaseAvailable)("getLinearGateway", () => {
     token.fail = true;
     await expect(gateway()).rejects.toThrow(/400/);
     expect(await stored()).toEqual(before);
+  });
+});
+
+describe("lazyLinearGateway", () => {
+  it("loads the gateway once, on the first call, and forwards core and capability calls", async () => {
+    const linear = new FakeLinearGateway();
+    const issue = linear.add({ title: "Build it" });
+    const load = vi.fn(async () => linear);
+    const gateway = lazyLinearGateway(load);
+    expect(gateway.provider).toBe("linear");
+    expect(trackerCapabilities(gateway)).toEqual({
+      sessions: true,
+      delegation: true,
+      documents: true,
+      uploads: true,
+    });
+    expect(gateway.uploads.isUploadUrl("https://uploads.linear.app/a/b")).toBe(true);
+    expect(load).not.toHaveBeenCalled();
+
+    expect((await gateway.getIssue(issue.id)).title).toBe("Build it");
+    await gateway.delegation.delegateIssue(issue.id, "app-user");
+    const sessionId = await gateway.sessions.createSessionOnIssue(issue.id);
+    await gateway.sessions.createActivity(sessionId, { type: "thought", body: "On it" });
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(linear.delegateOf(issue.id)).toBe("app-user");
+    expect(linear.bodies(sessionId, "thought")).toEqual(["On it"]);
+  });
+
+  it("tries a failed load again on the next call", async () => {
+    const linear = new FakeLinearGateway();
+    const load = vi
+      .fn<() => Promise<InstanceType<typeof FakeLinearGateway>>>()
+      .mockRejectedValueOnce(new Error("token refresh failed"))
+      .mockResolvedValue(linear);
+    const gateway = lazyLinearGateway(load);
+    await expect(gateway.listTeams()).rejects.toThrow("token refresh failed");
+    expect(await gateway.listTeams()).toEqual(linear.teams);
+  });
+});
+
+describe("disconnectedLinearGateway", () => {
+  it("fails every core and capability call with LinearNotConnectedError", async () => {
+    const gateway = disconnectedLinearGateway();
+    expect(gateway.provider).toBe("linear");
+    await expect(gateway.getIssue("ENG-1")).rejects.toBeInstanceOf(LinearNotConnectedError);
+    await expect(gateway.sessions.createSessionOnIssue("ENG-1")).rejects.toBeInstanceOf(
+      LinearNotConnectedError,
+    );
+    await expect(gateway.documents.getDocument("doc")).rejects.toBeInstanceOf(
+      LinearNotConnectedError,
+    );
   });
 });

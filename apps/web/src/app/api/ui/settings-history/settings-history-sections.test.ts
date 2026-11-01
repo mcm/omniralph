@@ -92,7 +92,7 @@ vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
     getReadOnlyCloneCredential: async () => ({ username: "oauth2", password: "clone-token" }),
   }),
 }));
-vi.mock("@/lib/linear/oauth", async (importOriginal) => ({
+vi.mock("@/lib/tracker/linear/oauth", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   revokeToken: async () => {},
 }));

@@ -1,18 +1,24 @@
 import "server-only";
-import { InvalidInputLinearError } from "@linear/sdk";
 import type { TrackerStateMapping } from "@omniralph/db";
 import { DEFAULT_MANUAL_LABELS, isManualIssue, parsePrd } from "@omniralph/ralph";
-import type {
-  Blocker,
-  IssueLabel,
-  IssueSummary,
-  IssueWithBlockers,
-  LinearGateway,
-  RoutingIssue,
-  Viewer,
-} from "@/lib/linear/gateway";
-import { parseIssueIdentifier } from "@/lib/linear/gateway";
-import { isTriageLabel, TRIAGE_LABEL, TRIAGE_LABEL_NAMES } from "@/lib/linear/webhook";
+import {
+  isTriageLabel,
+  toIssuePriority,
+  TRIAGE_LABEL,
+  TRIAGE_LABEL_NAMES,
+  TrackerNotFoundError,
+  type Blocker,
+  type IssueLabel,
+  type IssueSummary,
+  type Viewer,
+  type WorkflowStateType,
+} from "@omniralph/tracker";
+import {
+  parseIssueIdentifier,
+  type LinearGateway,
+  type LinearIssueWithBlockers,
+  type RoutingIssue,
+} from "@omniralph/tracker/linear";
 import {
   readinessOf,
   readinessStateMatch,
@@ -49,7 +55,7 @@ import {
 } from "./tracker";
 
 /** The Linear workflow state type of each work item state. */
-export const LINEAR_STATE_TYPES: Record<WorkItemState, string> = {
+export const LINEAR_STATE_TYPES: Record<WorkItemState, WorkflowStateType> = {
   backlog: "backlog",
   todo: "unstarted",
   in_progress: "started",
@@ -122,8 +128,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     try {
       return await this.gateway.getIssue(ref);
     } catch (error) {
-      // Linear answers an unknown ID or identifier with an invalid input error.
-      if (error instanceof InvalidInputLinearError) throw new WorkItemNotFoundError(ref);
+      if (error instanceof TrackerNotFoundError) throw new WorkItemNotFoundError(ref);
       throw error;
     }
   }
@@ -239,7 +244,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     const failed: string[] = [];
     for (const image of images) {
       try {
-        const url = await this.gateway.uploadFile(image);
+        const url = await this.gateway.uploads.uploadFile(image);
         embedded.push(`![${image.filename}](${url})`);
       } catch (error) {
         console.warn(`Couldn't upload ${image.filename} to Linear`, error);
@@ -307,7 +312,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     });
     const appUserId = delegate ?? (await this.appUserIdFor(page.issues));
     return {
-      items: page.issues.map(({ blockers, routing, ...issue }: IssueWithBlockers) =>
+      items: page.issues.map(({ blockers, routing, ...issue }: LinearIssueWithBlockers) =>
         this.workItem(issue, blockers, appUserId, routing),
       ),
       nextCursor: page.endCursor,
@@ -329,7 +334,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
       ...(projectId && { projectId }),
       ...(input.parentId && { parentId: input.parentId }),
       ...(input.labels?.length && { labels: input.labels }),
-      ...(input.priority !== undefined && { priority: input.priority }),
+      ...(input.priority !== undefined && { priority: toIssuePriority(input.priority) }),
     });
     // A new issue has no relations yet, and isn't delegated.
     return {
@@ -350,7 +355,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     await this.gateway.updateIssue(issue.id, {
       ...(input.title !== undefined && { title: input.title }),
       ...(input.description !== undefined && { description: input.description }),
-      ...(input.priority !== undefined && { priority: input.priority }),
+      ...(input.priority !== undefined && { priority: toIssuePriority(input.priority) }),
     });
     if (input.addLabels?.length) {
       const labels = await Promise.all(
@@ -413,12 +418,12 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     const issue = await this.issue(ref);
     const appUser = await this.appUser();
     if (issue.delegateId !== appUser.id) {
-      await this.gateway.delegateIssue(issue.id, appUser.id);
+      await this.gateway.delegation.delegateIssue(issue.id, appUser.id);
       return;
     }
     // Delegating it again changes nothing in Linear, so no session would start: open one.
     if (!(await this.hasActiveRun(issue.id)))
-      await this.gateway.createAgentSessionOnIssue(issue.id);
+      await this.gateway.sessions.createSessionOnIssue(issue.id);
   }
 
   async stories(ref: WorkItemRef): Promise<WorkItemStory[]> {
@@ -470,7 +475,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     try {
       return await this.gateway.getRoutingFields(ref);
     } catch (error) {
-      if (error instanceof InvalidInputLinearError) throw new WorkItemNotFoundError(ref);
+      if (error instanceof TrackerNotFoundError) throw new WorkItemNotFoundError(ref);
       throw error;
     }
   }

@@ -12,7 +12,7 @@ import {
 } from "@omniralph/db";
 import { skipJobAndClearDue } from "@/lib/dispatch/due";
 import { getDispatcher } from "@/lib/dispatch";
-import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/linear/client";
+import { getLinearGatewayOrDisconnected, lazyLinearGateway } from "@/lib/tracker/linear/client";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { checkRunCi } from "./ci";
 import { applyCleanupJob, startPendingCleanups } from "./cleanup";

@@ -3,7 +3,7 @@
  * sub-issue order (ported from cyralph's `planFor`).
  */
 import type { RalphStory, RalphStoryStatus } from "@omniralph/db";
-import type { PlanStep } from "@/lib/linear/gateway";
+import type { PlanStep } from "@omniralph/tracker";
 
 const PLAN_STATUS: Record<RalphStoryStatus, PlanStep["status"]> = {
   pending: "pending",

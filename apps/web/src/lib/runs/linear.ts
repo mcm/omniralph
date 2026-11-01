@@ -4,20 +4,21 @@
  * workspace (see `@omniralph/shared` `run-linear.ts`).
  */
 import "server-only";
-import { InvalidInputLinearError } from "@linear/sdk";
+import {
+  TrackerInvalidInputError,
+  TrackerNotFoundError,
+  type IssueComment,
+  type IssueSummary,
+  type TrackerDocument,
+} from "@omniralph/tracker";
 import { getJobForAgent, type Job } from "@omniralph/db";
 import type { RunLinearComment, RunLinearDocument, RunLinearIssue } from "@omniralph/shared";
 import type { LinearTool } from "@omniralph/tasks";
 import { requireJob } from "@/lib/agent-auth/verify";
 import { jobIdParam, notFound, type JobRouteContext } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
-import { getLinearGateway, LinearNotConnectedError } from "@/lib/linear/client";
-import type {
-  IssueComment,
-  IssueSummary,
-  LinearDocument,
-  LinearGateway,
-} from "@/lib/linear/gateway";
+import { getLinearGateway, LinearNotConnectedError } from "@/lib/tracker/linear/client";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import { organizationPlaybooks, type PlaybookSource } from "@/lib/playbooks";
 
 /**
@@ -60,7 +61,7 @@ export function runLinearComment(comment: IssueComment): RunLinearComment {
   };
 }
 
-export function runLinearDocument(document: LinearDocument): RunLinearDocument {
+export function runLinearDocument(document: TrackerDocument): RunLinearDocument {
   return {
     id: document.id,
     title: document.title,
@@ -116,7 +117,10 @@ export async function serveRunLinearTool(
       );
     }
     const reason = error instanceof Error ? error.message : String(error);
-    if (error instanceof InvalidInputLinearError) return failed(404, "linear_not_found", reason);
+    // Linear answers a read of an unknown issue (its comments, say) with an invalid input error.
+    if (error instanceof TrackerNotFoundError || error instanceof TrackerInvalidInputError) {
+      return failed(404, "linear_not_found", reason);
+    }
     console.error(`Linear tool ${tool} failed`, error);
     return failed(502, "linear_failed", reason);
   }

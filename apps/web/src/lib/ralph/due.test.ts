@@ -27,7 +27,7 @@ import {
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { startTestRedis, testRedisAvailable, type TestRedis } from "@/lib/hot-state/testing";
-import type * as LinearClient from "@/lib/linear/client";
+import type * as LinearClient from "@/lib/tracker/linear/client";
 import type * as ReconcileCron from "./reconcile-cron";
 import type * as Run from "./run";
 import type * as Sinks from "@/lib/sinks";
@@ -47,7 +47,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/dispatch", () => ({ getDispatcher: () => ({}) }));
-vi.mock("@/lib/linear/client", async (importOriginal) => {
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => {
   const actual = await importOriginal<typeof LinearClient>();
   return {
     ...actual,

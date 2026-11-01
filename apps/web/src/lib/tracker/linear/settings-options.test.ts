@@ -4,7 +4,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/db", () => ({ getDb: () => ({}) }));
 
 const { disconnectedLinearGateway } = await import("./client");
-const { FakeLinearGateway } = await import("./fake-gateway");
+const { FakeLinearGateway } = await import("@omniralph/tracker/linear/testing");
 const {
   clearLinearSettingsOptionsCache,
   getLinearSettingsOptions,
@@ -96,7 +96,7 @@ describe("getLinearSettingsOptions", () => {
     expect(await getLinearSettingsOptions("org-a", deps)).toEqual(first);
     expect(gateway).toHaveBeenCalledTimes(1);
     expect(listTeams).toHaveBeenCalledTimes(1);
-    expect(linear.pageRequests.filter((r) => r.method === "listIssueLabels")).toHaveLength(1);
+    expect(linear.pageRequests.filter((r) => r.method === "listLabels")).toHaveLength(1);
 
     await getLinearSettingsOptions("org-b", deps);
     expect(gateway).toHaveBeenLastCalledWith("org-b");

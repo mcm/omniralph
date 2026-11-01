@@ -28,6 +28,7 @@ import { changeRequestTerm } from "./publish";
 import { matchSelection } from "./routing";
 import { advanceRun, type AdvanceResult, type RalphDeps } from "./run";
 import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
+import { epicIssue } from "./epic-loader";
 
 /** `routed_by` of a repository a person picked: later re-routing keeps it. */
 export const ROUTED_BY_SELECTION = "your selection";
@@ -154,7 +155,7 @@ export async function answerRepositorySelection(
   let branch: string;
   try {
     const issue = await deps.linear.getIssue(run.linearIssueId);
-    branch = epicBranchName(issue, run.kind === "single" ? null : undefined);
+    branch = epicBranchName(epicIssue(issue), run.kind === "single" ? null : undefined);
     const found = await getRepositoryWithConnection(deps.db, repository.id);
     if (!found) throw new Error(`repository ${repository.fullPath} is gone`);
     baseBranch = await fetchDefaultBranch(deps, found.connection, found.repository);

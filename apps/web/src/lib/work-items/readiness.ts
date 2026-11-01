@@ -5,6 +5,7 @@
  * that team only.
  */
 import type { TrackerStateMapping } from "@omniralph/db";
+import { isWorkflowStateType, type WorkflowStateType } from "@omniralph/tracker";
 import { z } from "zod";
 import type { WorkItemReadiness, WORK_ITEM_READINESS } from "./tracker";
 
@@ -72,10 +73,11 @@ export function readinessTargetState<S extends { id: string; type: string }>(
 export function readinessStateMatch(
   mapping: TrackerStateMapping,
   readiness: ReadonlyArray<(typeof WORK_ITEM_READINESS)[number]>,
-): { types: string[]; typesExceptTeamIds: string[]; ids: string[] } {
+): { types: WorkflowStateType[]; typesExceptTeamIds: string[]; ids: string[] } {
   const keys = [...new Set(readiness)].map((r) => readinessKeys[r]);
   return {
-    types: [...new Set(keys.flatMap((key) => mapping[key].types))],
+    // A stored type that isn't a workflow state type matches no state.
+    types: [...new Set(keys.flatMap((key) => mapping[key].types.filter(isWorkflowStateType)))],
     typesExceptTeamIds: Object.keys(mapping.teams),
     ids: [
       ...new Set(Object.values(mapping.teams).flatMap((team) => keys.flatMap((key) => team[key]))),

@@ -19,7 +19,7 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import type * as RalphActivities from "@/lib/ralph/activities";
 
 const RALPH_SCOPES: JobTokenScope[] = [
@@ -35,7 +35,7 @@ const state = vi.hoisted(() => ({
   linear: undefined as unknown as FakeLinearGateway,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@/lib/linear/client", () => ({ getLinearGateway: async () => state.linear }));
+vi.mock("@/lib/tracker/linear/client", () => ({ getLinearGateway: async () => state.linear }));
 const relayActivity = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/ralph/activities", async (importOriginal) => {
   const actual = await importOriginal<typeof RalphActivities>();
@@ -309,7 +309,7 @@ describe.skipIf(!databaseAvailable)("POST /api/agent/jobs/{id}/activities", () =
   it("answers 502 when Linear fails", async () => {
     const run = await newRun();
     const jobId = await newJob({ ralphRunId: run.id });
-    state.linear.createActivity = () => Promise.reject(new Error("Linear is down"));
+    state.linear.sessions.createActivity = () => Promise.reject(new Error("Linear is down"));
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await activityRequest(jobId, await token(jobId), THOUGHT);
     expect(res.status).toBe(502);

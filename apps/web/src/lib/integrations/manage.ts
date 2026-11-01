@@ -37,7 +37,7 @@ import {
   type ChatPlaybookSlot,
 } from "@/lib/chat/playbooks";
 import { getPlaybook, listPlaybookChoices } from "@/lib/playbooks";
-import { revokeToken, type LinearCredentials } from "@/lib/linear/oauth";
+import { revokeToken, type LinearCredentials } from "@/lib/tracker/linear/oauth";
 import {
   settingsActor,
   trackedChatPlaybookDefaults,

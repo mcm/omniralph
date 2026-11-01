@@ -1,8 +1,8 @@
 import "server-only";
 import { getDb } from "@/lib/db";
 import { getLinearGatewayOrDisconnected, LinearNotConnectedError } from "./client";
-import { fixtureLinearEnabled, fixtureLinearGateway } from "./fixture-gateway";
-import type { LinearGateway } from "./gateway";
+import { fixtureLinearEnabled, fixtureLinearGateway } from "@omniralph/tracker/linear/testing";
+import type { LinearGateway } from "@omniralph/tracker/linear";
 import type { LinearSettingsOptions } from "./settings-values";
 
 export type { LinearSettingsOptions } from "./settings-values";
@@ -35,7 +35,7 @@ function uniqueNames(names: string[]): string[] {
 async function load(linear: LinearGateway): Promise<LinearSettingsOptions> {
   const [teams, labels, projects, milestones, cycles, users] = await Promise.all([
     linear.listTeams(),
-    linear.listIssueLabels(),
+    linear.listLabels(),
     linear.listProjects(),
     linear.listProjectMilestones(),
     linear.listCycles(),

@@ -1,37 +1,44 @@
 /**
  * An in-memory `LinearGateway` for tests (ported from cyralph's `FakeLinear`):
  * issues, blocks relations, comments, activities, plans and session URLs are
- * plain fields to arrange and assert on.
+ * plain fields to arrange and assert on. It has every optional capability.
  */
-import { InvalidInputLinearError } from "@linear/sdk";
-import { isLinearRun, type LinearRun } from "@omniralph/db";
-import type {
-  ActivityContent,
-  ActivityOptions,
-  Blocker,
-  CreateIssueInput,
-  Cycle,
-  IssueComment,
-  IssueLabel,
-  IssuePage,
-  IssueSummary,
-  IssueWithBlockers,
-  LinearDocument,
-  ListIssuesFilter,
-  LinearGateway,
-  PlanStep,
-  Project,
-  RoutingIssue,
-  RoutingIssueFields,
-  ProjectMilestone,
-  Team,
-  UpdateIssueInput,
-  UploadDownload,
-  UploadFileInput,
-  User,
-  Viewer,
-  WorkflowState,
-} from "./gateway";
+import {
+  toIssuePriority,
+  TrackerInvalidInputError,
+  TrackerNotFoundError,
+  type ActivityContent,
+  type ActivityOptions,
+  type Blocker,
+  type IssueComment,
+  type IssueLabel,
+  type IssueStateTarget,
+  type IssueSummary,
+  type PlanStep,
+  type Project,
+  type Team,
+  type TrackerDelegation,
+  type TrackerDocument,
+  type TrackerDocuments,
+  type TrackerSessions,
+  type TrackerUploads,
+  type UpdateIssueInput,
+  type Viewer,
+  type WorkflowState,
+} from "../types.js";
+import {
+  isLinearUploadUrl,
+  type Cycle,
+  type LinearCreateIssueInput,
+  type LinearGateway,
+  type LinearIssuePage,
+  type LinearIssueWithBlockers,
+  type LinearListIssuesFilter,
+  type ProjectMilestone,
+  type RoutingIssue,
+  type RoutingIssueFields,
+  type User,
+} from "./gateway.js";
 
 export interface FakeActivity {
   sessionId: string;
@@ -40,6 +47,7 @@ export interface FakeActivity {
 }
 
 export class FakeLinearGateway implements LinearGateway {
+  readonly provider = "linear" as const;
   private seq = 0;
   /**
    * The fake's clock for issues' `updatedAt`: each change moves it on a second, so every
@@ -75,39 +83,32 @@ export class FakeLinearGateway implements LinearGateway {
   /** What `getViewer` returns: the app user. */
   viewer: Viewer = { id: "app-user", name: "Omniralph" };
   /**
-   * Every delegation, by `delegateIssue` or `createIssue` with `delegateId`, in order; a null
+   * Every delegation, by `delegation.delegateIssue` or `createIssue` with `delegateId`, in order; a null
    * `delegateId` removed the issue's delegate.
    */
   delegations: Array<{ issueId: string; delegateId: string | null }> = [];
   /** Workflow states of particular teams, in position order (others have `workflowStates`). */
   workflowStatesByTeam = new Map<string, WorkflowState[]>();
   /** Every `listIssues` filter, in order. */
-  issueLists: ListIssuesFilter[] = [];
+  issueLists: LinearListIssuesFilter[] = [];
   /** Every team's workflow states, in position order. */
-  workflowStates: WorkflowState[] = [
-    "backlog",
-    "unstarted",
-    "started",
-    "completed",
-    "canceled",
-  ].map((type, position) => ({ id: `state-${type}`, name: type, type, position }));
+  workflowStates: WorkflowState[] = (
+    ["backlog", "unstarted", "started", "completed", "canceled"] as const
+  ).map((type, position) => ({ id: `state-${type}`, name: type, type, position }));
   /** Every `linkUrl` call, in order. */
   links: Array<{ issueId: string; url: string; title?: string }> = [];
   /** Every `setIssueState` call, in order. */
-  stateChanges: Array<{
-    issueId: string;
-    target: { id?: string; type?: string; name?: string };
-  }> = [];
+  stateChanges: Array<{ issueId: string; target: IssueStateTarget }> = [];
   /** Every `updateIssue` call, in order. */
   issueUpdates: Array<{ issueId: string; input: UpdateIssueInput }> = [];
   /** Every `addIssueLabels` / `removeIssueLabel` call, in order. */
   labelChanges: Array<{ issueId: string; added?: string[]; removed?: string[] }> = [];
-  /** Every agent session `createAgentSessionOnIssue` opened, in order. */
+  /** Every agent session `sessions.createSessionOnIssue` opened, in order. */
   sessionsCreated: Array<{ issueId: string; sessionId: string }> = [];
   /** Issue ID -> its comments, oldest first. */
   commentsByIssue = new Map<string, IssueComment[]>();
-  /** Upload URL -> the file `downloadUpload` returns (any other URL: 404). */
-  uploads = new Map<
+  /** Upload URL -> the file `uploads.downloadUpload` returns (any other URL: 404). */
+  uploadedFiles = new Map<
     string,
     { contentType: string; body: string | Uint8Array<ArrayBuffer>; status?: number }
   >();
@@ -115,8 +116,8 @@ export class FakeLinearGateway implements LinearGateway {
   uploaded: Array<{ filename: string; contentType: string; size: number; assetUrl: string }> = [];
   /** Every `downloadUpload` URL, in order. */
   downloads: string[] = [];
-  /** Documents `getDocument` finds, by ID. */
-  documents = new Map<string, LinearDocument>();
+  /** Documents `documents.getDocument` finds, by ID. */
+  documentsById = new Map<string, TrackerDocument>();
   /** Every `searchIssues` call, in order. */
   searches: Array<{ query: string; first?: number }> = [];
   /**
@@ -125,12 +126,15 @@ export class FakeLinearGateway implements LinearGateway {
    */
   routingFields = new Map<string, Partial<RoutingIssueFields>>();
   /** Every `createIssue` input, in order. */
-  created: CreateIssueInput[] = [];
+  created: LinearCreateIssueInput[] = [];
   /** Cycle IDs `createIssue` refuses, as Linear may a completed cycle. */
   closedCycles = new Set<string>();
   /** Every `getRoutingFields` call, in order. */
   routingLoads: string[] = [];
-  /** Calls by method name, e.g. to fail one: `failures.set("getIssue", new Error())`. */
+  /**
+   * Calls by method name, e.g. to fail one: `failures.set("getIssue", new Error())`
+   * (a capability's methods by their own name, e.g. `createSessionOnIssue`).
+   */
   failures = new Map<string, Error>();
 
   add(partial: Partial<IssueSummary> & { title: string }): IssueSummary {
@@ -225,12 +229,11 @@ export class FakeLinearGateway implements LinearGateway {
     const issue =
       this.issues.get(idOrIdentifier) ??
       [...this.issues.values()].find((i) => i.identifier === idOrIdentifier);
-    // Linear answers an unknown ID with an InvalidInput error ("Entity not found").
-    if (!issue) throw new InvalidInputLinearError({ message: `no issue ${idOrIdentifier}` });
+    if (!issue) throw new TrackerNotFoundError("issue", idOrIdentifier);
     return issue;
   }
 
-  async getOrganization() {
+  async getWorkspace() {
     return { id: "org-1", name: "Acme" };
   }
   async listTeams(): Promise<Team[]> {
@@ -301,16 +304,16 @@ export class FakeLinearGateway implements LinearGateway {
       .slice(0, options.first ?? 10)
       .map((i) => ({ ...i }));
   }
-  async getDocument(idOrSlugId: string): Promise<LinearDocument> {
-    this.fail("getDocument");
-    const document =
-      this.documents.get(idOrSlugId) ??
-      [...this.documents.values()].find((d) => d.url.endsWith(`-${idOrSlugId}`));
-    if (!document) {
-      throw new InvalidInputLinearError({ message: `no document ${idOrSlugId}` });
-    }
-    return { ...document };
-  }
+  readonly documents: TrackerDocuments = {
+    getDocument: async (idOrSlugId) => {
+      this.fail("getDocument");
+      const document =
+        this.documentsById.get(idOrSlugId) ??
+        [...this.documentsById.values()].find((d) => d.url.endsWith(`-${idOrSlugId}`));
+      if (!document) throw new TrackerNotFoundError("document", idOrSlugId);
+      return { ...document };
+    },
+  };
   async getBlockers(issueId: string): Promise<Blocker[]> {
     this.fail("getBlockers");
     return this.blockersOf(issueId);
@@ -328,7 +331,7 @@ export class FakeLinearGateway implements LinearGateway {
     });
   }
   /** Like Linear's: issues matching every condition, in creation order, `first` per page. */
-  async listIssues(filter: ListIssuesFilter): Promise<IssuePage> {
+  async listIssues(filter: LinearListIssuesFilter): Promise<LinearIssuePage> {
     this.fail("listIssues");
     this.issueLists.push(structuredClone(filter));
     const labelNames = filter.labelIds?.map((id) => this.labelName(id).toLowerCase());
@@ -370,7 +373,7 @@ export class FakeLinearGateway implements LinearGateway {
     const page = matches.slice(offset, offset + filter.first);
     const next = offset + page.length;
     return {
-      issues: page.map((issue): IssueWithBlockers => {
+      issues: page.map((issue): LinearIssueWithBlockers => {
         const parent = issue.parentId ? this.issues.get(issue.parentId) : undefined;
         return {
           ...this.summaryOf(issue),
@@ -400,9 +403,7 @@ export class FakeLinearGateway implements LinearGateway {
     const taken = this.labels.some(
       (l) => l.name.toLowerCase() === name.toLowerCase() && (!l.teamId || l.teamId === teamId),
     );
-    if (taken) {
-      throw new InvalidInputLinearError({ message: `A label named ${name} already exists` });
-    }
+    if (taken) throw new TrackerInvalidInputError(`A label named ${name} already exists`);
     const label = { id: `label-${this.labels.length + 1}`, name, teamId };
     this.labels.push(label);
     return label;
@@ -419,9 +420,9 @@ export class FakeLinearGateway implements LinearGateway {
       if (page.length === 0 || after >= items.length) return nodes;
     }
   }
-  async listIssueLabels(): Promise<IssueLabel[]> {
-    this.fail("listIssueLabels");
-    return this.allPages("listIssueLabels", this.labels).map((l) => ({ ...l }));
+  async listLabels(): Promise<IssueLabel[]> {
+    this.fail("listLabels");
+    return this.allPages("listLabels", this.labels).map((l) => ({ ...l }));
   }
   async listProjects(): Promise<Project[]> {
     this.fail("listProjects");
@@ -439,10 +440,10 @@ export class FakeLinearGateway implements LinearGateway {
     this.fail("listUsers");
     return this.allPages("listUsers", this.users).map((u) => ({ ...u }));
   }
-  async createIssue(input: CreateIssueInput) {
+  async createIssue(input: LinearCreateIssueInput) {
     this.fail("createIssue");
     if (input.cycleId && this.closedCycles.has(input.cycleId)) {
-      throw new InvalidInputLinearError({ message: `cycle ${input.cycleId} is completed` });
+      throw new TrackerInvalidInputError(`cycle ${input.cycleId} is completed`);
     }
     const issue = this.add({
       title: input.title,
@@ -451,7 +452,7 @@ export class FakeLinearGateway implements LinearGateway {
       teamId: input.teamId,
       // The team's key, as on its other issues (else its team's, else the default).
       ...this.teamKeyOf(input.teamId),
-      priority: input.priority ?? 0,
+      priority: toIssuePriority(input.priority),
       subIssueSortOrder: input.subIssueSortOrder,
       labels: input.labels ?? [],
       projectName:
@@ -483,7 +484,7 @@ export class FakeLinearGateway implements LinearGateway {
    * Like Linear's: the state of `target.id`, else one with `target.name` (ignoring case), else
    * the first of `target.type`.
    */
-  async setIssueState(issueId: string, target: { id?: string; type?: string; name?: string }) {
+  async setIssueState(issueId: string, target: IssueStateTarget) {
     this.fail("setIssueState");
     this.stateChanges.push({ issueId, target });
     const issue = this.find(issueId);
@@ -534,67 +535,73 @@ export class FakeLinearGateway implements LinearGateway {
     if (labels.length !== issue.labels.length) issue.updatedAt = this.tick();
     issue.labels = labels;
   }
-  async delegateIssue(issueId: string, delegateId: string | null) {
-    this.fail("delegateIssue");
-    const issue = this.find(issueId);
-    issue.updatedAt = this.tick();
-    this.delegations.push({ issueId: issue.id, delegateId });
-  }
-  async createAgentSessionOnIssue(issueId: string) {
-    this.fail("createAgentSessionOnIssue");
-    const issue = this.find(issueId);
-    const sessionId = `session-${this.sessionsCreated.length + 1}`;
-    this.sessionsCreated.push({ issueId: issue.id, sessionId });
-    return sessionId;
-  }
+  readonly delegation: TrackerDelegation = {
+    delegateIssue: async (issueId, delegateId) => {
+      this.fail("delegateIssue");
+      const issue = this.find(issueId);
+      issue.updatedAt = this.tick();
+      this.delegations.push({ issueId: issue.id, delegateId });
+    },
+  };
+  readonly sessions: TrackerSessions = {
+    createSessionOnIssue: async (issueId) => {
+      this.fail("createSessionOnIssue");
+      const issue = this.find(issueId);
+      const sessionId = `session-${this.sessionsCreated.length + 1}`;
+      this.sessionsCreated.push({ issueId: issue.id, sessionId });
+      return sessionId;
+    },
+    createActivity: async (sessionId, content, options) => {
+      this.activities.push({ sessionId, content, ...(options && { options }) });
+    },
+    updatePlan: async (sessionId, plan) => {
+      this.plans.set(sessionId, [...(this.plans.get(sessionId) ?? []), plan]);
+    },
+    addExternalUrl: async (sessionId, label, url) => {
+      this.urls.push({ sessionId, label, url });
+    },
+  };
   async addComment(issueId: string, body: string) {
     this.fail("addComment");
     this.comments.push({ issueId, body });
-  }
-  async createActivity(sessionId: string, content: ActivityContent, options?: ActivityOptions) {
-    this.activities.push({ sessionId, content, ...(options && { options }) });
-  }
-  async updateSessionPlan(sessionId: string, plan: PlanStep[]) {
-    this.plans.set(sessionId, [...(this.plans.get(sessionId) ?? []), plan]);
   }
   async linkUrl(issueId: string, url: string, title?: string) {
     this.fail("linkUrl");
     this.links.push({ issueId, url, ...(title !== undefined && { title }) });
   }
-  async addSessionExternalUrl(sessionId: string, label: string, url: string) {
-    this.urls.push({ sessionId, label, url });
-  }
 
-  async downloadUpload(url: string): Promise<UploadDownload> {
-    this.fail("downloadUpload");
-    this.downloads.push(url);
-    const upload = this.uploads.get(url);
-    if (!upload)
-      return { ok: false, status: 404, contentType: "", contentLength: null, body: null };
-    const bytes =
-      typeof upload.body === "string" ? new TextEncoder().encode(upload.body) : upload.body;
-    const status = upload.status ?? 200;
-    const ok = status >= 200 && status < 300;
-    return {
-      ok,
-      status,
-      contentType: upload.contentType,
-      contentLength: bytes.byteLength,
-      body: ok ? new Response(bytes).body : null,
-    };
-  }
-
-  async uploadFile(input: UploadFileInput): Promise<string> {
-    this.fail("uploadFile");
-    const assetUrl = `https://uploads.linear.app/fake/${this.uploaded.length + 1}/${encodeURIComponent(input.filename)}`;
-    this.uploaded.push({
-      filename: input.filename,
-      contentType: input.contentType,
-      size: input.data.byteLength,
-      assetUrl,
-    });
-    return assetUrl;
-  }
+  readonly uploads: TrackerUploads = {
+    isUploadUrl: isLinearUploadUrl,
+    downloadUpload: async (url) => {
+      this.fail("downloadUpload");
+      this.downloads.push(url);
+      const upload = this.uploadedFiles.get(url);
+      if (!upload)
+        return { ok: false, status: 404, contentType: "", contentLength: null, body: null };
+      const bytes =
+        typeof upload.body === "string" ? new TextEncoder().encode(upload.body) : upload.body;
+      const status = upload.status ?? 200;
+      const ok = status >= 200 && status < 300;
+      return {
+        ok,
+        status,
+        contentType: upload.contentType,
+        contentLength: bytes.byteLength,
+        body: ok ? new Response(bytes).body : null,
+      };
+    },
+    uploadFile: async (input) => {
+      this.fail("uploadFile");
+      const assetUrl = `https://uploads.linear.app/fake/${this.uploaded.length + 1}/${encodeURIComponent(input.filename)}`;
+      this.uploaded.push({
+        filename: input.filename,
+        contentType: input.contentType,
+        size: input.data.byteLength,
+        assetUrl,
+      });
+      return assetUrl;
+    },
+  };
 
   /** Bodies of the session's activities of one type, in order. */
   bodies(sessionId: string, type: ActivityContent["type"]): string[] {
@@ -607,10 +614,4 @@ export class FakeLinearGateway implements LinearGateway {
   plan(sessionId: string): PlanStep[] | undefined {
     return this.plans.get(sessionId)?.at(-1);
   }
-}
-
-/** A run a test expects to have come from Linear, with its issue and session; throws otherwise. */
-export function linearRun<T extends Parameters<typeof isLinearRun>[0]>(run: T): LinearRun<T> {
-  if (!isLinearRun(run)) throw new Error("Expected a run from Linear");
-  return run;
 }

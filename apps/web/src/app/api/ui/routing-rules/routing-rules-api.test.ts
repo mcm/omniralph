@@ -20,7 +20,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type { RoutingRules } from "@/lib/api/routing-rules";
-import type { LinearSettingsOptions } from "@/lib/linear/settings-values";
+import type { LinearSettingsOptions } from "@/lib/tracker/linear/settings-values";
 
 vi.mock("server-only", () => ({}));
 
@@ -32,7 +32,7 @@ const state = vi.hoisted(() => ({
   role: "admin" as Role,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@/lib/linear/settings-options", () => ({
+vi.mock("@/lib/tracker/linear/settings-options", () => ({
   getLinearSettingsOptions: async () => {
     if (state.linear instanceof Error) throw state.linear;
     return state.linear;
@@ -54,7 +54,7 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 
 const route = await import("@/app/api/ui/routing-rules/route");
-const { LINEAR_ROUTING_FIELDS } = await import("@/lib/linear/routing-fields");
+const { LINEAR_ROUTING_FIELDS } = await import("@/lib/tracker/linear/routing-fields");
 
 const key = randomBytes(32);
 

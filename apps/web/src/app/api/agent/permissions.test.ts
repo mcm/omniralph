@@ -22,7 +22,7 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 
 const RALPH_SCOPES: JobTokenScope[] = [
   "credentials:read",
@@ -43,7 +43,7 @@ const state = vi.hoisted(() => ({
   linear: undefined as unknown as FakeLinearGateway,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@/lib/linear/client", () => ({ getLinearGateway: async () => state.linear }));
+vi.mock("@/lib/tracker/linear/client", () => ({ getLinearGateway: async () => state.linear }));
 
 const signingKey = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
 delete process.env.KMS_AGENT_ISSUER_ID;

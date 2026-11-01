@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { classifyWebhook, signBody, TRIAGE_LABEL, verifyWebhook } from "./webhook";
+import { TRIAGE_LABEL } from "../events.js";
+import { AGENT_SESSION_MARKER, classifyWebhook, signBody, verifyWebhook } from "./webhook.js";
 
 const SECRET = "linear-secret";
 const NOW = 1_790_000_000_000;
@@ -71,7 +72,7 @@ describe("classifyWebhook", () => {
         },
       }),
     ).toEqual({
-      kind: "session_created",
+      kind: "issue_mentioned",
       sessionId: "s1",
       issueId: "i1",
       issueIdentifier: "TOOL-1",
@@ -79,6 +80,22 @@ describe("classifyWebhook", () => {
       commentBody: "@omniralph go",
       creatorName: "Steve",
     });
+  });
+
+  it("classifies a created agent session with Linear's system note, or no comment, as a delegation", () => {
+    const created = (comment?: { body: string }) =>
+      classifyWebhook({
+        type: "AgentSessionEvent",
+        action: "created",
+        agentSession: { id: "s1", issueId: "i1", ...(comment && { comment }) },
+      });
+    expect(created({ body: `${AGENT_SESSION_MARKER}. Delegated by Steve.` })).toMatchObject({
+      kind: "issue_delegated",
+      sessionId: "s1",
+      issueId: "i1",
+    });
+    expect(created()).toMatchObject({ kind: "issue_delegated", issueId: "i1" });
+    expect(created({ body: "   " })).toMatchObject({ kind: "issue_delegated" });
   });
 
   it("classifies a prompt, including the stop signal", () => {
@@ -108,16 +125,27 @@ describe("classifyWebhook", () => {
         data: { id: "i2", identifier: "TOOL-2", state: { type: "completed" } },
       }),
     ).toEqual({
-      kind: "issue_state",
+      kind: "issue_state_changed",
       issueId: "i2",
       identifier: "TOOL-2",
       stateType: "completed",
       removed: false,
     });
     expect(classifyWebhook({ type: "Issue", action: "remove", data: { id: "i2" } })).toMatchObject({
-      kind: "issue_state",
+      kind: "issue_state_changed",
       removed: true,
     });
+  });
+
+  it("leaves out a state type that isn't one of the workflow state types", () => {
+    const event = classifyWebhook({
+      type: "Issue",
+      action: "update",
+      updatedFrom: { stateId: "old" },
+      data: { id: "i2", state: { type: "duplicate" } },
+    });
+    expect(event).toMatchObject({ kind: "issue_state_changed", issueId: "i2" });
+    expect(event).not.toHaveProperty("stateType");
   });
 
   it("classifies an update that adds the coding:triage label, ignoring case", () => {
@@ -129,7 +157,7 @@ describe("classifyWebhook", () => {
     });
     for (const name of [TRIAGE_LABEL, "Coding:Triage"]) {
       expect(classifyWebhook(update([{ id: "l1", name }], []))).toEqual({
-        kind: "triage_label_added",
+        kind: "triage_requested",
         issueId: "i3",
         identifier: "TOOL-3",
         labelId: "l1",
@@ -148,7 +176,7 @@ describe("classifyWebhook", () => {
       data: { id: "i3", identifier: "TOOL-3", labelIds: labels.map((l) => l.id), labels },
     });
     expect(classifyWebhook(update([{ id: "l1", name: "ralph:triage" }], []))).toEqual({
-      kind: "triage_label_added",
+      kind: "triage_requested",
       issueId: "i3",
       identifier: "TOOL-3",
       labelId: "l1",
@@ -163,7 +191,7 @@ describe("classifyWebhook", () => {
           ["l2"],
         ),
       ),
-    ).toMatchObject({ kind: "triage_label_added", labelId: "l1" });
+    ).toMatchObject({ kind: "triage_requested", labelId: "l1" });
   });
 
   it("classifies a state change that also adds ralph:triage as both", () => {
@@ -180,7 +208,7 @@ describe("classifyWebhook", () => {
       },
     });
     expect(classifyWebhook(update([{ id: "l1", name: "Ralph:Triage" }], []))).toEqual({
-      kind: "issue_state",
+      kind: "issue_state_changed",
       issueId: "i4",
       identifier: "TOOL-4",
       stateType: "backlog",
@@ -193,7 +221,7 @@ describe("classifyWebhook", () => {
       update([{ id: "l2", name: "bug" }], []),
     ]) {
       const event = classifyWebhook(payload);
-      expect(event).toMatchObject({ kind: "issue_state", issueId: "i4" });
+      expect(event).toMatchObject({ kind: "issue_state_changed", issueId: "i4" });
       expect(event).not.toHaveProperty("triageLabelId");
     }
   });

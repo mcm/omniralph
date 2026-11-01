@@ -21,8 +21,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createShareLinkResultSchema, shareLinkListSchema } from "@/lib/api/work-items";
 import { assertRole, type Role } from "@/lib/auth/roles";
-import type * as LinearClient from "@/lib/linear/client";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
+import type * as LinearClient from "@/lib/tracker/linear/client";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 
 vi.mock("server-only", () => ({}));
 
@@ -47,7 +47,7 @@ vi.mock("@/lib/auth/session", () => ({
       role,
     ),
 }));
-vi.mock("@/lib/linear/client", async (importOriginal) => {
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => {
   const actual = await importOriginal<typeof LinearClient>();
   return {
     ...actual,

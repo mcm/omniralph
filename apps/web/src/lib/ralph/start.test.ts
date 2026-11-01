@@ -43,20 +43,15 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureChanges } from "@omniralph/db/changes";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { acknowledgeLinearEvent, handleLinearEvent } from "@/lib/linear/events";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
-import { handleLinearWebhook } from "@/lib/linear/ingest";
-import { signBody, type LinearWebhookEvent } from "@/lib/linear/webhook";
+import { acknowledgeTrackerEvent, handleTrackerEvent } from "@/lib/tracker/events";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import { handleLinearWebhook } from "@/lib/tracker/linear/ingest";
+import { signBody, AGENT_SESSION_MARKER } from "@omniralph/tracker/linear";
+import type { TrackerEvent } from "@omniralph/tracker";
 import { cachedBacklog, hasCachedBacklog } from "@/lib/work-items/backlog-cache";
 import { handleReply } from "./reply";
 import { advanceRun, updateStoryAndPlan } from "./run";
-import {
-  ACKNOWLEDGEMENT,
-  AGENT_SESSION_MARKER,
-  startRun,
-  type SessionCreatedEvent,
-  type StartRunDeps,
-} from "./start";
+import { ACKNOWLEDGEMENT, startRun, type SessionCreatedEvent, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
@@ -151,18 +146,17 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   const updateMainLane = async (run: RalphRun, update: RalphLaneUpdate) =>
     updateLane(db, (await getMainLane(db, run))!.id, update);
 
+  /** A new session: a mention when `commentBody` is a comment, else a delegation (as Linear's are). */
   const created = (
     issueId: string,
-    overrides: Partial<SessionCreatedEvent> = {},
+    overrides: Partial<Omit<SessionCreatedEvent, "kind">> = {},
   ): SessionCreatedEvent => {
     sessionSeq += 1;
-    return {
-      kind: "session_created",
-      sessionId: `session-${sessionSeq}`,
-      issueId,
-      commentBody: DELEGATION,
-      ...overrides,
-    };
+    const { commentBody = DELEGATION, ...rest } = overrides;
+    const fields = { sessionId: `session-${sessionSeq}`, issueId, ...rest };
+    return commentBody.trim() && !commentBody.includes(AGENT_SESSION_MARKER)
+      ? { kind: "issue_mentioned", ...fields, commentBody }
+      : { kind: "issue_delegated", ...fields, commentBody };
   };
 
   beforeAll(async () => {
@@ -1139,9 +1133,9 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
           {
             db,
             secret: SECRET,
-            acknowledge: (event, context) => acknowledgeLinearEvent(event, context, linear),
-            handle: async (event: Exclude<LinearWebhookEvent, { kind: "ignored" }>) => {
-              if (event.kind === "session_created") await startRun(event, deps());
+            acknowledge: (event, context) => acknowledgeTrackerEvent(event, context, linear),
+            handle: async (event: Exclude<TrackerEvent, { kind: "ignored" }>) => {
+              if (event.kind === "issue_delegated") await startRun(event, deps());
             },
             defer: (task) => {
               deferred.push(task);
@@ -1153,7 +1147,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       const id = randomUUID();
       expect(await (await deliver(id)).json()).toEqual({
         status: "accepted",
-        kind: "session_created",
+        kind: "issue_delegated",
       });
       // Only the acknowledgement so far.
       expect(linear.activities).toEqual([
@@ -1225,7 +1219,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
           db,
           secret: SECRET,
           handle: (event, context) =>
-            handleLinearEvent(event, context, {
+            handleTrackerEvent(event, context, {
               linear,
               dispatcher: new PostgresDispatcher({ db }),
               adapterFor: () => fakeAdapter,
@@ -1305,7 +1299,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
             db,
             secret: SECRET,
             handle: (event, context) =>
-              handleLinearEvent(event, context, {
+              handleTrackerEvent(event, context, {
                 linear,
                 dispatcher: new PostgresDispatcher({ db }),
                 adapterFor: () => fakeAdapter,

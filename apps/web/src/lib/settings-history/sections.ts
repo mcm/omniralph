@@ -35,7 +35,7 @@ import type { OrgUser } from "@/lib/auth/session";
 import { platformChannelId } from "@/lib/chat/playbooks";
 import { listPlaybooks } from "@/lib/playbooks";
 import type { SettingsSection } from "@/lib/live/events";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/linear/routing-fields";
+import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
 import { describeQuery } from "@/lib/routing/describe";
 import { matchSentence } from "@/lib/routing/match";
 import { userDisplayName } from "@/lib/user-display";

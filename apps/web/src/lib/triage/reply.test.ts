@@ -27,9 +27,9 @@ import {
 } from "@omniralph/db/testing";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import { handleLinearEvent } from "@/lib/linear/events";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
-import type { IssueSummary } from "@/lib/linear/gateway";
+import { handleTrackerEvent } from "@/lib/tracker/events";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import type { IssueSummary } from "@omniralph/tracker";
 import {
   onTriageJobCompleted,
   onTriageJobFinishedWithoutResult,
@@ -131,7 +131,7 @@ describe.skipIf(!databaseAvailable)("continuing triage from session replies", ()
     sessionSeq += 1;
     const sessionId = `reply-session-${sessionSeq}`;
     const started = await startTriage(
-      { kind: "session_created", sessionId, issueId: issue.id, commentBody: "@omniralph /triage" },
+      { kind: "issue_mentioned", sessionId, issueId: issue.id, commentBody: "@omniralph /triage" },
       deps(),
     );
     if (started.status !== "queued") throw new Error(`not queued: ${started.status}`);
@@ -345,7 +345,7 @@ describe.skipIf(!databaseAvailable)("continuing triage from session replies", ()
     const context = { db, organizationId: orgId, workspaceId: "ws-1" };
     const { dispatcher, adapterFor } = deps();
 
-    await handleLinearEvent(prompt("ralph-session", "", "stop"), context, {
+    await handleTrackerEvent(prompt("ralph-session", "", "stop"), context, {
       linear,
       dispatcher,
       adapterFor,
@@ -353,7 +353,7 @@ describe.skipIf(!databaseAvailable)("continuing triage from session replies", ()
     expect((await getRun(db, ralph.id))?.status).toBe("stopped");
     expect(await getTriageRun(db, runId)).toMatchObject({ status: "queued" });
 
-    await handleLinearEvent(prompt(sessionId, "", "stop"), context, {
+    await handleTrackerEvent(prompt(sessionId, "", "stop"), context, {
       linear,
       dispatcher,
       adapterFor,

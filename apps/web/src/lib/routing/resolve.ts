@@ -31,12 +31,12 @@ import {
   type RoutingRule,
   type WorkItemMatchFields,
 } from "@omniralph/db";
-import type { LinearGateway, RoutingIssueFields } from "@/lib/linear/gateway";
+import type { LinearGateway, RoutingIssueFields } from "@omniralph/tracker/linear";
 import {
   LINEAR_ROUTING_FIELDS,
   LINEAR_ROUTING_FIELD_TYPES,
   linearRoutingValues,
-} from "@/lib/linear/routing-fields";
+} from "@/lib/tracker/linear/routing-fields";
 import { describeRule } from "./describe";
 import { evaluateQuery } from "./evaluate";
 import { describeMatchRoute, describeMatchTie, matchesWorkItem, specificity } from "./match";

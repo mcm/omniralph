@@ -65,8 +65,10 @@ import {
   type PreparationAnswer,
 } from "@omniralph/ralph";
 import { bumpAgentHeartbeat } from "@/lib/agents/heartbeat-cache";
-import type { ActivityContent } from "@/lib/linear/gateway";
-import type { LinearWebhookEvent } from "@/lib/linear/webhook";
+import type {
+  ActivityContent,
+  SessionPromptedEvent as TrackerSessionPromptedEvent,
+} from "@omniralph/tracker";
 import { conversationFor } from "./conversation";
 import { mainBranch } from "./lanes";
 import { loadEpic, runEpicOptions } from "./epic-loader";
@@ -88,7 +90,7 @@ import {
   type RalphDeps,
 } from "./run";
 
-export type SessionPromptedEvent = Extract<LinearWebhookEvent, { kind: "session_prompted" }>;
+export type SessionPromptedEvent = TrackerSessionPromptedEvent;
 
 /** What a reply turned out to be. */
 export type ReplyKind =

@@ -1,151 +1,43 @@
-import "server-only";
-import { LinearClient } from "@linear/sdk";
-import { isUploadUrl } from "@omniralph/ralph";
+import { InvalidInputLinearError, LinearClient } from "@linear/sdk";
+import type { GatewayWith } from "../capabilities.js";
+import {
+  isWorkflowStateType,
+  toIssuePriority,
+  TrackerInvalidInputError,
+  TrackerNotFoundError,
+  type ActivityContent,
+  type ActivityOptions,
+  type Blocker,
+  type CreateIssueInput,
+  type IssueComment,
+  type IssueLabel,
+  type IssueSummary,
+  type IssueWithBlockers,
+  type ListIssuesFilter,
+  type PlanStep,
+  type Project,
+  type Team,
+  type TrackerCapability,
+  type TrackerDocument,
+  type TrackerDocuments,
+  type TrackerDelegation,
+  type TrackerSessions,
+  type TrackerUploads,
+  type UpdateIssueInput,
+  type UploadDownload,
+  type UploadFileInput,
+  type Viewer,
+  type WorkflowState,
+  type WorkflowStateType,
+  type Workspace,
+  type IssueStateTarget,
+} from "../types.js";
 
 /**
- * The slice of Linear the ralph loop needs, behind an interface so the
- * orchestrator can be tested without the network (ported from cyralph).
- * `SdkLinearGateway` implements it with `@linear/sdk`.
+ * The Linear adapter of the tracker gateway (ported from cyralph):
+ * `SdkLinearGateway` implements {@link LinearGateway} with `@linear/sdk`, with
+ * every optional capability (agent sessions, delegation, documents, uploads).
  */
-
-export interface IssueSummary {
-  id: string;
-  identifier: string;
-  title: string;
-  description: string;
-  url: string;
-  branchName: string;
-  teamId: string;
-  teamKey: string;
-  /** The team's name (when Linear returned it). */
-  teamName?: string;
-  /** The workflow state's ID (when Linear returned it). */
-  stateId?: string;
-  stateType: string;
-  stateName: string;
-  labels: string[];
-  /** Linear priority: 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low. */
-  priority: number;
-  /** Manual position among its parent's sub-issues. */
-  subIssueSortOrder?: number;
-  projectName?: string;
-  projectId?: string;
-  parentId?: string;
-  assigneeId?: string;
-  /** The (agent) user the issue is delegated to (when Linear returned it). */
-  delegateId?: string;
-  /** When the issue last changed (ISO 8601, when Linear returned it). */
-  updatedAt?: string;
-  /**
-   * Who created the issue; absent when Linear doesn't say (e.g. an integration).
-   * `url` is their profile URL, which a comment @mentions them with.
-   */
-  creator?: { id: string; name: string; url?: string };
-}
-
-export interface IssueComment {
-  body: string;
-  author?: string;
-  createdAt?: string;
-}
-
-/** A Linear document (e.g. a PRD or design doc). */
-export interface LinearDocument {
-  id: string;
-  title: string;
-  /** Markdown. */
-  content: string;
-  url: string;
-  updatedAt: string;
-  projectName?: string;
-  /** The issue the document belongs to, if any. */
-  issueIdentifier?: string;
-}
-
-export interface Blocker {
-  id: string;
-  identifier: string;
-  title?: string;
-  stateType: string;
-  stateName?: string;
-}
-
-/**
- * Which issues `listIssues` returns: every condition given must hold. Paginated by
- * `after` (the previous page's `endCursor`), `first` per page.
- */
-export interface ListIssuesFilter {
-  teamId?: string;
-  /** The team by its key (`ENG`), ignoring case. */
-  teamKey?: string;
-  projectId?: string;
-  /** The project by its name, ignoring case. */
-  projectName?: string;
-  /** Issues carrying any of these labels. */
-  labelIds?: string[];
-  /** Issues carrying a label of any of these names, ignoring case. */
-  labelNames?: string[];
-  /** Issues delegated to this (agent) user. */
-  delegateId?: string;
-  /** Issues not delegated to this user (undelegated ones included). */
-  notDelegateId?: string;
-  /** Issues in a workflow state of one of these types. */
-  stateTypes?: string[];
-  /**
-   * Issues in a state of one of `types` (except in the `typesExceptTeamIds` teams), or in
-   * one of the states `ids`.
-   */
-  stateMatch?: { types: string[]; typesExceptTeamIds: string[]; ids: string[] };
-  /** Only issues in no project. */
-  withoutProject?: boolean;
-  /** Each issue also carries its `routing` fields (selected in the same query). */
-  withRoutingFields?: boolean;
-  /** Issues with one of these identifiers (`ENG-12`, the team key ignoring case). */
-  identifiers?: string[];
-  first: number;
-  after?: string | null;
-}
-
-/** An issue `listIssues` returned, with the issues that block it. */
-export interface IssueWithBlockers extends IssueSummary {
-  /** Issues that block it ("X blocks this"), in any state. */
-  blockers: Blocker[];
-  /** Its routing fields and its parent's, when the filter asked `withRoutingFields`. */
-  routing?: RoutingIssue;
-}
-
-/** A page of `listIssues`. */
-export interface IssuePage {
-  issues: IssueWithBlockers[];
-  /** The `after` of the next page; null on the last one. */
-  endCursor: string | null;
-}
-
-export interface WorkflowState {
-  id: string;
-  name: string;
-  /** `triage`, `backlog`, `unstarted`, `started`, `completed` or `canceled`. */
-  type: string;
-  position: number;
-}
-
-export interface IssueLabel {
-  id: string;
-  name: string;
-  /** Null for a workspace label. */
-  teamId: string | null;
-}
-
-export interface Project {
-  id: string;
-  name: string;
-}
-
-export interface Team {
-  id: string;
-  key: string;
-  name: string;
-}
 
 export interface ProjectMilestone {
   id: string;
@@ -164,12 +56,6 @@ export interface Cycle {
 
 /** A workspace member (not a deactivated one). */
 export interface User {
-  id: string;
-  name: string;
-}
-
-/** The user the gateway's token acts as: for the app's OAuth token, the app user. */
-export interface Viewer {
   id: string;
   name: string;
 }
@@ -214,157 +100,61 @@ export interface RoutingIssue {
   parent: RoutingIssueFields | null;
 }
 
-export interface CreateIssueInput {
-  teamId: string;
-  title: string;
-  description: string;
-  parentId?: string;
-  priority?: number;
-  subIssueSortOrder?: number;
-  projectName?: string;
-  /** The project by ID (`projectName` is then ignored). */
-  projectId?: string;
+/** `ListIssuesFilter` with Linear's extras. */
+export interface LinearListIssuesFilter extends ListIssuesFilter {
+  /** Each issue also carries its `routing` fields (selected in the same query). */
+  withRoutingFields?: boolean;
+}
+
+/** An issue `listIssues` returned, with its blockers and (when asked) its routing fields. */
+export interface LinearIssueWithBlockers extends IssueWithBlockers {
+  /** Its routing fields and its parent's, when the filter asked `withRoutingFields`. */
+  routing?: RoutingIssue;
+}
+
+/** A page of `listIssues`. */
+export interface LinearIssuePage {
+  issues: LinearIssueWithBlockers[];
+  /** The `after` of the next page; null on the last one. */
+  endCursor: string | null;
+}
+
+/** `CreateIssueInput` with Linear's extras. */
+export interface LinearCreateIssueInput extends CreateIssueInput {
   projectMilestoneId?: string;
   cycleId?: string;
-  /** Label names (case-insensitive); a label the team doesn't have yet is created for it. */
-  labels?: string[];
-  /** The (agent) user to delegate the issue to, e.g. the app user from `getViewer`. */
-  delegateId?: string;
 }
 
-/** Fields `updateIssue` changes; omitted ones are left as they are. */
-export interface UpdateIssueInput {
-  title?: string;
-  description?: string;
-  /** Linear priority: 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low. */
-  priority?: number;
-}
-
-export type ActivityContent =
-  | { type: "thought"; body: string }
-  | { type: "action"; action: string; parameter: string; result?: string }
-  | { type: "response"; body: string }
-  | { type: "error"; body: string }
-  | { type: "elicitation"; body: string };
-
-export interface ActivityOptions {
-  /** Ephemeral activities are replaced by the next activity (thoughts/actions only). */
-  ephemeral?: boolean;
-  /** e.g. `select` with `signalMetadata: { options: [{ value }] }` renders a picker in Linear. */
-  signal?: "select" | "auth" | "stop" | "continue";
-  signalMetadata?: Record<string, unknown>;
-}
-
-export interface PlanStep {
-  content: string;
-  status: "pending" | "inProgress" | "completed" | "canceled";
-}
-
-/** A file uploaded to Linear, as `downloadUpload` fetched it. */
-export interface UploadDownload {
-  /** False for an error status. */
-  ok: boolean;
-  status: number;
-  /** Without parameters, e.g. `image/png`. */
-  contentType: string;
-  /** From `Content-Length`, when Linear sent one. */
-  contentLength: number | null;
-  /** The file (null after an error status). */
-  body: ReadableStream<Uint8Array> | null;
-}
-
-/** A file to upload to Linear (`uploadFile`). */
-export interface UploadFileInput {
-  filename: string;
-  /** e.g. `image/png`. */
-  contentType: string;
-  data: Uint8Array;
-}
-
-export interface LinearGateway {
-  /** The installing workspace. */
-  getOrganization(): Promise<{ id: string; name: string }>;
-  /** Every team in the workspace (all pages). */
-  listTeams(): Promise<Team[]>;
-  /** The user the token acts as (the app user for the app's token). */
-  getViewer(): Promise<Viewer>;
-  getIssue(idOrIdentifier: string): Promise<IssueSummary>;
+/**
+ * The tracker gateway over Linear: the core operations, every optional
+ * capability, and the Linear-only reads routing uses (milestones, cycles,
+ * users and an issue's routing fields).
+ */
+export interface LinearGateway extends GatewayWith<TrackerCapability> {
+  readonly provider: "linear";
+  listIssues(filter: LinearListIssuesFilter): Promise<LinearIssuePage>;
+  createIssue(input: LinearCreateIssueInput): Promise<IssueSummary>;
   /** An issue's routing field values and its parent's, in one query. */
   getRoutingFields(idOrIdentifier: string): Promise<RoutingIssue>;
-  /** Every sub-issue (all pages). */
-  getChildren(issueId: string): Promise<IssueSummary[]>;
-  /** Comments on an issue, oldest first. */
-  getComments(issueId: string): Promise<IssueComment[]>;
-  /** Issues matching a full-text search (title, description), best match first. */
-  searchIssues(query: string, options?: { first?: number }): Promise<IssueSummary[]>;
-  /** A document by ID or slug ID. */
-  getDocument(idOrSlugId: string): Promise<LinearDocument>;
-  /** Issues that block the given issue ("X blocks this"). */
-  getBlockers(issueId: string): Promise<Blocker[]>;
-  /**
-   * A page of issues matching `filter`, oldest first, each with its blockers (fetched in
-   * the same query).
-   */
-  listIssues(filter: ListIssuesFilter): Promise<IssuePage>;
-  /** The team's workflow states by position (cached per team for the gateway's lifetime). */
-  getWorkflowStates(teamId: string): Promise<WorkflowState[]>;
-  /** The team's label with this name (case-insensitive), else a workspace label, else null. */
-  findLabel(teamId: string, name: string): Promise<IssueLabel | null>;
-  createLabel(teamId: string, name: string): Promise<IssueLabel>;
-  /** Every label issues can carry, workspace and team labels (all pages; not label groups). */
-  listIssueLabels(): Promise<IssueLabel[]>;
-  /** Every project in the workspace (all pages). */
-  listProjects(): Promise<Project[]>;
   /** Every project's milestones (every page). */
   listProjectMilestones(): Promise<ProjectMilestone[]>;
   /** Every team's current and upcoming cycles (every page). */
   listCycles(): Promise<Cycle[]>;
   /** The workspace's active users (every page). */
   listUsers(): Promise<User[]>;
-  createIssue(input: CreateIssueInput): Promise<IssueSummary>;
-  /** `blockerId` blocks `blockedId`. */
-  createBlocksRelation(blockerId: string, blockedId: string): Promise<void>;
-  /**
-   * Moves the issue to the state of this ID, else the named state, else the team's first
-   * state of this type.
-   */
-  setIssueState(
-    issueId: string,
-    target: { id?: string; type?: string; name?: string },
-  ): Promise<void>;
-  /** Updates the given fields of an existing issue (a no-op when none are given). */
-  updateIssue(issueId: string, input: UpdateIssueInput): Promise<void>;
-  /** Adds labels by ID, keeping the issue's other labels. */
-  addIssueLabels(issueId: string, labelIds: string[]): Promise<void>;
-  removeIssueLabel(issueId: string, labelId: string): Promise<void>;
-  /** Delegates the issue to an (agent) user, e.g. the app user from `getViewer`; null removes its delegate. */
-  delegateIssue(issueId: string, delegateId: string | null): Promise<void>;
-  addComment(issueId: string, body: string): Promise<void>;
-  /**
-   * Links a URL (e.g. a PR/MR) to the issue as an attachment
-   * (`attachmentLinkURL`). Linking the same URL again updates the one there.
-   */
-  linkUrl(issueId: string, url: string, title?: string): Promise<void>;
-  /** Opens an agent session on the issue (as the app) and returns its ID. */
-  createAgentSessionOnIssue(issueId: string): Promise<string>;
-  createActivity(
-    sessionId: string,
-    content: ActivityContent,
-    opts?: ActivityOptions,
-  ): Promise<void>;
-  updateSessionPlan(sessionId: string, plan: PlanStep[]): Promise<void>;
-  addSessionExternalUrl(sessionId: string, label: string, url: string): Promise<void>;
-  /**
-   * Fetches a file uploaded to Linear (`https://uploads.linear.app/...`) with
-   * the workspace's token. Rejects any other URL without sending the token.
-   */
-  downloadUpload(url: string, signal?: AbortSignal): Promise<UploadDownload>;
-  /**
-   * Uploads a file to the workspace's storage (`fileUpload`, then a PUT to the
-   * signed URL) and returns its asset URL, for a Markdown link or image in an
-   * issue description.
-   */
-  uploadFile(input: UploadFileInput): Promise<string>;
+}
+
+/** Linear's upload storage: files pasted into issues and comments. */
+const UPLOAD_URL = /^https:\/\/uploads\.linear\.app\/[A-Za-z0-9/_.-]+$/;
+
+/** Whether `url` is exactly an (unsigned) Linear upload URL. */
+export function isLinearUploadUrl(url: string): boolean {
+  return UPLOAD_URL.test(url) && !url.endsWith(".");
+}
+
+/** A Linear workflow state type as the neutral one (Linear's are the same six). */
+export function toWorkflowStateType(type: string | null | undefined): WorkflowStateType {
+  return type && isWorkflowStateType(type) ? type : "unstarted";
 }
 
 const PAGE_SIZE = 100;
@@ -548,15 +338,15 @@ function summarize(issue: IssueNode): IssueSummary {
     title: issue.title,
     description: issue.description ?? "",
     url: issue.url,
-    branchName: issue.branchName,
+    ...(issue.branchName && { branchName: issue.branchName }),
     teamId: issue.team?.id ?? "",
     teamKey: issue.team?.key ?? "",
     ...(issue.team?.name && { teamName: issue.team.name }),
     ...(issue.state?.id && { stateId: issue.state.id }),
-    stateType: issue.state?.type ?? "unstarted",
+    stateType: toWorkflowStateType(issue.state?.type),
     stateName: issue.state?.name ?? "",
     labels: issue.labels?.nodes.map((l) => l.name) ?? [],
-    priority: issue.priority ?? 0,
+    priority: toIssuePriority(issue.priority),
     subIssueSortOrder: issue.subIssueSortOrder ?? undefined,
     projectName: issue.project?.name ?? undefined,
     ...(issue.project?.id && { projectId: issue.project.id }),
@@ -594,7 +384,7 @@ function blockersOf(nodes: RelationNode[]): Blocker[] {
             id: rel.issue.id,
             identifier: rel.issue.identifier,
             title: rel.issue.title ?? undefined,
-            stateType: rel.issue.state?.type ?? "unstarted",
+            stateType: toWorkflowStateType(rel.issue.state?.type),
             ...(rel.issue.state?.name && { stateName: rel.issue.state.name }),
           },
         ]
@@ -605,7 +395,6 @@ function blockersOf(nodes: RelationNode[]): Blocker[] {
 /** Blockers `listIssues` reads per issue (in the same query, so its complexity stays bounded). */
 const BLOCKERS_PER_ISSUE = 25;
 
-/** `ListIssuesFilter` as a Linear `IssueFilter` (every condition must hold). */
 /** The team key and number of an issue identifier (`ENG-12`), or null. */
 export function parseIssueIdentifier(
   identifier: string,
@@ -614,7 +403,8 @@ export function parseIssueIdentifier(
   return match ? { teamKey: match[1]!.toUpperCase(), number: Number(match[2]) } : null;
 }
 
-export function issueFilter(filter: ListIssuesFilter): Record<string, unknown> {
+/** `ListIssuesFilter` as a Linear `IssueFilter` (every condition must hold). */
+export function issueFilter(filter: LinearListIssuesFilter): Record<string, unknown> {
   const and: Array<Record<string, unknown>> = [];
   if (filter.teamId) and.push({ team: { id: { eq: filter.teamId } } });
   if (filter.teamKey) and.push({ team: { key: { eqIgnoreCase: filter.teamKey } } });
@@ -668,12 +458,18 @@ export class LinearMutationError extends Error {
   }
 }
 
+/** Whether the error is Linear refusing the input (an unknown ID included: "Entity not found"). */
+function isInvalidInput(error: unknown): error is TrackerInvalidInputError {
+  return error instanceof TrackerInvalidInputError;
+}
+
 /**
  * `LinearGateway` over `@linear/sdk`. Each call is one named GraphQL document
  * (the SDK's lazy model getters would cost a request per relation), sent
  * through the SDK client so auth, errors and rate limits are the SDK's.
  */
 export class SdkLinearGateway implements LinearGateway {
+  readonly provider = "linear" as const;
   private readonly client: LinearClient;
   private readonly statesByTeam = new Map<string, Promise<WorkflowState[]>>();
 
@@ -687,11 +483,39 @@ export class SdkLinearGateway implements LinearGateway {
     });
   }
 
+  readonly sessions: TrackerSessions = {
+    createSessionOnIssue: (issueId) => this.createSessionOnIssue(issueId),
+    createActivity: (sessionId, content, options) =>
+      this.createActivity(sessionId, content, options),
+    updatePlan: (sessionId, plan) => this.updatePlan(sessionId, plan),
+    addExternalUrl: (sessionId, label, url) => this.addExternalUrl(sessionId, label, url),
+  };
+
+  readonly delegation: TrackerDelegation = {
+    delegateIssue: (issueId, delegateId) => this.delegateIssue(issueId, delegateId),
+  };
+
+  readonly documents: TrackerDocuments = {
+    getDocument: (ref) => this.getDocument(ref),
+  };
+
+  readonly uploads: TrackerUploads = {
+    isUploadUrl: isLinearUploadUrl,
+    downloadUpload: (url, signal) => this.downloadUpload(url, signal),
+    uploadFile: (input) => this.uploadFile(input),
+  };
+
+  /** Linear refusing the input (`InvalidInputLinearError`) throws a `TrackerInvalidInputError`. */
   private async request<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-    const response = await this.client.client.rawRequest<T, Record<string, unknown>>(
-      query,
-      variables,
-    );
+    let response;
+    try {
+      response = await this.client.client.rawRequest<T, Record<string, unknown>>(query, variables);
+    } catch (error) {
+      if (error instanceof InvalidInputLinearError) {
+        throw new TrackerInvalidInputError(error.message, { cause: error });
+      }
+      throw error;
+    }
     if (!response.data) throw new Error("Linear returned no data");
     return response.data;
   }
@@ -720,7 +544,7 @@ export class SdkLinearGateway implements LinearGateway {
     }
   }
 
-  async getOrganization(): Promise<{ id: string; name: string }> {
+  async getWorkspace(): Promise<Workspace> {
     const data = await this.request<{ organization: { id: string; name: string } }>(/* GraphQL */ `
       query Organization {
         organization {
@@ -768,26 +592,39 @@ export class SdkLinearGateway implements LinearGateway {
     return { id: data.viewer.id, name: data.viewer.name };
   }
 
+  /** Runs a read of one entity by ref, answering Linear's "Entity not found" with `TrackerNotFoundError`. */
+  private async findOne<T>(entity: string, ref: string, read: () => Promise<T>): Promise<T> {
+    try {
+      return await read();
+    } catch (error) {
+      if (isInvalidInput(error)) throw new TrackerNotFoundError(entity, ref, { cause: error });
+      throw error;
+    }
+  }
+
   async getIssue(idOrIdentifier: string): Promise<IssueSummary> {
-    const data = await this.request<{ issue: IssueNode }>(
-      /* GraphQL */ `
-        query Issue($id: String!) {
-          issue(id: $id) {
-            ...IssueFields
+    const data = await this.findOne("issue", idOrIdentifier, () =>
+      this.request<{ issue: IssueNode }>(
+        /* GraphQL */ `
+          query Issue($id: String!) {
+            issue(id: $id) {
+              ...IssueFields
+            }
           }
-        }
-        ${ISSUE_FIELDS}
-      `,
-      { id: idOrIdentifier },
+          ${ISSUE_FIELDS}
+        `,
+        { id: idOrIdentifier },
+      ),
     );
     return summarize(data.issue);
   }
 
   async getRoutingFields(idOrIdentifier: string): Promise<RoutingIssue> {
-    const data = await this.request<{
-      issue: RoutingNode & { parentIssue?: RoutingNode | null };
-    }>(
-      /* GraphQL */ `
+    const data = await this.findOne("issue", idOrIdentifier, () =>
+      this.request<{
+        issue: RoutingNode & { parentIssue?: RoutingNode | null };
+      }>(
+        /* GraphQL */ `
         query IssueRoutingFields($id: String!) {
           issue(id: $id) {
             ...RoutingFields
@@ -800,7 +637,8 @@ export class SdkLinearGateway implements LinearGateway {
           ${routingSelection(250)}
         }
       `,
-      { id: idOrIdentifier },
+        { id: idOrIdentifier },
+      ),
     );
     const { parentIssue, ...issue } = data.issue;
     return {
@@ -887,7 +725,8 @@ export class SdkLinearGateway implements LinearGateway {
     return data.searchIssues.nodes.map(summarize);
   }
 
-  async getDocument(idOrSlugId: string): Promise<LinearDocument> {
+  /** A document by ID or slug ID. */
+  private async getDocument(idOrSlugId: string): Promise<TrackerDocument> {
     type DocumentNode = {
       id: string;
       title: string;
@@ -897,25 +736,27 @@ export class SdkLinearGateway implements LinearGateway {
       project?: { name: string } | null;
       issue?: { identifier: string } | null;
     };
-    const { document } = await this.request<{ document: DocumentNode }>(
-      /* GraphQL */ `
-        query Document($id: String!) {
-          document(id: $id) {
-            id
-            title
-            content
-            url
-            updatedAt
-            project {
-              name
-            }
-            issue {
-              identifier
+    const { document } = await this.findOne("document", idOrSlugId, () =>
+      this.request<{ document: DocumentNode }>(
+        /* GraphQL */ `
+          query Document($id: String!) {
+            document(id: $id) {
+              id
+              title
+              content
+              url
+              updatedAt
+              project {
+                name
+              }
+              issue {
+                identifier
+              }
             }
           }
-        }
-      `,
-      { id: idOrSlugId },
+        `,
+        { id: idOrSlugId },
+      ),
     );
     return {
       id: document.id,
@@ -962,7 +803,7 @@ export class SdkLinearGateway implements LinearGateway {
     return blockersOf(nodes);
   }
 
-  async listIssues(filter: ListIssuesFilter): Promise<IssuePage> {
+  async listIssues(filter: LinearListIssuesFilter): Promise<LinearIssuePage> {
     // The routing fields share `IssueFields`' labels selection (50), so the fragments merge.
     const routing = filter.withRoutingFields
       ? {
@@ -1034,7 +875,9 @@ export class SdkLinearGateway implements LinearGateway {
   getWorkflowStates(teamId: string): Promise<WorkflowState[]> {
     let states = this.statesByTeam.get(teamId);
     if (!states) {
-      states = this.request<{ workflowStates: { nodes: WorkflowState[] } }>(
+      states = this.request<{
+        workflowStates: { nodes: Array<Omit<WorkflowState, "type"> & { type: string }> };
+      }>(
         /* GraphQL */ `
           query TeamWorkflowStates($teamId: ID!) {
             workflowStates(filter: { team: { id: { eq: $teamId } } }, first: 100) {
@@ -1048,7 +891,11 @@ export class SdkLinearGateway implements LinearGateway {
           }
         `,
         { teamId },
-      ).then((data) => [...data.workflowStates.nodes].sort((a, b) => a.position - b.position));
+      ).then((data) =>
+        data.workflowStates.nodes
+          .map((state) => ({ ...state, type: toWorkflowStateType(state.type) }))
+          .sort((a, b) => a.position - b.position),
+      );
       // A failed lookup isn't cached.
       states.catch(() => this.statesByTeam.delete(teamId));
       this.statesByTeam.set(teamId, states);
@@ -1105,7 +952,7 @@ export class SdkLinearGateway implements LinearGateway {
     return { id: result.issueLabel.id, name: result.issueLabel.name, teamId };
   }
 
-  async listIssueLabels(): Promise<IssueLabel[]> {
+  async listLabels(): Promise<IssueLabel[]> {
     type LabelNode = { id: string; name: string; isGroup: boolean; team?: { id: string } | null };
     const nodes = await this.paginate(async (after) => {
       const data = await this.request<{ issueLabels: Connection<LabelNode> }>(
@@ -1266,7 +1113,7 @@ export class SdkLinearGateway implements LinearGateway {
     return data.projects.nodes[0]?.id;
   }
 
-  async createIssue(input: CreateIssueInput): Promise<IssueSummary> {
+  async createIssue(input: LinearCreateIssueInput): Promise<IssueSummary> {
     const projectId =
       input.projectId ?? (input.projectName ? await this.projectId(input.projectName) : undefined);
     const labelIds = input.labels?.length
@@ -1329,10 +1176,7 @@ export class SdkLinearGateway implements LinearGateway {
     );
   }
 
-  async setIssueState(
-    issueId: string,
-    target: { id?: string; type?: string; name?: string },
-  ): Promise<void> {
+  async setIssueState(issueId: string, target: IssueStateTarget): Promise<void> {
     const data = await this.request<{
       issue: { team?: { id: string } | null; state?: { id: string } | null };
     }>(
@@ -1405,7 +1249,7 @@ export class SdkLinearGateway implements LinearGateway {
     await this.issueUpdate(issueId, { removedLabelIds: [labelId] });
   }
 
-  async delegateIssue(issueId: string, delegateId: string | null): Promise<void> {
+  private async delegateIssue(issueId: string, delegateId: string | null): Promise<void> {
     await this.issueUpdate(issueId, { delegateId });
   }
 
@@ -1437,7 +1281,7 @@ export class SdkLinearGateway implements LinearGateway {
     );
   }
 
-  async createAgentSessionOnIssue(issueId: string): Promise<string> {
+  private async createSessionOnIssue(issueId: string): Promise<string> {
     const result = await this.mutate<
       "agentSessionCreateOnIssue",
       { success: boolean; agentSession?: { id: string } | null }
@@ -1459,7 +1303,7 @@ export class SdkLinearGateway implements LinearGateway {
     return result.agentSession.id;
   }
 
-  async createActivity(
+  private async createActivity(
     sessionId: string,
     content: ActivityContent,
     opts?: ActivityOptions,
@@ -1499,16 +1343,16 @@ export class SdkLinearGateway implements LinearGateway {
     );
   }
 
-  updateSessionPlan(sessionId: string, plan: PlanStep[]): Promise<void> {
+  private updatePlan(sessionId: string, plan: PlanStep[]): Promise<void> {
     return this.updateSession(sessionId, { plan });
   }
 
-  addSessionExternalUrl(sessionId: string, label: string, url: string): Promise<void> {
+  private addExternalUrl(sessionId: string, label: string, url: string): Promise<void> {
     return this.updateSession(sessionId, { addedExternalUrls: [{ label, url }] });
   }
 
-  async downloadUpload(url: string, signal?: AbortSignal): Promise<UploadDownload> {
-    if (!isUploadUrl(url)) throw new Error("not a Linear upload URL");
+  private async downloadUpload(url: string, signal?: AbortSignal): Promise<UploadDownload> {
+    if (!isLinearUploadUrl(url)) throw new Error("not a Linear upload URL");
     // Redirects (e.g. to a signed storage URL) are followed; fetch drops the token on a cross-origin one.
     const res = await fetch(url, {
       headers: { authorization: `Bearer ${this.accessToken}` },
@@ -1526,7 +1370,7 @@ export class SdkLinearGateway implements LinearGateway {
     };
   }
 
-  async uploadFile(input: UploadFileInput): Promise<string> {
+  private async uploadFile(input: UploadFileInput): Promise<string> {
     const { uploadFile } = await this.mutate<
       "fileUpload",
       {

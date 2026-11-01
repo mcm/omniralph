@@ -33,9 +33,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { deliveryDetailSchema, type DeliveryDetail } from "@/lib/api/deliveries";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
-import type { HandledLinearEvent, LinearEventContext } from "@/lib/linear/events";
-import { FakeLinearGateway } from "@/lib/linear/fake-gateway";
-import type { IssueSummary } from "@/lib/linear/gateway";
+import type { HandledTrackerEvent, TrackerEventContext } from "@/lib/tracker/events";
+import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
+import type { IssueSummary } from "@omniralph/tracker";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { handleWebhook, webhookHeaderEvent } from "@/lib/webhooks/ingest";
 
@@ -48,8 +48,8 @@ const state = vi.hoisted(() => ({
   orgId: "",
   linear: undefined as unknown as FakeLinearGateway,
   scm: undefined as unknown as FakeScmAdapter,
-  handled: [] as HandledLinearEvent[],
-  handle: async (_event: HandledLinearEvent, _context: LinearEventContext): Promise<void> => {},
+  handled: [] as HandledTrackerEvent[],
+  handle: async (_event: HandledTrackerEvent, _context: TrackerEventContext): Promise<void> => {},
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
@@ -64,13 +64,13 @@ vi.mock("@/lib/dispatch", async () => {
   return { getDispatcher: () => new Dispatcher({ db: state.db }) };
 });
 vi.mock("@/lib/scm/adapters", () => ({ scmAdapterFor: () => state.scm.asAdapter() }));
-vi.mock("@/lib/linear/client", async (importOriginal) => ({
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   getLinearGateway: async () => state.linear,
 }));
-vi.mock("@/lib/linear/events", async (importOriginal) => ({
+vi.mock("@/lib/tracker/events", async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  handleLinearEvent: async (event: HandledLinearEvent, context: LinearEventContext) => {
+  handleTrackerEvent: async (event: HandledTrackerEvent, context: TrackerEventContext) => {
     state.handled.push(event);
     await state.handle(event, context);
   },
@@ -464,7 +464,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/deliveries/{id}/replay", () =>
     });
     let started = "";
     state.handle = async (event) => {
-      if (event.kind !== "session_created") return;
+      if (event.kind !== "issue_mentioned") return;
       started = (await ralphRun(event.issueId, "ENG-1", event.sessionId)).run.id;
     };
 
@@ -473,7 +473,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/deliveries/{id}/replay", () =>
     expect(state.linear.sessionsCreated).toEqual([{ issueId: "issue-1", sessionId: "session-1" }]);
     expect(state.handled).toEqual([
       expect.objectContaining({
-        kind: "session_created",
+        kind: "issue_mentioned",
         sessionId: "session-1",
         issueId: "issue-1",
         commentBody: "@omniralph build it",
@@ -505,7 +505,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/deliveries/{id}/replay", () =>
     expect((await replay(original)).status).toBe(200);
     expect(state.handled).toEqual([
       expect.objectContaining({
-        kind: "session_created",
+        kind: "issue_mentioned",
         sessionId: "session-1",
         issueId: "issue-3",
         commentBody: "Split it in two",
