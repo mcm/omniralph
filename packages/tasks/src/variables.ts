@@ -61,9 +61,9 @@ const CODING_TRIGGERS = [...STORY_TRIGGERS, ...REQUEST_TRIGGERS] as const;
 /** Coding triggers, and the `run.invoked` of a query task a coding run invokes (`builtin:describe-pr`). */
 const CODING_RUN_TRIGGERS = [...CODING_TRIGGERS, "run.invoked"] as const;
 const LINEAR_TRIGGERS = [
-  "linear.delegated",
-  "linear.triage",
-  "linear.mention",
+  "tracker.delegated",
+  "tracker.triage",
+  "tracker.mention",
 ] as const satisfies readonly TriggerKind[];
 
 export const VARIABLES: readonly VariableDefinition[] = [
@@ -71,14 +71,14 @@ export const VARIABLES: readonly VariableDefinition[] = [
     name: "repository",
     source: "trigger",
     trust: "trusted",
-    triggers: [...PR_TRIGGERS, "chat.request", "linear.triage", "run.invoked"],
+    triggers: [...PR_TRIGGERS, "chat.request", "tracker.triage", "run.invoked"],
     description: "`owner/repo` or `group/project` (null when a Linear issue routes to none).",
   },
   {
     name: "branch",
     source: "trigger",
     trust: "trusted",
-    triggers: ["linear.triage", ...CODING_RUN_TRIGGERS],
+    triggers: ["tracker.triage", ...CODING_RUN_TRIGGERS],
     description:
       "Branch checked out in the working directory: the default branch for a query, the run's branch for a coding run (and the PR description it invokes).",
   },
@@ -213,14 +213,14 @@ export const VARIABLES: readonly VariableDefinition[] = [
     name: "comments.items.author",
     source: "trigger",
     trust: "trusted",
-    triggers: ["linear.triage"],
+    triggers: ["tracker.triage"],
     description: "Author of a comment (null for an integration or a deleted user).",
   },
   {
     name: "comments.items.createdAt",
     source: "trigger",
     trust: "trusted",
-    triggers: ["linear.triage"],
+    triggers: ["tracker.triage"],
     description: "When a comment was posted (ISO 8601).",
   },
   {
@@ -228,14 +228,14 @@ export const VARIABLES: readonly VariableDefinition[] = [
     source: "trigger",
     trust: "untrusted",
     quote: "comment",
-    triggers: ["linear.triage"],
+    triggers: ["tracker.triage"],
     description: "Body of a comment, oldest first.",
   },
   ...(["id", "identifier", "stateType", "priority"] as const).map((field): VariableDefinition => ({
     name: `children.items.${field}`,
     source: "trigger",
     trust: "trusted",
-    triggers: ["linear.triage"],
+    triggers: ["tracker.triage"],
     description:
       field === "priority"
         ? "Linear priority name of a sub-issue (`No priority`, `Urgent` … `Low`)."
@@ -246,7 +246,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     source: "trigger",
     trust: "untrusted",
     quote: "sub-issue-title",
-    triggers: ["linear.triage"],
+    triggers: ["tracker.triage"],
     description: "Title of a sub-issue.",
   },
   {
@@ -254,14 +254,14 @@ export const VARIABLES: readonly VariableDefinition[] = [
     source: "trigger",
     trust: "untrusted",
     quote: "sub-issue-description",
-    triggers: ["linear.triage"],
+    triggers: ["tracker.triage"],
     description: "Description of a sub-issue.",
   },
   ...(["identifier", "stateType", "blocks", "title"] as const).map((field): VariableDefinition => ({
     name: `blockers.items.${field}`,
     source: "trigger",
     trust: "trusted",
-    triggers: ["linear.triage"],
+    triggers: ["tracker.triage"],
     description:
       field === "title"
         ? "Title of an issue blocking the issue or a sub-issue, on one line."
@@ -274,7 +274,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     source: "trigger",
     trust: "untrusted",
     quote: "reply",
-    triggers: ["linear.triage"],
+    triggers: ["tracker.triage"],
     description: "A reply in the Linear session (e.g. answers to open questions; may be empty).",
   },
   ...(
@@ -292,7 +292,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     name: `previousResult.${field}`,
     source: "trigger",
     trust: "trusted",
-    triggers: ["linear.triage"],
+    triggers: ["tracker.triage"],
     description,
   })),
   {
@@ -300,7 +300,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     source: "trigger",
     trust: "untrusted",
     quote: "previous-title",
-    triggers: ["linear.triage"],
+    triggers: ["tracker.triage"],
     description: "Title the previous triage wrote.",
   },
   {
@@ -308,7 +308,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     source: "trigger",
     trust: "untrusted",
     quote: "previous-description",
-    triggers: ["linear.triage"],
+    triggers: ["tracker.triage"],
     description: "Description the previous triage wrote.",
   },
   // Correlation: the review run that invoked the run, with each task's results.

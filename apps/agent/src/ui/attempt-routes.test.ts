@@ -63,7 +63,7 @@ function storyJob() {
     job: { id: randomUUID(), type: RALPH_STORY_JOB_TYPE, taskType: "coding" as const, payload: {} },
     spec: {
       trigger: {
-        kind: "linear.delegated",
+        kind: "tracker.delegated",
         context: {
           runId: RUN_ID,
           repository: REPO,

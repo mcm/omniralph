@@ -134,7 +134,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
   /** The queued run's payload, parsed, with its trigger context. */
   const payloadOf = async (jobId: string) => {
     const payload = RunSpecJobPayload.parse((await getJob(db, jobId))!.payload);
-    expect(payload.trigger.kind).toBe("linear.triage");
+    expect(payload.trigger.kind).toBe("tracker.triage");
     const context = payload.trigger.context as unknown as TriageTemplateContext & {
       triageRunId: string;
     };

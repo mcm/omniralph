@@ -224,7 +224,7 @@ export function templateList<T>(items: readonly T[] | undefined): TemplateList<T
 }
 
 /**
- * The trigger context of a `builtin:triage` run (task `linear.triage`): the
+ * The trigger context of a `builtin:triage` run (task `tracker.triage`): the
  * issue, its comments, sub-issues and blockers, the routed repository and the
  * session's reply and previous triage, shaped for the logic-less prompt
  * template, which renders it as `buildTriagePrompt` renders `input` (with the

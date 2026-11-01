@@ -413,7 +413,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       triageRunId: triage.id,
       payload: {
         trigger: {
-          kind: "linear.triage",
+          kind: "tracker.triage",
           context: {
             triageRunId: triage.id,
             issue: {
@@ -1892,7 +1892,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         // A coding run's payload: the request is its trigger context.
         payload: {
           trigger: {
-            kind: "linear.mention",
+            kind: "tracker.mention",
             context: { requests: [{ id: message.id, text: message.text }] },
           },
         },
@@ -2117,7 +2117,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         triageRunId: run.id,
         payload: {
           trigger: {
-            kind: "linear.triage",
+            kind: "tracker.triage",
             context: {
               triageRunId: run.id,
               reply: "Owners only.",

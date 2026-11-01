@@ -38,7 +38,7 @@ function job(
 
 /** The part of a run spec the history reads. */
 function runSpec(context: Record<string, unknown>, repository = REPO): RunSpec {
-  return { trigger: { kind: "linear.delegated", context }, repository } as unknown as RunSpec;
+  return { trigger: { kind: "tracker.delegated", context }, repository } as unknown as RunSpec;
 }
 
 const story = () => ({

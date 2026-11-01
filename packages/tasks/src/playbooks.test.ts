@@ -56,7 +56,7 @@ describe("PLAYBOOK_ROLES", () => {
       },
       story: {
         taskType: "coding",
-        triggers: ["linear.delegated"],
+        triggers: ["tracker.delegated"],
         sink: "ralph-run",
         builtinOnly: false,
       },
@@ -78,7 +78,12 @@ describe("PLAYBOOK_ROLES", () => {
         sink: "chat-thread",
         builtinOnly: false,
       },
-      triage: { taskType: "query", triggers: ["linear.triage"], sink: "triage", builtinOnly: true },
+      triage: {
+        taskType: "query",
+        triggers: ["tracker.triage"],
+        sink: "triage",
+        builtinOnly: true,
+      },
       "learn-rule": {
         taskType: "query",
         triggers: ["finding.dismissed"],
@@ -331,7 +336,7 @@ describe("playbookRunSpec", () => {
     expect(playbookRunSpec(story).task).toMatchObject({
       ...CODING_DEFAULTS,
       taskType: "coding",
-      triggers: ["linear.delegated"],
+      triggers: ["tracker.delegated"],
       sink: "ralph-run",
       maxAttemptsPerStory: 5,
       prDescriptionTaskId: UUID,

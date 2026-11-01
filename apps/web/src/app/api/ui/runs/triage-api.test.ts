@@ -139,7 +139,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/runs/{id}/triage", () => {
         triageRunId: run.id,
         payload: {
           trigger: {
-            kind: "linear.triage",
+            kind: "tracker.triage",
             context: {
               triageRunId: run.id,
               issue: { identifier: "ENG-90", title: `Title ${index + 1}`, description },

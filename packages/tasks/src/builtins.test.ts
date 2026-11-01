@@ -159,7 +159,7 @@ describe("builtinProblems", () => {
     ).toEqual([
       "Playbook builtin:handle prDescriptionTaskId: builtin:learn-rule isn't a query task started by run.invoked.",
       expect.stringMatching(
-        /^Playbook builtin:handle promptTemplate: A request \(linear\.mention, chat\.request, pr\.review-findings, pr\.ci-failed, pr\.fix-command\) may have no epic or story: put \{\{epic\.prd\}\} in an optional section/,
+        /^Playbook builtin:handle promptTemplate: A request \(tracker\.mention, chat\.request, pr\.review-findings, pr\.ci-failed, pr\.fix-command\) may have no epic or story: put \{\{epic\.prd\}\} in an optional section/,
       ),
     ]);
   });

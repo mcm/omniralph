@@ -4,7 +4,7 @@
   "description": "Does what a run's pending requests ask (a mention, a chat request, review findings, a failed CI run, a fix command or /ship) in the run's branch worktree.",
   "taskType": "coding",
   "triggers": [
-    "linear.mention",
+    "tracker.mention",
     "chat.request",
     "pr.review-findings",
     "pr.ci-failed",

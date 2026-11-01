@@ -811,8 +811,8 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
 
       await reply(run!, "go on");
       expect((await listPendingRequests(db, run!.id)).map((r) => r.trigger)).toEqual([
-        "linear.mention",
-        "linear.mention",
+        "tracker.mention",
+        "tracker.mention",
       ]);
       const payload = await request(run!.id);
       expect(payload.requests.map((r) => r.text)).toEqual(["rebase onto main", "go on"]);

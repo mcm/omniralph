@@ -519,12 +519,12 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
           const routed =
             type === "ralph.story"
               ? await codingJobInput(
-                  { taskId: "builtin:implement-story", trigger: "linear.delegated" },
+                  { taskId: "builtin:implement-story", trigger: "tracker.delegated" },
                   storyPayload(runId),
                   BUILTIN_PLAYBOOK_SOURCE,
                 )
               : await codingJobInput(
-                  { taskId: "builtin:handle-request", trigger: "linear.mention" },
+                  { taskId: "builtin:handle-request", trigger: "tracker.mention" },
                   requestPayload(runId),
                   BUILTIN_PLAYBOOK_SOURCE,
                 );

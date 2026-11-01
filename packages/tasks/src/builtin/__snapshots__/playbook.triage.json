@@ -4,7 +4,7 @@
   "description": "Triages a Linear issue into a PRD a coding task can build and applies it to Linear.",
   "taskType": "query",
   "triggers": [
-    "linear.triage"
+    "tracker.triage"
   ],
   "sink": "triage",
   "systemPromptMode": "append",

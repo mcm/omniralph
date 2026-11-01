@@ -84,7 +84,7 @@ tasks' IDs. See [definitions.md](../definitions.md)._
   | `builtin:learn-rule`       | `builtin:rule-writer` (no tools)                            | `finding.dismissed` | `learned-rule`   | 5000 tokens; output `{ rule: string \| null }`                    |
   | `builtin:reply-to-finding` | `builtin:reviewer` (Read, Grep, Glob)                       | `finding.mention`   | `finding-thread` | 10 % of the profile budget, 10 turns                              |
   | `builtin:ask-about-code`   | `builtin:code-explainer` (Read, Grep, Glob)                 | `chat.request`      | `chat-thread`    | 25 % of the profile budget, 30 turns                              |
-  | `builtin:triage`           | `builtin:planner` (Read, Grep, Glob, the four Linear tools) | `linear.triage`     | `triage`         | `opus`, no budget, 5 min idle timeout, output = the triage schema |
+  | `builtin:triage`           | `builtin:planner` (Read, Grep, Glob, the four Linear tools) | `tracker.triage`    | `triage`         | `opus`, no budget, 5 min idle timeout, output = the triage schema |
 
   They replace the job types `review.learn-rule`, `review.reply`, `chat.ask` and `triage.run`,
   whose names stay as job types and dedupe-key prefixes. Their prompts render byte for byte as the
@@ -109,11 +109,11 @@ tasks' IDs. See [definitions.md](../definitions.md)._
 
 - **Built-ins of TOOL-304** (see [Coding runs](#coding-runs)):
 
-  | Task                      | Type     | Agent                                                            | Triggers                                                                                 | Sink         | Notes                                                                   |
-  | ------------------------- | -------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------- |
-  | `builtin:implement-story` | `coding` | `builtin:engineer` (ralph's tool policy; the four harness tools) | `linear.delegated`                                                                       | `ralph-run`  | `long` pool, `opus`; one attempt at one story                           |
-  | `builtin:handle-request`  | `coding` | `builtin:engineer`                                               | `linear.mention`, `chat.request`, `pr.review-findings`, `pr.ci-failed`, `pr.fix-command` | `ralph-run`  | `long` pool, `opus`; one request session on the lane's branch           |
-  | `builtin:describe-pr`     | `query`  | `builtin:pr-writer` (Read, Grep, Glob)                           | `run.invoked`                                                                            | `run-result` | `short` pool, checkout of the branch required; output `{ title, body }` |
+  | Task                      | Type     | Agent                                                            | Triggers                                                                                  | Sink         | Notes                                                                   |
+  | ------------------------- | -------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------- |
+  | `builtin:implement-story` | `coding` | `builtin:engineer` (ralph's tool policy; the four harness tools) | `tracker.delegated`                                                                       | `ralph-run`  | `long` pool, `opus`; one attempt at one story                           |
+  | `builtin:handle-request`  | `coding` | `builtin:engineer`                                               | `tracker.mention`, `chat.request`, `pr.review-findings`, `pr.ci-failed`, `pr.fix-command` | `ralph-run`  | `long` pool, `opus`; one request session on the lane's branch           |
+  | `builtin:describe-pr`     | `query`  | `builtin:pr-writer` (Read, Grep, Glob)                           | `run.invoked`                                                                             | `run-result` | `short` pool, checkout of the branch required; output `{ title, body }` |
 
   Their templates render byte for byte as `buildStoryPrompt`, `buildRequestPrompt` and
   `buildDescribePrPrompt` did for the same inputs (snapshots and parity tests in

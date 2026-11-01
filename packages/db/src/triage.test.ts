@@ -333,7 +333,7 @@ describe.skipIf(!databaseAvailable)("triage queries", () => {
         type,
         taskType: "query",
         payload: {
-          trigger: { kind: "linear.triage", context: { triageRunId: runId, issue: {} } },
+          trigger: { kind: "tracker.triage", context: { triageRunId: runId, issue: {} } },
         },
       })
     ).job;

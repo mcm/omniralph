@@ -329,7 +329,7 @@ export async function enqueueTriage(
       organizationId: deps.organizationId,
       type: TRIAGE_RUN_JOB_TYPE,
       ...(await taskJobInput(definitions, task, {
-        trigger: { kind: "linear.triage", context: trigger },
+        trigger: { kind: "tracker.triage", context: trigger },
         // Without a routed repository the run has no checkout; a default branch that doesn't
         // exist yet (an empty repository) runs without one too.
         ...(repository && {

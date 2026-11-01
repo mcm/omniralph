@@ -13,14 +13,14 @@ const story: TaskDefinitionInput = {
   name: "Implement a story",
   taskType: "coding",
   agentId: "builtin:engineer",
-  triggers: ["linear.delegated"],
+  triggers: ["tracker.delegated"],
   promptTemplate: "{{story.title}}\n{{epic.prd}}",
   sink: "ralph-run",
 };
 
 const request: TaskDefinitionInput = {
   ...story,
-  triggers: ["linear.mention", "chat.request"],
+  triggers: ["tracker.mention", "chat.request"],
   promptTemplate: "{{#requests}}{{.}}{{/requests}}",
 };
 
@@ -82,7 +82,7 @@ describe("validateCodingTask", () => {
     }
     // One request trigger is enough.
     expect(
-      errors({ ...story, triggers: ["linear.delegated", "pr.fix-command"] }).promptTemplate,
+      errors({ ...story, triggers: ["tracker.delegated", "pr.fix-command"] }).promptTemplate,
     ).toContain("{{story.title}}, {{epic.prd}}");
     for (const template of [
       "{{#epic.prd}}{{epic.prd}}{{/epic.prd}}",

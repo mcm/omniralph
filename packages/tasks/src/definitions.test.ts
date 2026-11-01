@@ -156,7 +156,7 @@ describe("TaskDefinition", () => {
     const coding = {
       ...rest,
       taskType: "coding",
-      triggers: ["linear.delegated"],
+      triggers: ["tracker.delegated"],
       sink: "ralph-run",
       maxTurns: 200,
       idleTimeoutMs: 600_000,

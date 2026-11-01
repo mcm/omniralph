@@ -555,7 +555,7 @@ async function usableRepository(
  * `ralph.story` job goes to the lane's agent (`laneAgentId`: the agent
  * that started the lane's last job, else the lane repository's pinned agent,
  * else any ralph agent of its organization). The job is a coding run of the
- * lane repository's story task (trigger `linear.delegated`, the payload as
+ * lane repository's story task (trigger `tracker.delegated`, the payload as
  * its context); attempts are capped by that task.
  */
 async function enqueueStory(
@@ -588,7 +588,7 @@ async function enqueueStory(
     attachments: payloadAttachments(attachments, story.key),
   });
   const taskId = storyTaskFor(found.repository);
-  const routed = await codingJobInput({ taskId, trigger: "linear.delegated" }, payload, playbooks);
+  const routed = await codingJobInput({ taskId, trigger: "tracker.delegated" }, payload, playbooks);
   if (!routed) return failRun(deps, tx, run, notACodingTask(taskId, found.repository, "stories"));
   const { job, created } = await deps.dispatcher.createAndPublish({
     organizationId: run.organizationId,
