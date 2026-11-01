@@ -132,6 +132,7 @@ function ralphKindFacts(
             identifier: m.identifier,
             url: siblingIssueUrl(facts.trackerProvider, facts.trackerIssueUrl, m.identifier),
           })),
+          relations: facts.waitingOn.relations ?? [],
         }
       : null;
   const details = {
@@ -289,7 +290,7 @@ function attemptKindFacts(attempts: RunAttemptEntry[], base: AttemptLabelContext
 
 /**
  * The reason facts of a run (`runReason`, as its Inbox item says): a waiting run's open
- * question, else its first manual story, else its blockers; a queued run's newest attempt's
+ * question, else the relations it waits on, else its first manual story, else its blockers; a queued run's newest attempt's
  * waiting reason; a stopped or failed run's error.
  */
 function detailReasonFacts(
@@ -312,6 +313,8 @@ function detailReasonFacts(
             : "pull request",
         };
       }
+      const relations = facts.details.waitingOn?.relations ?? [];
+      if (relations.length > 0) return { kind: "broken_relations", relations };
       const manual = facts.manualStories?.[0];
       if (manual) return { kind: "manual_story", ...manual };
       const blockers = facts.details.waitingOn?.blockers ?? [];

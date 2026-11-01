@@ -25,6 +25,7 @@ export type InboxTabParam = (typeof INBOX_TABS)[number];
 export const INBOX_ITEM_KINDS = [
   "manual_story",
   "blocked_epic",
+  "broken_relations",
   "question",
   "stopped_epic",
   "prd_ready",

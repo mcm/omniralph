@@ -104,6 +104,8 @@ export function inboxItemLabel(item: InboxItem, now: number): InboxItemLabel {
       return waiting("Manual story", "Epic");
     case "blocked_epic":
       return waiting("Blocked", "Epic");
+    case "broken_relations":
+      return waiting("Relations to fix", "Epic");
     case "question":
       return waiting("Question");
     case "stopped_epic":

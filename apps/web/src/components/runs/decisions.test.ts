@@ -105,6 +105,15 @@ describe("inboxCtas", () => {
     ]);
   });
 
+  it("an epic with relations to fix leads with Open run and offers no Start anyway", () => {
+    expect(ctas(itemOf("broken_relations", { actions: ["done", "snooze"] }))).toEqual([
+      ["Open run", "primary", "/runs/run-2"],
+      ["View PRD", "outline"],
+      ["Dismiss", "ghost"],
+      ["Snooze", "ghost"],
+    ]);
+  });
+
   it("a blocked epic and a question lead with their own decision", () => {
     expect(ctas(itemOf("blocked_epic"))[0]).toEqual(["Start anyway", "primary"]);
     expect(ctas(itemOf("question"))[0]).toEqual(["Send answer", "primary"]);

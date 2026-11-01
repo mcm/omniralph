@@ -192,6 +192,16 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       title: "Manual",
       status: "manual",
     });
+    // Waits on relations that break the dependency rules ("start anyway" doesn't get past them).
+    await ralphRun("relations", {
+      status: "waiting",
+      ignoreBlockers: true,
+      waitingOn: {
+        blockers: [],
+        manual: [],
+        relations: ["ENG-12 is blocked by OPS-4: one. Fix it.", "ENG-13 is blocked by OPS-5: two."],
+      },
+    });
     // Blockers ignored ("start anyway"), an answered permission, a preparation being run.
     await ralphRun("startAnyway", {
       status: "waiting",
@@ -563,12 +573,17 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
     // Timestamps in keys are when something happened: stable, but not worth spelling out.
     expect(
       keysOf(items)
-        .map((k) => k.replace(/:\d{4}-\d\d-\d\dT[\d:.]+Z$/, ":<at>"))
+        .map((k) =>
+          k
+            .replace(/:\d{4}-\d\d-\d\dT[\d:.]+Z$/, ":<at>")
+            .replace(/^(relations:[^:]+:)[0-9a-f]{16}$/, "$1<digest>"),
+        )
         .sort(),
     ).toEqual(
       [
         `manual_story:${ids.manualStory}`,
         `blocked:${ids.waiting}:blocker-1,blocker-2`,
+        `relations:${ids.relations}:<digest>`,
         `question:${ids.waiting}:preparation:<at>`,
         `question:${ids.running}:permission:<at>`,
         `question:${ids.noRepo}:repository:<at>`,
@@ -603,6 +618,10 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
           openFindings: { critical: 0, high: 2, medium: 0, low: 0, info: 0 },
         },
       },
+    });
+    expect(byKind.get(`broken_relations:${ids.relations}`)?.facts).toEqual({
+      kind: "broken_relations",
+      relations: ["ENG-12 is blocked by OPS-4: one. Fix it.", "ENG-13 is blocked by OPS-5: two."],
     });
     expect(byKind.get(`stopped_epic:${ids.stopped}`)?.run).toEqual({
       id: ids.stopped,

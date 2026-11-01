@@ -20,6 +20,8 @@ export type RunReasonFacts =
       elsewhere: boolean;
     }
   | { kind: "blocked_epic"; blockers: readonly string[] }
+  /** Each relation that breaks the dependency rules, as its message says it. */
+  | { kind: "broken_relations"; relations: readonly string[] }
   | {
       kind: "question";
       question: InboxQuestionKind;
@@ -102,6 +104,14 @@ export function runReason(facts: RunReasonFacts): string {
       return facts.blockers.length === 1
         ? `Waiting on ${names}, which is outside the epic.`
         : `Waiting on ${names}, which are outside the epic.`;
+    }
+    case "broken_relations": {
+      const many = facts.relations.length > 1;
+      return [
+        `Om paused the epic: ${many ? "these relations break" : "this relation breaks"} the dependency rules.`,
+        ...facts.relations,
+        `Fix ${many ? "them" : "it"} in the tracker and Om goes on.`,
+      ].join(" ");
     }
     case "question":
       return questionReason(facts);
