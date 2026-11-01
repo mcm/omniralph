@@ -375,6 +375,8 @@ importers:
         specifier: workspace:*
         version: link:../ralph
 
+  packages/tracker: {}
+
   packages/ui:
     dependencies:
       '@fontsource-variable/geist-mono':

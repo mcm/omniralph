@@ -1,0 +1,28 @@
+{
+  "name": "@omniralph/tracker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Issue tracker gateway interface with neutral types, optional capabilities and an in-memory fake",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@omniralph/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "@omniralph/source": "./src/testing/index.ts",
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsrs --noEmit",
+    "lint": "oxlint",
+    "test": "vitest run"
+  }
+}
