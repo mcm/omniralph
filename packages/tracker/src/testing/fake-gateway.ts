@@ -51,7 +51,7 @@ export interface FakeTrackerGatewayOptions {
   provider?: TrackerProvider;
   /** Which optional capabilities the fake has; each one left out is on. */
   capabilities?: Partial<Record<TrackerCapability, boolean>>;
-  /** Where `uploadFile` puts files and which URLs `isUploadUrl` accepts. */
+  /** Where `uploadFile` puts files and which URLs `isUploadUrl` (and `findUploads`) accept. */
   uploadBaseUrl?: string;
 }
 
@@ -495,6 +495,10 @@ export class FakeTrackerGateway implements TrackerGateway {
     const isUploadUrl = (url: string) => url.startsWith(this.uploadBaseUrl);
     return {
       isUploadUrl,
+      findUploads: (text) => {
+        const urls = (text ?? "").match(/https?:\/\/[^\s)<>"\]]+/g) ?? [];
+        return [...new Set(urls.filter(isUploadUrl))].map((url) => ({ url }));
+      },
       downloadUpload: async (url): Promise<UploadDownload> => {
         this.fail("downloadUpload");
         if (!isUploadUrl(url)) throw new TrackerInvalidInputError(`Not an upload URL: ${url}`);

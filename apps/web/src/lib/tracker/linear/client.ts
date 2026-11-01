@@ -5,7 +5,12 @@ import {
   type Database,
 } from "@omniralph/db";
 import { TRACKER_CAPABILITIES, type TrackerCapability } from "@omniralph/tracker";
-import { isLinearUploadUrl, SdkLinearGateway, type LinearGateway } from "@omniralph/tracker/linear";
+import {
+  findLinearUploads,
+  isLinearUploadUrl,
+  SdkLinearGateway,
+  type LinearGateway,
+} from "@omniralph/tracker/linear";
 import {
   linearOAuthConfig,
   refreshCredentials,
@@ -136,7 +141,9 @@ function forwardingGateway(
             ? undefined
             : prop === "isUploadUrl" && name === "uploads"
               ? isLinearUploadUrl
-              : (...args: unknown[]) => call([name, String(prop)], args),
+              : prop === "findUploads" && name === "uploads"
+                ? findLinearUploads
+                : (...args: unknown[]) => call([name, String(prop)], args),
       },
     );
   const capabilities = new Map(TRACKER_CAPABILITIES.map((name) => [name, capability(name)]));

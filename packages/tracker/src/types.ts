@@ -288,6 +288,14 @@ export interface UploadDownload {
   body: ReadableStream<Uint8Array> | null;
 }
 
+/** An upload referenced in text (`findUploads`). */
+export interface UploadRef {
+  /** The upload's URL as `isUploadUrl` accepts it (without any expiring signature). */
+  url: string;
+  /** The file's name as the tracker stores it (e.g. "mockup.png"), when known. */
+  title?: string;
+}
+
 /** A file to upload to the tracker (`uploadFile`). */
 export interface UploadFileInput {
   filename: string;
@@ -330,6 +338,11 @@ export interface TrackerDocuments {
 export interface TrackerUploads {
   /** Whether the URL is one of the tracker's uploads, which `downloadUpload` fetches. */
   isUploadUrl(url: string): boolean;
+  /**
+   * The uploads referenced in text (an issue description, a comment) in the
+   * tracker's markup, in order of first appearance and deduplicated by URL.
+   */
+  findUploads(text: string | undefined | null): UploadRef[];
   /**
    * Fetches an uploaded file with the workspace's credential. Rejects any URL
    * `isUploadUrl` refuses, without sending the credential.

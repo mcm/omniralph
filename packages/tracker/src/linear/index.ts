@@ -1,7 +1,6 @@
 /** The Linear adapter of the tracker gateway, and its webhook parser. */
 export {
   issueFilter,
-  isLinearUploadUrl,
   LinearMutationError,
   parseIssueIdentifier,
   SdkLinearGateway,
@@ -19,6 +18,7 @@ export type {
   RoutingIssueFields,
   User,
 } from "./gateway.js";
+export { findLinearUploads, isLinearUploadUrl } from "./uploads.js";
 export {
   AGENT_SESSION_MARKER,
   classifyWebhook,

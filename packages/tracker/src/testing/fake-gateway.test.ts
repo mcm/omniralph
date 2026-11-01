@@ -307,6 +307,9 @@ describe("FakeTrackerGateway optional capabilities", () => {
     const missing = await uploads.downloadUpload(`${url}-gone`);
     expect(missing).toMatchObject({ ok: false, status: 404, body: null });
     expect(uploads.isUploadUrl("https://elsewhere.test/a.png")).toBe(false);
+    expect(uploads.findUploads(`see ${url} and ${url} not https://elsewhere.test/a.png`)).toEqual([
+      { url },
+    ]);
     await expect(uploads.downloadUpload("https://elsewhere.test/a.png")).rejects.toBeInstanceOf(
       TrackerInvalidInputError,
     );

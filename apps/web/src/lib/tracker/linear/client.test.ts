@@ -267,6 +267,9 @@ describe("lazyLinearGateway", () => {
       uploads: true,
     });
     expect(gateway.uploads.isUploadUrl("https://uploads.linear.app/a/b")).toBe(true);
+    expect(gateway.uploads.findUploads("see https://uploads.linear.app/a/b")).toEqual([
+      { url: "https://uploads.linear.app/a/b" },
+    ]);
     expect(load).not.toHaveBeenCalled();
 
     expect((await gateway.getIssue(issue.id)).title).toBe("Build it");

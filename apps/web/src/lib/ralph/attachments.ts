@@ -1,10 +1,11 @@
 /**
- * Files uploaded to Linear for a run (cyralph's `gatherAttachments`): the
- * control panel finds the `uploads.linear.app` URLs in the epic, its stories,
- * their comments and the thread, remembers them on the run by attachment ID
- * and lists them in job payloads. Agents download them by ID through
+ * Files uploaded to the tracker for a run (cyralph's `gatherAttachments`):
+ * the control panel finds the tracker's uploads (its uploads capability's
+ * `findUploads`) in the epic, its stories, their comments and the thread,
+ * remembers them on the run by attachment ID and lists them in job payloads.
+ * Agents download them by ID through
  * `GET /api/agent/jobs/{id}/attachments/{attachmentId}` and never see the
- * Linear token.
+ * tracker's credential.
  */
 import { createHash } from "node:crypto";
 import {
@@ -23,6 +24,7 @@ import {
 } from "@omniralph/ralph";
 import type { RalphAttachment } from "@omniralph/shared";
 import { hasCapability, type IssueComment, type TrackerGateway } from "@omniralph/tracker";
+import { trackerName } from "@/lib/tracker/adapters";
 
 /** Attachments listed in one payload at most. */
 const MAX_ATTACHMENTS_PER_PAYLOAD = 200;
@@ -45,7 +47,7 @@ function commentLabel(identifier: string, comment: IssueComment): string {
 /**
  * The uploads referenced by the epic's description and comments, every
  * story's description, open stories' comments, and the thread (guidance and
- * pending requests, as "Linear thread"), each shared or scoped to one story.
+ * pending requests, as "<tracker> thread"), each shared or scoped to one story.
  * New ones are recorded on the run (`ralph_runs.attachments`), which the
  * download endpoint resolves IDs with. Comments that can't be read are
  * skipped (logged). A tracker without the uploads capability has none.
@@ -81,9 +83,13 @@ export async function gatherRunAttachments(
     ...run.guidance.map((g) => g.text),
     ...(await listPendingRequests(tx, run.id)).map((m) => m.text),
   ];
-  for (const text of thread) sources.push({ label: "Linear thread", text });
+  const threadLabel = `${trackerName(tracker.provider)} thread`;
+  for (const text of thread) sources.push({ label: threadLabel, text });
 
-  const found = gatherAttachments(sources).map((a) => ({ ...a, id: attachmentId(a.url) }));
+  const found = gatherAttachments(sources, tracker.uploads.findUploads).map((a) => ({
+    ...a,
+    id: attachmentId(a.url),
+  }));
   const known = run.attachments ?? {};
   const added = found.filter((a) => known[a.id]?.url !== a.url);
   if (added.length > 0) {
