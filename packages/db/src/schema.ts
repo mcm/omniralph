@@ -1005,6 +1005,14 @@ export const repositories = pgTable(
     historyRewrite: historyRewrite("history_rewrite").notNull().default("when-asked"),
     /** Fix review findings, `@bot` requests and failed CI on its runs' PRs. */
     respondToReviewsAndCi: boolean("respond_to_reviews_and_ci").notNull().default(true),
+    /**
+     * The commands that must pass after every story and request on it, in order (the Coding
+     * card's Checks); empty for none.
+     */
+    checks: text("checks")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     /** The story playbook a story attempt runs. */
     storyPlaybookId: text("story_playbook_id").notNull().default("builtin:implement-story"),
     /** The request playbook a lane's requests run. */

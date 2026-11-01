@@ -114,6 +114,7 @@ const savedCard = (body: CodingCardInput): CodingCard => ({
   openPullRequestEarly: body.openPullRequestEarly,
   historyRewrite: body.historyRewrite,
   respondToReviewsAndCi: body.respondToReviewsAndCi,
+  checks: body.checks,
 });
 
 /** The portal's detail with `coding` over its defaults. */
@@ -217,6 +218,10 @@ const rewriteOption = (card: HTMLElement, name: string) =>
 const instructions = (card: HTMLElement) =>
   within(card).getByRole<HTMLTextAreaElement>("textbox", { name: "Extra instructions" });
 const editor = (card: HTMLElement) => within(card).getByRole("group", { name: "Work item match" });
+const checkRows = (card: HTMLElement) =>
+  [...(within(card).queryByRole("list", { name: "Checks" })?.querySelectorAll("code") ?? [])].map(
+    (code) => code.textContent,
+  );
 const reads = () => seen.filter((request) => request.method === "GET");
 const saves = () => seen.filter((request) => request.method === "PUT");
 const matchChecks = () => seen.filter((request) => request.path.endsWith("/match-check"));
@@ -421,6 +426,7 @@ describe("the Coding card", () => {
       openPullRequestEarly: false,
       historyRewrite: "when-asked",
       respondToReviewsAndCi: true,
+      checks: [],
     });
     // The save's own conflict warnings name the conflicting repo once the staged list is gone.
     expect(ui.toast).toHaveBeenCalledWith(
@@ -574,6 +580,113 @@ describe("the Coding card", () => {
     await waitFor(() => expect(saveBar(card)).toBeNull());
     expect(saves()).toHaveLength(2);
     expect(saves()[1]!.body).toMatchObject({ historyRewrite: "always" });
+  });
+
+  it("adds, edits, reorders and removes checks, staging them in order", async () => {
+    renderRepos();
+    const card = await codingCard();
+    const user = userEvent.setup();
+    expect(
+      within(card).getByText(
+        "No checks yet. Checks run after every story and request on this repo.",
+      ),
+    ).toBeTruthy();
+    const add = () => user.click(within(card).getByRole("button", { name: "Add check" }));
+    await add();
+    await user.type(within(card).getByRole("textbox", { name: "Check 1" }), " pnpm lint {Enter}");
+    await add();
+    await user.type(within(card).getByRole("textbox", { name: "Check 2" }), "pnpm tst");
+    await user.click(within(card).getByRole("button", { name: "Done" }));
+    expect(checkRows(card)).toEqual(["pnpm lint", "pnpm tst"]);
+    expect(pendingItems(card)).toEqual([
+      {
+        label: "Checks",
+        from: "None",
+        to: "2 checks",
+        effect: "New stories and requests run these checks, in order, after their changes.",
+      },
+    ]);
+
+    await user.click(within(card).getByRole("button", { name: "Edit check 2" }));
+    const edit = within(card).getByRole<HTMLInputElement>("textbox", { name: "Check 2" });
+    expect(edit.value).toBe("pnpm tst");
+    await user.clear(edit);
+    await user.type(edit, "pnpm test{Enter}");
+    await user.click(within(card).getByRole("button", { name: "Move check 2 up" }));
+    expect(checkRows(card)).toEqual(["pnpm test", "pnpm lint"]);
+    await add();
+    await user.type(within(card).getByRole("textbox", { name: "Check 3" }), "pnpm build{Enter}");
+    await user.click(within(card).getByRole("button", { name: "Remove check 2" }));
+    expect(checkRows(card)).toEqual(["pnpm test", "pnpm build"]);
+
+    await user.click(within(card).getByRole("button", { name: "Save 1 change" }));
+    await waitFor(() => expect(saveBar(card)).toBeNull());
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(saves()[0]!.body).toMatchObject({ checks: ["pnpm test", "pnpm build"] });
+    expect(checkRows(card)).toEqual(["pnpm test", "pnpm build"]);
+    expect(
+      within(card).getByText(
+        "Checks run in order after every story and request on this repo. Each must pass.",
+      ),
+    ).toBeTruthy();
+
+    // Reordering the saved checks is a change; moving them back un-stages it.
+    await user.click(within(card).getByRole("button", { name: "Move check 1 down" }));
+    expect(pendingItems(card)).toHaveLength(1);
+    await user.click(within(card).getByRole("button", { name: "Move check 2 up" }));
+    expect(saveBar(card)).toBeNull();
+  });
+
+  it("refuses a blank check, and Escape or Cancel leaves the list as it was", async () => {
+    details[REPO_PORTAL] = portal({ checks: ["pnpm test"] }, { trackers: [LINEAR] });
+    renderRepos();
+    const card = await codingCard();
+    const user = userEvent.setup();
+    expect(checkRows(card)).toEqual(["pnpm test"]);
+    await user.click(within(card).getByRole("button", { name: "Add check" }));
+    await user.type(within(card).getByRole("textbox", { name: "Check 2" }), "   {Enter}");
+    expect(within(card).getByText("Enter a command.")).toBeTruthy();
+    await user.click(within(card).getByRole("button", { name: "Cancel" }));
+    expect(within(card).queryByRole("textbox", { name: "Check 2" })).toBeNull();
+    await user.click(within(card).getByRole("button", { name: "Edit check 1" }));
+    await user.type(within(card).getByRole("textbox", { name: "Check 1" }), " --watch{Escape}");
+    expect(checkRows(card)).toEqual(["pnpm test"]);
+    expect(saveBar(card)).toBeNull();
+  });
+
+  it("shows a check's save error under it", async () => {
+    saveAnswer = () =>
+      jsonResponse(
+        {
+          error: "Commands are one line, without control characters.",
+          fieldErrors: { "checks.0": "Commands are one line, without control characters." },
+        },
+        400,
+      );
+    renderRepos();
+    const card = await codingCard();
+    const user = userEvent.setup();
+    await user.click(within(card).getByRole("button", { name: "Add check" }));
+    await user.type(within(card).getByRole("textbox", { name: "Check 1" }), "pnpm test{Enter}");
+    await user.click(within(card).getByRole("button", { name: "Save 1 change" }));
+    const row = await waitFor(() => {
+      const item = within(within(card).getByRole("list", { name: "Checks" })).getByRole("listitem");
+      expect(item.textContent).toContain("Commands are one line, without control characters.");
+      return item;
+    });
+    expect(within(row).getByText("pnpm test")).toBeTruthy();
+  });
+
+  it("shows checks read-only to members", async () => {
+    details[REPO_PORTAL] = portal(
+      { checks: ["pnpm lint", "pnpm test"] },
+      { trackers: [LINEAR], canEdit: false },
+    );
+    renderRepos({ user: member });
+    const card = await codingCard();
+    expect(checkRows(card)).toEqual(["pnpm lint", "pnpm test"]);
+    expect(within(card).queryByRole("button", { name: "Add check" })).toBeNull();
+    expect(within(card).queryByRole("button", { name: "Edit check 1" })).toBeNull();
   });
 
   it("shows “Add a work item match…” under the switch", async () => {

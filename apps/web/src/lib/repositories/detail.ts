@@ -89,6 +89,7 @@ export async function loadCodingCard(db: Database, repository: Repository): Prom
     openPullRequestEarly: repository.openPullRequestEarly,
     historyRewrite: repository.historyRewrite,
     respondToReviewsAndCi: repository.respondToReviewsAndCi,
+    checks: repository.checks,
     roundLimits: { review: settings.maxReviewRounds, fix: settings.maxFixRounds },
     routingRules: rules.flatMap((rule, index) =>
       rule.repositoryId === id

@@ -179,6 +179,7 @@ const baseCoding: CodingCardInput = {
   openPullRequestEarly: false,
   historyRewrite: "when-asked",
   respondToReviewsAndCi: true,
+  checks: [],
 };
 
 describe.skipIf(!databaseAvailable)("repo card saves", () => {
@@ -865,6 +866,7 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
           openPullRequestEarly: false,
           historyRewrite: "when-asked",
           respondToReviewsAndCi: true,
+          checks: [],
         })
         .where(eq(repositories.organizationId, orgId));
       await setCodingEnabled(db, repoId);
@@ -895,6 +897,7 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
         openPullRequestEarly: true,
         historyRewrite: "always",
         respondToReviewsAndCi: false,
+        checks: [],
         roundLimits: { review: 3, fix: 3 },
         routingRules: [],
       };
@@ -1055,6 +1058,64 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
           after: "Linear team MOD, no project",
         },
       ]);
+    });
+
+    it("saves checks in order: one entry, the repo's change, the card and the detail", async () => {
+      const { status, body, changes } = await coding({
+        ...baseCoding,
+        codingEnabled: false,
+        checks: [" pnpm build ", "pnpm test", "pnpm build"],
+      });
+      expect(status).toBe(200);
+      const checks = ["pnpm build", "pnpm test", "pnpm build"];
+      expect(body).toMatchObject({ ok: true, card: { checks } });
+      expect(await getRepository(db, codingRepo)).toMatchObject({ checks });
+      expect(await detailCoding()).toMatchObject({ checks });
+      expect(kinds(changes)).toEqual(["repository", "settings:repository.coding"]);
+      expect((await history("repository.coding", codingRepo))[0]!.changes).toEqual([
+        { field: "checks", label: "Checks", before: [], after: checks },
+      ]);
+
+      // Reordering is a change; the same checks again are not.
+      const reordered = ["pnpm test", "pnpm build", "pnpm build"];
+      const moved = await coding({ ...baseCoding, codingEnabled: false, checks: reordered });
+      expect(moved.body).toMatchObject({ card: { checks: reordered } });
+      expect((await history("repository.coding", codingRepo))[0]!.changes).toEqual([
+        { field: "checks", label: "Checks", before: checks, after: reordered },
+      ]);
+      const again = await coding({ ...baseCoding, codingEnabled: false, checks: reordered });
+      expect(again).toMatchObject({ status: 200, changes: [] });
+
+      // Removing every check clears them.
+      const cleared = await coding({ ...baseCoding, codingEnabled: false });
+      expect(cleared.body).toMatchObject({ card: { checks: [] } });
+      expect(await getRepository(db, codingRepo)).toMatchObject({ checks: [] });
+    });
+
+    it("refuses bad checks with their field errors, saving nothing", async () => {
+      const before = await getRepository(db, codingRepo);
+      expect(
+        await coding({ ...baseCoding, codingEnabled: false, checks: ["pnpm lint", "a\nb", ""] }),
+      ).toMatchObject({
+        status: 400,
+        body: {
+          fieldErrors: {
+            "checks.1": "Commands are one line, without control characters.",
+            "checks.2": "Enter a command.",
+          },
+        },
+        changes: [],
+      });
+      expect(
+        await coding({
+          ...baseCoding,
+          codingEnabled: false,
+          checks: Array.from({ length: 51 }, (_, index) => `echo ${index}`),
+        }),
+      ).toMatchObject({ status: 400, body: { fieldErrors: { checks: "Add at most 50 checks." } } });
+      const { checks: _missing, ...withoutChecks } = baseCoding;
+      expect((await coding(withoutChecks)).status).toBe(400);
+      expect(await getRepository(db, codingRepo)).toEqual(before);
     });
 
     it("labels Open a draft merge request on GitLab", async () => {

@@ -163,14 +163,38 @@ const validCoding: RepositoryCodingInput = {
   openPullRequestEarly: false,
   historyRewrite: "always",
   respondToReviewsAndCi: true,
+  checks: ["pnpm lint", "pnpm test"],
 };
 
 describe("RepositoryCodingInput", () => {
-  it("accepts the six-field coding policy, with or without instructions", () => {
+  it("accepts the coding policy, with or without instructions and checks", () => {
     expect(RepositoryCodingInput.parse(validCoding)).toEqual(validCoding);
     expect(
       RepositoryCodingInput.safeParse({ ...validCoding, codingInstructions: null }).success,
     ).toBe(true);
+    expect(RepositoryCodingInput.parse({ ...validCoding, checks: [] }).checks).toEqual([]);
+  });
+
+  it("trims each check and keeps their order", () => {
+    expect(
+      RepositoryCodingInput.parse({ ...validCoding, checks: ["  pnpm test ", "pnpm build"] })
+        .checks,
+    ).toEqual(["pnpm test", "pnpm build"]);
+  });
+
+  it("refuses blank, multi-line, long and too many checks", () => {
+    const errors = (checks: string[]) =>
+      fieldErrors(RepositoryCodingInput.safeParse({ ...validCoding, checks }).error!);
+    expect(errors(["pnpm lint", " "])).toEqual({ "checks.1": "Enter a command." });
+    expect(errors(["pnpm lint\npnpm test"])).toEqual({
+      "checks.0": "Commands are one line, without control characters.",
+    });
+    expect(errors(["x".repeat(4001)])).toEqual({
+      "checks.0": "Commands can be at most 4,000 characters.",
+    });
+    expect(errors(Array.from({ length: 51 }, (_, index) => `echo ${index}`))).toEqual({
+      checks: "Add at most 50 checks.",
+    });
   });
 
   it("rejects unknown keys, such as the settings that moved to playbooks", () => {

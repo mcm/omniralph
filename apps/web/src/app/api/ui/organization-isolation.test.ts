@@ -236,6 +236,7 @@ const CODING_CARD = {
   openPullRequestEarly: false,
   historyRewrite: "always",
   respondToReviewsAndCi: true,
+  checks: [],
 };
 const repositoryRule = await import("./repositories/[id]/rules/[ruleId]/route");
 const gitlabConnections = await import("./gitlab-connections/route");

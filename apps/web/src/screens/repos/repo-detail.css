@@ -431,3 +431,58 @@
   font-size: 13px;
   line-height: 1.4;
 }
+
+/* The Coding card's Checks: numbered code rows, each edited, moved or removed in place. */
+.or-repo-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.or-repo-check-list__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 24px;
+}
+
+.or-repo-check-list__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.or-repo-check-list__command {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 5px;
+}
+
+.or-repo-check-list__command code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.or-repo-check-list__editor {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.or-repo-check-list__editor > :first-child {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.or-repo-check-list__actions {
+  display: flex;
+  gap: 2px;
+}

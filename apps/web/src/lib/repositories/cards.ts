@@ -152,7 +152,8 @@ function matchFields(match: WorkItemMatchFields): WorkItemMatchFields {
 }
 
 /**
- * Saves the Coding card: the switch, work item match (null clears it) and coding policy, in
+ * Saves the Coding card: the switch, work item match (null clears it) and coding policy (with
+ * the checks), in
  * one transaction. Coding off is applied before the match is removed, and the match is set
  * before Coding on, so that turning Coding on with a new match, or off while clearing the
  * match, saves. The rules hold on the final state (409, saving nothing): Coding on needs a
@@ -181,12 +182,14 @@ export async function saveCodingCard(
         openPullRequestEarly: input.openPullRequestEarly,
         historyRewrite: input.historyRewrite,
         respondToReviewsAndCi: input.respondToReviewsAndCi,
+        checks: input.checks,
       };
       const policyChanged = !isDeepStrictEqual(policy, {
         codingInstructions: current.codingInstructions ?? "",
         openPullRequestEarly: current.openPullRequestEarly,
         historyRewrite: current.historyRewrite,
         respondToReviewsAndCi: current.respondToReviewsAndCi,
+        checks: current.checks,
       });
       const switchChanged = current.codingEnabled !== input.codingEnabled;
       if (!matchChanged && !policyChanged && !switchChanged) return current;

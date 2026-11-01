@@ -40,6 +40,7 @@ import {
   type RepositoryTracker,
 } from "@/lib/api/repositories";
 import {
+  checksEffect,
   codingEnabledEffect,
   codingInstructionsEffect,
   HISTORY_REWRITE_LABELS,
@@ -53,6 +54,7 @@ import {
   type CodeHost,
   type WorkItemMatchConditions,
 } from "@/lib/repositories/effects";
+import { ChecksList } from "./checks-list";
 import { applySavedCard } from "./mutations";
 import { reposKeys } from "./queries";
 import { saveChangesLabel } from "./reviews-card";
@@ -74,6 +76,7 @@ export interface CodingDraft {
   openPullRequestEarly: boolean;
   historyRewrite: RalphHistoryRewrite;
   respondToReviewsAndCi: boolean;
+  checks: string[];
 }
 
 /** A match's conditions, always built in the same key order so drafts compare by value. */
@@ -95,6 +98,7 @@ function toDraft(card: CodingCardData): CodingDraft {
     openPullRequestEarly: card.openPullRequestEarly,
     historyRewrite: card.historyRewrite,
     respondToReviewsAndCi: card.respondToReviewsAndCi,
+    checks: [...card.checks],
   };
 }
 
@@ -118,12 +122,17 @@ export function codingInput(draft: CodingDraft): CodingCardInput {
     openPullRequestEarly: draft.openPullRequestEarly,
     historyRewrite: draft.historyRewrite,
     respondToReviewsAndCi: draft.respondToReviewsAndCi,
+    checks: [...draft.checks],
   };
 }
 
 /** Labels are "or"-joined: the same labels in another order are the same match. */
 const matchKey = (match: WorkItemMatchConditions | null) =>
   JSON.stringify(match && { ...match, labels: [...match.labels].sort() });
+
+/** Checks run in order: the same commands in another order are a change. */
+const sameChecks = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && a.every((check, index) => check === b[index]);
 
 const sameMatch = (a: WorkItemMatchConditions | null, b: WorkItemMatchConditions | null) =>
   matchKey(a) === matchKey(b);
@@ -171,6 +180,8 @@ export function codingChanges(
       ),
     );
   }
+  if (!sameChecks(draft.checks, saved.checks))
+    changes.push(checksEffect(saved.checks, draft.checks));
   if (draft.codingInstructions !== saved.codingInstructions) {
     changes.push(codingInstructionsEffect());
   }
@@ -469,7 +480,7 @@ function MatchEditor({
 /**
  * The Coding card (Design rule 12): its switch, the work item match as a sentence of badges
  * with its inline editor and conflicts, the routing rules that also send work here (Design
- * rule 14), extra instructions, pull request handling and Rewrite history. Every field stages
+ * rule 14), the Checks, extra instructions, pull request handling and Rewrite history. Every field stages
  * in its save bar with its effect; Coding off, a match change or a Rewrite history change is
  * confirmed first; Save sends one request (`PUT /api/ui/repositories/{id}/coding`). Members
  * see it read-only.
@@ -637,6 +648,14 @@ export function CodingCard({ detail, titleId }: { detail: RepositoryDetail; titl
             </div>
           ) : null}
         </div>
+        <ChecksList
+          checks={draft.checks}
+          onChange={(checks) => set("checks", checks)}
+          canEdit={canEdit}
+          disabled={disabled}
+          errorOf={(index) => fieldErrors[`checks.${index}`]}
+          error={fieldErrors.checks}
+        />
         <Field
           label="Extra instructions"
           description="Om follows these in every story and request."

@@ -4,6 +4,7 @@ import {
   agentPinnedEffect,
   agentUnpinnedEffect,
   askEnabledEffect,
+  checksEffect,
   codingEnabledEffect,
   codingInstructionsEffect,
   historyRewriteEffect,
@@ -173,6 +174,17 @@ describe("Coding effects", () => {
 
   it("extra instructions, draft PR early, review and CI fixes, rewrite history", () => {
     expect(codingInstructionsEffect().effect).toBe("Applies to new stories.");
+    expect(checksEffect([], ["pnpm test"])).toMatchObject({
+      label: "Checks",
+      from: "None",
+      to: "1 check",
+      effect: "New stories and requests run these checks, in order, after their changes.",
+    });
+    expect(checksEffect(["pnpm lint", "pnpm test"], [])).toMatchObject({
+      from: "2 checks",
+      to: "None",
+      effect: "New stories and requests run no repo checks.",
+    });
     expect(openPullRequestEarlyEffect("gitlab", true)).toMatchObject({
       label: "Open a draft MR after the first story",
       effect: "Om opens a draft merge request after the first story.",

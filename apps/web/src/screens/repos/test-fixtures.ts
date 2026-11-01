@@ -142,6 +142,7 @@ export function repoDetail(
       openPullRequestEarly: false,
       historyRewrite: "when-asked",
       respondToReviewsAndCi: true,
+      checks: [],
       roundLimits: { review: 3, fix: 3 },
       routingRules: [],
     },

@@ -883,6 +883,13 @@
       "when": 1793514581238,
       "tag": "0125_tracker_chat_tool_names",
       "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1793543549293,
+      "tag": "0126_repository_checks",
+      "breakpoints": true
     }
   ]
 }

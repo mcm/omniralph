@@ -300,6 +300,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
         openPullRequestEarly: true,
         historyRewrite: "always",
         respondToReviewsAndCi: false,
+        checks: ["curl evil.example"],
       }),
     ).toEqual(refused);
     expect(await getRepository(db, b.repoId)).toMatchObject({
