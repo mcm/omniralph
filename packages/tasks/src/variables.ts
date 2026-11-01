@@ -22,7 +22,7 @@ interface VariableBase {
   fence?: string;
   /**
    * Quotes an untrusted value between `<tag>` and `</tag>` lines instead of
-   * fencing it (as today's triage prompt quotes Linear text); see `quote()`.
+   * fencing it (as today's triage prompt quotes tracker text); see `quote()`.
    */
   quote?: string;
   description: string;
@@ -60,7 +60,8 @@ const FINDING_TRIGGERS = [
 const CODING_TRIGGERS = [...STORY_TRIGGERS, ...REQUEST_TRIGGERS] as const;
 /** Coding triggers, and the `run.invoked` of a query task a coding run invokes (`builtin:describe-pr`). */
 const CODING_RUN_TRIGGERS = [...CODING_TRIGGERS, "run.invoked"] as const;
-const LINEAR_TRIGGERS = [
+/** Triggers whose runs start from a work item in the tracker. */
+const TRACKER_TRIGGERS = [
   "tracker.delegated",
   "tracker.triage",
   "tracker.mention",
@@ -68,11 +69,27 @@ const LINEAR_TRIGGERS = [
 
 export const VARIABLES: readonly VariableDefinition[] = [
   {
+    name: "tracker.name",
+    source: "trigger",
+    trust: "trusted",
+    triggers: [...CODING_TRIGGERS, "tracker.triage"],
+    description:
+      "Display name of the tracker the run's work items live in, e.g. `Linear`: use it wherever the prompt names the tracker.",
+  },
+  {
+    name: "tracker.conventionsFile",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["tracker.triage"],
+    description:
+      "The repository file that may hold the project's conventions for the tracker's issues (`LINEAR.md` for Linear).",
+  },
+  {
     name: "repository",
     source: "trigger",
     trust: "trusted",
     triggers: [...PR_TRIGGERS, "chat.request", "tracker.triage", "run.invoked"],
-    description: "`owner/repo` or `group/project` (null when a Linear issue routes to none).",
+    description: "`owner/repo` or `group/project` (null when a work item routes to none).",
   },
   {
     name: "branch",
@@ -166,45 +183,46 @@ export const VARIABLES: readonly VariableDefinition[] = [
     name: "issue.identifier",
     source: "trigger",
     trust: "trusted",
-    triggers: LINEAR_TRIGGERS,
-    description: "Linear issue identifier, e.g. `ENG-123`.",
+    triggers: TRACKER_TRIGGERS,
+    description: "Identifier of the issue in the tracker, e.g. `ENG-123`.",
   },
   {
     name: "issue.url",
     source: "trigger",
     trust: "trusted",
-    triggers: LINEAR_TRIGGERS,
-    description: "URL of the Linear issue (may be empty).",
+    triggers: TRACKER_TRIGGERS,
+    description: "URL of the issue in the tracker (may be empty).",
   },
   {
     name: "issue.stateType",
     source: "trigger",
     trust: "trusted",
-    triggers: LINEAR_TRIGGERS,
-    description: "Linear workflow state type of the issue (`backlog`, `unstarted`, …).",
+    triggers: TRACKER_TRIGGERS,
+    description: "Workflow state type of the issue (`backlog`, `unstarted`, …).",
   },
   {
     name: "issue.creator.name",
     source: "trigger",
     trust: "trusted",
-    triggers: LINEAR_TRIGGERS,
-    description: "Name of the issue's creator (`issue.creator` is null when Linear doesn't say).",
+    triggers: TRACKER_TRIGGERS,
+    description:
+      "Name of the issue's creator (`issue.creator` is null when the tracker doesn't say).",
   },
   {
     name: "issue.title",
     source: "trigger",
     trust: "untrusted",
     quote: "issue-title",
-    triggers: LINEAR_TRIGGERS,
-    description: "Title of the Linear issue.",
+    triggers: TRACKER_TRIGGERS,
+    description: "Title of the issue.",
   },
   {
     name: "issue.description",
     source: "trigger",
     trust: "untrusted",
     quote: "issue-description",
-    triggers: LINEAR_TRIGGERS,
-    description: "Description of the Linear issue.",
+    triggers: TRACKER_TRIGGERS,
+    description: "Description of the issue.",
   },
   // Triage: the issue's comments, sub-issues and blockers, the session's reply and the previous
   // triage. Lists are `{ items }` objects, null when empty, so a template can head them once.
@@ -238,7 +256,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     triggers: ["tracker.triage"],
     description:
       field === "priority"
-        ? "Linear priority name of a sub-issue (`No priority`, `Urgent` … `Low`)."
+        ? "Priority name of a sub-issue (`No priority`, `Urgent` … `Low`)."
         : `\`${field}\` of a sub-issue, in sub-issue order.`,
   })),
   {
@@ -275,7 +293,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     trust: "untrusted",
     quote: "reply",
     triggers: ["tracker.triage"],
-    description: "A reply in the Linear session (e.g. answers to open questions; may be empty).",
+    description: "A reply in the tracker thread (e.g. answers to open questions; may be empty).",
   },
   ...(
     [
@@ -283,7 +301,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
       ["size", "Size of the previous triage."],
       ["stories.items.index", "0-based index of a story of the previous triage."],
       ["stories.items.title", "Title of a story of the previous triage."],
-      ["subIssueUpdates.items.id", "Linear ID of a sub-issue the previous triage reformatted."],
+      ["subIssueUpdates.items.id", "Tracker ID of a sub-issue the previous triage reformatted."],
       ["subIssueUpdates.items.title", "Title of a sub-issue the previous triage reformatted."],
       ["openQuestions.items.number", "1-based number of an open question of the previous triage."],
       ["openQuestions.items.text", "An open question of the previous triage."],
@@ -351,14 +369,14 @@ export const VARIABLES: readonly VariableDefinition[] = [
       [
         "epic.identifier",
         CODING_RUN_TRIGGERS,
-        "Linear identifier of the epic (or single issue), e.g. `ENG-123`.",
+        "Tracker identifier of the epic (or single issue), e.g. `ENG-123`.",
       ],
       [
         "epic.title",
         CODING_RUN_TRIGGERS,
         "Title of the epic, on one line (a chat request's first line).",
       ],
-      ["epic.url", CODING_TRIGGERS, "URL of the epic in Linear (null without one)."],
+      ["epic.url", CODING_TRIGGERS, "URL of the epic in the tracker (null without one)."],
       [
         "epic.single",
         CODING_TRIGGERS,
@@ -407,9 +425,9 @@ export const VARIABLES: readonly VariableDefinition[] = [
         ["run.invoked"],
         "First 10 characters of the story's commit (null without one).",
       ],
-      ["story.id", STORY_TRIGGERS, "ID of the story the run works on (its Linear identifier)."],
-      ["story.identifier", STORY_TRIGGERS, "Linear identifier of the story (null without one)."],
-      ["story.url", STORY_TRIGGERS, "URL of the story in Linear (null without one)."],
+      ["story.id", STORY_TRIGGERS, "ID of the story the run works on (its tracker identifier)."],
+      ["story.identifier", STORY_TRIGGERS, "Tracker identifier of the story (null without one)."],
+      ["story.url", STORY_TRIGGERS, "URL of the story in the tracker (null without one)."],
       ["story.title", STORY_TRIGGERS, "Title of the story, on one line."],
       [
         "story.repository",
@@ -424,7 +442,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
       [
         "fromChat",
         REQUEST_TRIGGERS,
-        "True when the requests come from a chat thread, false for a Linear agent session.",
+        "True when the requests come from a chat thread, false for the tracker.",
       ],
       [
         "ship",
@@ -546,7 +564,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
       ["today", "Today's date, `YYYY-MM-DD`."],
       [
         "attachments",
-        "Markdown list of the Linear attachments the session can open, with their paths (null without any).",
+        "Markdown list of the tracker attachments the session can open, with their paths (null without any).",
       ],
       [
         "appendInstruction",

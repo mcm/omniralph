@@ -81,6 +81,8 @@ export interface TrackerWebAdapter {
   readonly provider: TrackerProvider;
   /** The provider's name as people read it ("Linear"). */
   readonly name: string;
+  /** The repository file a project's conventions for its issues go in, which triage reads (`LINEAR.md`). */
+  readonly conventionsFile: string;
   /** The optional capabilities its gateways have, known without connecting (e.g. to offer tools). */
   readonly capabilities: readonly TrackerCapability[];
   /** The connected tracker's gateway; throws `TrackerNotConnectedError` without one. */

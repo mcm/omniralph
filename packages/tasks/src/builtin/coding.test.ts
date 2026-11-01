@@ -283,7 +283,10 @@ describe("builtin:handle-request", () => {
       render(REQUEST_RULES, requestTemplateContext(ctx)).split("\n");
     for (const ctx of Object.values(REQUEST_FIXTURES)) {
       const today = withShipTool(
-        requestSystemAppend(ctx.historyRewrite, ctx.source, { ship: !!ctx.ship }),
+        requestSystemAppend(ctx.historyRewrite, ctx.source, {
+          ship: !!ctx.ship,
+          trackerName: ctx.trackerName,
+        }),
         ctx,
       )
         .split("\n")
@@ -295,13 +298,13 @@ describe("builtin:handle-request", () => {
         expect(moved).toContain(line);
       }
     }
-    const linear = render(
+    const tracker = render(
       REQUEST_RULES,
-      requestTemplateContext(REQUEST_FIXTURES["linear-request"]!),
+      requestTemplateContext(REQUEST_FIXTURES["tracker-request"]!),
     );
-    expect(linear).toContain("- Only ship `eng-10-widget-exports`, the branch you are on.");
-    expect(linear).toContain("do it on `eng-10-widget-exports` and ship it with");
-    expect(linear).toContain("end your turn with `waiting: true`");
+    expect(tracker).toContain("- Only ship `eng-10-widget-exports`, the branch you are on.");
+    expect(tracker).toContain("do it on `eng-10-widget-exports` and ship it with");
+    expect(tracker).toContain("end your turn with `waiting: true`");
   });
 
   it("tells the session to push through the `ship` tool, never `git push`", () => {
@@ -320,6 +323,51 @@ describe("builtin:handle-request", () => {
       requestTemplateContext(REQUEST_FIXTURES["chat-request"]!),
     );
     expect(chat).not.toMatch(/## Status|<prd-document>/);
+  });
+});
+
+describe("the tracker's name in coding prompts", () => {
+  const storyPrompt = (trackerName: string) =>
+    render(
+      storyTask.promptTemplate,
+      storyTemplateContext({ ...STORY_FIXTURES["prd-epic"]!, trackerName }),
+    );
+  const requestPrompt = (trackerName: string, fixture = "tracker-request") => {
+    const ctx = REQUEST_FIXTURES[fixture]!;
+    // The server labels an attachment's source with the tracker's name too.
+    const attachments = ctx.attachments?.replace("Linear", trackerName);
+    return render(
+      requestTask.promptTemplate,
+      requestTemplateContext({ ...ctx, trackerName, ...(attachments && { attachments }) }),
+    );
+  };
+
+  it("names Linear on a Linear run", () => {
+    const story = storyPrompt("Linear");
+    expect(story).toContain("a PRD epic from Linear, one user story per session.");
+    expect(story).toContain("Linear issue: ENG-12");
+    expect(story).toContain("`summary` is posted to Linear: what you did");
+    expect(story).toContain("don't create Linear issues yourself");
+    const request = requestPrompt("Linear");
+    expect(request).toContain("You are working on Linear ENG-10:");
+    expect(request).toContain("Files attached in Linear.");
+    expect(request).toContain("posted to the thread on Linear");
+  });
+
+  it("names whichever tracker the run's work items live in", () => {
+    for (const prompt of [
+      storyPrompt("Acme Issues"),
+      requestPrompt("Acme Issues"),
+      requestPrompt("Acme Issues", "ship-with-stashes"),
+    ]) {
+      expect(prompt).toContain("Acme Issues");
+      // The fixture's URLs are on linear.app; the prompt itself never names Linear.
+      expect(prompt).not.toContain("Linear");
+    }
+  });
+
+  it("doesn't name the tracker for a chat request", () => {
+    expect(requestPrompt("Acme Issues", "chat-request")).not.toContain("Acme Issues");
   });
 });
 

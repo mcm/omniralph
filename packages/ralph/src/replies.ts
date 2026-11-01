@@ -1,13 +1,13 @@
 /**
  * Replies in a run's agent session and the preparation of manual stories (ported from cyralph's
- * `linear/webhook.ts` and `engine/preparation.ts`): what a reply asks for, and the approval of a
+ * webhook handling and `engine/preparation.ts`): what a reply asks for, and the approval of a
  * manual story's ```cyralph-prepare commands, run only after a person says "Run it".
  */
 import { createHash } from "node:crypto";
 import { isStoryDone, sortStories } from "./selection.js";
 import type { Story } from "./types.js";
 
-/** "stop", "stop working", "Stop session." (or Linear's Stop button, the `stop` signal). */
+/** "stop", "stop working", "Stop session." (or the tracker's Stop button, the `stop` signal). */
 export function isStopRequest(reply: { body: string; signal?: string | undefined }): boolean {
   return reply.signal === "stop" || /^\s*stop(\s+session|\s+working)?[\s.!?]*$/i.test(reply.body);
 }
@@ -89,7 +89,7 @@ const norm = (s: string) =>
     .trim();
 
 /**
- * A reply to the pending preparation question: an option's value (what Linear sends for a picked
+ * A reply to the pending preparation question: an option's value (what the tracker sends for a picked
  * option) or its 1-based number. Anything else isn't an answer.
  */
 export function matchPreparationAnswer(reply: string): PreparationAnswer | undefined {

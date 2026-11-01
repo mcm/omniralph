@@ -153,6 +153,7 @@ describe("/ship", () => {
 
   it("tells a ship session to prepare the commit, not make it", () => {
     const prompt = buildRequestPrompt({
+      trackerName: "Linear",
       epic: {
         kind: "single",
         issueId: "",

@@ -120,6 +120,11 @@ const RalphJobBase = z.object({
 
 /** The tracker the run's work items live in. */
 const RalphTrackerProvider = JobTrackerProvider.default("linear");
+/**
+ * The tracker's display name, which prompts name it by (`tracker.name`). The control panel
+ * fills it from the provider; it defaults to the default provider's.
+ */
+const RalphTrackerName = z.string().min(1).max(100).default("Linear");
 
 /** A work item as the agent sees it (untrusted text; quoted into prompts). */
 const RalphIssue = z.object({
@@ -170,6 +175,7 @@ export type RalphStoryListItem = z.infer<typeof RalphStoryListItem>;
 export const RalphStoryPayload = RalphJobBase.extend({
   /** The tracker the epic and its stories live in. */
   trackerProvider: RalphTrackerProvider,
+  trackerName: RalphTrackerName,
   /** The `ralph_stories` row. */
   storyId: z.uuid(),
   /** 1 on the story's first attempt (queue redeliveries keep the attempt). */
@@ -383,6 +389,7 @@ export type RalphRequestSource = (typeof RALPH_REQUEST_SOURCES)[number];
 export const RalphRequestPayload = RalphJobBase.extend({
   /** The tracker the epic lives in (a chat request's too, when it builds an epic). */
   trackerProvider: RalphTrackerProvider,
+  trackerName: RalphTrackerName,
   /** Where the requests come from. */
   source: z.enum(RALPH_REQUEST_SOURCES),
   epic: RalphIssue.extend({

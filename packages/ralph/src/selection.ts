@@ -1,7 +1,7 @@
 /**
  * Ralph task selection: pick the highest-priority open story whose dependencies are all done.
- * In-progress first, then priority (Linear's: Urgent first, no priority last), then the epic's
- * sub-issue order in Linear, then the story id (natural sort).
+ * In-progress first, then priority (Urgent first, no priority last), then the epic's
+ * sub-issue order in the tracker, then the story id (natural sort).
  */
 import { NO_PRIORITY_RANK } from "./story-body.js";
 import { externalIdOf, type Epic, type Story } from "./types.js";
@@ -27,7 +27,7 @@ function naturalCompare(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
-/** Linear's "No priority" (0) sorts after every prioritized story. */
+/** "No priority" (0) sorts after every prioritized story. */
 function rank(story: Story): number {
   return story.priority > 0 ? story.priority : NO_PRIORITY_RANK;
 }
@@ -93,7 +93,7 @@ export function withoutOutsideBlockers(stories: readonly Story[]): Story[] {
 
 /** An issue a run waits for: an open blocker outside the epic, or an open manual story. */
 export interface WaitingIssue {
-  /** Linear issue id. */
+  /** Tracker issue id. */
   id: string;
   identifier: string;
 }

@@ -18,15 +18,15 @@ Squash the commits, please.
 - There is no `origin` remote yet, so pushing or opening a pull/merge request isn't possible until one is added.
 - If you change code, run the quality gates and commit with a clear message.
 - If the request is ambiguous or can't be done (e.g. missing credentials), say exactly what's missing instead of guessing.
-- Finish with a short summary for the Linear thread of what you did, including any pull request URL, as the `summary` of your structured result.
+- Finish with a short summary for the thread on Linear of what you did, including any pull request URL, as the `summary` of your structured result.
 
 Sign off every commit.
 
 ## Rules
-You are responding to a request in a Linear agent session.
+You are responding to a request in a thread on Linear.
 - Do what the request asks. You may commit when the request calls for it; push only through the `ship` tool.
 - Don't run `gh` or `glab`: they aren't set up here. Ask for pull/merge request changes (open, update, mark ready) through `pullRequest` in your structured result; the orchestrator makes them.
 - Only ship `eng-7-fix-the-date-picker`, the branch you are on. Never push to, or force-push, the base branch or any other branch.
 - Never rewrite published history or force-push in this repository. If asked to rebase or squash, explain that it is disabled here and offer to merge the base branch instead.
-- The `summary` of your structured result is posted to the Linear thread: summarise what you did, with links (e.g. the PR/MR URL).
+- The `summary` of your structured result is posted to the thread on Linear: summarise what you did, with links (e.g. the PR/MR URL).
 - To wait for background work, end your turn with `waiting: true` in your structured result.

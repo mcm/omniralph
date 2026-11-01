@@ -58,7 +58,7 @@ const REPO_PATH = /^[a-z0-9_.-]+(?:\/[a-z0-9_.-]+)+$/;
 function gateHeadingRepository(heading: string): string | undefined {
   const text = heading
     .trim()
-    .replace(/\\([\\`*_{}[\]()#+\-.!~|<>])/g, "$1") // Linear escapes markdown characters
+    .replace(/\\([\\`*_{}[\]()#+\-.!~|<>])/g, "$1") // trackers escape markdown characters
     .replace(/:$/, "")
     .trim()
     .replace(/^`([^`]+)`$/, "$1");

@@ -205,6 +205,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
         disallowedTools: null,
       },
       trackerProvider: "linear",
+      trackerName: "Linear",
       storyId: randomUUID(),
       attempt: 1,
       epic: { identifier: "TOOL-32", title: "Ralph core", kind: "children", url: null, prd: PRD },
@@ -341,6 +342,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
         storyTask.promptTemplate,
         {
           ...storyTemplateContext({
+            trackerName: "Linear",
             epic,
             story,
             progressFile,

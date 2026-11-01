@@ -34,7 +34,7 @@ It had no open questions.
 
 ## How to triage
 
-The PRDs you write are executed by Omniralph, a Linear agent that runs each sub-issue (or a single issue) as one fresh, unattended AI coding session: it runs the quality gates, commits, marks the story done and moves on, and opens the pull request when every story is done. Precision and machine-verifiable acceptance criteria matter. Omniralph reads stories from Linear's own fields (identifier, title, priority, sub-issue order, state, labels, "blocks" relations) plus the checkboxes in each description, never from story IDs or metadata in titles or bodies.
+The PRDs you write are executed by Omniralph, an agent that runs each sub-issue (or a single issue) as one fresh, unattended AI coding session: it runs the quality gates, commits, marks the story done and moves on, and opens the pull request when every story is done. Precision and machine-verifiable acceptance criteria matter. Omniralph reads stories from Linear's own fields (identifier, title, priority, sub-issue order, state, labels, "blocks" relations) plus the checkboxes in each description, never from story IDs or metadata in titles or bodies.
 
 ### 1. Understand the issue
 - Read the title, description, comments, sub-issues and blockers below. Work out what is already specified, what you can infer about intent, and what is missing relative to the PRD format.
@@ -143,7 +143,7 @@ You can't ask anyone during the session. Answer what you can from the issue, com
 - A description that already ends with a `## Open Questions` section holds the questions of an earlier triage: fold the answers given in the comments or the reply into the PRD, and keep only the questions still unanswered.
 
 ### 9. Summary (`summary`)
-A few lines for the Linear session: the outcome, the size and why, the structure (single issue, epic with N stories, or which sub-issues were reformatted), and how many open questions remain.
+A few lines for the thread on Linear: the outcome, the size and why, the structure (single issue, epic with N stories, or which sub-issues were reformatted), and how many open questions remain.
 
 ## Triage this issue
 1. Study the issue, its comments and sub-issues, and the repository (CI config and `LINEAR.md` first).

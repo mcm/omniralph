@@ -53,6 +53,7 @@ export function linearExtras(gateway: LinearGateway): TrackerExtras {
 export const linearWebAdapter: TrackerWebAdapter = {
   provider: "linear",
   name: "Linear",
+  conventionsFile: "LINEAR.md",
   capabilities: TRACKER_CAPABILITIES,
   getGateway({ db, organizationId, fixtures, refreshTimeoutMs }) {
     const options: LinearGatewayOptions = {

@@ -35,10 +35,10 @@ function normalizeCommand(cmd: string): string {
  */
 export const GOOD_NEIGHBOR_RULE = `- Be a good neighbor: always assume you share this machine's CPU, memory, disk and network with other sessions and workloads, and never assume what resources are available. Run tests and builds the usual way, one at a time. Never stress test by saturating all cores, running several instances of a test suite at once, or otherwise exhausting the machine's resources.`;
 
-/** System prompt addition of a story session: the job owns git, the control panel owns Linear. */
-export const RALPH_SYSTEM_APPEND = `You are "Omniralph", an autonomous engineer working a Linear epic one user story at a time (the coding loop).
+/** System prompt addition of a story session: the job owns git, the control panel owns the tracker. */
+export const RALPH_SYSTEM_APPEND = `You are "Omniralph", an autonomous engineer working an epic one user story at a time (the coding loop).
 - Work only on the single story you are given; other stories get their own sessions.
-- Never run git commit, git push, or open pull requests: the orchestrator handles version control and Linear updates. If guidance asks for a push or a PR/MR, skip that part without comment; the orchestrator does it.
+- Never run git commit, git push, or open pull requests: the orchestrator handles version control and work item updates. If guidance asks for a push or a PR/MR, skip that part without comment; the orchestrator does it.
 - Be precise and verifiable. Only report the status "complete" in your structured result when the story truly meets its acceptance criteria.
 - You may run subagents and commands in the background. To wait for them, end your turn with the status "waiting": the session stays open, you are resumed as each finishes (for up to an hour), and only your last structured result counts. Stop background processes you no longer need (e.g. dev servers) before you finish.
 ${GOOD_NEIGHBOR_RULE}`;
@@ -52,6 +52,8 @@ export interface OfferedStash {
 }
 
 export interface PromptContext {
+  /** The tracker's display name (the provider's, from the server), where the prompt names it. */
+  trackerName: string;
   epic: Epic;
   story: Story;
   /** Where the session appends its learnings (a copy of the run's progress log). */
@@ -64,13 +66,13 @@ export interface PromptContext {
   recentProgress?: string;
   /** Output of failed quality gates / previous failed attempt for this story. */
   previousAttemptFeedback?: string;
-  /** Follow-up instructions from humans in the Linear agent session. */
+  /** Follow-up instructions from humans in the tracker's agent session. */
   guidance?: string[];
   attempt: number;
   maxAttempts: number;
   /** Extra instructions from repository config. */
   appendInstruction?: string;
-  /** The orchestrator files `followUps` as sub-issues of the epic (Linear-backed epics only). */
+  /** The orchestrator files `followUps` as sub-issues of the epic (tracker-backed epics only). */
   followUps?: boolean;
   /**
    * Commands the orchestrator runs itself after the agent reports the story complete. Quality gates among them
@@ -79,13 +81,13 @@ export interface PromptContext {
   verifyCommands?: string[];
   /** Stash entries of earlier sessions of this story that haven't been applied yet. */
   stashes?: OfferedStash[];
-  /** Markdown list of the Linear attachments the session can open (see `formatAttachments`). */
+  /** Markdown list of the tracker attachments the session can open (see `formatAttachments`). */
   attachments?: string;
   /** Today's date in the progress entry heading; defaults to now. */
   now?: Date;
 }
 
-export const DEFAULT_STORY_TEMPLATE = `You are working through a PRD epic from Linear, one user story per session.
+export const DEFAULT_STORY_TEMPLATE = `You are working through a PRD epic from {{trackerName}}, one user story per session.
 Each session starts with a fresh context: the PRD, the progress log and the repository are your memory.
 
 ## PRD: {{epicTitle}} ({{epicIdentifier}})
@@ -106,7 +108,7 @@ Each session starts with a fresh context: the PRD, the progress log and the repo
 
 {{/if}}
 ## Your Task: {{storyId}} - {{storyTitle}}
-{{#if storyIdentifier}}Linear issue: {{storyIdentifier}}{{#if storyUrl}} ({{storyUrl}}){{/if}}
+{{#if storyIdentifier}}{{trackerName}} issue: {{storyIdentifier}}{{#if storyUrl}} ({{storyUrl}}){{/if}}
 {{/if}}
 {{#if repository}}Repository: \`{{repository}}\`. This story belongs in this repository rather than the epic's main one, and this worktree is a checkout of it: make every change here.
 {{/if}}
@@ -127,7 +129,7 @@ Each session starts with a fresh context: the PRD, the progress log and the repo
 {{/if}}
 {{#if attachments}}
 ### Attachments
-Files attached in Linear (screenshots, mockups, documents). Open each one with the Read tool (it shows images) before you start, and treat them as part of the spec:
+Files attached in {{trackerName}} (screenshots, mockups, documents). Open each one with the Read tool (it shows images) before you start, and treat them as part of the spec:
 {{attachments}}
 
 {{/if}}
@@ -199,11 +201,11 @@ Your session ends with a structured result (the JSON schema you were given). It 
 - \`status: "blocked"\` when something another attempt can't get past stops you (missing access or credentials, an unavailable service, a decision only a person can make). Explain in \`summary\` precisely why and what would unblock you. The story is then set aside without retries until someone replies. Changes you leave in the worktree are committed as work in progress when the quality gates pass, and stashed otherwise: describe them in one line with \`commit: { summary }\`.
 - \`status: "incomplete"\` when the story is just unfinished: it gets another attempt.
 - \`status: "waiting"\` only to end your turn while background work you started (subagents, commands) still runs: you are resumed when it finishes, and then report one of the statuses above.
-- \`summary\` is posted to Linear: what you did, or what is in the way.
+- \`summary\` is posted to {{trackerName}}: what you did, or what is in the way.
 {{#if followUps}}
 
 ## Follow-up Work
-If you find work in this project that this story needs but is outside its scope (bugs elsewhere, missing pieces, problems a validation turns up), don't create Linear issues yourself and don't leave it as a note. Add one entry per item to \`followUps\`, and the orchestrator files each as a new story (a sub-issue of {{epicIdentifier}}): a short imperative \`title\`, and a \`description\` of what is wrong, where, and what done looks like (acceptance criteria as \`- [ ]\` checkboxes).
+If you find work in this project that this story needs but is outside its scope (bugs elsewhere, missing pieces, problems a validation turns up), don't create {{trackerName}} issues yourself and don't leave it as a note. Add one entry per item to \`followUps\`, and the orchestrator files each as a new story (a sub-issue of {{epicIdentifier}}): a short imperative \`title\`, and a \`description\` of what is wrong, where, and what done looks like (acceptance criteria as \`- [ ]\` checkboxes).
 - \`followUps\` are only for work outside this story's acceptance criteria: never use them to defer part of this story. If you can't finish it, report it \`incomplete\` or \`blocked\`.
 - If {{storyId}} can't be completed until they are fixed, report it \`blocked\`, not complete. They will block {{storyId}}, be worked first, and then {{storyId}} runs again. Each such round (a review loop filing its fixes, say) doesn't use up an attempt, but rounds are capped.
 - If {{storyId}} measures its progress across rounds (e.g. a critique score it must raise to a bar), report this round's value as \`metric\`: a \`name\`, the \`value\`, its \`direction\` (\`higher\` or \`lower\` is better) and, if it has one, the \`target\`. Use the same name and direction every round: a loop whose best value hasn't improved for a few rounds is set aside. Otherwise leave \`metric\` out.
@@ -286,6 +288,7 @@ export function buildStoryPrompt(ctx: PromptContext, template = DEFAULT_STORY_TE
   const completed = completedCount(epic);
   const { verifyCommands, qualityGates } = storyGates(ctx);
   const vars: Vars = {
+    trackerName: ctx.trackerName,
     epicTitle: epic.title,
     epicIdentifier: epic.identifier,
     epicUrl: epic.url,
@@ -367,8 +370,8 @@ function describedStories(
 
 /**
  * Prompt for a short session that reads the branch's changes and writes the PR/MR title and
- * description: a summary of the deliverable a reviewer without access to Linear can follow, the
- * stories it implements (with their Linear identifiers) and how it was verified.
+ * description: a summary of the deliverable a reviewer without access to the tracker can follow, the
+ * stories it implements (with their identifiers) and how it was verified.
  */
 export function buildDescribePrPrompt(ctx: DescribePrPromptContext): string {
   const { epic, baseBranch, prTerm } = ctx;
@@ -390,7 +393,7 @@ export function buildDescribePrPrompt(ctx: DescribePrPromptContext): string {
       : []),
     ...(stories.length > 0
       ? [
-          "The stories the branch implements, one commit each (Linear identifier, title, commit):",
+          "The stories the branch implements, one commit each (identifier, title, commit):",
           ...stories.map(
             (s) =>
               `- ${s.identifier}: ${s.title}${s.commitSha ? ` (\`${s.commitSha.slice(0, 10)}\`)` : ""}`,
@@ -454,9 +457,10 @@ export const REQUEST_HEADING = "## Request from your team";
 export function requestSystemAppend(
   historyRewrite: HistoryRewritePolicy = "when-asked",
   source: RequestSource = "tracker",
-  options: { ship?: boolean } = {},
+  options: { ship?: boolean; trackerName?: string } = {},
 ): string {
-  if (options.ship) return shipSystemAppend(source);
+  const tracker = options.trackerName ?? "the tracker";
+  if (options.ship) return shipSystemAppend(source, tracker);
   const rewrite =
     historyRewrite === "always"
       ? "- History rewrites are allowed on the epic branch without being asked, and merges are not: never merge the base branch (or any other branch) into it. When it needs the base branch (it is behind or conflicts with it), or the request asks for a rebase, squash, amend or reword, do it and push with `git push --force-with-lease`, never a plain `--force`."
@@ -466,8 +470,8 @@ export function requestSystemAppend(
   const where =
     source === "chat"
       ? "a request in a chat thread about a repository"
-      : "a request in a Linear agent session about a PRD epic";
-  const thread = source === "chat" ? "the chat thread" : "the Linear thread";
+      : `a request in a thread on ${tracker} about a PRD epic`;
+  const thread = source === "chat" ? "the chat thread" : `the thread on ${tracker}`;
   return `You are "Omniralph", an autonomous engineer responding to ${where}.
 - Do what the request asks. You may use git (commit, push) when the request calls for it.
 - Don't run \`gh\` or \`glab\`: they aren't set up here. Ask for pull/merge request changes (open, update, mark ready) through \`pullRequest\` in your structured result; the orchestrator makes them.
@@ -482,9 +486,9 @@ ${GOOD_NEIGHBOR_RULE}`;
  * System prompt addition of a `/ship` request session: it prepares one
  * commit and describes it; the job commits, pushes and opens the PR/MR.
  */
-function shipSystemAppend(source: RequestSource): string {
-  const where = source === "chat" ? "a chat thread" : "a Linear agent session";
-  const thread = source === "chat" ? "the chat thread" : "the Linear thread";
+function shipSystemAppend(source: RequestSource, tracker: string): string {
+  const where = source === "chat" ? "a chat thread" : `a thread on ${tracker}`;
+  const thread = source === "chat" ? "the chat thread" : `the thread on ${tracker}`;
   return `You are "Omniralph", an autonomous engineer shipping the work on a branch for ${where}.
 - Don't run \`git commit\`, \`git push\`, \`git stash pop\`/\`drop\` or any command that rewrites history: the orchestrator commits everything left in the worktree with the \`commit.message\` of your structured result, then pushes the branch.
 - Don't run \`gh\` or \`glab\`: they aren't set up here. Ask for pull/merge request changes (open, update) through \`pullRequest\` in your structured result; the orchestrator makes them after it pushes.
@@ -500,13 +504,15 @@ export interface ShipStash {
 }
 
 export interface RequestPromptContext {
+  /** The tracker's display name (the provider's, from the server), where the prompt names it. */
+  trackerName: string;
   epic: Epic;
-  /** The requests from the Linear or chat thread, oldest first. */
+  /** The requests from the tracker or chat thread, oldest first. */
   requests: readonly string[];
   /**
    * Where the requests come from. A chat request's epic is a stand-in (the
    * run's reference and the request's first line, no stories), so its prompt
-   * names neither Linear nor a story status. Default "tracker".
+   * names neither the tracker nor a story status. Default "tracker".
    */
   source?: RequestSource;
   /** The branch of the worktree the session runs in. */
@@ -523,7 +529,7 @@ export interface RequestPromptContext {
   prTerm?: string;
   /** May a request rewrite the epic branch's history (`always`: rebase, never merge)? Default "when-asked". */
   historyRewrite?: HistoryRewritePolicy;
-  /** Markdown list of the Linear attachments the session can open. */
+  /** Markdown list of the tracker attachments the session can open. */
   attachments?: string;
   /** Extra instructions from the repository's settings. */
   appendInstruction?: string;
@@ -539,7 +545,7 @@ function capitalize(text: string): string {
 }
 
 /**
- * Prompt of a direct request from the Linear thread (an @mention, or a reply
+ * Prompt of a direct request from the tracker thread (an @mention, or a reply
  * no story picked up), e.g. "push and open a PR" (cyralph's
  * `buildRequestPrompt`), or from a chat thread. Like Cyrus, the agent acts on
  * it itself; PR/MR changes go through its structured result.
@@ -557,7 +563,7 @@ export function buildRequestPrompt(ctx: RequestPromptContext): string {
         `It is implemented on branch \`${ctx.branch}\` (base \`${ctx.baseBranch}\`) in this git worktree.`,
       ]
     : [
-        `You are working on Linear ${epic.identifier}: ${epic.title}.`,
+        `You are working on ${ctx.trackerName} ${epic.identifier}: ${epic.title}.`,
         epic.kind === "single"
           ? `It is implemented on branch \`${ctx.branch}\` (base \`${ctx.baseBranch}\`) in this git worktree.`
           : `It is a PRD epic implemented one story per commit on branch \`${ctx.branch}\` (base \`${ctx.baseBranch}\`) in this git worktree.`,
@@ -577,7 +583,7 @@ export function buildRequestPrompt(ctx: RequestPromptContext): string {
       ? [
           "",
           "## Attachments",
-          `Files attached ${chat ? "to the request" : "in Linear"}. Open the ones relevant to the request with the Read tool (it shows images):`,
+          `Files attached ${chat ? "to the request" : `in ${ctx.trackerName}`}. Open the ones relevant to the request with the Read tool (it shows images):`,
           ctx.attachments,
         ]
       : []),
@@ -593,7 +599,7 @@ export function buildRequestPrompt(ctx: RequestPromptContext): string {
 /** "How to handle it" of an ordinary request session. */
 function requestInstructions(ctx: RequestPromptContext, term: string): string[] {
   const chat = ctx.source === "chat";
-  const thread = chat ? "chat thread" : "Linear thread";
+  const thread = chat ? "chat thread" : `thread on ${ctx.trackerName}`;
   return [
     "## How to handle it",
     "- This is a direct request, not a story. Do what it asks, and nothing beyond it.",
@@ -604,7 +610,7 @@ function requestInstructions(ctx: RequestPromptContext, term: string): string[] 
         ? `- History rewrites are allowed on \`${ctx.branch}\` when the request asks for one. For a rebase: \`git fetch origin && git rebase origin/${ctx.baseBranch}\`, resolve conflicts, run the quality gates, then \`git push --force-with-lease origin ${ctx.branch}\`. Do the rebase that was asked for; don't substitute a merge. If the lease is rejected (someone else pushed), stop and report it instead of overwriting their work.`
         : `- History rewrites (rebase, squash, force-push) are disabled for this repository. If the request asks for one, say so and offer to merge \`${ctx.baseBranch}\` into \`${ctx.branch}\` instead.`,
     ctx.remoteUrl
-      ? `- For the ${term}, don't run \`gh\` or \`glab\`. Push \`${ctx.branch}\` first, then set \`pullRequest\` in your structured result: \`open\` opens it into \`${ctx.baseBranch}\` as a draft, \`update\` changes the open one's title or description, \`ready\` marks it ready for review. Give \`open\` a title summarising the change itself and a description of the deliverable written for reviewers who can't see ${chat ? "the chat thread" : "Linear"}: what it does and why, notable changes, and any breaking changes or judgement calls.${chat ? "" : " Don't list the user stories."}`
+      ? `- For the ${term}, don't run \`gh\` or \`glab\`. Push \`${ctx.branch}\` first, then set \`pullRequest\` in your structured result: \`open\` opens it into \`${ctx.baseBranch}\` as a draft, \`update\` changes the open one's title or description, \`ready\` marks it ready for review. Give \`open\` a title summarising the change itself and a description of the deliverable written for reviewers who can't see ${chat ? "the chat thread" : ctx.trackerName}: what it does and why, notable changes, and any breaking changes or judgement calls.${chat ? "" : " Don't list the user stories."}`
       : "- There is no `origin` remote yet, so pushing or opening a pull/merge request isn't possible until one is added.",
     "- If you change code, run the quality gates and commit with a clear message.",
     "- If the request is ambiguous or can't be done (e.g. missing credentials), say exactly what's missing instead of guessing.",
@@ -642,9 +648,9 @@ function shipInstructions(
     "6. Report `commit.message` in your structured result: a one-line subject, a blank line, and a short body saying what changed and why. Leave `commit` out when there's nothing to commit (the orchestrator still pushes commits that aren't on `origin` yet).",
     ctx.prUrl
       ? `7. The ${term} is open (${ctx.prUrl}). If its title or description no longer match the branch, set \`pullRequest\` to \`update\` with a new title and description; otherwise leave \`pullRequest\` out.`
-      : `7. No ${term} is open yet: set \`pullRequest\` to \`open\` with a title summarising the change itself and a description written for reviewers who can't see ${chat ? "the chat thread" : "Linear"} (what it does and why, notable changes, breaking changes or judgement calls).${chat ? "" : " Don't list the user stories."}`,
+      : `7. No ${term} is open yet: set \`pullRequest\` to \`open\` with a title summarising the change itself and a description written for reviewers who can't see ${chat ? "the chat thread" : ctx.trackerName} (what it does and why, notable changes, breaking changes or judgement calls).${chat ? "" : " Don't list the user stories."}`,
     "- If something stops you (failing gates you can't fix, a conflict, missing credentials), leave `commit` out and say exactly what's wrong in `summary`: nothing is committed or pushed then.",
-    `- \`summary\` is posted to the ${chat ? "chat" : "Linear"} thread: say what is being committed and pushed, in a sentence or two.`,
+    `- \`summary\` is posted to the ${chat ? "chat thread" : `thread on ${ctx.trackerName}`}: say what is being committed and pushed, in a sentence or two.`,
   ];
 }
 
@@ -708,8 +714,15 @@ function storyListContext(epic: Epic, current?: Story): StoryListContext {
   };
 }
 
+/** The tracker the run's work items live in, as the coding templates name it (`tracker.name`). */
+export interface TrackerTemplateContext {
+  /** Its display name (the provider's, from the server). */
+  name: string;
+}
+
 /** What `builtin:implement-story`'s template renders (see `buildStoryPrompt`). */
 export interface StoryTemplateContext {
+  tracker: TrackerTemplateContext;
   epic: {
     identifier: string;
     title: string;
@@ -720,9 +733,9 @@ export interface StoryTemplateContext {
   };
   stories: StoryListContext;
   story: {
-    /** The story's ID in the epic (its Linear identifier for a Linear-backed epic). */
+    /** The story's ID in the epic (its tracker identifier for a tracker-backed epic). */
     id: string;
-    /** Its Linear identifier; null when it has none. */
+    /** Its tracker identifier; null when it has none. */
     identifier: string | null;
     url: string | null;
     title: string;
@@ -760,6 +773,7 @@ export function storyTemplateContext(ctx: PromptContext): StoryTemplateContext {
   const { epic, story } = ctx;
   const { verifyCommands, qualityGates } = storyGates(ctx);
   return {
+    tracker: { name: ctx.trackerName },
     epic: {
       identifier: epic.identifier,
       title: oneLine(epic.title),
@@ -803,7 +817,8 @@ export function storyTemplateContext(ctx: PromptContext): StoryTemplateContext {
 
 /** What `builtin:handle-request`'s template renders (see `buildRequestPrompt`). */
 export interface RequestTemplateContext {
-  /** The requests come from a chat thread (else from a Linear agent session). */
+  tracker: TrackerTemplateContext;
+  /** The requests come from a chat thread (else from the tracker). */
   fromChat: boolean;
   epic: {
     identifier: string;
@@ -852,6 +867,7 @@ export function requestTemplateContext(ctx: RequestPromptContext): RequestTempla
   const fromChat = ctx.source === "chat";
   const stories = storyListContext(epic);
   return {
+    tracker: { name: ctx.trackerName },
     fromChat,
     epic: {
       identifier: epic.identifier,

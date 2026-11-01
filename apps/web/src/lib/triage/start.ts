@@ -32,7 +32,7 @@ import type {
 } from "@omniralph/tracker";
 import { errorMessage, postActivity } from "@/lib/ralph/notify";
 import { trackerConversation } from "@/lib/ralph/conversation";
-import { trackerName } from "@/lib/tracker/adapters";
+import { trackerName, trackerPromptInfo } from "@/lib/tracker/adapters";
 import { resolveRoute, routedRepository } from "@/lib/routing/resolve";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/playbooks";
@@ -295,6 +295,7 @@ export async function enqueueTriage(
     triageRunId: run.id,
     trackerProvider: run.trackerProvider,
     ...triageTemplateContext({
+      tracker: trackerPromptInfo(run.trackerProvider),
       issue: {
         identifier: issue.identifier,
         title: cut(issue.title, MAX_TITLE),

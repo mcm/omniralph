@@ -212,6 +212,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
     expect(context).toMatchObject({
       triageRunId: run!.id,
       trackerProvider: "linear",
+      tracker: { name: "Linear", conventionsFile: "LINEAR.md" },
       issue: {
         identifier: "ENG-1",
         title: "Priorities",

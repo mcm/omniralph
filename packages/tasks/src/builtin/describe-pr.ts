@@ -31,7 +31,7 @@ Background from the issue tracker (for context only; readers of the {{prTerm}} c
 
 {{/epic.prd}}
 {{#stories}}
-The stories the branch implements, one commit each (Linear identifier, title, commit):
+The stories the branch implements, one commit each (identifier, title, commit):
 {{#items}}
 - {{identifier}}: {{title}}{{#commit}} (\`{{commit}}\`){{/commit}}
 {{/items}}

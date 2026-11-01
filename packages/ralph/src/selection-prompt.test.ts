@@ -144,6 +144,7 @@ describe("prompt", () => {
 
   it("renders the full story prompt", () => {
     const p = buildStoryPrompt({
+      trackerName: "Linear",
       epic,
       story: epic.stories[1]!,
       progressFile: "/tmp/p.md",
@@ -167,6 +168,7 @@ describe("prompt", () => {
   it("feeds the progress log's patterns and tail into the prompt", () => {
     const progress = `# Ralph Progress Log\n\n## Codebase Patterns (Study These First)\n- Use zod\n\n---\n\n${Array.from({ length: 7 }, (_, i) => `## [2026-01-0${i + 1}] - US-00${i}: S${i}\n- did ${i}\n---\n`).join("\n")}`;
     const p = buildStoryPrompt({
+      trackerName: "Linear",
       epic,
       story: epic.stories[1]!,
       progressFile: "/tmp/p.md",
@@ -185,6 +187,7 @@ describe("prompt", () => {
   it("shows no PRD document for a single issue", () => {
     const single: Epic = { ...epic, kind: "single", stories: [story("ENG-1")] };
     const p = buildStoryPrompt({
+      trackerName: "Linear",
       epic: single,
       story: single.stories[0]!,
       progressFile: "/tmp/p.md",
@@ -202,6 +205,7 @@ describe("prompt", () => {
       qualityGates: ["pnpm lint", "pnpm  test", "pnpm typecheck", "pnpm lint"],
     };
     const p = buildStoryPrompt({
+      trackerName: "Linear",
       epic: gated,
       story: gated.stories[1]!,
       progressFile: "/tmp/p.md",
@@ -216,6 +220,7 @@ describe("prompt", () => {
     expect(p.match(/`pnpm lint`/g)).toHaveLength(1);
 
     const all = buildStoryPrompt({
+      trackerName: "Linear",
       epic: gated,
       story: gated.stories[1]!,
       progressFile: "/tmp/p.md",
@@ -243,6 +248,7 @@ describe("prompt", () => {
 
   it("asks for a structured result instead of signals in the text", () => {
     const p = buildStoryPrompt({
+      trackerName: "Linear",
       epic,
       story: epic.stories[1]!,
       progressFile: "/tmp/p.md",
@@ -256,6 +262,7 @@ describe("prompt", () => {
     expect(p).toContain("Add one entry per item to `followUps`");
     expect(
       buildStoryPrompt({
+        trackerName: "Linear",
         epic,
         story: epic.stories[1]!,
         progressFile: "/tmp/p.md",
@@ -267,6 +274,7 @@ describe("prompt", () => {
 
   it("lists stash entries to review only when there are some", () => {
     const base = {
+      trackerName: "Linear",
       epic,
       story: epic.stories[1]!,
       progressFile: "/tmp/p.md",
@@ -310,6 +318,7 @@ describe("prompt", () => {
 
 describe("request prompt", () => {
   const base = {
+    trackerName: "Linear",
     requests: ["fix the typo in the README"],
     branch: "omniralph/x",
     baseBranch: "main",
@@ -347,7 +356,7 @@ describe("request prompt", () => {
     expect(p).toContain("<prd-document>\nThe PRD body\n</prd-document>");
     expect(p).toContain("reviewers who can't see Linear");
     expect(p).toContain("judgement calls. Don't list the user stories.");
-    expect(p).toContain("Finish with a short summary for the Linear thread");
+    expect(p).toContain("Finish with a short summary for the thread on Linear");
   });
 
   it("names neither Linear nor a story status for a request from chat", () => {
@@ -377,8 +386,10 @@ describe("request prompt", () => {
 
   it("has a system prompt for each source", () => {
     expect(requestSystemAppend("when-asked", "tracker")).toBe(requestSystemAppend("when-asked"));
-    expect(requestSystemAppend()).toContain("a request in a Linear agent session about a PRD epic");
-    expect(requestSystemAppend()).toContain("posted to the Linear thread");
+    const linear = requestSystemAppend("when-asked", "tracker", { trackerName: "Linear" });
+    expect(linear).toContain("a request in a thread on Linear about a PRD epic");
+    expect(linear).toContain("posted to the thread on Linear");
+    expect(requestSystemAppend()).toContain("posted to the thread on the tracker");
     const chat = requestSystemAppend("never", "chat");
     expect(chat).toContain("a request in a chat thread about a repository");
     expect(chat).toContain("posted to the chat thread");

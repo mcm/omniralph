@@ -88,6 +88,7 @@ const asQueryResult = (result: TriageRunResult): QueryRunResult => ({
 /** A previous triage as the next run's trigger context holds it. */
 const previousContext = (previous: TriageOutcome | null) =>
   triageTemplateContext({
+    tracker: { name: "Linear", conventionsFile: "LINEAR.md" },
     issue: { identifier: "X-1", title: "", description: "", stateType: "backlog" },
     previousResult: previous,
   }).previousResult;

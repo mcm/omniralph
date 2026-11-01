@@ -32,6 +32,19 @@ export function trackerName(provider: TrackerProvider): string {
   return knownProvider(provider) ? ADAPTERS[provider].name : "the tracker";
 }
 
+/** The provider's file of issue conventions in a repository (`TRACKER.md` for an unknown one). */
+export function trackerConventionsFile(provider: TrackerProvider): string {
+  return knownProvider(provider) ? ADAPTERS[provider].conventionsFile : "TRACKER.md";
+}
+
+/** The tracker as prompts name it (the `tracker.*` prompt variables). */
+export function trackerPromptInfo(provider: TrackerProvider): {
+  name: string;
+  conventionsFile: string;
+} {
+  return { name: trackerName(provider), conventionsFile: trackerConventionsFile(provider) };
+}
+
 /** The optional capabilities the provider's gateways have (none for an unknown one). */
 export function trackerProviderCapabilities(
   provider: TrackerProvider,
