@@ -290,3 +290,37 @@ describe("the tracker's name", () => {
     expect(payload.trackerName).toBe("Linear");
   });
 });
+
+describe("the story's kind", () => {
+  const kindOf = (
+    kind: RalphRun["kind"],
+    labels: string[] | undefined,
+    fixLabels?: readonly string[],
+  ) => {
+    const labelled: Story = { ...story, ...(labels && { labels }) };
+    return buildStoryPayload({
+      coding: coding(),
+      run: run(kind),
+      lane,
+      repository: repository(),
+      connection,
+      epic: { ...epic(kind === "single" ? "single" : "children"), stories: [labelled] },
+      stories: [labelled],
+      story: labelled,
+      row: row as RalphStory,
+      ...(fixLabels && { fixLabels }),
+    }).story.kind;
+  };
+
+  it("is a Fix with the default fix label, Bug, and a Story without it", () => {
+    expect(kindOf("children", ["frontend", "bug"])).toBe("fix");
+    expect(kindOf("children", ["Enhancement"])).toBe("story");
+    expect(kindOf("children", undefined)).toBe("story");
+  });
+
+  it("follows the integration's custom fix labels, for a story and a single issue", () => {
+    expect(kindOf("children", ["Defect"], ["Defect", "Regression"])).toBe("fix");
+    expect(kindOf("single", ["regression"], ["Defect", "Regression"])).toBe("fix");
+    expect(kindOf("single", ["Bug"], ["Defect"])).toBe("story");
+  });
+});

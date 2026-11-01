@@ -57,8 +57,11 @@ export interface WorkItem {
   project: { id: string | null; name: string } | null;
   /** Label names. */
   labels: string[];
-  /** A Fix when it carries one of the integration's fix labels, else a Story. */
-  kind: WorkItemKind;
+  /**
+   * A task's kind: a Fix when it carries one of the integration's fix labels, else a Story.
+   * Null when it isn't a task: it has sub-issues (an epic or a feature).
+   */
+  kind: WorkItemKind | null;
   parentId: string | null;
   /** 0 No priority, 1 Urgent, 2 High, 3 Medium, 4 Low. */
   priority: number;

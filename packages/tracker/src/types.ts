@@ -91,6 +91,11 @@ export interface IssueSummary {
   projectId?: string;
   projectName?: string;
   parentId?: string;
+  /**
+   * It has sub-issues that aren't canceled (an epic or a feature, not a task). Absent: it has
+   * none.
+   */
+  hasSubIssues?: boolean;
   assigneeId?: string;
   /**
    * The (agent) user the issue is delegated to, on trackers with the

@@ -206,13 +206,22 @@ export class FakeLinearGateway implements LinearGateway {
     const projectId = this.projectIdOf(issue);
     const delegated = this.delegations.some((d) => d.issueId === issue.id);
     const delegateId = delegated ? this.delegateOf(issue.id) : issue.delegateId;
+    const { hasSubIssues: _stored, ...rest } = issue;
     return {
-      ...issue,
+      ...rest,
       ...(delegateId && { delegateId }),
       ...(stateId && { stateId }),
       ...(teamName && { teamName }),
       ...(projectId && { projectId }),
+      ...(this.hasOpenChildren(issue.id) && { hasSubIssues: true }),
     };
+  }
+
+  /** Whether the issue has sub-issues that aren't canceled (`hasSubIssues`). */
+  private hasOpenChildren(issueId: string): boolean {
+    return [...this.issues.values()].some(
+      (i) => i.parentId === issueId && i.stateType !== "canceled",
+    );
   }
 
   /** Who the issue is delegated to: its latest delegation. */

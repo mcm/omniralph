@@ -17,6 +17,7 @@ export function workItemRow(overrides: Partial<WorkItemRow> = {}): WorkItemRow {
     url: "https://linear.app/acme/issue/SOC-412",
     organization: { id: TEST_ORGANIZATION_ID, name: "Acme", role: "admin" },
     repository: { id: REPO_PORTAL, provider: "gitlab", fullPath: "acme/portal" },
+    kind: null,
     size: "M",
     group: "ready",
     blocked: false,

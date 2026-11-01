@@ -34,6 +34,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import { useCurrentUser } from "@/components/current-user";
 import { BlockedByLine } from "@/components/work-items/blocked";
 import { CHANGE_REPO, ChangeRepoSheet } from "@/components/work-items/change-repo-sheet";
+import { KindBadge } from "@/components/work-items/kind";
 import { ManualTaskChecklist } from "@/components/work-items/manual-task-checklist";
 import { PrdView } from "@/components/work-items/prd-view";
 import { WORK_ITEM_STATE_TONES } from "@/components/work-items/state-tones";
@@ -277,6 +278,7 @@ function WorkItemDetailContent({
     <div className="or-backlog-detail__badges">
       {user.scope === "all" ? <OrgBadge name={item.organization.name} /> : null}
       <IssueBadge tracker={item.tracker} id={item.identifier} />
+      <KindBadge kind={item.kind} />
       {item.size ? <SizeBadge size={item.size} /> : null}
     </div>
   );

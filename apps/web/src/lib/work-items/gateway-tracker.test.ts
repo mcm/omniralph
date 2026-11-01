@@ -330,6 +330,57 @@ describe("GatewayWorkItemTracker over Linear", () => {
     });
   });
 
+  it("gives a task its kind, and an epic or a feature none, in candidates and reads alike", async () => {
+    const h = linearAgent();
+    const fix = h.fake.add({
+      identifier: "ENG-1",
+      title: "Crash",
+      teamId: "team-a",
+      labels: ["Bug"],
+    });
+    const story = h.fake.add({ identifier: "ENG-2", title: "Export", teamId: "team-a" });
+    const epic = h.fake.add({ identifier: "ENG-3", title: "Invoices", teamId: "team-a" });
+    h.fake.add({ identifier: "ENG-4", title: "Task", teamId: "team-a", parentId: epic.id });
+    const feature = h.fake.add({ identifier: "ENG-5", title: "Billing", teamId: "team-a" });
+    const child = h.fake.add({
+      identifier: "ENG-6",
+      title: "Epic",
+      teamId: "team-a",
+      parentId: feature.id,
+    });
+    h.fake.add({ identifier: "ENG-7", title: "Task", teamId: "team-a", parentId: child.id });
+    // Only canceled sub-issues: still a task.
+    const emptied = h.fake.add({
+      identifier: "ENG-8",
+      title: "Was split",
+      teamId: "team-a",
+      labels: ["bug"],
+    });
+    h.fake.add({
+      identifier: "ENG-9",
+      title: "Dropped",
+      teamId: "team-a",
+      parentId: emptied.id,
+      stateType: "canceled",
+    });
+    const expected = {
+      [fix.id]: "fix",
+      [story.id]: "story",
+      [epic.id]: null,
+      [feature.id]: null,
+      [emptied.id]: "fix",
+    };
+    for (const [id, kind] of Object.entries(expected)) {
+      expect((await h.tracker.get(id)).kind).toBe(kind);
+    }
+    const page = await h.tracker.listCandidates({
+      readiness: ["ready", "needs_refining"],
+      limit: 50,
+    });
+    const listed = Object.fromEntries(page.items.map((item) => [item.id, item.kind]));
+    expect(listed).toMatchObject(expected);
+  });
+
   it("passes the team overrides' states to listIssues", async () => {
     const h = linearAgent();
     await h.tracker.setStateMapping({

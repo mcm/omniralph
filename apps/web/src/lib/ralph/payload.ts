@@ -13,6 +13,7 @@ import type {
   Repository,
   ScmConnection,
 } from "@omniralph/db";
+import { workItemKind } from "@omniralph/planning";
 import {
   dependencyLabel,
   initialProgress,
@@ -134,6 +135,8 @@ export interface StoryPayloadInput {
   row: RalphStory;
   /** The tracker attachments in the story's scope (`payloadAttachments`). */
   attachments?: readonly RalphAttachment[];
+  /** The tracker integration's fix labels, which make the story a Fix (default `Bug`). */
+  fixLabels?: readonly string[];
 }
 
 export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
@@ -163,6 +166,7 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
       trackerIssueId: row.trackerIssueId,
       url: url(story.url),
       description: headOf(story.description),
+      kind: workItemKind(story.labels ?? [], input.fixLabels),
     },
     stories: storyList(epic, input.stories).slice(0, 500),
     commitMessage: storyCommitMessage(run.kind, identifier, story.title),

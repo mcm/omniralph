@@ -202,7 +202,7 @@ export class GatewayWorkItemTracker implements WorkItemTracker {
       team: { id: issue.teamId, key: issue.teamKey, name: issue.teamName ?? issue.teamKey },
       project: issue.projectName ? { id: issue.projectId ?? null, name: issue.projectName } : null,
       labels: [...issue.labels],
-      kind: workItemKind(issue.labels, this.fixLabels),
+      kind: issue.hasSubIssues ? null : workItemKind(issue.labels, this.fixLabels),
       parentId: issue.parentId ?? null,
       priority: issue.priority,
       readiness: readinessOf(this.mapping, {

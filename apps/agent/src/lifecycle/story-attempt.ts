@@ -98,6 +98,7 @@ export function promptEpic(payload: RalphStoryPayload): { epic: Epic; story: Sto
     storyId: payload.story.identifier,
     identifier: payload.story.identifier,
     issueId: payload.story.trackerIssueId,
+    kind: payload.story.kind,
     ...(payload.story.url && { url: payload.story.url }),
     title: payload.story.title,
     description: body.description,

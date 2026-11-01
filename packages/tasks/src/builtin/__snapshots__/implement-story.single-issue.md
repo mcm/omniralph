@@ -9,6 +9,7 @@ Each session starts with a fresh context: the PRD, the progress log and the repo
 
 ## Your Task: ENG-7 - Fix the date picker
 Linear issue: ENG-7
+Kind: Fix
 
 ### Description
 ```markdown

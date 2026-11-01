@@ -221,6 +221,16 @@ describe("SdkLinearGateway reads", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("tells an issue with sub-issues from one without", async () => {
+    resolvers.Issue = (v) => ({
+      issue: issueNode(String(v.id), {
+        children: { nodes: v.id === "1" ? [{ id: "2" }] : [] },
+      }),
+    });
+    expect((await gateway().getIssue("1")).hasSubIssues).toBe(true);
+    expect(await gateway().getIssue("2")).not.toHaveProperty("hasSubIssues");
+  });
+
   it("reads an issue's routing fields and its parent's in one request", async () => {
     const routingNode = (id: string, overrides: Record<string, unknown> = {}) => ({
       id,

@@ -117,6 +117,7 @@ export function storyDetail(overrides: Partial<WorkItemDetail> = {}): WorkItemDe
     url: "https://linear.app/acme/issue/TOOL-42",
     organization: { id: TEST_ORGANIZATION_ID, name: "Acme", role: "admin" },
     repository: null,
+    kind: "story",
     size: null,
     group: null,
     blocked: false,

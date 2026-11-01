@@ -215,6 +215,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
         trackerIssueId: "issue-91",
         url: null,
         description: "Run it.\n\n## Acceptance Criteria\n- [ ] it runs\n",
+        kind: "story",
       },
       stories: [
         {
@@ -369,6 +370,17 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     );
     expect(call!.prompt).toContain("## Your Task: TOOL-91 - Run a story");
     expect(call!.prompt).toContain("Never run git commit, git push");
+    // The payload's kind is printed under the issue line: a Story here, a Fix for a fix.
+    expect(call!.prompt).toContain("\nKind: Story\n");
+    const delegated = run.trigger.context as RalphStoryPayload;
+    const fix = storyRunPrompt(
+      run,
+      { ...delegated, story: { ...delegated.story, kind: "fix" } },
+      { offered: [], progressFile },
+      now,
+    );
+    expect(fix).toContain("\nKind: Fix\n");
+    expect(fix).not.toContain("Kind: Story");
     // The system prompt is the agent's, not ralph's story system prompt.
     expect(call!.options.systemPrompt).toMatchObject({
       type: "preset",

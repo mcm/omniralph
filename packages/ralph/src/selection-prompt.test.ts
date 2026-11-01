@@ -23,6 +23,7 @@ import {
   RALPH_SYSTEM_APPEND,
   renderTemplate,
   requestSystemAppend,
+  storyTemplateContext,
   uniqueCommands,
 } from "./prompt.js";
 import { blockedStories, isEpicComplete, selectNextStory } from "./selection.js";
@@ -243,6 +244,27 @@ describe("prompt", () => {
     });
     expect(none).not.toContain("### Checked by the Orchestrator");
     expect(none).toContain("### Quality Gates");
+  });
+
+  it("says whether the story is a Fix or a Story, under its issue line", () => {
+    const prompt = (kind: Story["kind"]) => {
+      const task = { ...epic.stories[1]!, identifier: "ENG-2", ...(kind && { kind }) };
+      const ctx = {
+        trackerName: "Linear",
+        epic,
+        story: task,
+        progressFile: "/tmp/p.md",
+        attempt: 1,
+        maxAttempts: 3,
+      };
+      expect(storyTemplateContext(ctx).story.kind).toBe(kind === "fix" ? "Fix" : "Story");
+      return buildStoryPrompt(ctx);
+    };
+    expect(prompt("fix")).toMatch(/\nLinear issue: [^\n]+\nKind: Fix\n/);
+    expect(prompt("story")).toMatch(/\nLinear issue: [^\n]+\nKind: Story\n/);
+    // A story without a kind (one of a PRD) is new work.
+    expect(prompt(undefined)).toContain("\nKind: Story\n");
+    expect(prompt("fix")).not.toContain("Kind: Story");
   });
 
   it("drops duplicate commands, ignoring whitespace", () => {

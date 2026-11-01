@@ -39,6 +39,10 @@ import {
   updateRepositoryCoding,
   setTrackerLabels,
   DEFAULT_TRACKER_LABELS,
+  integrations,
+  saveIntegration,
+  setIntegrationFixLabels,
+  type Integration,
   updateRun,
   upsertScmConnection,
   type Database,
@@ -451,6 +455,46 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       taskType: "coding",
       taskId,
       minAgentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
+    });
+
+    it("tells each story job its kind by the integration's fix labels (Bug by default)", async () => {
+      const kinds = async () => {
+        const epic = tracker.add({ title: "Epic", description: EPIC_DESCRIPTION });
+        const bug = tracker.add({
+          title: "Crash",
+          parentId: epic.id,
+          priority: 1,
+          labels: ["bug"],
+        });
+        tracker.add({ title: "Defect", parentId: epic.id, priority: 2, labels: ["Defect"] });
+        const run = await delegate(epic.id);
+        const first = storyPayload(await activeJob(run.id));
+        expect(first.story.trackerIssueId).toBe(bug.id);
+        await work(run.id, { commitSha: sha(91) });
+        const second = storyPayload(await activeJob(run.id));
+        await db.delete(jobs).where(eq(jobs.ralphRunId, run.id));
+        await db.update(ralphRuns).set({ status: "stopped" }).where(eq(ralphRuns.id, run.id));
+        return [first.story.kind, second.story.kind];
+      };
+      expect(await kinds()).toEqual(["fix", "story"]);
+
+      const saved = await saveIntegration(
+        db,
+        {
+          organizationId: orgId,
+          provider: "linear",
+          externalId: "ws-kinds",
+          name: "Acme",
+          credentials: { accessToken: "lin_token" },
+          installedByUserId: null,
+        },
+        randomBytes(32),
+      );
+      onTestFinished(async () => {
+        await db.delete(integrations).where(eq(integrations.organizationId, orgId));
+      });
+      await setIntegrationFixLabels(db, (saved as Integration).id, ["Defect"]);
+      expect(await kinds()).toEqual(["story", "fix"]);
     });
 
     it("builds a 3-story epic in priority and blocker order, then completes", async () => {

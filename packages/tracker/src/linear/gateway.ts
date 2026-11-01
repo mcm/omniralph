@@ -134,6 +134,11 @@ const ISSUE_SELECTION = /* GraphQL */ `
     parent {
       id
     }
+    children(first: 1, filter: { state: { type: { neq: "canceled" } } }) {
+      nodes {
+        id
+      }
+    }
     assignee {
       id
     }
@@ -183,6 +188,7 @@ interface IssueNode {
   subIssueSortOrder?: number | null;
   updatedAt?: string | null;
   parent?: { id: string } | null;
+  children?: { nodes: Array<{ id: string }> } | null;
   assignee?: { id: string } | null;
   delegate?: { id: string } | null;
   creator?: { id: string; name: string; url?: string | null } | null;
@@ -312,6 +318,7 @@ function summarize(issue: IssueNode): IssueSummary {
     projectName: issue.project?.name ?? undefined,
     ...(issue.project?.id && { projectId: issue.project.id }),
     parentId: issue.parent?.id ?? undefined,
+    ...((issue.children?.nodes.length ?? 0) > 0 && { hasSubIssues: true }),
     assigneeId: issue.assignee?.id ?? undefined,
     ...(issue.delegate?.id && { delegateId: issue.delegate.id }),
     ...(issue.updatedAt && { updatedAt: issue.updatedAt }),

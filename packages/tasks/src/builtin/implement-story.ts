@@ -45,6 +45,7 @@ Each session starts with a fresh context: the PRD, the progress log and the repo
 {{#story.identifier}}
 {{tracker.name}} issue: {{story.identifier}}{{#story.url}} ({{story.url}}){{/story.url}}
 {{/story.identifier}}
+Kind: {{story.kind}}
 
 {{#story.repository}}
 Repository: \`{{story.repository}}\`. This story belongs in this repository rather than the epic's main one, and this worktree is a checkout of it: make every change here.

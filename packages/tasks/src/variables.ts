@@ -430,6 +430,11 @@ export const VARIABLES: readonly VariableDefinition[] = [
       ["story.url", STORY_TRIGGERS, "URL of the story in the tracker (null without one)."],
       ["story.title", STORY_TRIGGERS, "Title of the story, on one line."],
       [
+        "story.kind",
+        STORY_TRIGGERS,
+        "Kind of the story: `Fix` (a bug, by the tracker's fix labels) or `Story` (new work).",
+      ],
+      [
         "story.repository",
         STORY_TRIGGERS,
         "Repository the story is worked in, when it isn't the epic's main one (else null).",

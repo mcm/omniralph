@@ -10,6 +10,9 @@ import { WORK_ITEM_TRACKERS } from "./work-item-matches";
 export const WORK_ITEM_GROUPS = ["ready", "refine"] as const;
 export type WorkItemGroup = (typeof WORK_ITEM_GROUPS)[number];
 
+/** A task's kinds: a Fix (a bug) or a Story (new work). */
+export const WORK_ITEM_KINDS = ["fix", "story"] as const;
+
 /** Where a work item comes from: its tracker project, or its team when it has none. */
 export const workItemSourceSchema = z.object({
   kind: z.enum(["project", "team"]),
@@ -31,6 +34,11 @@ export const workItemRowSchema = z.object({
   organization: organizationRefSchema,
   /** The repo it routes to; null while routing asks (a tie: "no repo yet"). */
   repository: repositoryRefSchema.nullable(),
+  /**
+   * A task's kind: `fix` (it has one of the tracker's fix labels) or `story`. Null when it
+   * isn't a task: it has sub-issues (an epic or a feature).
+   */
+  kind: z.enum(WORK_ITEM_KINDS).nullable().default(null),
   /** From its newest triage; null when no triage sized it. */
   size: z.enum(TRIAGE_SIZES).nullable(),
   group: z.enum(WORK_ITEM_GROUPS),
