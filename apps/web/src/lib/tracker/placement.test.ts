@@ -1,7 +1,10 @@
 import { FakeTrackerGateway, NO_CAPABILITIES } from "@omniralph/tracker/testing";
 import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
-import { describe, expect, it } from "vitest";
-import { createIssueWithExtras, readIssuePlacement } from "./placement";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+const { createIssueWithExtras, readIssuePlacement } = await import("./placement");
 
 describe("readIssuePlacement", () => {
   it("reads a tracker's issue fields, with no extras", async () => {

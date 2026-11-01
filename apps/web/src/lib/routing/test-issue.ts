@@ -9,12 +9,10 @@ import {
 import { ApiRouteError } from "@/lib/api/handler";
 import type { RoutingPreviewItem, RoutingTestResult } from "@/lib/api/routing-rules";
 import type { WorkItemMatchInput } from "@/lib/api/work-item-matches";
-import { getLinearGateway, LinearNotConnectedError } from "@/lib/tracker/linear/client";
-import { fixtureLinearEnabled, fixtureLinearGateway } from "@omniralph/tracker/linear/testing";
-import { TrackerNotFoundError } from "@omniralph/tracker";
-import type { LinearGateway, RoutingIssue } from "@omniralph/tracker/linear";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
-import { readRoutingIssue } from "@/lib/tracker/routing-issue";
+import { getTrackerGateway, TrackerNotConnectedError } from "@/lib/tracker/client";
+import { TrackerNotFoundError, type RoutingIssue, type TrackerGateway } from "@omniralph/tracker";
+import { ROUTING_FIELDS } from "@/lib/routing/fields";
+import { readRoutingIssue, type RoutingRead } from "@/lib/tracker/routing-issue";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { describeQuery } from "./describe";
 import { createRouter, type RouteDeps, type RouteWorkItemMatch } from "./resolve";
@@ -55,9 +53,9 @@ async function matchesWith(
  * Where each of `identifiers` routes under `rules` (the saved list, or Settings › Advanced ›
  * Routing rules' unsaved one, already validated) and the work item matches, with `unsaved`
  * applied when given, by the same router delegation, triage, story lanes and follow-ups use, in
- * the order sent. An issue Linear doesn't know is a `not_found` result.
+ * the order sent. An issue the tracker doesn't know is a `not_found` result.
  *
- * Linear is asked once per issue in the request: the issues sent are loaded first, and
+ * The tracker is asked once per issue in the request: the issues sent are loaded first, and
  * every later lookup (a parent, a follow-up's source, an issue sent twice) reuses them.
  */
 export async function routeIssues(
@@ -66,16 +64,21 @@ export async function routeIssues(
   rules: Rules,
   unsaved?: UnsavedWorkItemMatch,
 ): Promise<RoutingPreviewItem[]> {
-  const linear = dedupedRoutingFields(deps.linear);
+  const tracker = dedupedRoutingFields(deps.linear);
   const loaded = new Map(
     await Promise.all(
       [...new Set(identifiers)].map(
-        async (identifier) => [identifier, await loadIssue(linear, identifier)] as const,
+        async (identifier) => [identifier, await loadIssue(tracker, identifier)] as const,
       ),
     ),
   );
   const matches = unsaved ? await matchesWith(deps, unsaved) : undefined;
-  const router = await createRouter({ ...deps, linear, rules, ...(matches && { matches }) });
+  const router = await createRouter({
+    ...deps,
+    linear: tracker,
+    rules,
+    ...(matches && { matches }),
+  });
   const issueIds = [...loaded.values()].flatMap((l) => (l ? [l.issue.id] : []));
   const runs = await listLatestIssueRuns(deps.db, deps.organizationId, issueIds);
 
@@ -133,7 +136,7 @@ export async function routeIssues(
           rule: {
             kind: "custom",
             number: route.rule,
-            summary: describeQuery(ruleQuery, LINEAR_ROUTING_FIELDS),
+            summary: describeQuery(ruleQuery, ROUTING_FIELDS),
           },
         };
       }
@@ -150,7 +153,7 @@ export async function routeIssues(
 /**
  * Settings › Advanced › Routing rules' "Test where an issue would go": where `identifier` routes
  * under `rules` (the unsaved list, already validated; undefined: the saved rules) and the work
- * item matches, with `unsaved` applied when given, by `routeIssues`. An issue Linear doesn't know answers 404.
+ * item matches, with `unsaved` applied when given, by `routeIssues`. An issue the tracker doesn't know answers 404.
  */
 export async function testRoutingRules(
   deps: Omit<RouteDeps, "rules" | "matches">,
@@ -183,29 +186,27 @@ export async function testRoutingRules(
   };
 }
 
-/** An issue's routing fields, or null when Linear doesn't know it. */
+/** An issue's routing fields, or null when the tracker doesn't know it. */
 async function loadIssue(
-  linear: RouteDeps["linear"],
+  tracker: RouteDeps["linear"],
   identifier: string,
 ): Promise<RoutingIssue | null> {
   try {
-    return await readRoutingIssue(linear, identifier);
+    return await readRoutingIssue(tracker, identifier);
   } catch (error) {
     if (error instanceof TrackerNotFoundError) return null;
     throw error;
   }
 }
 
-/** `getRoutingFields` asking Linear once per issue, by ID or identifier (failures are retried). */
-function dedupedRoutingFields(
-  linear: RouteDeps["linear"],
-): Pick<LinearGateway, "getRoutingFields"> {
+/** Routing reads asking the tracker once per issue, by ID or identifier (failures are retried). */
+function dedupedRoutingFields(tracker: RouteDeps["linear"]): RoutingRead {
   const cache = new Map<string, Promise<RoutingIssue>>();
   return {
-    getRoutingFields(idOrIdentifier) {
+    routingIssue(idOrIdentifier) {
       let pending = cache.get(idOrIdentifier);
       if (!pending) {
-        pending = readRoutingIssue(linear, idOrIdentifier);
+        pending = readRoutingIssue(tracker, idOrIdentifier);
         cache.set(idOrIdentifier, pending);
         pending.then(
           (loaded) => {
@@ -239,21 +240,17 @@ export async function hitRoutingTestLimit(db: Database, userId: string): Promise
   }
 }
 
-/** The organization's Linear workspace to route by; 409 with `message` when none is connected. */
-export async function routingLinearGateway(
+/** The organization's tracker to route by; 409 with `message` when none is connected. */
+export async function routingTrackerGateway(
   db: Database,
   organizationId: string,
   message: string,
-): Promise<LinearGateway> {
+): Promise<TrackerGateway> {
   try {
-    return await getLinearGateway({
-      db,
-      organizationId,
-      ...(fixtureLinearEnabled() && { createGateway: fixtureLinearGateway }),
-    });
+    return await getTrackerGateway({ db, organizationId, fixtures: true });
   } catch (error) {
-    if (error instanceof LinearNotConnectedError) {
-      throw new ApiRouteError(409, message, "linear_not_connected");
+    if (error instanceof TrackerNotConnectedError) {
+      throw new ApiRouteError(409, message, "tracker_not_connected");
     }
     throw error;
   }

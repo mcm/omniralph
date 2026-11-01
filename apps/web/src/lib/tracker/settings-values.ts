@@ -1,5 +1,8 @@
-/** The connected Linear workspace's values the settings pages pick from. */
-export interface LinearSettingsOptions {
+/**
+ * The connected tracker's values the settings pages pick from. Lists a tracker
+ * doesn't have (milestones, cycles, users on some) are empty.
+ */
+export interface TrackerSettingsOptions {
   teams: Array<{ key: string; name: string }>;
   /** Label names, workspace and team labels de-duplicated (ignoring case). */
   labels: string[];

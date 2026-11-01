@@ -11,6 +11,7 @@ import {
   type RalphRun,
 } from "@omniralph/db";
 import { PERMISSION_ALLOW, PERMISSION_DENY } from "@omniralph/ralph";
+import { TrackerCapabilityError } from "@omniralph/tracker";
 import { z } from "zod";
 import { sendGuidance, sendToChatRun } from "@/lib/ralph/chat-reply";
 import { startChatRequest } from "@/lib/ralph/chat-start";
@@ -32,8 +33,8 @@ import {
   CONNECT_TRACKER_TEXT,
   delegateToRalph,
   draftCard,
-  LINEAR_ISSUE_DRAFT_TTL_MS,
-} from "../linear-issue";
+  ISSUE_DRAFT_TTL_MS,
+} from "../issue-draft";
 import {
   REQUEST_DRAFT_REQUEST_MAX,
   REQUEST_DRAFT_TITLE_MAX,
@@ -522,7 +523,7 @@ export const draftLinearIssue = defineChatTool({
       labels: input.labels?.map((l) => l.trim()).filter(Boolean) ?? [],
       priority: input.priority ?? null,
       attachments: screenshots.attachments,
-      expiresAt: new Date(Date.now() + LINEAR_ISSUE_DRAFT_TTL_MS),
+      expiresAt: new Date(Date.now() + ISSUE_DRAFT_TTL_MS),
     });
     const posted = await thread.post(draftCard(draft));
     await setChatLinearIssueDraftMessage(db, draft.id, posted.id);
@@ -575,6 +576,13 @@ export const delegateLinearIssue = defineChatTool({
       });
     } catch (error) {
       if (error instanceof TrackerNotConnectedError) return TRACKER_NOT_CONNECTED_RESULT;
+      if (error instanceof TrackerCapabilityError) {
+        return {
+          error: "delegation_unsupported",
+          message:
+            "The organization's tracker can't delegate work items to Omniralph. Tell the user Omniralph can't take this issue through a delegation.",
+        };
+      }
       return {
         error: "tracker_error",
         message: `The tracker didn't delegate the issue: ${errorText(error)}. Tell the user to try again later, or to delegate it to Omniralph in the tracker.`,

@@ -32,7 +32,7 @@ import {
 import { ApiRouteError } from "@/lib/api/handler";
 import type { RunAnswerRequest, RunQuestion } from "@/lib/api/runs";
 import type { ActivityContent } from "@omniralph/tracker";
-import { getLinearGatewayOrDisconnected } from "@/lib/tracker/linear/client";
+import { getTrackerGatewayOrDisconnected } from "@/lib/tracker/client";
 import { conversationFor, trackerConversation } from "@/lib/ralph/conversation";
 import { truncate } from "@/lib/ralph/display";
 import { postActivity } from "@/lib/ralph/notify";
@@ -266,7 +266,7 @@ async function noteStoredAnswer(
   if (run.kind !== "triage") return;
   const triage = await getTriageRun(db, run.id);
   if (!triage) return;
-  const linear = () => getLinearGatewayOrDisconnected({ db, organizationId: run.organizationId });
+  const linear = () => getTrackerGatewayOrDisconnected({ db, organizationId: run.organizationId });
   await postActivity(
     trackerConversation(linear, triage.linearAgentSessionId, triage.linearIssueId),
     note,

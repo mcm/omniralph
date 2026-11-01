@@ -8,25 +8,23 @@ import {
   setIntegrationStateMapping,
   type Database,
 } from "@omniralph/db";
-import {
-  getLinearGateway,
-  lazyLinearGateway,
-  LinearNotConnectedError,
-} from "@/lib/tracker/linear/client";
-import { fixtureLinearEnabled, fixtureLinearGateway } from "@omniralph/tracker/linear/testing";
-import type { LinearGateway } from "@omniralph/tracker/linear";
 import type { TrackerGateway } from "@omniralph/tracker";
-import { isLinearGateway } from "@/lib/tracker/linear/placement";
-import { LinearWorkItemTracker } from "./linear";
+import {
+  DEFAULT_TRACKER_PROVIDER,
+  getTrackerGateway,
+  lazyTrackerGateway,
+} from "@/lib/tracker/client";
+import { GatewayWorkItemTracker } from "./gateway-tracker";
 import { TrackerNotConnectedError, type WorkItemTracker } from "./tracker";
 
 export interface WorkItemTrackerOptions {
   db: Database;
   organizationId: string;
-  /** The Linear gateway for an access token (tests; default: the SDK gateway). */
-  createGateway?: (accessToken: string) => LinearGateway;
-  /** Encryption key override (tests). */
-  key?: string | Buffer;
+  /**
+   * The organization's tracker gateway (tests; default: its connected one, the provider's
+   * fixture workspace in fixture mode).
+   */
+  gateway?: () => Promise<TrackerGateway>;
 }
 
 /** Whether the organization has a ralph or triage run of the issue that isn't over. */
@@ -41,27 +39,27 @@ const manualLabels = (db: Database, organizationId: string) => async (): Promise
   (await getTrackerLabels(db, organizationId)).manualLabels;
 
 /**
- * The organization's work item tracker: its Linear connection. Throws
- * `TrackerNotConnectedError` without one. The workspace's token is only read (and
- * refreshed) on the tracker's first call to Linear.
+ * The organization's work item tracker: its tracker connection. Throws
+ * `TrackerNotConnectedError` without one. The tracker's credentials are only read (and
+ * refreshed) on its first call to the tracker.
  */
 export async function getWorkItemTracker(
   options: WorkItemTrackerOptions,
 ): Promise<WorkItemTracker> {
-  const { db, organizationId, key } = options;
-  const integration = await getIntegration(db, organizationId, "linear");
+  const { db, organizationId } = options;
+  const provider = DEFAULT_TRACKER_PROVIDER;
+  const integration = await getIntegration(db, organizationId, provider);
   if (!integration) throw new TrackerNotConnectedError();
-  const createGateway =
-    options.createGateway ?? (fixtureLinearEnabled() ? fixtureLinearGateway : undefined);
-  return new LinearWorkItemTracker({
-    gateway: lazyLinearGateway(() =>
-      getLinearGateway({ db, organizationId, key, ...(createGateway && { createGateway }) }).catch(
-        (error: unknown) => {
-          // Disconnected since.
-          throw error instanceof LinearNotConnectedError ? new TrackerNotConnectedError() : error;
-        },
-      ),
-    ),
+  return new GatewayWorkItemTracker({
+    gateway: lazyTrackerGateway({
+      db,
+      organizationId,
+      provider,
+      // A disconnected tracker (since) fails every call with `TrackerNotConnectedError`.
+      load:
+        options.gateway ??
+        (() => getTrackerGateway({ db, organizationId, provider, fixtures: true })),
+    }),
     integrationId: integration.id,
     stateMapping: integration.stateMapping,
     saveStateMapping: async (mapping) => {
@@ -75,7 +73,7 @@ export async function getWorkItemTracker(
 }
 
 /**
- * The tracker over a gateway the caller already holds (a Linear webhook's or a
+ * The tracker over a gateway the caller already holds (a tracker webhook's or a
  * triage job's), with the organization's saved state mapping. When the integration row is
  * missing (gone since the gateway was made), the default mapping applies and saving a
  * mapping throws `TrackerNotConnectedError`.
@@ -86,12 +84,8 @@ export async function workItemTrackerFor(options: {
   gateway: TrackerGateway;
 }): Promise<WorkItemTracker> {
   const { db, organizationId, gateway } = options;
-  // Only Linear has a work item tracker so far.
-  if (!isLinearGateway(gateway)) {
-    throw new Error(`There is no work item tracker for the ${gateway.provider} tracker gateway`);
-  }
-  const integration = await getIntegration(db, organizationId, "linear");
-  return new LinearWorkItemTracker({
+  const integration = await getIntegration(db, organizationId, gateway.provider);
+  return new GatewayWorkItemTracker({
     gateway,
     integrationId: integration?.id ?? "",
     stateMapping: integration?.stateMapping ?? structuredClone(DEFAULT_TRACKER_STATE_MAPPING),

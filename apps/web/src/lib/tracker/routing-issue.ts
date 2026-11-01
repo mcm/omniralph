@@ -3,14 +3,25 @@
  * one query; other trackers build them from the issue and its parent, without
  * the fields they don't have (milestones, cycles, estimates, due dates).
  */
-import type { IssueSummary, TrackerGateway } from "@omniralph/tracker";
-import type { LinearGateway, RoutingIssue, RoutingIssueFields } from "@omniralph/tracker/linear";
+import type {
+  IssueSummary,
+  RoutingIssue,
+  RoutingIssueFields,
+  TrackerGateway,
+} from "@omniralph/tracker";
+import { trackerExtras } from "./adapters";
 
-/** What routing reads an issue's fields from: any tracker, or just Linear's routing read. */
-export type RoutingSource = TrackerGateway | Pick<LinearGateway, "getRoutingFields">;
+/** Reads an issue's routing fields and its parent's in one go (e.g. a cache over a tracker). */
+export interface RoutingRead {
+  routingIssue(idOrIdentifier: string): Promise<RoutingIssue>;
+}
 
-function hasRoutingRead(source: RoutingSource): source is Pick<LinearGateway, "getRoutingFields"> {
-  return typeof (source as Partial<LinearGateway>).getRoutingFields === "function";
+/** What routing reads an issue's fields from: any tracker, or just a routing read. */
+export type RoutingSource = TrackerGateway | RoutingRead;
+
+/** A routing read, not a gateway (a gateway has its provider; a lazy one answers any method). */
+function isRoutingRead(source: RoutingSource): source is RoutingRead {
+  return typeof (source as Partial<TrackerGateway>).provider !== "string";
 }
 
 /** An issue's routing field values and its parent's. */
@@ -18,7 +29,9 @@ export async function readRoutingIssue(
   gateway: RoutingSource,
   idOrIdentifier: string,
 ): Promise<RoutingIssue> {
-  if (hasRoutingRead(gateway)) return gateway.getRoutingFields(idOrIdentifier);
+  if (isRoutingRead(gateway)) return gateway.routingIssue(idOrIdentifier);
+  const extras = trackerExtras(gateway);
+  if (extras) return extras.routingIssue(idOrIdentifier);
   const issue = await gateway.getIssue(idOrIdentifier);
   const parent = issue.parentId ? await gateway.getIssue(issue.parentId) : null;
   const grandparent =

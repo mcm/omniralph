@@ -2,7 +2,10 @@ import "server-only";
 import type { TrackerStateMapping } from "@omniralph/db";
 import { DEFAULT_MANUAL_LABELS, isManualIssue, parsePrd } from "@omniralph/ralph";
 import {
+  hasCapability,
   isTriageLabel,
+  parseIssueIdentifier,
+  requireCapability,
   toIssuePriority,
   TRIAGE_LABEL,
   TRIAGE_LABEL_NAMES,
@@ -10,15 +13,15 @@ import {
   type Blocker,
   type IssueLabel,
   type IssueSummary,
+  type IssueWithRouting,
+  type ListIssuesFilter,
+  type RoutingIssue,
+  type TrackerGateway,
   type Viewer,
   type WorkflowStateType,
 } from "@omniralph/tracker";
-import {
-  parseIssueIdentifier,
-  type LinearGateway,
-  type LinearIssueWithBlockers,
-  type RoutingIssue,
-} from "@omniralph/tracker/linear";
+import { trackerExtras, trackerName } from "@/lib/tracker/adapters";
+import { readRoutingIssue } from "@/lib/tracker/routing-issue";
 import {
   readinessOf,
   readinessStateMatch,
@@ -54,8 +57,8 @@ import {
   type WorkItemTracker,
 } from "./tracker";
 
-/** The Linear workflow state type of each work item state. */
-export const LINEAR_STATE_TYPES: Record<WorkItemState, WorkflowStateType> = {
+/** The workflow state type of each work item state. */
+export const WORK_ITEM_STATE_TYPES: Record<WorkItemState, WorkflowStateType> = {
   backlog: "backlog",
   todo: "unstarted",
   in_progress: "started",
@@ -72,7 +75,7 @@ const CATEGORIES: Record<string, WorkItemStateCategory> = {
   canceled: "canceled",
 };
 
-/** The work item state category of a Linear workflow state type (an unknown one: backlog). */
+/** The work item state category of a workflow state type (an unknown one: backlog). */
 export function stateCategoryOf(type: string): WorkItemStateCategory {
   return Object.hasOwn(CATEGORIES, type) ? CATEGORIES[type]! : "backlog";
 }
@@ -84,9 +87,9 @@ type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 const routingFieldsMatch: Same<WorkItemRouting, RoutingIssue> = true;
 void routingFieldsMatch;
 
-export interface LinearWorkItemTrackerOptions {
-  gateway: LinearGateway;
-  /** The Linear integration's ID. */
+export interface GatewayWorkItemTrackerOptions {
+  gateway: TrackerGateway;
+  /** The tracker integration's ID. */
   integrationId: string;
   /** The integration's saved readiness state mapping. */
   stateMapping: TrackerStateMapping;
@@ -103,19 +106,24 @@ export interface LinearWorkItemTrackerOptions {
 
 const READINESS_LABELS = { ready: "Ready to start", needs_refining: "Needs refining" } as const;
 
-/** `WorkItemTracker` over a Linear workspace's `LinearGateway`. */
-export class LinearWorkItemTracker implements WorkItemTracker {
-  readonly kind = "linear" as const;
+/**
+ * `WorkItemTracker` over any tracker's `TrackerGateway`. Without the optional capabilities
+ * it degrades: no uploads leaves images out (reported as failed), no delegation answers no
+ * delegated items and refuses `delegateToOmniralph` with a `TrackerCapabilityError`.
+ */
+export class GatewayWorkItemTracker implements WorkItemTracker {
+  readonly kind: WorkItemTracker["kind"];
   readonly integrationId: string;
-  private readonly gateway: LinearGateway;
+  private readonly gateway: TrackerGateway;
   private mapping: TrackerStateMapping;
   private readonly saveStateMapping: (mapping: TrackerStateMapping) => Promise<void>;
   private readonly hasActiveRun: (issueId: string) => Promise<boolean>;
   private readonly manualLabels: () => Promise<string[]>;
   private viewer: Promise<Viewer> | undefined;
 
-  constructor(options: LinearWorkItemTrackerOptions) {
+  constructor(options: GatewayWorkItemTrackerOptions) {
     this.gateway = options.gateway;
+    this.kind = options.gateway.provider;
     this.integrationId = options.integrationId;
     this.mapping = options.stateMapping;
     this.saveStateMapping = options.saveStateMapping;
@@ -144,7 +152,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
 
   /**
    * The app user's ID when one of the issues is delegated (to tell Omniralph from another
-   * agent), else null without asking Linear.
+   * agent), else null without asking the tracker.
    */
   private async appUserIdFor(issues: IssueSummary[]): Promise<string | null> {
     return issues.some((issue) => issue.delegateId) ? (await this.appUser()).id : null;
@@ -168,7 +176,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
         },
       }));
     return {
-      tracker: "linear",
+      tracker: this.kind,
       id: issue.id,
       identifier: issue.identifier,
       title: issue.title,
@@ -204,8 +212,8 @@ export class LinearWorkItemTracker implements WorkItemTracker {
 
   /**
    * The triage label the team can use: its own or the workspace's, under either
-   * name (Linear won't create a team label a workspace label already has the
-   * name of). Created on the team as `coding:triage` when there is none.
+   * name (Linear, for one, won't create a team label a workspace label already
+   * has the name of). Created on the team as `coding:triage` when there is none.
    */
   private async triageLabel(teamId: string): Promise<IssueLabel> {
     for (const name of TRIAGE_LABEL_NAMES) {
@@ -234,7 +242,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
   }
 
   /**
-   * Uploads the images to Linear: the Markdown that embeds them at the end of a description,
+   * Uploads the images to the tracker: the Markdown that embeds them at the end of a description,
    * and the names of those that failed to upload.
    */
   private async embedImages(
@@ -242,12 +250,16 @@ export class LinearWorkItemTracker implements WorkItemTracker {
   ): Promise<{ markdown: string; failed: string[] }> {
     const embedded: string[] = [];
     const failed: string[] = [];
+    if (!hasCapability(this.gateway, "uploads")) {
+      // The tracker takes no files: none is attached.
+      return { markdown: "", failed: images.map((image) => image.filename) };
+    }
     for (const image of images) {
       try {
         const url = await this.gateway.uploads.uploadFile(image);
         embedded.push(`![${image.filename}](${url})`);
       } catch (error) {
-        console.warn(`Couldn't upload ${image.filename} to Linear`, error);
+        console.warn(`Couldn't upload ${image.filename} to ${trackerName(this.kind)}`, error);
         failed.push(image.filename);
       }
     }
@@ -288,31 +300,40 @@ export class LinearWorkItemTracker implements WorkItemTracker {
 
   async listCandidates(input: ListCandidatesInput): Promise<WorkItemPage> {
     const limit = Math.min(Math.max(Math.trunc(input.limit), 1), LIST_CANDIDATES_MAX_LIMIT);
+    const delegates = hasCapability(this.gateway, "delegation");
+    // Nothing is delegated on a tracker without delegation.
+    if (input.delegatedToOmniralph && !delegates) return { items: [], nextCursor: null };
     const delegate =
-      input.delegatedToOmniralph === undefined ? undefined : (await this.appUser()).id;
-    const page = await this.gateway.listIssues({
+      input.delegatedToOmniralph === undefined || !delegates
+        ? undefined
+        : (await this.appUser()).id;
+    const filter: ListIssuesFilter = {
       ...(input.teamId && { teamId: input.teamId }),
       ...(input.teamKey && { teamKey: input.teamKey }),
       ...(input.projectId && { projectId: input.projectId }),
       ...(input.projectName && { projectName: input.projectName }),
       ...(input.labelNames?.length && { labelNames: input.labelNames }),
       ...(input.withoutProject && { withoutProject: true }),
-      ...(input.withRoutingFields && { withRoutingFields: true }),
       ...(input.labelIds?.length && { labelIds: input.labelIds }),
       ...(delegate &&
         (input.delegatedToOmniralph ? { delegateId: delegate } : { notDelegateId: delegate })),
       ...(input.states && {
-        stateTypes: [...new Set(input.states.map((state) => LINEAR_STATE_TYPES[state]))],
+        stateTypes: [...new Set(input.states.map((state) => WORK_ITEM_STATE_TYPES[state]))],
       }),
       ...(input.readiness?.length && {
         stateMatch: readinessStateMatch(this.mapping, input.readiness),
       }),
       first: limit,
       ...(input.cursor && { after: input.cursor }),
-    });
+    };
+    // Where the tracker reads routing fields with the page; elsewhere `routingFields` reads them.
+    const extras = input.withRoutingFields ? trackerExtras(this.gateway) : null;
+    const page: { issues: IssueWithRouting[]; endCursor: string | null } = extras
+      ? await extras.listIssuesWithRouting(filter)
+      : await this.gateway.listIssues(filter);
     const appUserId = delegate ?? (await this.appUserIdFor(page.issues));
     return {
-      items: page.issues.map(({ blockers, routing, ...issue }: LinearIssueWithBlockers) =>
+      items: page.issues.map(({ blockers, routing, ...issue }) =>
         this.workItem(issue, blockers, appUserId, routing),
       ),
       nextCursor: page.endCursor,
@@ -377,7 +398,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
   async setState(ref: WorkItemRef, state: WorkItemState | ReadinessStateTarget): Promise<void> {
     const issue = await this.issue(ref);
     if (typeof state === "string") {
-      await this.gateway.setIssueState(issue.id, { type: LINEAR_STATE_TYPES[state] });
+      await this.gateway.setIssueState(issue.id, { type: WORK_ITEM_STATE_TYPES[state] });
       return;
     }
     const current = readinessOf(this.mapping, {
@@ -394,7 +415,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
     );
     if (!target) {
       throw new Error(
-        `${issue.identifier}'s team has no ${READINESS_LABELS[state.readiness]} state (Settings › Connections › Linear).`,
+        `${issue.identifier}'s team has no ${READINESS_LABELS[state.readiness]} state (Settings › Connections › ${trackerName(this.kind)}).`,
       );
     }
     await this.gateway.setIssueState(issue.id, { id: target.id });
@@ -402,7 +423,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
 
   async cancel(ref: WorkItemRef, options: { comment?: string } = {}): Promise<void> {
     const issue = await this.issue(ref);
-    await this.gateway.setIssueState(issue.id, { type: LINEAR_STATE_TYPES.canceled });
+    await this.gateway.setIssueState(issue.id, { type: WORK_ITEM_STATE_TYPES.canceled });
     if (options.comment) await this.gateway.addComment(issue.id, options.comment);
   }
 
@@ -415,15 +436,17 @@ export class LinearWorkItemTracker implements WorkItemTracker {
   }
 
   async delegateToOmniralph(ref: WorkItemRef): Promise<void> {
+    const delegation = requireCapability(this.gateway, "delegation");
     const issue = await this.issue(ref);
     const appUser = await this.appUser();
     if (issue.delegateId !== appUser.id) {
-      await this.gateway.delegation.delegateIssue(issue.id, appUser.id);
+      await delegation.delegateIssue(issue.id, appUser.id);
       return;
     }
-    // Delegating it again changes nothing in Linear, so no session would start: open one.
-    if (!(await this.hasActiveRun(issue.id)))
+    // Delegating it again changes nothing in the tracker, so no session would start: open one.
+    if (hasCapability(this.gateway, "sessions") && !(await this.hasActiveRun(issue.id))) {
       await this.gateway.sessions.createSessionOnIssue(issue.id);
+    }
   }
 
   async stories(ref: WorkItemRef): Promise<WorkItemStory[]> {
@@ -473,7 +496,7 @@ export class LinearWorkItemTracker implements WorkItemTracker {
 
   async routingFields(ref: WorkItemRef): Promise<WorkItemRouting> {
     try {
-      return await this.gateway.getRoutingFields(ref);
+      return await readRoutingIssue(this.gateway, ref);
     } catch (error) {
       if (error instanceof TrackerNotFoundError) throw new WorkItemNotFoundError(ref);
       throw error;

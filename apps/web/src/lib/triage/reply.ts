@@ -26,6 +26,7 @@ import { TriageRunResult, type TriageOutcome } from "@omniralph/shared";
 import type { SessionPromptedEvent as TrackerSessionPromptedEvent } from "@omniralph/tracker";
 import { postActivity, quietly } from "@/lib/ralph/notify";
 import { trackerConversation } from "@/lib/ralph/conversation";
+import { trackerName } from "@/lib/tracker/adapters";
 import { removeTriageLabelQuietly } from "./label";
 import { enqueueTriage, prepareTriage, type StartTriageOutcome, type TriageDeps } from "./start";
 
@@ -97,13 +98,13 @@ async function afterReply(
     case "none":
       return { kind: "ignored" };
     case "pending":
-      await postActivity(trackerConversation(deps.linear, sessionId), {
+      await postActivity(trackerConversation(deps.linear, sessionId, run.linearIssueId), {
         type: "thought",
         body: "Got it. Triage is still running; I'll triage again with this once it finishes.",
       });
       return { kind: "pending" };
     case "conflict":
-      await postActivity(trackerConversation(deps.linear, sessionId), {
+      await postActivity(trackerConversation(deps.linear, sessionId, run.linearIssueId), {
         type: "response",
         body: "The issue is being triaged in another session right now, so I didn't act on this. Reply again once that triage is over.",
       });
@@ -173,7 +174,7 @@ async function stopTriage(
     trackerConversation(deps.linear, run.linearAgentSessionId, run.linearIssueId),
     {
       type: "response",
-      body: `Stopped${by}. ${canceled ? "I canceled the triage job, and " : ""}nothing more changes in Linear. Reply here to triage again.`,
+      body: `Stopped${by}. ${canceled ? "I canceled the triage job, and " : ""}nothing more changes in ${trackerName(deps.linear.provider)}. Reply here to triage again.`,
     },
   );
   return { kind: "stop", canceled };

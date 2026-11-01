@@ -129,6 +129,30 @@
       }
     },
     {
+      "files": ["src/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@omniralph/tracker/linear",
+                  "@omniralph/tracker/linear/*",
+                  "@linear/sdk",
+                  "@linear/sdk/*",
+                  "@/lib/tracker/linear/*",
+                  "**/tracker/linear/*",
+                  "./linear/*"
+                ],
+                "message": "Reach trackers through @/lib/tracker (TrackerGateway, trackerAdapter, trackerExtras): only the Linear adapter, its routes and lib/tracker/adapters.ts import Linear modules."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["src/app/(app)/**/*.tsx", "src/components/**/*.tsx"],
       "rules": {
         "no-restricted-imports": [
@@ -139,15 +163,63 @@
                 "name": "next/link",
                 "message": "Use Link from @/components/link: it shows the pending navigation."
               }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "@omniralph/tracker/linear",
+                  "@omniralph/tracker/linear/*",
+                  "@linear/sdk",
+                  "@linear/sdk/*",
+                  "@/lib/tracker/linear/*",
+                  "**/tracker/linear/*",
+                  "./linear/*"
+                ],
+                "message": "Reach trackers through @/lib/tracker (TrackerGateway, trackerAdapter, trackerExtras): only the Linear adapter, its routes and lib/tracker/adapters.ts import Linear modules."
+              }
             ]
           }
         ]
       }
     },
     {
-      "files": ["src/components/link.tsx", "src/components/auth-shell.tsx", "src/**/*.test.tsx"],
+      "files": [
+        "src/components/link.tsx",
+        "src/components/auth-shell.tsx",
+        "src/**/*.test.tsx",
+        "src/**/*.test.ts",
+        "src/lib/tracker/adapters.ts",
+        "src/lib/tracker/linear/**",
+        "src/app/api/webhooks/linear/**",
+        "src/app/api/integrations/linear/**",
+        "src/app/api/ui/integrations/linear/**"
+      ],
       "rules": {
         "no-restricted-imports": "off"
+      }
+    },
+    {
+      "files": ["src/lib/chat/**", "src/lib/ask/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@omniralph/tracker/linear",
+                  "@omniralph/tracker/linear/*",
+                  "@linear/sdk",
+                  "@linear/sdk/*",
+                  "@/lib/tracker/linear/*",
+                  "**/tracker/linear/*",
+                  "./linear/*"
+                ],
+                "message": "The chat and Ask reach work items only through WorkItemTracker (tests included): don't import Linear modules."
+              }
+            ]
+          }
+        ]
       }
     }
   ]

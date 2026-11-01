@@ -23,11 +23,14 @@ vi.mock("@/lib/tracker/linear/client", async (importOriginal) => {
   return {
     ...original,
     getLinearGateway: async ({ organizationId }: { organizationId: string }) => {
-      if (state.disconnected.has(organizationId)) throw new original.LinearNotConnectedError();
+      // Only the organizations with Linear connected have a workspace.
+      if (state.disconnected.has(organizationId) || !state.organizations.includes(organizationId)) {
+        throw new original.LinearNotConnectedError();
+      }
       state.gateways.push(organizationId);
       return { workspaceOf: organizationId };
     },
-    getLinearGatewayOrDisconnected: async () => ({ workspaceOf: "disconnected" }),
+    disconnectedLinearGateway: () => ({ workspaceOf: "disconnected" }),
   };
 });
 type Deps = { organizationId: string; linear: { workspaceOf: string } };

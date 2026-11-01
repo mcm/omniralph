@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
+import { ROUTING_FIELDS } from "@/lib/routing/fields";
 import { describeQuery, describeRule } from "./describe";
 
 describe("describeRule", () => {
@@ -11,7 +11,7 @@ describe("describeRule", () => {
           combinator: "and",
           rules: [{ field: "labels", operator: "containsAny", value: ["backend"] }],
         },
-        LINEAR_ROUTING_FIELDS,
+        ROUTING_FIELDS,
       ),
     ).toBe("rule 3 (Labels contains any of backend)");
   });
@@ -36,7 +36,7 @@ describe("describeQuery", () => {
             },
           ],
         },
-        LINEAR_ROUTING_FIELDS,
+        ROUTING_FIELDS,
       ),
     ).toBe(
       "Team is any of ENG, OPS, and (Priority is Urgent, or Parent › Estimate between 1 and 3, " +
@@ -45,8 +45,6 @@ describe("describeQuery", () => {
   });
 
   it("reads an empty rule as every issue", () => {
-    expect(describeQuery({ combinator: "and", rules: [] }, LINEAR_ROUTING_FIELDS)).toBe(
-      "every issue",
-    );
+    expect(describeQuery({ combinator: "and", rules: [] }, ROUTING_FIELDS)).toBe("every issue");
   });
 });

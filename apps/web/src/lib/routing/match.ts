@@ -5,7 +5,7 @@
  * item, the most specific one wins (`specificity`); a tie asks.
  */
 import type { WorkItemMatchFields } from "@omniralph/db";
-import type { RoutingIssueFields } from "@omniralph/tracker/linear";
+import type { RoutingIssueFields } from "@omniralph/tracker";
 
 /** A work item's fields a match tests: the team's key, the project's name and label names. */
 export type WorkItemValues = Pick<RoutingIssueFields, "team" | "project" | "labels">;
@@ -14,7 +14,7 @@ const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 const normalized = (labels: readonly string[]) => new Set(labels.map((l) => l.toLowerCase()));
 
-/** Whether `values` (a Linear work item's) satisfy `match`. */
+/** Whether `values` (a work item's) satisfy `match` (a match on its tracker). */
 export function matchesWorkItem(match: WorkItemMatchFields, values: WorkItemValues): boolean {
   if (match.tracker !== "linear") return false;
   if (!values.team || !same(match.team, values.team)) return false;

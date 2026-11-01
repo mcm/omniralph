@@ -30,7 +30,7 @@ import { TriageRunResult } from "@omniralph/shared";
 import { eq, isNotNull } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { storedPlaybookInput } from "@/lib/playbooks";
-import { linearRoutingRulesSchema } from "@/lib/tracker/linear/routing-fields";
+import { routingRulesBodySchema } from "@/lib/routing/fields";
 import { FIXTURE_IDS } from "./ids";
 import { FIXTURE_ENCRYPTION_KEY, seedFixtures } from "./seed";
 
@@ -173,7 +173,7 @@ describe("seedFixtures", () => {
       [FIXTURE_IDS.repositories.agent, expect.objectContaining({ field: "project" })],
       [FIXTURE_IDS.repositories.controlPanel, expect.objectContaining({ field: "team" })],
     ]);
-    const parsed = linearRoutingRulesSchema.safeParse({
+    const parsed = routingRulesBodySchema.safeParse({
       rules: saved.map((r) => ({ repositoryId: r.repositoryId, query: r.query })),
     });
     expect(parsed.error).toBeUndefined();

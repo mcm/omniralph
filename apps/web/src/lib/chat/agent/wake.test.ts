@@ -32,7 +32,7 @@ import { MockLanguageModelV2 } from "ai/test";
 import { Chat, Message, parseMarkdown, type Adapter, type Logger, type StateAdapter } from "chat";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { fakeRalphLinear } from "@/lib/testing/fake-linear";
+import { fakeRalphTracker } from "@/lib/testing/fake-tracker";
 import type { ChatChannel } from "@/lib/ralph/conversation";
 import { askPermission } from "@/lib/ralph/permissions";
 import { applyChatAnswer, chatThreadSink } from "@/lib/sinks/chat-thread";
@@ -356,7 +356,7 @@ describe.skipIf(!databaseAvailable)("processThreadRunEvents", () => {
     };
     expect(
       await askPermission(
-        { db, linear: async () => fakeRalphLinear(), chat: source },
+        { db, linear: async () => fakeRalphTracker(), chat: source },
         job,
         request,
         new Date(),

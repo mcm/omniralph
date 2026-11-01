@@ -23,7 +23,7 @@ import {
 import { UnsavedChangesProvider } from "@/components/unsaved-changes";
 import type { RoutingRuleRow, RoutingRules } from "@/lib/api/routing-rules";
 import type { SettingsHistoryEntry } from "@/lib/api/settings-history";
-import { LINEAR_ROUTING_FIELDS } from "@/lib/tracker/linear/routing-fields";
+import { ROUTING_FIELDS } from "@/lib/routing/fields";
 import {
   DEFAULT_RULES,
   ROUTING_RULES_CONFLICT,
@@ -49,7 +49,7 @@ const API = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const WEB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const BETA_ID = "22222222-2222-4222-8222-222222222222";
 
-const fields: RoutingRules["fields"] = LINEAR_ROUTING_FIELDS.map((field) => ({
+const fields: RoutingRules["fields"] = ROUTING_FIELDS.map((field) => ({
   ...field,
   operators: [...field.operators],
   options:
@@ -93,7 +93,7 @@ function routing(rules: RoutingRuleRow[]): RoutingRules {
   return {
     rules,
     fields,
-    linear: {
+    tracker: {
       status: "connected",
       options: {
         teams: [{ key: "ENG", name: "Engineering" }],
@@ -842,7 +842,7 @@ describe("Test where an issue would go", () => {
 
   it.each([
     [429, "rate_limited", "That's a lot of tests in a minute. Try again in 42 seconds."],
-    [409, "linear_not_connected", "Connect Linear to preview where work items route."],
+    [409, "tracker_not_connected", "Connect Linear to preview where work items route."],
   ])("shows a %i answer's message in an alert", async (status, code, message) => {
     previewAnswer = () => jsonResponse({ error: message, code }, status);
     testAnswer = () => jsonResponse({ error: message, code }, status);

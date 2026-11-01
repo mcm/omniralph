@@ -21,7 +21,7 @@ import type { RunDetail, RunRetryResult, RunRetryTarget } from "@/lib/api/runs";
 import type { ScopedOrganization } from "@/lib/api/scope";
 import { getDispatcher } from "@/lib/dispatch";
 import { retryChatAsk } from "@/lib/chat/ask";
-import { getLinearGatewayOrDisconnected } from "@/lib/tracker/linear/client";
+import { getTrackerGatewayOrDisconnected } from "@/lib/tracker/client";
 import { changeRequestTerm } from "@/lib/ralph/publish";
 import { retryRalphRun, type RalphRetryTarget } from "@/lib/ralph/retry";
 import { rerunOrganizationReview } from "@/lib/reviews/manage";
@@ -188,7 +188,7 @@ async function retryTriage(
     {
       db,
       organizationId: run.organizationId,
-      linear: await getLinearGatewayOrDisconnected({ db, organizationId: run.organizationId }),
+      linear: await getTrackerGatewayOrDisconnected({ db, organizationId: run.organizationId }),
       dispatcher: getDispatcher(),
       adapterFor: scmAdapterFor,
     },

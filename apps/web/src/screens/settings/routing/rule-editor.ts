@@ -18,7 +18,7 @@ import { describeQuery } from "@/lib/routing/describe";
 
 export type RoutingFieldData = RoutingRules["fields"][number];
 export type RoutingRepository = RoutingRules["repositories"][number];
-export type RoutingLinear = RoutingRules["linear"];
+export type RoutingTracker = RoutingRules["tracker"];
 
 /** One rule being edited. `key` identifies its row while it moves. */
 export interface DraftRule {
@@ -328,13 +328,13 @@ export interface ValueOption {
  */
 export function valueOptions(
   field: RoutingFieldData | undefined,
-  linear: RoutingLinear,
+  tracker: RoutingTracker,
 ): ValueOption[] | null {
   const options = field?.options;
   if (!options) return null;
   if ("values" in options) return options.values;
-  if (linear.status !== "connected") return null;
-  const workspace = linear.options;
+  if (tracker.status !== "connected") return null;
+  const workspace = tracker.options;
   const names = (list: readonly string[]) => list.map((name) => ({ value: name, label: name }));
   switch (options.source) {
     case "teams":

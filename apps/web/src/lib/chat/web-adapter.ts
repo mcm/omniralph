@@ -38,7 +38,7 @@ import {
   type StreamChunk,
   type ThreadInfo,
 } from "chat";
-import { LINEAR_ISSUE_ACTIONS } from "./linear-issue";
+import { ISSUE_DRAFT_ACTIONS } from "./issue-draft";
 import { REQUEST_DRAFT_ACTIONS } from "./request-draft";
 import { sendWebEvent } from "./web-stream";
 
@@ -96,7 +96,7 @@ function cardButtons(children: readonly CardChild[]): Array<{ id: string; value?
 
 /**
  * The draft a card acts on, from its buttons' actions: a request draft's card
- * (`REQUEST_DRAFT_ACTIONS`) or a Linear issue draft's (`LINEAR_ISSUE_ACTIONS`), the draft's ID
+ * (`REQUEST_DRAFT_ACTIONS`) or a Linear issue draft's (`ISSUE_DRAFT_ACTIONS`), the draft's ID
  * as their value; null for any other card.
  */
 export function webCardRef(card: CardElement): ChatWebCardRef | null {
@@ -105,7 +105,7 @@ export function webCardRef(card: CardElement): ChatWebCardRef | null {
     if (REQUEST_DRAFT_ACTIONS.includes(button.id)) {
       return { kind: "request_draft", draftId: button.value };
     }
-    if (LINEAR_ISSUE_ACTIONS.includes(button.id)) {
+    if (ISSUE_DRAFT_ACTIONS.includes(button.id)) {
       return { kind: "linear_issue_draft", draftId: button.value };
     }
   }

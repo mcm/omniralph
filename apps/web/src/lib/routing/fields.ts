@@ -4,17 +4,19 @@ import {
   type RoutingFieldType,
   type RoutingOperator,
 } from "@omniralph/shared";
-import type { RoutingFieldValues, RoutingIssueValue } from "@/lib/routing/evaluate";
-import type { RoutingIssue, RoutingIssueFields } from "@omniralph/tracker/linear";
+import type { RoutingIssue, RoutingIssueFields } from "@omniralph/tracker";
+import type { RoutingFieldValues, RoutingIssueValue } from "./evaluate";
 
 /**
- * The Linear issue fields routing rules test (Settings › Advanced › Routing rules), under Linear's own names.
+ * The work item fields routing rules test (Settings › Advanced › Routing rules), as the
+ * neutral issue model (`RoutingIssueFields`) names them; a tracker without a field (e.g.
+ * cycles) leaves it empty.
  * Each is offered for the issue itself, its parent (`parent.labels`, "Parent › Labels") and,
  * for a follow-up, the issue it was filed from (`source.team`, "Source › Team"). Names
  * (labels, projects, milestones, states) match ignoring case.
  */
 
-/** A list of the connected workspace's `LinearSettingsOptions` the value picker offers. */
+/** A list of the connected tracker's `TrackerSettingsOptions` the value picker offers. */
 export type RoutingOptionSource =
   | "teams"
   | "projects"
@@ -39,7 +41,7 @@ export type RoutingFieldOptions =
   | null;
 
 export interface RoutingField {
-  /** Linear's name, with a `parent.` or `source.` prefix for those issues' fields. */
+  /** The field's name, with a `parent.` or `source.` prefix for those issues' fields. */
   id: string;
   label: string;
   type: RoutingFieldType;
@@ -59,7 +61,7 @@ const STATE_TYPES: readonly RoutingFieldValue[] = [
   { value: "canceled", label: "Canceled" },
 ];
 
-/** Linear's priorities, 0–4. */
+/** The priorities, 0–4. */
 const PRIORITIES: readonly RoutingFieldValue[] = [
   { value: "0", label: "No priority" },
   { value: "1", label: "Urgent" },
@@ -104,7 +106,7 @@ function withOperators(field: BaseField): RoutingField {
 }
 
 /** Every field, the issue's own first, then its parent's, then its source's. */
-export const LINEAR_ROUTING_FIELDS: readonly RoutingField[] = [
+export const ROUTING_FIELDS: readonly RoutingField[] = [
   ...ISSUE_FIELDS.map(withOperators),
   ...RELATED.flatMap(({ prefix, label }) =>
     ISSUE_FIELDS.map((field) =>
@@ -113,9 +115,9 @@ export const LINEAR_ROUTING_FIELDS: readonly RoutingField[] = [
   ),
 ];
 
-/** `PUT /api/ui/routing-rules`'s body, checked against the Linear catalog. */
-export const linearRoutingRulesSchema = routingRulesSchema(
-  LINEAR_ROUTING_FIELDS.map((field) => ({
+/** `PUT /api/ui/routing-rules`'s body, checked against the catalog. */
+export const routingRulesBodySchema = routingRulesSchema(
+  ROUTING_FIELDS.map((field) => ({
     id: field.id,
     type: field.type,
     ...(field.options && "values" in field.options
@@ -125,8 +127,8 @@ export const linearRoutingRulesSchema = routingRulesSchema(
 );
 
 /** Each catalog field's type, by ID, for the evaluator. */
-export const LINEAR_ROUTING_FIELD_TYPES: ReadonlyMap<string, RoutingFieldType> = new Map(
-  LINEAR_ROUTING_FIELDS.map((field) => [field.id, field.type]),
+export const ROUTING_FIELD_TYPES: ReadonlyMap<string, RoutingFieldType> = new Map(
+  ROUTING_FIELDS.map((field) => [field.id, field.type]),
 );
 
 /** One issue's fields as the evaluator reads them, under `prefix` (`parent.`) when given. */
@@ -150,7 +152,7 @@ function issueValues(
  * follow-up, those of the issue it was filed from (`source.*`). Missing issues' fields are
  * empty.
  */
-export function linearRoutingValues(
+export function routingValues(
   routing: RoutingIssue,
   source: RoutingIssueFields | null = null,
 ): RoutingFieldValues {

@@ -26,6 +26,7 @@ import {
   type CardElement,
   type Logger,
 } from "chat";
+import { TrackerCapabilityError } from "@omniralph/tracker";
 import { eq } from "drizzle-orm";
 import { sanitizeCapped, sanitizeTitle } from "@/lib/review/sanitize";
 import { CHAT_ATTACHMENT_LIMITS, type ChatAttachmentLimits } from "./agent/config";
@@ -44,23 +45,23 @@ import {
 import type { ChatActor } from "./identity";
 
 /**
- * Linear issues drafted by the control-panel agent (`draft_linear_issue`): a
+ * Work items drafted by the control-panel agent (`draft_linear_issue`): a
  * card with the preview and **Create** / **Create and delegate** / **Cancel**
  * buttons. Only the linked member who asked can click them; **Create** creates
  * the issue through the organization's work item tracker (`WorkItemTracker`)
  * and turns the card into a link to it, and **Create and delegate** also
  * delegates it to Omniralph ({@link delegateToRalph}). A draft expires after
- * {@link LINEAR_ISSUE_DRAFT_TTL_MS}.
+ * {@link ISSUE_DRAFT_TTL_MS}.
  */
 
-export const LINEAR_ISSUE_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
-export const CREATE_LINEAR_ISSUE_ACTION = "linear_issue_create";
-export const CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION = "linear_issue_create_delegate";
-export const CANCEL_LINEAR_ISSUE_ACTION = "linear_issue_cancel";
-export const LINEAR_ISSUE_ACTIONS = [
-  CREATE_LINEAR_ISSUE_ACTION,
-  CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION,
-  CANCEL_LINEAR_ISSUE_ACTION,
+export const ISSUE_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+export const CREATE_ISSUE_ACTION = "linear_issue_create";
+export const CREATE_AND_DELEGATE_ISSUE_ACTION = "linear_issue_create_delegate";
+export const CANCEL_ISSUE_ACTION = "linear_issue_cancel";
+export const ISSUE_DRAFT_ACTIONS = [
+  CREATE_ISSUE_ACTION,
+  CREATE_AND_DELEGATE_ISSUE_ACTION,
+  CANCEL_ISSUE_ACTION,
 ];
 
 /** Longest description the preview shows (the issue gets all of it). */
@@ -130,23 +131,23 @@ export function draftPreview(draft: Pick<Draft, "title" | "description">): {
 export function draftCard(draft: Draft): CardElement {
   const { title, description } = draftPreview(draft);
   return Card({
-    title: `New Linear issue: ${title}`,
+    title: `New work item: ${title}`,
     children: [
       ...previewFields(draft),
       CardText(description),
       Actions([
         Button({
-          id: CREATE_LINEAR_ISSUE_ACTION,
+          id: CREATE_ISSUE_ACTION,
           label: "Create",
           style: "primary",
           value: draft.id,
         }),
         Button({
-          id: CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION,
+          id: CREATE_AND_DELEGATE_ISSUE_ACTION,
           label: "Create and delegate",
           value: draft.id,
         }),
-        Button({ id: CANCEL_LINEAR_ISSUE_ACTION, label: "Cancel", value: draft.id }),
+        Button({ id: CANCEL_ISSUE_ACTION, label: "Cancel", value: draft.id }),
       ]),
     ],
   });
@@ -182,7 +183,7 @@ export function createdCard(
 export function cancelledCard(draft: Draft): CardElement {
   return Card({
     title: "Cancelled",
-    children: [CardText(`Linear issue draft "${shownTitle(draft)}" was cancelled.`)],
+    children: [CardText(`Work item draft "${shownTitle(draft)}" was cancelled.`)],
   });
 }
 
@@ -191,7 +192,7 @@ export function expiredCard(draft: Draft): CardElement {
     title: "Expired",
     children: [
       CardText(
-        `Linear issue draft "${shownTitle(draft)}" expired after 24 hours. Mention me to draft it again.`,
+        `Work item draft "${shownTitle(draft)}" expired after 24 hours. Mention me to draft it again.`,
       ),
     ],
   });
@@ -214,7 +215,7 @@ export function cardFor(draft: ChatLinearIssueDraft): CardElement {
 
 /** What `chat_messages` records once the issue is created. */
 export function createdMessage(draft: Draft, delegated = false): string {
-  const created = `Created Linear issue ${draft.linearIssueIdentifier}: ${draft.title} (${draft.linearIssueUrl})`;
+  const created = `Created work item ${draft.linearIssueIdentifier}: ${draft.title} (${draft.linearIssueUrl})`;
   return delegated ? `${created}, and delegated it to Omniralph.` : created;
 }
 
@@ -266,10 +267,13 @@ export async function loadScreenshots(
   return { images, failed };
 }
 
+export const DELEGATION_UNSUPPORTED_REPLY =
+  "The issue was created, but the organization's tracker can't delegate work items to Omniralph.";
+
 export const DELEGATION_FAILED_REPLY =
   "The issue was created, but the tracker didn't delegate it to Omniralph. Ask me to delegate it again, or delegate it to Omniralph in the tracker.";
 
-export interface LinearIssueActionDeps {
+export interface IssueDraftActionDeps {
   db: Database;
   /** Who clicked, in the connection's organization. */
   resolveActor(connection: ChatConnection, externalUserId: string): Promise<ChatActor>;
@@ -287,8 +291,8 @@ export interface LinearIssueActionDeps {
  * by `connection`. Clicks on drafts of another connection or thread are
  * ignored; clicks by anyone but the member who asked get a private note.
  */
-export async function handleLinearIssueAction(
-  deps: LinearIssueActionDeps,
+export async function handleIssueDraftAction(
+  deps: IssueDraftActionDeps,
   event: ActionEvent,
   connection: ChatConnection,
 ): Promise<void> {
@@ -309,7 +313,7 @@ export async function handleLinearIssueAction(
     chatThread.connectionId !== connection.id ||
     chatThread.externalThreadId !== event.threadId
   ) {
-    logger.warn("Ignoring a Linear issue draft click from another thread", {
+    logger.warn("Ignoring a work item draft click from another thread", {
       draftId,
       threadId: event.threadId,
     });
@@ -323,7 +327,7 @@ export async function handleLinearIssueAction(
     await event.thread
       .postEphemeral(event.user, text, { fallbackToDM: true })
       .catch((error: unknown) =>
-        logger.warn("Couldn't answer a Linear issue draft click", { draftId, error }),
+        logger.warn("Couldn't answer a work item draft click", { draftId, error }),
       );
   };
   const record = (content: string) =>
@@ -339,11 +343,11 @@ export async function handleLinearIssueAction(
     const expired = await expireChatLinearIssueDraft(db, draft.id, now);
     await show(expiredCard(expired ?? draft));
     if (expired)
-      await record(`The Linear issue draft "${draft.title}" expired before it was created.`);
+      await record(`The work item draft "${draft.title}" expired before it was created.`);
     return;
   }
 
-  if (event.actionId === CANCEL_LINEAR_ISSUE_ACTION) {
+  if (event.actionId === CANCEL_ISSUE_ACTION) {
     const cancelled = await cancelChatLinearIssueDraft(db, draft.id);
     if (!cancelled) {
       // Already handled (e.g. a double click): show where it stands.
@@ -351,12 +355,12 @@ export async function handleLinearIssueAction(
       return;
     }
     await show(cancelledCard(cancelled));
-    await record(`Cancelled the Linear issue draft "${draft.title}"; nothing was created.`);
+    await record(`Cancelled the work item draft "${draft.title}"; nothing was created.`);
     return;
   }
 
-  const delegate = event.actionId === CREATE_AND_DELEGATE_LINEAR_ISSUE_ACTION;
-  if (event.actionId !== CREATE_LINEAR_ISSUE_ACTION && !delegate) return;
+  const delegate = event.actionId === CREATE_AND_DELEGATE_ISSUE_ACTION;
+  if (event.actionId !== CREATE_ISSUE_ACTION && !delegate) return;
   const claimed = await claimChatLinearIssueDraft(db, draft.id, now);
   if (!claimed) {
     if (draft.status !== "creating") await show(cardFor(draft));
@@ -407,8 +411,12 @@ export async function handleLinearIssueAction(
       });
       delegated = true;
     } catch (error) {
-      logger.error("Delegating a work item created from chat failed", { draftId, error });
-      await tell(DELEGATION_FAILED_REPLY);
+      if (error instanceof TrackerCapabilityError) {
+        await tell(DELEGATION_UNSUPPORTED_REPLY);
+      } else {
+        logger.error("Delegating a work item created from chat failed", { draftId, error });
+        await tell(DELEGATION_FAILED_REPLY);
+      }
     }
   }
   await show(createdCard(created, delegated, failedScreenshots));

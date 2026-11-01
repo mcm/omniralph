@@ -1,13 +1,14 @@
 /**
  * The tracker-neutral work item interface: everything that creates, updates, triages or
  * cancels a work item goes through a `WorkItemTracker`, never a tracker's SDK directly.
- * Linear is the first adapter (`./linear.ts`); `getWorkItemTracker` (`./get-tracker.ts`)
- * returns an organization's.
+ * `GatewayWorkItemTracker` (`./gateway-tracker.ts`) implements it over any tracker's
+ * gateway; `getWorkItemTracker` (`./get-tracker.ts`) returns an organization's.
  */
 import type { TrackerStateMapping } from "@omniralph/db";
+import type { TrackerProvider } from "@omniralph/tracker";
 
 /** The trackers an adapter exists for. */
-export type TrackerKind = "linear";
+export type TrackerKind = TrackerProvider;
 
 /** A work item's state, the same in every tracker. */
 export const WORK_ITEM_STATES = ["backlog", "todo", "in_progress", "done", "canceled"] as const;
@@ -76,7 +77,7 @@ export interface WorkItem {
 
 /**
  * A work item's values of the routing fields, as the router reads them (the same shape as
- * the Linear gateway's `RoutingIssueFields`): the team by key, the cycle and people by ID,
+ * the tracker's neutral `RoutingIssueFields`): the team by key, the cycle and people by ID,
  * the parent by identifier, the rest by name. Null where the item has none.
  */
 export interface WorkItemRoutingFields {

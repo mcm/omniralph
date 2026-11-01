@@ -20,20 +20,20 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import type { RoutingRules } from "@/lib/api/routing-rules";
-import type { LinearSettingsOptions } from "@/lib/tracker/linear/settings-values";
+import type { TrackerSettingsOptions } from "@/lib/tracker/settings-values";
 
 vi.mock("server-only", () => ({}));
 
 const state = vi.hoisted(() => ({
   /** The connected Linear workspace's options (null: none connected), or a load failure. */
-  linear: null as LinearSettingsOptions | null | Error,
+  linear: null as TrackerSettingsOptions | null | Error,
   orgId: "",
   db: undefined as unknown as Database,
   role: "admin" as Role,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@/lib/tracker/linear/settings-options", () => ({
-  getLinearSettingsOptions: async () => {
+vi.mock("@/lib/tracker/settings-options", () => ({
+  getTrackerSettingsOptions: async () => {
     if (state.linear instanceof Error) throw state.linear;
     return state.linear;
   },
@@ -54,11 +54,11 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 
 const route = await import("@/app/api/ui/routing-rules/route");
-const { LINEAR_ROUTING_FIELDS } = await import("@/lib/tracker/linear/routing-fields");
+const { ROUTING_FIELDS } = await import("@/lib/routing/fields");
 
 const key = randomBytes(32);
 
-const workspace: LinearSettingsOptions = {
+const workspace: TrackerSettingsOptions = {
   teams: [{ key: "ENG", name: "Engineering" }],
   labels: ["backend"],
   projects: ["Omniralph"],
@@ -169,8 +169,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/routing-rules", () => {
         [0, api, labels("backend")],
         [1, web, labels("frontend")],
       ]);
-      expect(result.fields).toEqual(JSON.parse(JSON.stringify(LINEAR_ROUTING_FIELDS)));
-      expect(result.linear).toEqual({ status: "connected", options: workspace });
+      expect(result.fields).toEqual(JSON.parse(JSON.stringify(ROUTING_FIELDS)));
+      expect(result.tracker).toEqual({ status: "connected", options: workspace });
       expect(result.repositories).toEqual([
         { id: api, provider: "github", fullPath: "acme/api", codingEnabled: false },
         { id: web, provider: "github", fullPath: "acme/web", codingEnabled: true },
@@ -191,10 +191,10 @@ describe.skipIf(!databaseAvailable)("/api/ui/routing-rules", () => {
 
     it("says when Linear isn't connected or can't be read", async () => {
       state.linear = null;
-      expect((await get()).body.linear).toEqual({ status: "disconnected" });
+      expect((await get()).body.tracker).toEqual({ status: "disconnected" });
       state.linear = new Error("Linear is down");
       vi.spyOn(console, "error").mockImplementation(() => {});
-      expect((await get()).body.linear).toEqual({ status: "unavailable" });
+      expect((await get()).body.tracker).toEqual({ status: "unavailable" });
     });
   });
 

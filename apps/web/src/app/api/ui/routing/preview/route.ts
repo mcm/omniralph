@@ -2,7 +2,7 @@ import { listRoutingRules } from "@omniralph/db";
 import { apiHandler } from "@/lib/api/handler";
 import { routingPreviewRequestSchema, type RoutingPreview } from "@/lib/api/routing-rules";
 import { getDb } from "@/lib/db";
-import { hitRoutingTestLimit, routeIssues, routingLinearGateway } from "@/lib/routing/test-issue";
+import { hitRoutingTestLimit, routeIssues, routingTrackerGateway } from "@/lib/routing/test-issue";
 
 /**
  * Where work items route under the organization's saved rules (every member), and why:
@@ -18,12 +18,14 @@ export const POST = apiHandler(
     const db = getDb();
     const organizationId = user.organization.id;
     await hitRoutingTestLimit(db, user.id);
-    const linear = await routingLinearGateway(
+    const tracker = await routingTrackerGateway(
       db,
       organizationId,
       "Connect Linear to preview where work items route.",
     );
     const rules = await listRoutingRules(db, organizationId);
-    return { results: await routeIssues({ db, organizationId, linear }, body.identifiers, rules) };
+    return {
+      results: await routeIssues({ db, organizationId, linear: tracker }, body.identifiers, rules),
+    };
   },
 );

@@ -13,15 +13,15 @@ import {
 import type { ScmAdapter } from "@omniralph/scm";
 import { ApiRouteError } from "@/lib/api/handler";
 import type { JobDispatcher } from "@/lib/dispatch";
-import { getLinearGateway } from "@/lib/tracker/linear/client";
+import { getTrackerGateway } from "@/lib/tracker/client";
+import { trackerAdapter } from "@/lib/tracker/adapters";
+import { openIssueConversation } from "@/lib/tracker/sessions";
 import {
   acknowledgeTrackerEvent,
   handleTrackerEvent,
   type HandledTrackerEvent,
 } from "@/lib/tracker/events";
-import { type LinearGateway, classifyWebhook } from "@omniralph/tracker/linear";
-import { replayLinearDelivery } from "@/lib/tracker/linear/ingest";
-import type { TrackerEvent } from "@omniralph/tracker";
+import type { TrackerEvent, TrackerGateway, TrackerProvider } from "@omniralph/tracker";
 import { hitRateLimit } from "@/lib/rate-limit";
 import { replayWebhookDelivery } from "@/lib/webhooks/ingest";
 
@@ -37,8 +37,8 @@ export interface ReplayDeps {
   db: Database;
   dispatcher: JobDispatcher;
   adapterFor?: (db: Database, connection: ScmConnection) => ScmAdapter;
-  /** The organization's Linear workspace (default: the connected one). */
-  linear?: (organizationId: string) => Promise<LinearGateway>;
+  /** The organization's tracker (default: the connected one). */
+  linear?: (organizationId: string) => Promise<TrackerGateway>;
 }
 
 /** 429 past `DELIVERY_REPLAY_LIMIT` replays in a minute. */
@@ -60,9 +60,9 @@ export async function hitReplayLimit(db: Database, userId: string): Promise<void
 /**
  * Replays a stored delivery (the caller checked the user may) with today's settings,
  * through the same processing as a live delivery; returns the replay's delivery log ID.
- * 400 for a payload that wasn't kept or a connection or repo that is gone; a Linear
+ * 400 for a payload that wasn't kept or a connection or repo that is gone; a tracker
  * agent-session event whose run is still active is 409, one whose run finished opens a
- * new agent session on the issue and replays there.
+ * new conversation on the issue and replays there.
  */
 export async function replayDelivery(
   deps: ReplayDeps,
@@ -74,7 +74,13 @@ export async function replayDelivery(
   }
   const id =
     event.provider === "linear"
-      ? await replayLinear(deps, event, event.payload as Record<string, unknown>, replayedBy)
+      ? await replayTracker(
+          deps,
+          event,
+          event.provider,
+          event.payload as Record<string, unknown>,
+          replayedBy,
+        )
       : await replayCodeHost(deps, event, event.provider, replayedBy);
   if (!id) throw new ApiRouteError(500, "The replay ran, but recording it failed.");
   return id;
@@ -117,9 +123,10 @@ async function replayCodeHost(
   );
 }
 
-async function replayLinear(
+async function replayTracker(
   deps: ReplayDeps,
   stored: WebhookEventDetail,
+  provider: TrackerProvider,
   payload: Record<string, unknown>,
   replayedBy: string,
 ): Promise<string | null> {
@@ -131,11 +138,12 @@ async function replayLinear(
     throw connectionRemoved();
   }
   const organizationId = integration.organizationId;
+  const adapter = trackerAdapter(provider);
   const loadGateway = () =>
-    deps.linear ? deps.linear(organizationId) : getLinearGateway({ db, organizationId });
-  let gateway: LinearGateway | undefined;
+    deps.linear ? deps.linear(organizationId) : getTrackerGateway({ db, organizationId, provider });
+  let gateway: TrackerGateway | undefined;
   const withGateway = async () => (gateway ??= await loadGateway());
-  let event: TrackerEvent = classifyWebhook(payload);
+  let event: TrackerEvent = adapter.parseDelivery(payload);
   if (
     event.kind === "issue_delegated" ||
     event.kind === "issue_mentioned" ||
@@ -144,7 +152,7 @@ async function replayLinear(
     event =
       (await inNewSessionIfFinished(deps, organizationId, event, payload, withGateway)) ?? event;
   }
-  return replayLinearDelivery(
+  return adapter.replayDelivery(
     {
       db,
       acknowledge: async (e: HandledTrackerEvent, context) =>
@@ -173,7 +181,7 @@ type SessionEvent = Extract<
 
 /**
  * An agent-session event of a run: 409 while the run is active; once it finished, the
- * event moves to a new agent session on the issue (a reply becomes the new session's
+ * event moves to a new conversation on the issue (a reply becomes the new session's
  * request). An event that reached no run replays in its own session (null).
  */
 async function inNewSessionIfFinished(
@@ -181,7 +189,7 @@ async function inNewSessionIfFinished(
   organizationId: string,
   event: SessionEvent,
   payload: Record<string, unknown>,
-  gateway: () => Promise<LinearGateway>,
+  gateway: () => Promise<TrackerGateway>,
 ): Promise<SessionEvent | null> {
   const ralph = await getRunBySession(deps.db, event.sessionId);
   const triage = ralph ? null : await getTriageRunBySession(deps.db, event.sessionId);
@@ -210,13 +218,13 @@ async function inNewSessionIfFinished(
   }
   let sessionId: string;
   try {
-    sessionId = await (await gateway()).sessions.createSessionOnIssue(issueId);
+    sessionId = await openIssueConversation(await gateway(), issueId);
   } catch (error) {
     console.error(`Opening an agent session on ${issueId} to replay a delivery failed`, error);
     throw new ApiRouteError(
       502,
-      "Linear couldn't open a new agent session for the replay. Try again.",
-      "linear_failed",
+      "The tracker couldn't open a new agent session for the replay. Try again.",
+      "tracker_failed",
     );
   }
   if (event.kind !== "session_prompted") return { ...event, sessionId };

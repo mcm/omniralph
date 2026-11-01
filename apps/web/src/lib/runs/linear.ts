@@ -1,15 +1,18 @@
 /**
- * The read-only Linear tools of a run, served under
- * `/api/agent/runs/{id}/linear/*` with the run's organization's Linear
- * workspace (see `@omniralph/shared` `run-linear.ts`).
+ * The read-only tracker tools of a run, served under
+ * `/api/agent/runs/{id}/linear/*` with the run's organization's
+ * tracker (see `@omniralph/shared` `run-linear.ts`); the route and tool names
+ * are renamed with the agent protocol.
  */
 import "server-only";
 import {
+  TrackerCapabilityError,
   TrackerInvalidInputError,
   TrackerNotFoundError,
   type IssueComment,
   type IssueSummary,
   type TrackerDocument,
+  type TrackerGateway,
 } from "@omniralph/tracker";
 import { getJobForAgent, type Job } from "@omniralph/db";
 import type { RunLinearComment, RunLinearDocument, RunLinearIssue } from "@omniralph/shared";
@@ -17,8 +20,7 @@ import type { LinearTool } from "@omniralph/tasks";
 import { requireJob } from "@/lib/agent-auth/verify";
 import { jobIdParam, notFound, type JobRouteContext } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
-import { getLinearGateway, LinearNotConnectedError } from "@/lib/tracker/linear/client";
-import type { LinearGateway } from "@omniralph/tracker/linear";
+import { getTrackerGateway, TrackerNotConnectedError } from "@/lib/tracker/client";
 import { organizationPlaybooks, type PlaybookSource } from "@/lib/playbooks";
 
 /**
@@ -90,7 +92,7 @@ export async function serveRunLinearTool(
   req: Request,
   ctx: JobRouteContext,
   tool: LinearTool,
-  read: (linear: LinearGateway) => Promise<unknown>,
+  read: (tracker: TrackerGateway) => Promise<unknown>,
 ): Promise<Response> {
   const principal = await requireJob(req, "linear:read");
   if (principal instanceof Response) return principal;
@@ -106,10 +108,10 @@ export async function serveRunLinearTool(
   }
 
   try {
-    const linear = await getLinearGateway({ db, organizationId: job.organizationId });
-    return Response.json(await read(linear), { headers: { "cache-control": "no-store" } });
+    const tracker = await getTrackerGateway({ db, organizationId: job.organizationId });
+    return Response.json(await read(tracker), { headers: { "cache-control": "no-store" } });
   } catch (error) {
-    if (error instanceof LinearNotConnectedError) {
+    if (error instanceof TrackerNotConnectedError) {
       return failed(
         409,
         "linear_not_connected",
@@ -117,6 +119,8 @@ export async function serveRunLinearTool(
       );
     }
     const reason = error instanceof Error ? error.message : String(error);
+    // The tool reads what this tracker doesn't have (e.g. documents).
+    if (error instanceof TrackerCapabilityError) return failed(404, "linear_not_found", reason);
     // Linear answers a read of an unknown issue (its comments, say) with an invalid input error.
     if (error instanceof TrackerNotFoundError || error instanceof TrackerInvalidInputError) {
       return failed(404, "linear_not_found", reason);

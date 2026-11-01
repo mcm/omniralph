@@ -53,10 +53,10 @@ export const ORGANIZATION_SWITCHED = "organization_switched";
 export const ENTER_ORGANIZATION = "enter_organization";
 
 /**
- * The connected Linear workspace's values the settings pickers offer (`LinearSettingsOptions`):
+ * The connected tracker's values the settings pickers offer (`TrackerSettingsOptions`):
  * a repository's Coding tab and Settings › Advanced › Routing rules.
  */
-export const linearSettingsOptionsSchema = z.object({
+export const trackerSettingsOptionsSchema = z.object({
   teams: z.array(z.object({ key: z.string(), name: z.string() })),
   labels: z.array(z.string()),
   projects: z.array(z.string()),

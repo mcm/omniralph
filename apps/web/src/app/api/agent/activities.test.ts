@@ -35,7 +35,10 @@ const state = vi.hoisted(() => ({
   linear: undefined as unknown as FakeLinearGateway,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
-vi.mock("@/lib/tracker/linear/client", () => ({ getLinearGateway: async () => state.linear }));
+vi.mock("@/lib/tracker/linear/client", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getLinearGateway: async () => state.linear,
+}));
 const relayActivity = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/ralph/activities", async (importOriginal) => {
   const actual = await importOriginal<typeof RalphActivities>();

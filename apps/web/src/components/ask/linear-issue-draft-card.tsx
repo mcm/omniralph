@@ -5,7 +5,7 @@ import type { AskLinearIssueDraft } from "@/lib/api/ask";
 import type { AskCardActionProps } from "./card-actions";
 import "./ask-cards.css";
 
-/** The card's buttons, as the chat's Linear issue draft names them (`lib/chat/linear-issue.ts`). */
+/** The card's buttons, as the chat's Linear issue draft names them (`lib/chat/issue-draft.ts`). */
 const BUTTON_VARIANTS: Record<string, ButtonVariant> = {
   linear_issue_create: "solid",
   linear_issue_create_delegate: "outline",
