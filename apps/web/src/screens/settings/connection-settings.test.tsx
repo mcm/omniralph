@@ -23,6 +23,7 @@ import { UnsavedChangesProvider } from "@/components/unsaved-changes";
 import type { Connection, ConnectionProvider } from "@/lib/api/connections";
 import type { TrackerStateMappingView } from "@/lib/api/trackers";
 import { ConnectionSettings } from "./connection-settings";
+import { FIX_LABELS_HELP, NO_FIX_LABEL_ERROR } from "./fix-labels-card";
 import { SettingsLayoutView } from "./settings-layout-view";
 import { organizationChange } from "./test-fixtures";
 import { SAME_STATE_ERROR, WORK_ITEM_STATES_HELP } from "./work-item-states-card";
@@ -171,12 +172,21 @@ const member: SessionUser = {
 
 let connections: Connection[];
 let mapping: TrackerStateMappingView;
+let fixLabels: string[];
+/** The answer to a fix labels save (default: the saved labels echoed back). */
+let fixLabelsSave: ((body: { fixLabels: string[] }) => Response) | null;
 let seen: SeenRequest[];
 /** While set, reads never answer: the view shows only what the cache holds. */
 let holdReads: boolean;
 let rotateResponse: () => Response;
 
 const MAPPING_PATH = `/api/ui/trackers/${IDS.linear}/state-mapping`;
+const FIX_LABELS_PATH = `/api/ui/trackers/${IDS.linear}/fix-labels`;
+const fixLabelsView = () => ({
+  integrationId: IDS.linear,
+  organization: { id: TEST_ORGANIZATION_ID, name: "Acme", role: "admin" },
+  fixLabels,
+});
 
 beforeEach(() => {
   ui.toast.mockReset();
@@ -185,6 +195,8 @@ beforeEach(() => {
   browser.openInNewTab.mockReset();
   connections = (Object.keys(IDS) as ConnectionProvider[]).map((provider) => connection(provider));
   mapping = stateMapping();
+  fixLabels = ["Bug"];
+  fixLabelsSave = null;
   holdReads = false;
   rotateResponse = () =>
     jsonResponse({ health: { state: "expiring", expiresAt: "2026-11-02", problems: [] } });
@@ -198,6 +210,13 @@ beforeEach(() => {
         ...mapping,
         mapping: request.body as TrackerStateMappingView["mapping"],
       }),
+    [`GET ${FIX_LABELS_PATH}`]: held(fixLabelsView),
+    [`PUT ${FIX_LABELS_PATH}`]: (request) => {
+      const body = request.body as { fixLabels: string[] };
+      if (fixLabelsSave) return fixLabelsSave(body);
+      fixLabels = body.fixLabels;
+      return jsonResponse(fixLabelsView());
+    },
     [`POST /api/ui/connections/gitlab/${IDS.gitlab}/rotate`]: () => rotateResponse(),
     [`PUT /api/ui/connections/gitlab/${IDS.gitlab}`]: () =>
       jsonResponse({ health: { state: "healthy", problems: [] } }),
@@ -734,6 +753,92 @@ describe("work item states", () => {
     expect((await select("Ready to start")).disabled).toBe(true);
     expect((await select("Needs refining")).disabled).toBe(true);
     expect(within(await states()).queryByRole("button", { name: "Save" })).toBeNull();
+  });
+});
+
+describe("fix label", () => {
+  const card = () => screen.findByRole("region", { name: "Fix label" });
+  // The card is replaced once the labels load: look the input up again each time.
+  const input = () =>
+    waitFor(() =>
+      within(screen.getByRole("region", { name: "Fix label" })).getByRole<HTMLInputElement>(
+        "textbox",
+        { name: "Fix labels" },
+      ),
+    );
+  const chips = async () =>
+    within(await card())
+      .queryAllByRole("button", { name: /^Remove / })
+      .map((button) => button.getAttribute("aria-label")!.replace(/^Remove /, ""));
+
+  it("is only on the Linear connection", async () => {
+    renderConnection("gitlab");
+    await page();
+    expect(screen.queryByRole("region", { name: "Fix label" })).toBeNull();
+  });
+
+  it("shows the default, Bug, with the help line and the change history", async () => {
+    renderConnection("linear");
+    await input();
+    expect(await chips()).toEqual(["Bug"]);
+    expect((await card()).textContent).toContain(FIX_LABELS_HELP);
+    expect(within(await card()).getByRole("button", { name: "Change history" })).toBeTruthy();
+  });
+
+  it("stages a custom label and saves the list, shown before any refetch", async () => {
+    renderConnection("linear");
+    await userEvent.type(await input(), "Defect{Enter}");
+    await userEvent.click(within(await card()).getByRole("button", { name: "Remove Bug" }));
+    holdReads = true;
+    await userEvent.click(within(await card()).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(requests("PUT", FIX_LABELS_PATH)).toHaveLength(1));
+    expect(requests("PUT", FIX_LABELS_PATH)[0]!.body).toEqual({ fixLabels: ["Defect"] });
+    await waitFor(async () =>
+      expect(within(await card()).queryByRole("button", { name: "Save" })).toBeNull(),
+    );
+    expect(await chips()).toEqual(["Defect"]);
+  });
+
+  it("won't add a label already listed, ignoring case", async () => {
+    renderConnection("linear");
+    await userEvent.type(await input(), "bug{Enter}");
+    expect(await chips()).toEqual(["Bug"]);
+    expect((await card()).textContent).toContain("This label is already listed.");
+  });
+
+  it("refuses an empty list, inline, without a request", async () => {
+    renderConnection("linear");
+    await input();
+    await userEvent.click(within(await card()).getByRole("button", { name: "Remove Bug" }));
+    expect((await card()).textContent).toContain(NO_FIX_LABEL_ERROR);
+    await userEvent.click(within(await card()).getByRole("button", { name: "Save" }));
+    expect(requests("PUT", FIX_LABELS_PATH)).toEqual([]);
+  });
+
+  it("shows the server's refusal under the field", async () => {
+    fixLabelsSave = () =>
+      jsonResponse(
+        {
+          error: "A fix label can't be blank.",
+          code: "invalid_request",
+          fieldErrors: { "fixLabels.1": "A fix label can't be blank." },
+        },
+        400,
+      );
+    renderConnection("linear");
+    await userEvent.type(await input(), "Defect{Enter}");
+    await userEvent.click(within(await card()).getByRole("button", { name: "Save" }));
+    await waitFor(async () =>
+      expect(
+        within(await card()).getAllByText("A fix label can't be blank.").length,
+      ).toBeGreaterThan(0),
+    );
+  });
+
+  it("is read-only for members", async () => {
+    renderConnection("linear", { user: member });
+    expect((await input()).disabled).toBe(true);
+    expect(within(await card()).queryByRole("button", { name: "Save" })).toBeNull();
   });
 });
 

@@ -21,6 +21,8 @@ export interface Integration {
   installedByUserId: string | null;
   /** Which workflow states mean "Ready to start" and "Needs refining". */
   stateMapping: TrackerStateMapping;
+  /** The labels that mark a work item as a Fix, matched ignoring case. */
+  fixLabels: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -90,6 +92,25 @@ export async function setIntegrationStateMapping(
   const [row] = await db
     .update(integrations)
     .set({ stateMapping, updatedAt: new Date() })
+    .where(eq(integrations.id, id))
+    .returning();
+  if (!row) return null;
+  recordConnectionChange(db, row);
+  return toIntegration(row);
+}
+
+/**
+ * Saves an integration's fix labels (validated by the caller) and records a `connection`
+ * change. Returns the integration, or null when it no longer exists.
+ */
+export async function setIntegrationFixLabels(
+  db: Database,
+  id: string,
+  fixLabels: string[],
+): Promise<Integration | null> {
+  const [row] = await db
+    .update(integrations)
+    .set({ fixLabels, updatedAt: new Date() })
     .where(eq(integrations.id, id))
     .returning();
   if (!row) return null;

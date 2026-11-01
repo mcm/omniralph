@@ -461,6 +461,7 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
         { field: "credentials", label: "Credentials", before: "changed", after: "changed" },
         { field: "ready", label: "Ready to start", before: null, after: ["unstarted"] },
         { field: "needsRefining", label: "Needs refining", before: null, after: ["backlog"] },
+        { field: "fixLabels", label: "Fix labels", before: null, after: ["Bug"] },
       ]);
 
       await connectingWithHistory(

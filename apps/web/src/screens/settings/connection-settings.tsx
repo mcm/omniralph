@@ -41,6 +41,7 @@ import { mutationResultSchema, type MutationResult } from "@/lib/api/schemas";
 import { hasRole } from "@/lib/auth/roles";
 import { withoutWebhookProblems, type ConnectionHealthSummary } from "@/lib/connections/health";
 import { navigateTo, openInNewTab } from "@/lib/navigate";
+import { FixLabelsCard } from "./fix-labels-card";
 import { useConnections } from "./queries";
 import { SETTINGS_PATH } from "./settings-nav";
 import { SettingsPage } from "./settings-page";
@@ -309,11 +310,18 @@ function ConnectionView({
         </Card>
       ) : null}
       {connection.provider === "linear" ? (
-        <WorkItemStatesCard
-          integrationId={connection.id}
-          isAdmin={isAdmin}
-          history={connection.history}
-        />
+        <>
+          <WorkItemStatesCard
+            integrationId={connection.id}
+            isAdmin={isAdmin}
+            history={connection.history}
+          />
+          <FixLabelsCard
+            integrationId={connection.id}
+            isAdmin={isAdmin}
+            history={connection.history}
+          />
+        </>
       ) : null}
       {connection.provider === "github" ||
       connection.provider === "gitlab" ||

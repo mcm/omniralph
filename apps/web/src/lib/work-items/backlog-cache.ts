@@ -12,7 +12,7 @@ import type { OrganizationBacklog } from "./backlog";
  * An entry is dropped as soon as a change that may alter it is committed (`onCommittedChange`,
  * `affectsBacklog`): a `work_item` change (an action, a tracker webhook, a run or triage of
  * an item, a repo choice), a repository connected, disconnected or saved (Coding, its work
- * item match), a tracker connection's change (its state mapping) or a routing rules save.
+ * item match), a tracker connection's change (its state mapping or fix labels) or a routing rules save.
  * A rolled-back write commits no change, so it drops nothing.
  */
 

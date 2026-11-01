@@ -13,6 +13,7 @@ import {
   getIntegrationWithCredentials,
   listIntegratedOrganizationIds,
   saveIntegration,
+  setIntegrationFixLabels,
   setIntegrationStateMapping,
   updateIntegrationCredentials,
 } from "./integrations.js";
@@ -249,6 +250,22 @@ describe.skipIf(!databaseAvailable)("integration queries", () => {
     expect((await install("org-1", "Acme", "t2")).stateMapping).toEqual(mapping);
     expect(await setIntegrationStateMapping(db, crypto.randomUUID(), mapping)).toBeNull();
     expect(await getIntegrationById(db, crypto.randomUUID())).toBeNull();
+  });
+
+  it("starts with the Bug fix label and saves new ones with a connection change", async () => {
+    const saved = await install("org-1", "Acme", "t1");
+    expect(saved.fixLabels).toEqual(["Bug"]);
+    const { result, changes } = await captureChanges(() =>
+      setIntegrationFixLabels(db, saved.id, ["Defect", "Regression"]),
+    );
+    expect(result?.fixLabels).toEqual(["Defect", "Regression"]);
+    expect((await getIntegrationById(db, saved.id))?.fixLabels).toEqual(["Defect", "Regression"]);
+    expect(changes).toEqual([
+      expect.objectContaining({ resource: "connection", ids: [saved.id], organizationId: orgId }),
+    ]);
+    // Reinstalling the workspace keeps its fix labels.
+    expect((await install("org-1", "Acme", "t2")).fixLabels).toEqual(["Defect", "Regression"]);
+    expect(await setIntegrationFixLabels(db, crypto.randomUUID(), ["Bug"])).toBeNull();
   });
 
   it("deletes the integration and returns its credentials", async () => {

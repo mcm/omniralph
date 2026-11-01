@@ -1,0 +1,1 @@
+ALTER TABLE "integrations" ADD COLUMN "fix_labels" text[] DEFAULT ARRAY['Bug']::text[] NOT NULL;
