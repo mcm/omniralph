@@ -1113,6 +1113,13 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
           checks: Array.from({ length: 51 }, (_, index) => `echo ${index}`),
         }),
       ).toMatchObject({ status: 400, body: { fieldErrors: { checks: "Add at most 50 checks." } } });
+      expect(
+        await coding({ ...baseCoding, codingEnabled: false, checks: ["x".repeat(4001)] }),
+      ).toMatchObject({
+        status: 400,
+        body: { fieldErrors: { "checks.0": "Commands can be at most 4,000 characters." } },
+        changes: [],
+      });
       const { checks: _missing, ...withoutChecks } = baseCoding;
       expect((await coding(withoutChecks)).status).toBe(400);
       expect(await getRepository(db, codingRepo)).toEqual(before);
