@@ -1,6 +1,12 @@
+import {
+  VALIDATION_AUDIT_TITLE,
+  renderTriageMethodology,
+  renderValidationAudit,
+  workItemFormat,
+} from "@omniralph/planning";
 import { describe, expect, it } from "vitest";
 import { TRIAGE_OUTPUT_SCHEMA, type TriageAgentOutput, validateTriageOutput } from "./output.js";
-import { parsePrd, parseQualityGates } from "./prd.js";
+import { parsePrd } from "./prd.js";
 import {
   OPEN_QUESTIONS_HEADING,
   TRIAGE_HEADING,
@@ -12,40 +18,50 @@ import {
   withoutOpenQuestions,
 } from "./triage.js";
 
-const PRD = `## Introduction
+const EPIC = `## Problem
 
-Let users set a priority on tasks.
+Tasks have no priority, so nobody can tell what matters.
 
-## Goals
+## Scope
 
-- Tasks have a priority
+### In
 
-## Quality Gates
+- A priority on every task
 
-These commands must pass for every user story:
-- \`pnpm typecheck\` - Type checking
-- \`pnpm test\` - Unit tests
-
-## Non-Goals
+### Out
 
 - No notifications
 
-## Success Metrics
+## Requirements
 
-- Priority visible on every task
+- FR-1: The system must store a priority (high, medium, low) on every task
+- FR-2: The system must show each task's priority in the task list`;
 
-## Functional Requirements
-
-- FR-1: Tasks must have a priority (high, medium, low)`;
-
-const SINGLE = `${PRD}
+const SINGLE = `As a user, I want a priority on tasks so that I know what matters.
 
 ## Acceptance Criteria
 
-- [ ] Tasks have a priority column
-- [ ] All quality gates pass`;
+- [ ] Tasks have a priority column`;
+
+const FIX = `## Current behavior
+
+Saving a task with a priority drops it.
+
+## Expected behavior
+
+The priority is kept.
+
+## Unchanged behavior
+
+Tasks without a priority save as before.
+
+## Acceptance Criteria
+
+- [ ] Saving a task keeps its priority`;
 
 const STORY_BODY = `As a user, I want a priority on tasks so that I know what matters.
+
+Covers: FR-1
 
 ## Acceptance Criteria
 
@@ -62,9 +78,11 @@ const single: TriageAgentOutput = {
   summary: "Sized S: one column and a badge.",
 };
 
+const fix: TriageAgentOutput = { ...single, title: "Keep task priorities", description: FIX };
+
 const epic: TriageAgentOutput = {
   ...single,
-  description: PRD,
+  description: EPIC,
   size: "L",
   stories: [
     {
@@ -74,10 +92,19 @@ const epic: TriageAgentOutput = {
       dependsOn: [],
       manual: false,
     },
-    { title: "Show the priority", body: STORY_BODY, priority: 2, dependsOn: [0], manual: false },
+    {
+      title: "Show the priority",
+      body: STORY_BODY.replace("FR-1", "FR-2"),
+      priority: 2,
+      dependsOn: [0],
+      manual: false,
+    },
     {
       title: "Validate functional requirements",
-      body: STORY_BODY,
+      body: renderValidationAudit([
+        { id: "FR-1", text: "The system must store a priority (high, medium, low) on every task" },
+        { id: "FR-2", text: "The system must show each task's priority in the task list" },
+      ]),
       priority: 2,
       dependsOn: [0, 1],
       manual: false,
@@ -108,9 +135,8 @@ describe("renderOpenQuestions", () => {
     expect(renderOpenQuestions(["", "  "])).toBe("");
   });
 
-  it("isn't read as acceptance criteria or quality gates", () => {
+  it("isn't read as acceptance criteria", () => {
     const description = `${SINGLE}\n\n${renderOpenQuestions(["Which label?"])}`;
-    expect(parseQualityGates(description)).toEqual(["pnpm typecheck", "pnpm test"]);
     expect(description).not.toMatch(/- \[ \] Which label/);
   });
 });
@@ -138,16 +164,32 @@ describe("hasOpenQuestions", () => {
     expect(hasOpenQuestions("")).toBe(false);
     expect(hasOpenQuestions(null)).toBe(false);
     expect(hasOpenQuestions(undefined)).toBe(false);
-    expect(hasOpenQuestions(`${PRD}\n\n## Open Questions\n\n`)).toBe(false);
+    expect(hasOpenQuestions(`${EPIC}\n\n## Open Questions\n\n`)).toBe(false);
     expect(hasOpenQuestions(`## Open Questions\n\n## Goals\n\n- One`)).toBe(false);
     expect(hasOpenQuestions("Any open questions? See the comments.")).toBe(false);
   });
 });
 
 describe("validateTriageOutput", () => {
-  it("accepts a single issue and an epic", () => {
+  it("accepts a single story, a single fix and an epic", () => {
     expect(validateTriageOutput(single)).toEqual({ result: single });
+    expect(validateTriageOutput(fix)).toEqual({ result: fix });
     expect(validateTriageOutput(epic)).toEqual({ result: epic });
+  });
+
+  it("writes the validation audit from the epic's requirements", () => {
+    const stories = epic.stories.map((s, i) =>
+      i === 2 ? { ...s, body: "Check everything.\n\n## Acceptance Criteria\n\n- [ ] All good" } : s,
+    );
+    const r = validateTriageOutput({ ...epic, stories });
+    if (!("result" in r)) throw new Error(r.problem);
+    const audit = r.result.stories[2]!;
+    expect(audit.title).toBe(VALIDATION_AUDIT_TITLE);
+    expect(audit.body).toBe(epic.stories[2]!.body);
+    expect(audit.body).toContain(
+      "- [ ] FR-2: The system must show each task's priority in the task list",
+    );
+    expect(audit.body).not.toContain("All good");
   });
 
   it("trims and deduplicates", () => {
@@ -202,44 +244,98 @@ describe("validateTriageOutput", () => {
     );
   });
 
-  it("keeps quality gates ralph can parse and single issues ralph won't split", () => {
-    for (const output of [single, epic]) {
+  it("keeps each output in its format, and single tasks ralph won't split", () => {
+    for (const [output, format] of [
+      [single, "story"],
+      [fix, "fix"],
+      [epic, "epic"],
+    ] as const) {
       const r = validateTriageOutput(output);
       if (!("result" in r)) throw new Error(r.problem);
-      expect(parseQualityGates(r.result.description)).toEqual(["pnpm typecheck", "pnpm test"]);
+      expect(workItemFormat(r.result.description)).toBe(format);
       expect(parsePrd(r.result.description)).toBeNull();
     }
-    const r = validateTriageOutput(single);
+    const r = validateTriageOutput(epic);
     if (!("result" in r)) throw new Error(r.problem);
-    const headings = r.result.description.match(/^## .+$/gm);
-    expect(headings?.at(-1)).toBe("## Acceptance Criteria");
+    expect(r.result.stories.slice(0, 2).map((s) => workItemFormat(s.body))).toEqual([
+      "story",
+      "story",
+    ]);
   });
 
-  it("rejects a description without a Quality Gates heading", () => {
-    expect(
-      problemOf({ ...single, description: SINGLE.replace("## Quality Gates", "## Gates") }),
-    ).toMatch(/Quality Gates/);
+  it("rejects a Success Metrics or Quality Gates section anywhere", () => {
+    for (const heading of ["## Success Metrics", "## Quality Gates"]) {
+      const section = `${heading}\n\n- \`pnpm test\` - Tests`;
+      expect(problemOf({ ...epic, description: `${EPIC}\n\n${section}` })).toContain(heading);
+      expect(
+        problemOf({
+          ...single,
+          description: SINGLE.replace("## Acceptance", `${section}\n\n## Acceptance`),
+        }),
+      ).toContain(heading);
+      const stories = epic.stories.map((s, i) =>
+        i === 0
+          ? { ...s, body: s.body.replace("## Acceptance", `${section}\n\n## Acceptance`) }
+          : s,
+      );
+      expect(problemOf({ ...epic, stories })).toMatch(new RegExp(`story 0 .*${heading}`));
+    }
   });
 
-  it("rejects an L or XL PRD without stories", () => {
+  it("rejects a description not in the format its size calls for", () => {
+    // An L epic written as a story, a single task written as an epic, a legacy PRD.
+    expect(problemOf({ ...epic, description: SINGLE })).toMatch(
+      /description: it isn't in the epic format/,
+    );
+    expect(problemOf({ ...single, description: EPIC })).toMatch(
+      /description: it isn't in the story format .* or the fix format/,
+    );
+    const legacy =
+      "## Introduction\n\nPriorities.\n\n## Functional Requirements\n\n- FR-1: Store it";
+    expect(problemOf({ ...epic, description: legacy })).toMatch(/isn't in the epic format/);
+    expect(problemOf({ ...epic, outcome: "reformat", stories: [], description: SINGLE })).toMatch(
+      /isn't in the epic format/,
+    );
+  });
+
+  it("rejects an epic missing a required section", () => {
+    const noScope = EPIC.replace(/## Scope[\s\S]*?(?=## Requirements)/, "");
+    expect(problemOf({ ...epic, description: noScope })).toMatch(/Scope section is missing/);
+  });
+
+  it("rejects a task that isn't a story or a fix, or covers an unknown requirement", () => {
+    const plain = epic.stories.map((s, i) =>
+      i === 0 ? { ...s, body: "Add the column.\n\n## Acceptance Criteria\n\n- [ ] Done" } : s,
+    );
+    expect(problemOf({ ...epic, stories: plain })).toMatch(/story 0 .*isn't in the story format/);
+    const unknown = epic.stories.map((s, i) =>
+      i === 1 ? { ...s, body: STORY_BODY.replace("FR-1", "FR-9") } : s,
+    );
+    expect(problemOf({ ...epic, stories: unknown })).toMatch(/story 1 .*names FR-9/);
+    const fixTask = epic.stories.map((s, i) => (i === 1 ? { ...s, body: FIX } : s));
+    expect(validateTriageOutput({ ...epic, stories: fixTask })).toHaveProperty("result");
+  });
+
+  it("rejects an L or XL epic without stories", () => {
     expect(problemOf({ ...epic, stories: [] })).toMatch(/epic but there are no `stories`/);
     expect(problemOf({ ...epic, size: "XL", stories: [] })).toMatch(/epic/);
   });
 
   it("rejects XS to M with stories", () => {
     for (const size of ["XS", "S", "M"]) {
-      expect(problemOf({ ...epic, size })).toMatch(/single issue but there are `stories`/);
+      expect(problemOf({ ...epic, description: SINGLE, size })).toMatch(
+        /single issue but there are `stories`/,
+      );
     }
   });
 
   it("rejects a single issue that doesn't end with its acceptance criteria", () => {
-    expect(problemOf({ ...single, description: PRD })).toMatch(/end with its `## Acceptance/);
     const after = `${SINGLE}\n\n## Notes\n\nLater.`;
     expect(problemOf({ ...single, description: after })).toMatch(/end with its `## Acceptance/);
-    // Epics keep their criteria in the stories, and the rule is only for new PRDs.
+    // Epics keep their criteria in the stories, and the rule is only for new descriptions.
     expect(validateTriageOutput(epic)).toHaveProperty("result");
     expect(
-      validateTriageOutput({ ...single, outcome: "unchanged", description: PRD }),
+      validateTriageOutput({ ...single, outcome: "unchanged", description: after }),
     ).toHaveProperty("result");
   });
 
@@ -281,6 +377,19 @@ describe("validateTriageOutput", () => {
     ).toMatch(/sub-issue child-1 .*Acceptance Criteria/);
   });
 
+  it("rejects a reformatted sub-issue that isn't a story or a fix", () => {
+    const update = {
+      id: "child-1",
+      title: "Add it",
+      body: "Do it.\n\n## Acceptance Criteria\n\n- [ ] Done",
+      priority: 3,
+      blockedBy: [],
+    };
+    expect(
+      problemOf({ ...epic, outcome: "reformat", stories: [], subIssueUpdates: [update] }),
+    ).toMatch(/sub-issue child-1: it isn't in the story format/);
+  });
+
   it("rejects stories or updates that don't fit the outcome", () => {
     expect(problemOf({ ...epic, outcome: "reformat" })).toMatch(/can't create `stories`/);
     expect(problemOf({ ...epic, outcome: "unchanged" })).toMatch(/can't create `stories`/);
@@ -291,6 +400,38 @@ describe("validateTriageOutput", () => {
   it("rejects empty fields", () => {
     expect(problemOf({ ...single, title: "  " })).toMatch(/title/);
     expect(problemOf({ ...single, summary: "" })).toMatch(/summary/);
+  });
+});
+
+/** A validated triage as the tracker gets it: the description with its open questions, then each task. */
+function renderOutcome(output: TriageAgentOutput): string {
+  const r = validateTriageOutput(output);
+  if (!("result" in r)) throw new Error(r.problem);
+  const { title, description, openQuestions, stories } = r.result;
+  return [
+    `# ${title}`,
+    description,
+    renderOpenQuestions(openQuestions),
+    ...stories.map((story) => `---\n\n# Task: ${story.title}\n\n${story.body}`),
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .concat("\n");
+}
+
+describe("triage outcomes", () => {
+  const outcomes = {
+    epic: { ...epic, openQuestions: ["Who can set a priority?"] },
+    story: single,
+    fix,
+  };
+
+  it.each(Object.keys(outcomes))("writes the %s format", async (name) => {
+    const output = outcomes[name as keyof typeof outcomes];
+    const text = renderOutcome(output);
+    expect(workItemFormat(output.description)).toBe(name);
+    expect(text).not.toMatch(/success metrics|quality gates/i);
+    await expect(text).toMatchFileSnapshot(`__snapshots__/triage-outcome.${name}.md`);
   });
 });
 
@@ -395,36 +536,33 @@ describe("buildTriagePrompt", () => {
     expect(prompt).toContain("1. Who can set a priority?");
   });
 
-  it("shows a Quality Gates example ralph's parser reads", () => {
-    const example = /```\n(## Quality Gates[\s\S]*?)```/.exec(buildTriagePrompt(input))?.[1];
-    expect(example).toBeDefined();
-    expect(parseQualityGates(example!)).toEqual(["pnpm typecheck", "pnpm lint", "pnpm test"]);
-  });
-
-  it("covers the methodology", () => {
+  it("assembles its methodology from packages/planning", () => {
     const prompt = buildTriagePrompt(input);
+    const methodology = renderTriageMethodology({
+      trackerName: "Linear",
+      conventionsFile: "LINEAR.md",
+    });
+    expect(prompt).toContain(`\n${methodology}\n\n${TRIAGE_HEADING}\n`);
     for (const text of [
-      "## Introduction",
-      "## Goals",
-      "## Quality Gates",
-      "## Non-Goals",
-      "## Success Metrics",
-      "## Functional Requirements",
-      "**first backticked span**",
-      "**CI config first**",
-      "LINEAR.md",
-      "**L or larger (L, XL) → an epic**",
-      "**Smaller than L (XS, S, M) → a single self-contained issue**",
-      "As a [user], I want [feature] so that [benefit].",
-      "## Ralph Metadata",
-      "Validate functional requirements",
-      "`userStories`",
-      "is the last section",
+      "## How to triage",
+      "## Planning rules",
+      "### Epic format",
+      "### Story format",
+      "### Fix format",
+      "### Validation audit",
       "Reformat it, don't replan it",
       "becomes one open question",
+      `\`${OPEN_QUESTIONS_HEADING}\``,
     ]) {
-      expect(prompt).toContain(text);
+      expect(methodology).toContain(text);
     }
+  });
+
+  it("asks for no Success Metrics or Quality Gates", () => {
+    const prompt = buildTriagePrompt(input);
+    expect(prompt).not.toMatch(/success metrics|quality gates/i);
+    expect(prompt).not.toMatch(/\bPRD\b/);
+    expect(TRIAGE_SYSTEM_APPEND).not.toMatch(/\bPRD\b/);
     expect(TRIAGE_SYSTEM_APPEND).toContain("open question instead of asking");
   });
 });

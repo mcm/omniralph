@@ -43,13 +43,7 @@ vi.mock("server-only", () => ({}));
 const databaseAvailable = testDatabaseAvailable();
 
 const PRD = [
-  "## Introduction",
-  "",
-  "Export widgets.",
-  "",
-  "## Quality Gates",
-  "",
-  "- `pnpm test`",
+  "As an admin, I want this done so that I can rely on it. Export widgets.",
   "",
   "## Acceptance Criteria",
   "",

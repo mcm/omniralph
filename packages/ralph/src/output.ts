@@ -2,6 +2,13 @@
  * Structured results of ralph's Claude sessions: the zod schemas, the JSON schemas passed to the
  * Agent SDK as `outputFormat`, and readers that validate and normalise a session's result.
  */
+import {
+  type WorkItemFormat,
+  lintWorkItem,
+  parseWorkItem,
+  renderValidationAudit,
+  workItemFormat,
+} from "@omniralph/planning";
 import { z } from "zod";
 import { parsePrd } from "./prd.js";
 import { PR_TITLE_MAX_LENGTH } from "./prompt.js";
@@ -323,13 +330,13 @@ export const TriageAgentOutput = z.object({
   outcome: z
     .enum(["prd", "reformat", "unchanged"])
     .describe(
-      "prd: the issue (with no sub-issues) is rewritten as a PRD. reformat: an issue already planned with sub-issues is put into the PRD format, sub-issues included. unchanged: it already is a PRD in the format.",
+      "prd: the issue (with no sub-issues) is rewritten as an epic, a story or a fix. reformat: an issue already planned with sub-issues is put into the epic format, sub-issues included. unchanged: it already is in the formats.",
     ),
   title: z.string().describe("The issue's title: descriptive but concise."),
   description: z
     .string()
     .describe(
-      "The PRD in markdown: the issue's new description, without a `## Open Questions` section.",
+      "The issue's new description in markdown: an epic (L or larger), else a story or a fix, without a `## Open Questions` section.",
     ),
   size: z
     .enum(TRIAGE_OUTPUT_SIZES)
@@ -344,7 +351,7 @@ export const TriageAgentOutput = z.object({
         body: z
           .string()
           .describe(
-            "User story sentence, optional context, then a `## Acceptance Criteria` checklist. No IDs or metadata.",
+            "The task in the story format (or the fix format for a bug), ending with a `## Acceptance Criteria` checklist. No IDs or metadata.",
           ),
         priority: TrackerPriority,
         dependsOn: z
@@ -354,7 +361,7 @@ export const TriageAgentOutput = z.object({
       }),
     )
     .describe(
-      "outcome prd, L or larger only: the sub-issues to create, in order, the validation story last. Empty otherwise.",
+      "outcome prd, L or larger only: the tasks to create as sub-issues, in order, the validation audit last. Empty otherwise.",
     ),
   subIssueUpdates: z
     .array(
@@ -363,7 +370,9 @@ export const TriageAgentOutput = z.object({
         title: z.string().describe("The plain story title, without IDs."),
         body: z
           .string()
-          .describe("The story body, ending with a `## Acceptance Criteria` checklist."),
+          .describe(
+            "The task in the story or fix format, ending with a `## Acceptance Criteria` checklist.",
+          ),
         priority: TrackerPriority,
         blockedBy: z
           .array(z.string())
@@ -373,7 +382,7 @@ export const TriageAgentOutput = z.object({
       }),
     )
     .describe(
-      "outcome reformat only: Backlog/Todo sub-issues rewritten in the story format. Empty otherwise.",
+      "outcome reformat only: Backlog/Todo sub-issues rewritten in the story or fix format. Empty otherwise.",
     ),
   summary: z
     .string()
@@ -393,9 +402,12 @@ function oneLine(title: string): string {
   return title.replace(/\s+/g, " ").trim().slice(0, MAX_TRIAGE_TITLE).trim();
 }
 
-const QUALITY_GATES_HEADING = /^##[ \t]+Quality Gates[ \t]*$/im;
 const ACCEPTANCE_CRITERIA_HEADING = /^##[ \t]+Acceptance Criteria[ \t]*$/im;
 const SECTION_HEADING = /^##[ \t]+(.+?)[ \t]*$/gm;
+/** Sections only legacy PRDs have: the repo decides the checks, and outcomes stay in planning documents. */
+const LEGACY_ONLY_SECTION = /^##[ \t]+(Success Metrics|Quality Gates)[ \t]*$/im;
+/** The title of the validation audit that closes an epic (the last story). */
+const VALIDATION_TITLE = /^validate\b/i;
 
 /** Whether `## Acceptance Criteria` is the description's last section. */
 function endsWithAcceptanceCriteria(description: string): boolean {
@@ -403,12 +415,51 @@ function endsWithAcceptanceCriteria(description: string): boolean {
   return last !== undefined && /^Acceptance Criteria$/i.test(last[1]!);
 }
 
+/** The `## Success Metrics` or `## Quality Gates` heading `text` has, if any. */
+function legacyOnlySection(text: string): string | null {
+  const match = LEGACY_ONLY_SECTION.exec(text);
+  return match ? `## ${match[1]}` : null;
+}
+
+const FORMAT_NAMES: Record<WorkItemFormat, string> = {
+  epic: "the epic format (`## Problem`, `## Scope`, `## Requirements`)",
+  story: 'the story format ("As a … I want … so that …", then `## Acceptance Criteria`)',
+  fix: "the fix format (`## Current behavior`, `## Expected behavior`, `## Unchanged behavior`, `## Acceptance Criteria`)",
+};
+
+/**
+ * What keeps `text` from being a work item in one of `formats` (an epic, or a story or a fix):
+ * not detected as one of them, or missing a required section (`lintWorkItem`), or a `Covers:`
+ * entry naming a requirement the epic doesn't have. Null when it is fine.
+ */
+function formatProblem(
+  text: string,
+  formats: readonly WorkItemFormat[],
+  epicRequirements?: readonly string[],
+): string | null {
+  const detected = workItemFormat(text);
+  const format = detected && formats.includes(detected) ? detected : null;
+  const problems = lintWorkItem(text, {
+    format: format ?? formats[0],
+    ...(epicRequirements && { epicRequirements }),
+  }).filter((p) =>
+    ["missing-section", "empty-acceptance-criteria", "unknown-requirement"].includes(p.code),
+  );
+  if (format && problems.length === 0) return null;
+  const expected = formats.map((f) => FORMAT_NAMES[f]).join(" or ");
+  const details = problems.map((p) => p.message).join(" ");
+  return format ? details : `it isn't in ${expected}${details ? `: ${details}` : ""}`;
+}
+
 /**
  * A triage session's result, trimmed (blank and duplicate open questions dropped, dependency indexes
- * limited to other stories), or the problem with it: a result that doesn't match the schema, a
- * description without `## Quality Gates` or with `## Open Questions`, an epic PRD without stories, a
- * smaller issue with stories, a description ralph would split into stories, a story body without
- * `## Acceptance Criteria`, or stories/updates that don't fit the outcome.
+ * limited to other stories, the validation audit's body written from the epic's requirements), or
+ * the problem with it: a result that doesn't match the schema, a description with
+ * `## Success Metrics`, `## Quality Gates` or `## Open Questions`, a description not in the format
+ * its outcome and size call for (an epic for L or larger, else a story or a fix), an epic without
+ * stories, a smaller issue with stories, a description ralph would split into stories, a story or
+ * sub-issue update that isn't a story or a fix (or covers a requirement the epic doesn't have), or
+ * stories/updates that don't fit the outcome.
  */
 export function validateTriageOutput(
   structured: unknown,
@@ -422,8 +473,9 @@ export function validateTriageOutput(
   if (!title) return { problem: "the title is empty" };
   if (!description) return { problem: "the description is empty" };
   if (!summary) return { problem: "the summary is empty" };
-  if (!QUALITY_GATES_HEADING.test(description)) {
-    return { problem: "the description has no `## Quality Gates` section" };
+  const legacy = legacyOnlySection(description);
+  if (legacy) {
+    return { problem: `the description has a \`${legacy}\` section: no work item has one` };
   }
   if (hasOpenQuestionsHeading(description)) {
     return {
@@ -437,6 +489,17 @@ export function validateTriageOutput(
     };
   }
   const epic = EPIC_SIZES.has(data.size);
+  const formats: readonly WorkItemFormat[] =
+    data.outcome === "reformat" || (data.outcome === "prd" && epic)
+      ? ["epic"]
+      : data.outcome === "prd"
+        ? ["story", "fix"]
+        : ["epic", "story", "fix"];
+  const descriptionProblem = formatProblem(description, formats);
+  if (descriptionProblem) return { problem: `the description: ${descriptionProblem}` };
+  const requirements =
+    workItemFormat(description) === "epic" ? parseWorkItem(description, "epic").requirements : [];
+  const requirementIds = requirements.map((r) => r.id);
   if (data.outcome === "prd" && epic && data.stories.length === 0) {
     return { problem: `size ${data.size} is an epic but there are no \`stories\`` };
   }
@@ -458,8 +521,17 @@ export function validateTriageOutput(
     const storyTitle = oneLine(s.title);
     const body = s.body.trim();
     if (!storyTitle) return { problem: `story ${i} has no title` };
-    if (!ACCEPTANCE_CRITERIA_HEADING.test(body)) {
-      return { problem: `story ${i} ("${storyTitle}") has no \`## Acceptance Criteria\`` };
+    const validation = i > 0 && i === data.stories.length - 1 && VALIDATION_TITLE.test(storyTitle);
+    if (!validation) {
+      if (!ACCEPTANCE_CRITERIA_HEADING.test(body)) {
+        return { problem: `story ${i} ("${storyTitle}") has no \`## Acceptance Criteria\`` };
+      }
+      const storyLegacy = legacyOnlySection(body);
+      if (storyLegacy) {
+        return { problem: `story ${i} ("${storyTitle}") has a \`${storyLegacy}\` section` };
+      }
+      const storyProblem = formatProblem(body, ["story", "fix"], requirementIds);
+      if (storyProblem) return { problem: `story ${i} ("${storyTitle}"): ${storyProblem}` };
     }
     const dependsOn = [
       ...new Set(
@@ -468,7 +540,14 @@ export function validateTriageOutput(
         ),
       ),
     ];
-    stories.push({ title: storyTitle, body, priority: s.priority, dependsOn, manual: s.manual });
+    stories.push({
+      title: storyTitle,
+      // The validation audit's wording comes from the methodology, with the epic's requirements.
+      body: validation ? renderValidationAudit(requirements) : body,
+      priority: s.priority,
+      dependsOn,
+      manual: s.manual,
+    });
   }
 
   const subIssueUpdates: TriageAgentOutput["subIssueUpdates"] = [];
@@ -480,6 +559,14 @@ export function validateTriageOutput(
     if (!updateTitle) return { problem: `the update of sub-issue ${id} has no title` };
     if (!ACCEPTANCE_CRITERIA_HEADING.test(body)) {
       return { problem: `the update of sub-issue ${id} has no \`## Acceptance Criteria\`` };
+    }
+    const updateLegacy = legacyOnlySection(body);
+    if (updateLegacy) {
+      return { problem: `the update of sub-issue ${id} has a \`${updateLegacy}\` section` };
+    }
+    if (!VALIDATION_TITLE.test(updateTitle)) {
+      const updateProblem = formatProblem(body, ["story", "fix"], requirementIds);
+      if (updateProblem) return { problem: `the update of sub-issue ${id}: ${updateProblem}` };
     }
     const blockedBy = [...new Set(u.blockedBy.map((b) => b.trim()).filter((b) => b && b !== id))];
     subIssueUpdates.push({ id, title: updateTitle, body, priority: u.priority, blockedBy });

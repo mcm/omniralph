@@ -98,11 +98,6 @@ const RALPH_ALLOWED: Allowed[] = [
     reason: "reads the legacy `## Ralph Metadata` section of issues written by older versions",
   },
   {
-    text: /`## Ralph Metadata`/g,
-    files: ["packages/ralph/src/triage.ts", "packages/tasks/src/builtin/triage.ts"],
-    reason: "tells triage to drop the legacy `## Ralph Metadata` section from issues",
-  },
-  {
     text: /^ralph:triage$/g,
     files: ["packages/tracker/src/events.ts"],
     reason: "the triage label's old name, which workspaces may still have and the web UI reuses",

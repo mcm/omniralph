@@ -68,7 +68,7 @@ export const TRIAGE_STORIES_STEP: Fragment = {
 - \`priority\`: 1 Urgent, 2 High, 3 Medium, 4 Low. Priority beats order when Omniralph picks the next task, so use one priority for the whole epic, or priorities that agree with the order on purpose.
 - \`dependsOn\`: the 0-based indexes, in \`stories\`, of the tasks it really depends on. These become "blocks" relations.
 - \`manual\`: true for a step only a person can do.
-- The **last** entry is the validation audit, titled \`${VALIDATION_AUDIT_TITLE}\`, depending on every other entry.`,
+- The **last** entry is the validation audit, titled \`${VALIDATION_AUDIT_TITLE}\`, depending on every other entry. Its body is the validation audit; Omniralph writes it from the epic's requirements, whatever you put there.`,
 };
 
 /** Reformatting existing sub-issues. */
