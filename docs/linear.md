@@ -7,6 +7,29 @@ attempt, then opens a pull/merge request to the repository's default branch. See
 requests are coding runs of the repository's story and request tasks
 ([deploy-agent.md](deploy-agent.md#coding-runs)).
 
+Linear is Omniralph's first tracker adapter: the orchestrator works with any tracker through the
+tracker-neutral `TrackerGateway` (`@omniralph/tracker`), and this page describes how the Linear
+adapter (`packages/tracker/src/linear/`, with its web side in `apps/web/src/lib/tracker/linear/`)
+fills it in. Linear has every optional capability: agent sessions (activities and plan steps),
+delegation, documents and uploads. See [trackers.md](trackers.md) for the layer and how to add a
+tracker, and [ADR 0012](adr/0012-tracker-layer.md) for the design. The names Om uses are the
+neutral ones:
+
+| What                  | Name                                                                                                                       |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Trigger kinds         | `tracker.delegated` (an issue delegated to the app), `tracker.mention` (an @mention or a reply), `tracker.triage` (triage) |
+| Agent tools           | `tracker_get_issue`, `tracker_list_comments`, `tracker_search_issues`, `tracker_get_document`                              |
+| Playbook fields       | `tools.tracker` (the tools a playbook lists) and `toolSettings.trackerRead` (turns them on)                                |
+| Session token scope   | `tracker:read`                                                                                                             |
+| Agent routes          | `/api/agent/runs/{id}/tracker/*`                                                                                           |
+| Prompt variables      | `tracker.name` (`Linear`) and `tracker.conventionsFile` (`LINEAR.md`)                                                      |
+| Om's chat tools       | `draft_tracker_issue`, `delegate_tracker_issue`                                                                            |
+| Database              | `tracker_issue_id`, `tracker_session_id` and `tracker_provider = 'linear'` on runs, stories and triage runs                |
+| Minimum agent version | 2.1.0 for coding runs and runs that read the tracker ([deploy-agent.md](deploy-agent.md#central-config))                   |
+
+The Linear app's own URLs keep its name: `/api/webhooks/linear`, `/api/integrations/linear` and
+`/api/ui/integrations/linear`.
+
 The control panel is the only thing that talks to Linear. It holds the app's tokens (encrypted with
 `ENCRYPTION_KEY`, refreshed automatically when they're within 5 minutes of expiry), receives
 Linear's webhooks and posts the agent session's plan, thoughts, actions and responses. Agents relay
@@ -342,7 +365,8 @@ a time as described in [cutover-from-cyralph.md](cutover-from-cyralph.md).
 ## 5. Delegate an issue
 
 Set an issue's **Delegate** (or assignee, depending on the Linear version) to the Omniralph app. The
-agent session acknowledges within seconds, then the run starts. What gets built depends on the
+agent session acknowledges within seconds, then the run starts (its story runs have the
+`tracker.delegated` trigger). What gets built depends on the
 issue:
 
 **An issue that still needs refining is triaged first.** A delegation reads the issue's readiness
@@ -503,8 +527,8 @@ A reply on a finished (completed) run reopens it: the reply runs as a request in
 
 ### @mentions (request mode)
 
-@mention the app in an issue's comments to ask for something specific ("push this and open the
-MR", "rebase on main", "what's left on this epic?"): like Cyrus, Omniralph does just that, with the
+@mention the app in an issue's comments (a `tracker.mention` trigger, as are replies) to ask for
+something specific ("push this and open the MR", "rebase on main", "what's left on this epic?"): like Cyrus, Omniralph does just that, with the
 epic as context. The mention's text (without a leading `@name`) is the request.
 
 - **No story loop.** A mention never builds stories, never changes the issue's state in Linear and
@@ -689,7 +713,7 @@ The session is read-only, like a review: only `Read`, `Grep` and `Glob` inside t
 shell, no writes, no network, no project settings or hooks, and no Linear token (the agent
 returns a typed result; the control panel makes every change in Linear). It sees the issue, its
 comments, its sub-issues (with their states and priorities) and blockers, and can read related
-Linear issues, comments and documents with the read-only Linear tools (`tracker_get_issue`,
+Linear issues, comments and documents with the read-only tracker tools (`tracker_get_issue`,
 `tracker_list_comments`, `tracker_search_issues`, `tracker_get_document`), which the control panel
 serves for the run's organization. When the routed repository's default branch doesn't exist yet,
 it runs as if no repository were routed.
@@ -774,8 +798,8 @@ and epic runs that are already going aren't affected.
 ## Work item tracker and readiness
 
 Code that creates, updates, triages or cancels a work item goes through the tracker-neutral
-`WorkItemTracker` interface (`apps/web/src/lib/work-items/tracker.ts`), never `LinearGateway`
-directly. `getWorkItemTracker({db, organizationId})` returns the organization's tracker
+`WorkItemTracker` interface (`apps/web/src/lib/work-items/tracker.ts`), never a tracker
+gateway directly. `getWorkItemTracker({db, organizationId})` returns the organization's tracker
 (`GatewayWorkItemTracker` in `apps/web/src/lib/work-items/gateway-tracker.ts`, over its connected
 tracker's gateway) and throws `TrackerNotConnectedError` without one. A new adapter runs the shared contract suite
 (`describeWorkItemTrackerContract` in `apps/web/src/lib/work-items/contract.ts`).
