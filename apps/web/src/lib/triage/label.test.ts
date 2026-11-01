@@ -41,13 +41,7 @@ process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 const databaseAvailable = testDatabaseAvailable();
 
 const PRD = [
-  "## Introduction",
-  "",
-  "Rotate the keys.",
-  "",
-  "## Quality Gates",
-  "",
-  "- `pnpm test` - Tests",
+  "As an admin, I want this done so that I can rely on it. Rotate the keys.",
   "",
   "## Acceptance Criteria",
   "",

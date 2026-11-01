@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { renderTriageMethodology } from "@omniralph/planning";
 import {
   buildTriagePrompt,
   TRIAGE_OUTPUT_SCHEMA,
@@ -107,9 +108,22 @@ describe("builtin:triage", () => {
 
   it("names Linear and its LINEAR.md on a Linear run", () => {
     const prompt = render(FIXTURES["routed-with-checkout"]!);
-    expect(prompt).toContain("Triage the Linear issue ENG-42 into a PRD");
-    expect(prompt).toContain("Omniralph reads stories from Linear's own fields");
-    expect(prompt).toContain("(CI config and `LINEAR.md` first)");
+    expect(prompt).toContain("Triage the Linear issue ENG-42 into an epic, a story or a fix");
+    expect(prompt).toContain("Omniralph reads tasks from Linear's own fields");
+    expect(prompt).toContain("the repo (`LINEAR.md` first)");
+  });
+
+  it("takes its methodology from packages/planning, with no Success Metrics or Quality Gates", () => {
+    const methodology = renderTriageMethodology({
+      trackerName: "{{tracker.name}}",
+      conventionsFile: "{{tracker.conventionsFile}}",
+    });
+    expect(task.promptTemplate).toContain(`\n${methodology}\n\n## Triage this issue\n`);
+    const prompt = render(FIXTURES["routed-with-checkout"]!);
+    expect(prompt).toContain(
+      renderTriageMethodology({ trackerName: "Linear", conventionsFile: "LINEAR.md" }),
+    );
+    expect(prompt).not.toMatch(/success metrics|quality gates/i);
   });
 
   it("names whichever tracker the issue lives in", () => {
@@ -120,8 +134,8 @@ describe("builtin:triage", () => {
       tracker: { name: "Acme Issues", conventionsFile: "ACME.md" },
     };
     const prompt = render({ ...fixture, input });
-    expect(prompt).toContain("Triage the Acme Issues issue ENG-42 into a PRD");
-    expect(prompt).toContain("package scripts and `ACME.md` (if present)");
+    expect(prompt).toContain("Triage the Acme Issues issue ENG-42 into an epic");
+    expect(prompt).toContain("Read its `ACME.md` (if present)");
     expect(prompt).toBe(buildTriagePrompt(input));
     expect(prompt).not.toMatch(/linear/i);
     expect(`${agent.systemPrompt}\n\n${task.systemAppend}`).not.toMatch(/linear/i);

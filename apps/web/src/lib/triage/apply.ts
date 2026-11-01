@@ -46,7 +46,13 @@ import {
   type IssueSummary,
   type TrackerGateway,
 } from "@omniralph/tracker";
-import { dependencyViolations } from "@omniralph/planning";
+import {
+  VALIDATION_AUDIT_TITLE,
+  dependencyViolations,
+  parseWorkItem,
+  renderValidationAudit,
+  workItemFormat,
+} from "@omniralph/planning";
 import { PlannedItems } from "@/lib/ralph/relations";
 import { createPlannedSubIssues, runManualLabels } from "@/lib/ralph/epic-loader";
 import { errorMessage, postActivity, quietly } from "@/lib/ralph/notify";
@@ -110,17 +116,18 @@ export function readyToStartMessage(issue: Pick<IssueSummary, "identifier">): st
 /** Sub-issue state types a reformat may rewrite. */
 const REFORMATTABLE = new Set(["backlog", "unstarted"]);
 
-/** The validation sub-issue a reformatted epic gets when it has none. */
-export const VALIDATION_STORY_TITLE = "Validate functional requirements";
-export const VALIDATION_STORY_BODY = [
-  "Verify that the finished epic meets every functional requirement of the parent issue's PRD and every other sub-issue's acceptance criteria. For each item, confirm it in the code or with a test; add missing tests and fix any gap you find.",
-  "",
-  "## Acceptance Criteria",
-  "",
-  "- [ ] Every functional requirement of the parent issue's PRD is met",
-  "- [ ] All acceptance criteria of the other stories of this epic are met",
-  "- [ ] All quality gates pass",
-].join("\n");
+/** The validation sub-issue a reformatted epic gets when it has none: the validation audit. */
+export const VALIDATION_STORY_TITLE = VALIDATION_AUDIT_TITLE;
+
+/**
+ * The validation audit's body for the epic described by `description`: one
+ * criterion per requirement of a new-format epic (a placeholder line for an
+ * epic with none, such as a legacy PRD).
+ */
+export function validationStoryBody(description: string): string {
+  const epic = parseWorkItem(description);
+  return renderValidationAudit(epic?.format === "epic" ? epic.requirements : []);
+}
 
 /** What the sink needs from the trigger context `enqueueTriage` stores. */
 export const TriageRunContext = TriageJobContext;
@@ -226,6 +233,8 @@ export function storyPlan(stories: TriageAgentOutput["stories"]): Materializatio
   };
 }
 
+const FORMAT_ARTICLES = { epic: "an epic", story: "a story", fix: "a fix" } as const;
+
 /** The final response in the session: what triage decided and what it changed. */
 export function appliedMessage(
   issue: Pick<IssueSummary, "identifier">,
@@ -243,9 +252,11 @@ export function appliedMessage(
         ? `epic with ${created.length} new sub-issue${plural(created.length)}: ${created.map((c) => c.identifier).join(", ")}`
         : EPIC_SIZES.has(triage.size)
           ? "epic (its existing sub-issues kept)"
-          : "single issue";
+          : workItemFormat(triage.description) === "fix"
+            ? "single fix"
+            : "single story";
   const lines = [
-    `Triaged **${issue.identifier}** (${triage.outcome === "prd" ? "rewritten as a PRD" : triage.outcome === "reformat" ? "reformatted" : "already in the PRD format"}).`,
+    `Triaged **${issue.identifier}** (${triage.outcome === "prd" ? `rewritten as ${FORMAT_ARTICLES[workItemFormat(triage.description) ?? "story"]}` : triage.outcome === "reformat" ? "reformatted as an epic" : "already in the planning formats"}).`,
     "",
     triage.summary,
     "",
@@ -335,6 +346,8 @@ export async function reformatSubIssues(
   issue: IssueSummary,
   children: readonly IssueSummary[],
   updates: TriageAgentOutput["subIssueUpdates"],
+  /** The epic's new description, whose requirements the validation audit lists. */
+  description: string,
 ): Promise<SubIssueReformat> {
   const byRef = new Map<string, IssueSummary>();
   for (const child of children) {
@@ -387,7 +400,7 @@ export async function reformatSubIssues(
       teamId: issue.teamId,
       parentId: issue.id,
       title: VALIDATION_STORY_TITLE,
-      description: VALIDATION_STORY_BODY,
+      description: validationStoryBody(description),
       priority: toIssuePriority(priorities.length > 0 ? Math.max(...priorities) : 3),
       ...(orders.length > 0 && { subIssueSortOrder: Math.max(...orders) + 1 }),
       ...(issue.projectName && { projectName: issue.projectName }),
@@ -482,7 +495,13 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
       triage.outcome === "reformat" &&
       (children.length > 0 || triage.subIssueUpdates.length > 0)
     ) {
-      reformat = await reformatSubIssues(gateway, issue, children, triage.subIssueUpdates);
+      reformat = await reformatSubIssues(
+        gateway,
+        issue,
+        children,
+        triage.subIssueUpdates,
+        triage.description,
+      );
       if (reformat.validation) created = [reformat.validation];
       if (reformat.reformatted.length > 0) {
         notes.push(

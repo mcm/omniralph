@@ -16,6 +16,7 @@ import {
   type Database,
   type Job,
 } from "@omniralph/db";
+import { renderValidationAudit } from "@omniralph/planning";
 import type { TriageAgentOutput } from "@omniralph/ralph";
 import type { QueryRunResult, RunSpecJobPayload, TriageOutcome } from "@omniralph/shared";
 import {
@@ -51,18 +52,34 @@ vi.mock("@/lib/tracker/linear/client", async (importOriginal) => ({
 
 const databaseAvailable = testDatabaseAvailable();
 
+/** A single task, in the story format. */
 const PRD = [
-  "## Introduction",
-  "",
-  "Export widgets as CSV.",
-  "",
-  "## Quality Gates",
-  "",
-  "- `pnpm test` - Tests",
+  "As a user, I want to export widgets as CSV so that I can share them.",
   "",
   "## Acceptance Criteria",
   "",
   "- [ ] It works",
+].join("\n");
+
+/** An epic, in the epic format. */
+const EPIC = [
+  "## Problem",
+  "",
+  "Widgets can't leave the app.",
+  "",
+  "## Scope",
+  "",
+  "### In",
+  "",
+  "- CSV export",
+  "",
+  "### Out",
+  "",
+  "- Other formats",
+  "",
+  "## Requirements",
+  "",
+  "- FR-1: The system must export widgets as CSV",
 ].join("\n");
 
 type Story = TriageAgentOutput["stories"][number];
@@ -80,7 +97,7 @@ const outcome = (overrides: Partial<TriageOutcome> = {}): TriageOutcome => ({
   outcome: "prd",
   size: "S",
   title: "Export widgets as CSV",
-  description: PRD,
+  description: overrides.size === "L" || overrides.size === "XL" ? EPIC : PRD,
   openQuestions: [],
   stories: [],
   subIssueUpdates: [],
@@ -91,7 +108,7 @@ const outcome = (overrides: Partial<TriageOutcome> = {}): TriageOutcome => ({
 const result = (overrides: Partial<TriageOutcome> = {}): QueryRunResult => ({
   outcome: "answered",
   answer: null,
-  structured: { ...outcome(overrides), summary: "Sized it and wrote the PRD." },
+  structured: { ...outcome(overrides), summary: "Sized it and wrote the story." },
   references: [],
   usage: { inputTokens: 1, outputTokens: 1 },
   durationMs: 10,
@@ -236,11 +253,11 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     const [response] = responses(sessionId);
     expect(response).toMatchObject({ type: "response" });
     expect(response && "body" in response && response.body).toMatch(
-      /Size:\*\* S[\s\S]*Structure:\*\* single issue[\s\S]*Status:\*\* Ready to start[\s\S]*ENG-\d+ is ready to start\. Start it from the Backlog, or delegate it to Om again\.$/,
+      /Size:\*\* S[\s\S]*Structure:\*\* single story[\s\S]*Status:\*\* Ready to start[\s\S]*ENG-\d+ is ready to start\. Start it from the Backlog, or delegate it to Om again\.$/,
     );
     expect(await getTriageRun(db, run.id)).toMatchObject({
       status: "completed",
-      lastResult: { summary: "Sized it and wrote the PRD." },
+      lastResult: { summary: "Sized it and wrote the story." },
     });
 
     // A replayed result is applied once.
@@ -346,6 +363,9 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     ]);
     expect(children[0]!.description).toBe(stories[0]!.body);
     const [endpoint, button, announce, validation] = children;
+    expect(validation!.description).toBe(
+      renderValidationAudit([{ id: "FR-1", text: "The system must export widgets as CSV" }]),
+    );
     expect((await linear.getBlockers(button!.id)).map((b) => b.id)).toEqual([endpoint!.id]);
     expect(await linear.getBlockers(endpoint!.id)).toEqual([]);
     expect((await linear.getBlockers(validation!.id)).map((b) => b.id).sort()).toEqual(
@@ -381,8 +401,9 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     expect(loaded).toMatchObject({ kind: "children", materialized: 0, root: { id: issue.id } });
     expect(linear.issues.size).toBe(issueCount);
     expect(linear.issueUpdates).toHaveLength(updates);
-    expect(loaded.epic.description).toBe(PRD);
-    expect(loaded.epic.qualityGates).not.toEqual([]);
+    expect(loaded.epic.description).toBe(EPIC);
+    // A new-format epic runs only the repo's checks.
+    expect(loaded.epic.qualityGates).toEqual([]);
     expect(
       loaded.epic.stories.map((s) => [s.title, s.priority, [...s.dependsOn].sort(), !!s.manual]),
     ).toEqual([
@@ -452,7 +473,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       ignored: [],
       readiness: "ready",
     });
-    expect(await linear.getIssue(issue.id)).toMatchObject({ description: PRD });
+    expect(await linear.getIssue(issue.id)).toMatchObject({ description: EPIC });
     expect(await linear.getIssue(first.id)).toMatchObject({
       title: "Add the export endpoint",
       description: updates[0]!.body,
@@ -484,7 +505,10 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       subIssueSortOrder: 4,
       projectName: "Widgets",
     });
-    expect(validation.description).toContain("## Acceptance Criteria");
+    // The validation audit, listing the epic's requirements.
+    expect(validation.description).toBe(
+      renderValidationAudit([{ id: "FR-1", text: "The system must export widgets as CSV" }]),
+    );
     expect((await linear.getBlockers(validation.id)).map((b) => b.id).sort()).toEqual(
       [first.id, second.id, third.id].sort(),
     );
@@ -656,7 +680,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     expect(await linear.getChildren(issue.id)).toEqual([expect.objectContaining({ id: child.id })]);
     expect(linear.stateChanges).toEqual([]); // already in Backlog
     expect(linear.comments).toHaveLength(1);
-    expect(JSON.stringify(responses(sessionId))).toContain("already in the PRD format");
+    expect(JSON.stringify(responses(sessionId))).toContain("already in the planning formats");
 
     // Once answered, the section goes and it moves to Todo, still without other changes.
     const again = addIssue({ description: `${PRD}\n\n## Open Questions\n\n1. Old?` });
@@ -853,7 +877,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       await hooks.onCompleted!(db, job);
       expect(await getTriageRun(db, run.id)).toMatchObject({
         status: "completed",
-        lastResult: { summary: "Sized it and wrote the PRD.", error: null },
+        lastResult: { summary: "Sized it and wrote the story.", error: null },
       });
       expect(linear.issueUpdates).toHaveLength(1);
       // A replayed result applies nothing twice.

@@ -1,4 +1,4 @@
-Triage the Linear issue ENG-42 into a PRD that Omniralph can build.
+Triage the Linear issue ENG-42 into an epic, a story or a fix that Omniralph can build.
 
 ## The issue
 - Identifier: ENG-42 (https://linear.app/acme/issue/ENG-42/csv-export)
@@ -62,7 +62,7 @@ Export button
 - ENG-7 (state type `started`) blocks ENG-43: Widgets table schema
 
 ## Repository
-The issue routes to `acme/widgets`, checked out read-only at its default branch `main` in your working directory. Read its CI config, package scripts and `LINEAR.md` (if present), and the code the issue touches.
+The issue routes to `acme/widgets`, checked out read-only at its default branch `main` in your working directory. Read its `LINEAR.md` (if present) and the code the issue touches.
 
 ## Your previous triage of this issue
 This session triaged the issue before (outcome `reformat`, size L). Build on it rather than starting over: keep what still holds and change only what the reply and any new information call for.
@@ -86,7 +86,7 @@ Open questions it asked:
 Admins only?
 
 ## Reply in the session
-Someone replied in the thread on Linear (typically answers to the open questions, or corrections). Treat the answers as decisions: fold them into the PRD and drop the questions they answer.
+Someone replied in the thread on Linear (typically answers to the open questions, or corrections). Treat the answers as decisions: fold them into the description and drop the questions they answer.
 <reply>
 1. id and name
 2. everyone
@@ -94,119 +94,219 @@ Someone replied in the thread on Linear (typically answers to the open questions
 
 ## How to triage
 
-The PRDs you write are executed by Omniralph, an agent that runs each sub-issue (or a single issue) as one fresh, unattended AI coding session: it runs the quality gates, commits, marks the story done and moves on, and opens the pull request when every story is done. Precision and machine-verifiable acceptance criteria matter. Omniralph reads stories from Linear's own fields (identifier, title, priority, sub-issue order, state, labels, "blocks" relations) plus the checkboxes in each description, never from story IDs or metadata in titles or bodies.
+What you write is built by Omniralph, which runs each task as one fresh, unattended AI coding session: it runs the repo's checks, commits, marks the task done and moves on, and opens the pull request once every task in the epic is done. Precise, checkable acceptance criteria matter. Omniralph reads tasks from Linear's own fields (identifier, title, priority, sub-issue order, state, labels, "blocks" relations) plus the checkboxes in each description, never from identifiers or metadata written into titles or bodies.
 
 ### 1. Understand the issue
-- Read the title, description, comments, sub-issues and blockers below. Work out what is already specified, what you can infer about intent, and what is missing relative to the PRD format.
-- If a repository is checked out, read it targeted, not wholesale: CI config and package scripts for the quality gates, the files the feature touches for technical considerations, existing components and patterns to reuse. Cite real file paths.
-- If the repository has a `LINEAR.md` at its root, read it first and honour it throughout: it holds the project's conventions for Linear issues (e.g. whether to add a `> Branch:` line, the manual label, standard manual stories).
+
+- Read the title, description, comments, sub-issues and blockers below. Work out what is already decided, what you can infer about intent, and what is missing.
+- If a repo is checked out, read it targeted, not wholesale: the files the work touches, existing components and patterns to reuse. Cite real file paths in technical notes and context.
+- If the repo has a `LINEAR.md` at its root, read it first and honour it throughout: it holds the project's conventions for Linear issues (e.g. whether to add a `> Branch:` line, the manual label, standard manual tasks).
+- Decide whether the issue is a bug (a Fix) or new work (a Story).
 
 ### 2. Decide what kind of triage this is (`outcome`)
-- `prd`: the issue isn't a PRD yet (a one-liner, a bug report, loose notes, a partial spec) and has no sub-issues. Write the full PRD; if it is L or larger, also the stories.
-- `reformat`: the issue is already planned (it has sub-issues) but isn't in the format below. Reformat it, don't replan it: keep its scope, decisions, stories and their order, and fix the format of the description and of every Backlog/Todo sub-issue (`subIssueUpdates`). Never add new stories alongside existing sub-issues (`stories` stays empty), and never drop, merge or cancel sub-issues; if work seems to be missing, or a sub-issue seems wrong or redundant, say so in an open question.
-- `unchanged`: the issue is already a PRD in the format below and needs no rewrite. Return its current description (without any `## Open Questions` section) and title as they are, with no stories or sub-issue updates.
-- An issue whose description holds user stories but has no sub-issues (e.g. a `### US-001: …` PRD) is `prd`: rewrite it in this format, with its stories as `stories` when it is L or larger.
+
+- `prd`: the issue has no sub-issues and isn't yet written in the formats below (a one-liner, a bug report, loose notes, a partial spec, or an older format). Write it out; if it is L or larger, also write its tasks.
+- `reformat`: the issue is already planned (it has sub-issues) but isn't in the formats below. Reformat it, don't replan it: keep its scope, decisions, tasks and their order, and fix the format of the description and of every Backlog or Todo sub-issue (`subIssueUpdates`). Never add tasks beside existing sub-issues (`stories` stays empty), and never drop, merge or cancel sub-issues; if work seems missing, or a sub-issue seems wrong or redundant, say so in an open question.
+- `unchanged`: the issue is already in the formats below and needs no rewrite. Return its current title and description as they are (without any `## Open Questions` section), with no tasks or sub-issue updates.
+- An issue whose description holds user stories but has no sub-issues (e.g. a `### US-001: …` list) is `prd`: rewrite it, with its stories as tasks when it is L or larger.
 - Omniralph never touches work in progress: only sub-issues in state type `backlog` or `unstarted` can be updated.
 
-### 3. Write the PRD (`description`)
-The description becomes the issue's description, and Omniralph includes it in every story's prompt. Use these sections, in this order, each as a plain `##` heading (`## Goals`, not `## 2. Goals`); the optional ones only when there is something to say:
-1. `## Introduction`: what the feature is and the problem it solves.
-2. `## Goals`: specific, measurable objectives (bullets).
-3. `## Quality Gates`: the commands every story must pass (see below). Always present.
-4. `## Non-Goals`: what this will NOT include. Only what is really out of scope: never label part of the requested work "future enhancement", "stretch" or "v2" unless the issue does. If something is genuinely optional, ask about it in an open question so a person decides; never defer it silently.
-5. `## Design Considerations` (optional): UI/UX requirements, mockups, components to reuse.
-6. `## Technical Considerations` (optional): constraints, dependencies, integration points, file paths.
-7. `## Success Metrics`: how you will know it succeeded (bullets, measurable).
-8. `## Functional Requirements`: a numbered list of bullets (`- FR-1: The system must …`). Explicit and unambiguous; never headings.
-9. Single issues only (smaller than L): `## Acceptance Criteria`, a consolidated `- [ ]` checklist, as the very last section.
+### 3. Write the description (`description`)
 
-Don't write a `# Title` heading (the title is its own field), a `## Description` or `## Test Plan` heading, or a `## Open Questions` section: report open questions in `openQuestions` and Omniralph adds the section at the end.
+The description becomes the issue's description, and Omniralph shows it to the agent working each task. Size the work first (see Sizing), then write:
+- **L or larger:** the epic format. The tasks go in `stories`, never into the description.
+- **Smaller than L:** a single task, in the fix format when the issue is a bug and the story format otherwise, with no `Covers:` line. Omniralph builds the whole description as one task, so it has no requirement list, no story-style headings such as `### US-001: …`, and its `## Acceptance Criteria` is the last section.
 
-Branch line: by default add none. Add ``> Branch: `name` `` on its own line after the sections only when the issue or `LINEAR.md` asks for it (keep one that is already there). Never add a `[repo=…]` tag: repositories are routed by their settings, not by the description.
+Never write a `## Open Questions` section yourself: report open questions in `openQuestions` and Omniralph adds the section at the end.
 
-#### Quality Gates
-Omniralph finds the gates by exact format, so follow it exactly:
-- The heading is literally `## Quality Gates`.
-- Each command is its own bullet, and the command is the **first backticked span** of the bullet: ``- `pnpm lint` - Linting``.
-- Anything that isn't a shell command must not start with backticks (a bullet like ``- `dev-browser` skill`` would be run as a command): write it as a plain prose bullet.
-- Every command must be non-interactive (no watch mode, no prompts) and runnable from the repository root in a fresh checkout.
+Branch line: by default add none. Add ``> Branch: `name` `` on its own line after the sections only when the issue or `LINEAR.md` asks for it (keep one that is already there). Never add a `[repo=…]` tag: repos are routed by their settings, not by the description.
 
+### 4. Report the size (`size`)
+
+Report the size by the Sizing rule, and mention it with a one-line rationale in your summary. For `reformat` and `unchanged`, size the work as planned.
+
+### 5. Write the tasks (`stories`; `prd` epics only, L or larger)
+
+Each entry becomes one sub-issue of the epic, in the story or fix format, split by the Splitting rule.
+- `title`: the plain task title, with no `US-001:` prefix or other identifiers.
+- `body`: the description, in the story format (or the fix format for a bug in the epic).
+- `priority`: 1 Urgent, 2 High, 3 Medium, 4 Low. Priority beats order when Omniralph picks the next task, so use one priority for the whole epic, or priorities that agree with the order on purpose.
+- `dependsOn`: the 0-based indexes, in `stories`, of the tasks it really depends on. These become "blocks" relations.
+- `manual`: true for a step only a person can do.
+- The **last** entry is the validation audit, titled `Validate functional requirements`, depending on every other entry. Its body is the validation audit; Omniralph writes it from the epic's requirements, whatever you put there.
+
+### 6. Reformat sub-issues (`subIssueUpdates`; `reformat` only)
+
+For each sub-issue in state type `backlog` or `unstarted` that isn't in the story or fix format, add an entry with its `id` (as given below), its title without identifier prefixes, its body in the story or fix format (keep its intent and criteria; drop metadata sections, identifiers, priority and dependency lines, and turn its criteria into a `## Acceptance Criteria` checklist), its `priority` (1–4; keep the current one unless it has none) and `blockedBy` (the `id`s of the sibling sub-issues it depends on, and the identifiers of work items outside this issue it is blocked by, including the existing relations under Blocked by; Omniralph applies the Dependency rules). Leave out sub-issues that are already fine and every sub-issue in any other state.
+
+### 7. Open questions (`openQuestions`)
+
+You can't ask anyone during the session. Answer what you can from the issue, comments, sub-issues, blockers and source, and make reasonable, conventional choices for minor details (mention notable ones under technical notes). Every ambiguity left that would change the scope, the behavior, the acceptance criteria or the structure becomes one open question: specific, self-contained and answerable in a sentence, with lettered options when that helps (e.g. "Who can delete a project? A. Owners only B. Owners and admins"). Don't ask about anything the issue already answers. Leave `openQuestions` empty when nothing is left: the issue then moves to Todo, ready for Omniralph. With open questions it stays in Backlog, and Omniralph won't start it until they are answered.
+- A description that already ends with a `## Open Questions` section holds the questions of an earlier triage: fold the answers given in the comments or the reply into the description, and keep only the questions still unanswered.
+
+### 8. Summary (`summary`)
+
+A few lines for the thread on Linear: the outcome, the size and why, the structure (a single story or fix, an epic with N tasks, or which sub-issues were reformatted), and how many open questions remain.
+
+## Planning rules
+
+### Work items
+
+Every work item has a kind and a role.
+- **Kind.** A **Story** is new work or an enhancement. A **Fix** is a bug: something that should work and doesn't. Omniralph tells a Fix by its bug label or its fix format; everything else is a Story.
+- **Role.** A **task** is one piece of work an agent finishes in one session; it has no sub-issues. An **epic** is a set of tasks (its sub-issues) that ship together in one pull request, once every task is done. A **feature** groups epics; nobody builds a feature directly. A task with no epic is a **standalone task**, and counts as an epic of one.
+- What an agent builds against is the task and its epic, never a planning document. Outcomes and success measures belong in planning documents, not in epics or tasks.
+
+### Epic format
+
+An epic's description has these sections, in this order, each as a plain `##` heading. Leave out `## Design` and `## Technical notes` when there is nothing to say; the others are always present.
+- `## Problem`: who has the problem, what it is today and why it matters now.
+- `## Scope`: what the epic delivers under `### In` and what it deliberately leaves out under `### Out`. Only what is really out of scope goes under Out: never relabel requested work as later or optional; if part of it truly is optional, ask a person.
+- `## Design` (optional): UI and UX decisions, flows, components to reuse.
+- `## Technical notes` (optional): constraints, integration points, real file paths, patterns to follow.
+- `## Requirements`: the numbered requirements (see Requirement wording). Every requirement is owned by at least one story.
+
+Nothing else: no title heading (the title is its own field), no checklist, no other sections. The repo decides which checks run on every task, so an epic never lists commands to run.
+
+```markdown
+## Problem
+
+[Who has the problem, what it is today and why it matters now.]
+
+## Scope
+
+### In
+
+- [What this epic delivers]
+
+### Out
+
+- [What it deliberately leaves out]
+
+## Design
+
+[Optional: UI and UX decisions, flows, components to reuse.]
+
+## Technical notes
+
+[Optional: constraints, integration points, file paths, patterns to follow.]
+
+## Requirements
+
+- FR-1: The system must [behavior].
+- FR-2: WHEN [event or state], the system must [behavior].
+- FR-3: IF [unwanted condition], the system must [behavior].
 ```
-## Quality Gates
 
-These commands must pass for every user story:
-- `pnpm typecheck` - Type checking
-- `pnpm lint` - Linting
-- `pnpm test` - Unit tests
-```
+### Story format
 
-Discover them from the repository, in this order:
-1. **CI config first** (`.github/workflows/*.yml`, `.gitlab-ci.yml` or equivalent): take the commands the pull-request pipeline runs (lint, typecheck, test, build). Gates weaker than CI let every story pass and then fail at the end, because CI only runs once the finished epic's pull request opens.
-2. **Then the scripts those commands call** (`package.json` scripts, `Makefile`, `pyproject.toml`, …). Prefer an aggregate script when CI uses one.
-Don't add browser verification unless the issue or `LINEAR.md` says the coding host has a browser tool. Without a repository, keep the heading with a prose bullet saying the gates are still to be decided, and add an open question asking which repository and commands apply.
+A story is a task for new work. Its description is exactly this shape:
+- One sentence: "As a [user], I want [capability] so that [benefit]."
+- A `Covers:` line naming the requirements of its epic the story owns, by identifier (`Covers: FR-2, FR-4`). A standalone story has no epic, and no `Covers:` line.
+- Optionally, short context: files to touch, patterns to follow.
+- `## Acceptance Criteria` (exactly that, no trailing colon), a `- [ ]` checklist, as the last section.
 
-### 4. Size it (`size`)
-Estimate the size of the entire body of work (every goal and functional requirement, not one piece): the number of distinct requirements, the surface area touched (database, API, UI, integrations, infra), unknowns and risk, and how many focused AI-agent sessions it would realistically take. XS, S, M, L or XL. Then apply the rule:
-- **L or larger (L, XL) → an epic**: one sub-issue per user story plus a final validation sub-issue.
-- **Smaller than L (XS, S, M) → a single self-contained issue**: no stories, acceptance criteria in the description.
-Mention the size and a one-line rationale in your summary. For `reformat` and `unchanged`, size the work as planned.
+Don't repeat the title as a heading, and don't add identifiers, priority, dependency or metadata lines: those are Linear fields. Never refer to another story by a drafting label such as US-001.
 
-### 5. Stories (`stories`; `prd` epics only, L or larger)
-Each story becomes one sub-issue, implemented in one fresh unattended session, so it must be small enough to finish in one session. Order them so earlier ones enable later ones. Split by feature boundary, never by development phase: "Auth system" is one story, not scaffolding, logic, tests and polish as four. Every story is in scope for the goal.
-- `title`: the plain story title. No `US-001:` prefix or other IDs.
-- `body`: exactly this shape, nothing else:
+```markdown
+As a [user], I want [capability] so that [benefit].
 
-```
-As a [user], I want [feature] so that [benefit].
+Covers: FR-1, FR-3
 
-[Optional extra context: files to touch, patterns to follow.]
+[Optional context: files to touch, patterns to follow.]
 
 ## Acceptance Criteria
 
-- [ ] Specific verifiable criterion
-- [ ] Another criterion
+- [ ] [Evidence to check]
+- [ ] [More evidence to check]
 ```
 
-  Don't repeat the title as a heading, and don't add a `## Ralph Metadata` section, story IDs, priority or dependency lines: those are Linear fields. The heading is exactly `## Acceptance Criteria` (no trailing colon). Never refer to other stories by drafting labels like US-001.
-- `priority`: 1 Urgent, 2 High, 3 Medium, 4 Low. Priority beats order when Omniralph picks the next story, so use one priority for the whole epic, or priorities that agree with the order on purpose.
-- `dependsOn`: the 0-based indexes, in `stories`, of the stories it really depends on. These become "blocks" relations, the only thing that stops a story from running early.
-- `manual`: true for a step only a person can do (secrets or credentials, DNS, third-party consoles, data migrations run by ops, design sign-off). Such steps are their own stories, never acceptance criteria on an agent story.
-- Every acceptance criterion must be verifiable by the agent itself, inside the repository: nothing that needs human judgement, production access or an external account. "Works correctly" is bad; "Button shows a confirmation dialog before deleting" is good.
-- Tests, error handling and basic hardening belong in the acceptance criteria of the story that introduces the code, never in a story of their own. The same goes for documenting that code.
-- The **last** story is the validation sub-issue, titled `Validate functional requirements`, depending on every other story, with this body:
+### Fix format
 
-```
-Verify that the finished epic meets every functional requirement and every story's acceptance criteria. For each item, confirm it in the code or with a test; add missing tests and fix any gap you find.
+A fix is a task for a bug. Its description has these sections, in this order, each always present:
+- `## Current behavior`: what happens now, with the steps, input or state that show it.
+- `## Expected behavior`: what must happen instead.
+- `## Unchanged behavior`: the nearby behavior the fix must keep exactly as it is, so the fix doesn't break it.
+- `## Acceptance Criteria`: a `- [ ]` checklist, as the last section.
+
+A fix in an epic may add a `Covers:` line before `## Current behavior` when it owns requirements of the epic.
+
+```markdown
+## Current behavior
+
+[What happens now, with the steps or input that show it.]
+
+## Expected behavior
+
+[What must happen instead.]
+
+## Unchanged behavior
+
+[Nearby behavior the fix must keep exactly as it is.]
 
 ## Acceptance Criteria
 
-- [ ] FR-1: …
-- [ ] FR-2: …
-- [ ] All acceptance criteria of the other stories of this epic are met
-- [ ] All quality gates pass
+- [ ] [Evidence to check]
+- [ ] [More evidence to check]
 ```
 
-The epic's description is the PRD (sections above, without `## Acceptance Criteria`); the stories go in `stories` only, never into the description.
+### Requirement wording
 
-### 6. Single issues (smaller than L)
-Omniralph treats the whole description as one story, and would split it into sub-issues if it looked like a PRD with stories. So:
-- no story-style headings such as `### US-001: …`, `### FR-1: …` or `### Feature 1.1: …`: functional requirements are bullets and criteria are checkboxes;
-- no ```json block containing `userStories`;
-- `## Acceptance Criteria` is the last section.
-`stories` and `subIssueUpdates` stay empty.
+Requirements are a bullet list, numbered from 1: `- FR-1: The system must …`. Never headings.
+- One behavior per requirement, explicit and unambiguous, stated as what the system must do.
+- Add a condition only to conditional behavior: WHEN for an event or state (`- FR-2: WHEN a run fails, the system must …`), IF for an unwanted condition (`- FR-3: IF the token has expired, the system must …`). Behavior that always holds has no condition.
+- Stories name the requirements they own by identifier in their `Covers:` line, so keep identifiers stable once stories refer to them.
 
-### 7. Reformatting sub-issues (`subIssueUpdates`; `reformat` only)
-For each sub-issue in state type `backlog` or `unstarted` that isn't in the story format above, add an entry with its `id` (as given below), its title without ID prefixes, its body in the story format (keep its intent and criteria; drop `## Ralph Metadata`, story IDs, priority and dependency lines, and turn criteria into a `## Acceptance Criteria` checklist), its `priority` (1–4; keep the current one unless it has none) and `blockedBy` (the `id`s of the sibling sub-issues it depends on, and the identifiers of work items outside this issue it is blocked by, including the existing relations under Blocked by; Omniralph blocks it on a task's epic when that task is in another epic). Leave out sub-issues that are already fine and every sub-issue in any other state.
+### Checkable criteria
 
-### 8. Open questions (`openQuestions`)
-You can't ask anyone during the session. Answer what you can from the issue, comments, sub-issues, blockers and source, and make reasonable, conventional choices for minor details (mention notable ones under Technical Considerations). Every ambiguity that remains and would change the scope, the behaviour, the acceptance criteria or the structure becomes one open question: specific, self-contained, and answerable in a sentence, with lettered options when that helps (e.g. "Who can delete a project? A. Owners only B. Owners and admins"). Don't ask about anything the issue already answers. Leave `openQuestions` empty when nothing is left: the issue then moves to Todo, ready for Omniralph. With open questions it stays in Backlog and Omniralph won't start it until they are answered.
-- A description that already ends with a `## Open Questions` section holds the questions of an earlier triage: fold the answers given in the comments or the reply into the PRD, and keep only the questions still unanswered.
+Acceptance criteria are evidence to check, not tests to write. Each one names something an agent can confirm inside the repo, in the code, the output of a command or the behavior of the running software: "Deleting a project asks for confirmation first", not "Works correctly".
+- Tests are written where the repo's conventions call for them on new behavior, never to prove a criterion. Don't phrase a criterion as a test to add.
+- A fix adds a regression test only where the affected code already has tests.
+- No outcomes or metrics: nothing measured after merge, such as adoption, a percentage improvement, fewer support requests or user satisfaction. Those belong in planning documents.
+- Nothing that needs human judgement, production access or an outside account.
 
-### 9. Summary (`summary`)
-A few lines for the thread on Linear: the outcome, the size and why, the structure (single issue, epic with N stories, or which sub-issues were reformatted), and how many open questions remain.
+### Sizing
+
+Size the whole body of work, not one piece of it: XS, S, M, L or XL. Weigh the number of distinct requirements, the surface it touches (database, API, UI, integrations, infrastructure), the unknowns and risk, and how many focused agent sessions it would realistically take.
+- **L or larger (L, XL): an epic.** One task per story or fix, then the validation audit as the last task.
+- **Smaller than L (XS, S, M): a single task.** One story, or one fix when it is a bug, with its acceptance criteria in its own description and no sub-issues.
+
+### Splitting into tasks
+
+Each task is built in one fresh, unattended agent session, so it must be small enough to finish in one.
+- Split by feature boundary, never by development phase: "Sign-in" is one story, not scaffolding, logic, tests and polish as four.
+- The tests, error handling, hardening and documentation of new code belong in the task that adds the code, never in a task of their own.
+- Order the tasks so earlier ones enable later ones, and block a task only on the tasks it really depends on.
+- Every task is in scope for the epic, and every requirement is owned by at least one task.
+- A step only a person can do (credentials, DNS, third-party consoles, a migration run by operations, a design sign-off) is its own manual task, never a criterion on an agent's task.
+
+### Validation audit
+
+Every epic ends with a validation audit: its last task, titled `Validate functional requirements`, blocked by every other task in the epic. It has one criterion per requirement of the epic, copied as the epic words it, and this body:
+
+```markdown
+Audit the finished epic against its requirements. For each requirement below, find the evidence that it holds on the epic's branch: the code that implements it, and the tests the repo's conventions call for on that behavior. Check every story's acceptance criteria the same way. Fix each gap you find, as part of this task.
+
+## Acceptance Criteria
+
+- [ ] FR-1: [the requirement, as the epic words it]
+- [ ] Every acceptance criterion of the other tasks in this epic holds
+- [ ] The repo's checks pass
+```
+
+### Dependency rules
+
+A "blocks" relation is the only thing that stops work from starting early, and Omniralph ships an epic only once every task in it is done. So:
+- A task in an epic may be blocked only by another epic, a standalone task, or a task in its own epic.
+- An epic may be blocked only by another epic or a standalone task.
+- A standalone task counts as an epic of one.
+- Nothing is blocked by a feature: block on the epic inside it the work waits for.
+- When work waits for a task in another epic, block it on that task's epic instead.
+- A task is never blocked by its own epic, and an epic never by one of its own tasks.
+- Work found while building an epic that can't land until the epic ships becomes a standalone task blocked by the epic, never a blocker of the task that found it.
 
 ## Triage this issue
-1. Study the issue, its comments and sub-issues, and the repository (CI config and `LINEAR.md` first).
-2. Decide the outcome, write or reformat the PRD, size it, and write the stories or sub-issue updates the structure needs.
+1. Study the issue, its comments and sub-issues, and the repo (`LINEAR.md` first).
+2. Decide the outcome and the kind (a Story or a Fix), size the work, write or reformat the epic, story or fix, and write the tasks or sub-issue updates the structure needs.
 3. Turn every remaining ambiguity into an open question.
 4. Report the result in your structured output: `outcome`, `title`, `description`, `size`, `openQuestions`, `stories`, `subIssueUpdates` and `summary`.
