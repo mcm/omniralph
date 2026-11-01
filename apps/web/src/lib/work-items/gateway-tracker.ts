@@ -21,6 +21,7 @@ import {
   type Viewer,
   type WorkflowStateType,
 } from "@omniralph/tracker";
+import { featureToRun, type FeatureFound } from "@/lib/ralph/feature";
 import { trackerExtras, trackerName } from "@/lib/tracker/adapters";
 import { readRoutingIssue } from "@/lib/tracker/routing-issue";
 import {
@@ -462,6 +463,11 @@ export class GatewayWorkItemTracker implements WorkItemTracker {
     if (hasCapability(this.gateway, "sessions") && !(await this.hasActiveRun(issue.id))) {
       await this.gateway.sessions.createSessionOnIssue(issue.id);
     }
+  }
+
+  async feature(ref: WorkItemRef): Promise<FeatureFound | null> {
+    const issue = await this.issue(ref);
+    return featureToRun(this.gateway, issue.id);
   }
 
   async stories(ref: WorkItemRef): Promise<WorkItemStory[]> {

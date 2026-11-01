@@ -10,6 +10,7 @@ import {
   type WorkItemEventKind,
 } from "@omniralph/db";
 import { ApiRouteError } from "@/lib/api/handler";
+import { featureStartReason } from "@/lib/ralph/feature";
 import { trackerName } from "@/lib/tracker/adapters";
 import { latestWorkItemRun, isActiveRunStatus } from "./detail";
 import { groupFor } from "./group";
@@ -58,7 +59,8 @@ function record(
 /**
  * Start epic: delegates the item to Om, whose agent session webhook starts the run as a
  * delegation made in the tracker does (a blocked item's run waits for its blockers). Only a Ready
- * to start item without a run (409 with one, 400 otherwise).
+ * to start item without a run (409 with one, 400 otherwise), and never a feature: a work item
+ * holding epics, or a task directly under one (400, `feature`).
  */
 export async function startWorkItem(
   db: Database,
@@ -70,6 +72,10 @@ export async function startWorkItem(
     throw new ApiRouteError(409, hasRunMessage(item.identifier), "run_exists");
   }
   if (groupFor(item) !== "ready") throw new ApiRouteError(400, NOT_READY_MESSAGE, "not_ready");
+  const feature = await trackerCall(tracker, `Reading ${item.identifier}'s sub-issues`, () =>
+    tracker.feature(item.id),
+  );
+  if (feature) throw new ApiRouteError(400, featureStartReason(feature), "feature");
   await trackerCall(tracker, `Delegating ${item.identifier}`, () =>
     tracker.delegateToOmniralph(item.id),
   );

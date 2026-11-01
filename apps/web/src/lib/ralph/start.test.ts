@@ -810,10 +810,101 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
         error: "rate limited",
       });
       expect(tracker.bodies(event.sessionId, "error")[0]).toContain(
-        "I couldn't check the issue for open questions in Linear, so I didn't start: rate limited.",
+        "I couldn't load the issue from Linear, so I didn't start: rate limited.",
       );
       expect(await db.select().from(ralphRuns)).toEqual([]);
       expect(tracker.issues.get(issue.id)?.stateType).toBe("unstarted");
+    });
+  });
+
+  describe("features", () => {
+    /** ENG-70, a feature: the epic ENG-71 (with the task ENG-72) and the task ENG-73. */
+    const addFeature = () => {
+      const feature = tracker.add({ identifier: "ENG-70", title: "Feature", description: PRD });
+      const epic = tracker.add({ identifier: "ENG-71", title: "Epic", parentId: feature.id });
+      const story = tracker.add({ identifier: "ENG-72", title: "Story", parentId: epic.id });
+      const task = tracker.add({ identifier: "ENG-73", title: "Loose", parentId: feature.id });
+      return { feature, epic, story, task };
+    };
+    const issueCount = () => tracker.issues.size;
+
+    it("refuses a delegated feature, creating nothing", async () => {
+      const { feature } = addFeature();
+      const before = issueCount();
+      const event = created(feature.id);
+      expect(await startRun(event, deps())).toEqual({ status: "feature", identifier: "ENG-70" });
+      expect(tracker.bodies(event.sessionId, "response")).toEqual([
+        "I won't build this. **ENG-70** is a feature: it holds epics (**ENG-71**). " +
+          "Each epic is started on its own: delegate each epic to me instead.",
+      ]);
+      expect(await db.select().from(ralphRuns)).toEqual([]);
+      expect(await db.select().from(jobs)).toEqual([]);
+      expect(defaultBranchCalls).toEqual([]);
+      // Its PRD wasn't materialized, and nothing moved.
+      expect(issueCount()).toBe(before);
+      expect(tracker.issues.get(feature.id)?.stateType).toBe("unstarted");
+    });
+
+    it("refuses a task directly under a feature, and a `/coding` mention of the feature", async () => {
+      const { feature, task } = addFeature();
+      const event = created(task.id);
+      expect(await startRun(event, deps())).toEqual({ status: "feature", identifier: "ENG-70" });
+      expect(tracker.bodies(event.sessionId, "response")[0]).toContain(
+        "**ENG-73** is a task directly under **ENG-70**, which is a feature: it holds epics " +
+          "(**ENG-71**). Each epic is started on its own: move **ENG-73** into one of them",
+      );
+      const mention = created(feature.id, { commentBody: "@omniralph /coding go" });
+      expect(await startRun(mention, deps())).toEqual({ status: "feature", identifier: "ENG-70" });
+      expect(await db.select().from(ralphRuns)).toEqual([]);
+      expect(await db.select().from(jobs)).toEqual([]);
+    });
+
+    it("refuses switching a mention's run of a feature to coding", async () => {
+      const { feature } = addFeature();
+      const event = created(feature.id, { commentBody: "@omniralph what is left here?" });
+      expect(await startRun(event, deps())).toMatchObject({ status: "started" });
+      const reply = await handleReply(
+        { kind: "session_prompted", sessionId: event.sessionId, body: "/coding" },
+        deps(),
+      );
+      expect(reply).toEqual({ kind: "feature" });
+      expect(tracker.bodies(event.sessionId, "response").at(-1)).toContain(
+        "**ENG-70** is a feature: it holds epics (**ENG-71**).",
+      );
+      expect((await getRunBySession(db, event.sessionId))?.mode).toBe("request");
+    });
+
+    it("starts an epic of a feature, one of its tasks, and a standalone task", async () => {
+      const { epic, story } = addFeature();
+      expect(await startRun(created(epic.id), deps())).toMatchObject({
+        status: "started",
+        created: true,
+        run: { trackerIdentifier: "ENG-71" },
+      });
+      await db.delete(jobs);
+      await db.delete(ralphRuns);
+      expect(await startRun(created(story.id), deps())).toMatchObject({
+        status: "started",
+        run: { trackerIdentifier: "ENG-71" },
+      });
+      const standalone = tracker.add({ identifier: "ENG-74", title: "Standalone" });
+      expect(await startRun(created(standalone.id), deps())).toMatchObject({
+        status: "started",
+        run: { trackerIdentifier: "ENG-74" },
+      });
+    });
+
+    it("counts only open sub-issues: an epic whose story's sub-issues are canceled starts", async () => {
+      const epic = tracker.add({ identifier: "ENG-75", title: "Epic" });
+      const story = tracker.add({ identifier: "ENG-76", title: "Story", parentId: epic.id });
+      tracker.add({
+        identifier: "ENG-77",
+        title: "Dropped",
+        parentId: story.id,
+        stateType: "canceled",
+        stateName: "Canceled",
+      });
+      expect(await startRun(created(epic.id), deps())).toMatchObject({ status: "started" });
     });
   });
 

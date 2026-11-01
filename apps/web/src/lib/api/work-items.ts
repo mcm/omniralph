@@ -111,7 +111,7 @@ export const workItemActivitySchema = z.object({
 
 /** What the user can do with the item now (any member may; these follow its state). */
 export const workItemActionsSchema = z.object({
-  /** Start epic: Ready to start, with no run. */
+  /** Start epic: Ready to start, with no run, and not a feature (`startRefusal`). */
   start: z.boolean(),
   /** Triage now: no triage queued or running, and no run. */
   triage: z.boolean(),
@@ -144,6 +144,11 @@ export const workItemDetailSchema = workItemRowSchema.extend({
   /** Its latest run, if one exists. */
   run: z.object({ id: z.string(), status: z.enum(RUN_STATUSES) }).nullable(),
   actions: workItemActionsSchema,
+  /**
+   * Why Start epic is refused, when it is (absent otherwise): it's a feature, a work item
+   * holding epics, or a task directly under one. `actions.start` is false then.
+   */
+  startRefusal: z.string().optional(),
   /**
    * Work for a person, not a run: it has one of the tracker's manual labels, or routes to a
    * repo with Coding off (absent: not manual). Its detail shows its task list

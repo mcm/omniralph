@@ -65,11 +65,13 @@ import {
   type PreparationAnswer,
 } from "@omniralph/ralph";
 import { bumpAgentHeartbeat } from "@/lib/agents/heartbeat-cache";
+import { trackerName } from "@/lib/tracker/adapters";
 import type {
   ActivityContent,
   SessionPromptedEvent as TrackerSessionPromptedEvent,
 } from "@omniralph/tracker";
 import { conversationFor } from "./conversation";
+import { featureMessage, featureToRun, type FeatureFound } from "./feature";
 import { mainBranch } from "./lanes";
 import { loadEpic, runEpicOptions } from "./epic-loader";
 import { answerCleanup, cleanUpStoppedRun } from "./cleanup";
@@ -114,7 +116,12 @@ export type ReplyKind =
   | "request"
   | "guidance"
   /** `/coding` on a mention's run whose PRD still has open questions (or couldn't be checked): refused. */
-  | "open_questions";
+  | "open_questions"
+  /**
+   * `/coding` on a mention's run of a feature (or a task directly under one), or when the
+   * tracker couldn't be read to tell: refused.
+   */
+  | "feature";
 
 export interface ReplyResult {
   kind: ReplyKind;
@@ -161,6 +168,24 @@ export async function handleReply(
   // `/coding` on a mention's run switches it to the story loop: not while the PRD has open questions.
   if (instruction.wantsLoop && run.mode === "request" && isTrackerRun(run)) {
     const issueId = run.focusStoryId ?? run.trackerIssueId;
+    let feature: FeatureFound | null;
+    try {
+      feature = await featureToRun(deps.tracker, issueId);
+    } catch (error) {
+      console.error(`Checking whether ${issueId} is a feature failed`, error);
+      await postActivity(conversationFor(run, deps), {
+        type: "error",
+        body: `I couldn't load the issue from ${trackerName(run.trackerProvider)}, so I didn't switch to coding: ${error instanceof Error ? error.message : String(error)}. Reply \`/coding\` again to retry.`,
+      });
+      return { kind: "feature" };
+    }
+    if (feature) {
+      await postActivity(conversationFor(run, deps), {
+        type: "response",
+        body: featureMessage(feature),
+      });
+      return { kind: "feature" };
+    }
     let found: Awaited<ReturnType<typeof withOpenQuestions>>;
     try {
       found = await withOpenQuestions(deps, issueId);

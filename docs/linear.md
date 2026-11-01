@@ -795,6 +795,17 @@ The same goes for `/coding` switching a mention's run to the story loop (in a re
 mention): the run stays in request mode until the questions are answered. Request-mode @mentions
 and epic runs that are already going aren't affected.
 
+### Om refuses features
+
+A feature is a work item whose sub-issues are epics: at least one of its open sub-issues has open
+sub-issues of its own. Om never builds one, since it would build each epic as if it were one
+story. A delegation, a `/coding` mention or a `/coding` reply on a feature (or on a task directly
+under one, which would run as a story of the feature) is answered in the session with the
+feature's epics and that each epic is started on its own; nothing is created and no state
+changes. On the work item page, Start epic is disabled with the same reason, and
+`POST /api/ui/work-items/{id}/start` refuses it (400, `feature`). The check is `featureToRun`
+(`apps/web/src/lib/ralph/feature.ts`, over `workItemRole` from `@omniralph/planning`).
+
 ## Work item tracker and readiness
 
 Code that creates, updates, triages or cancels a work item goes through the tracker-neutral
