@@ -220,6 +220,7 @@ function WorkItemDetailContent({
         icon: IconPlayerPlay,
         solid: true,
         disabled: !item.actions.start || start.isPending,
+        disabledReason: item.startRefusal,
         tooltip: item.blocked ? startsWhenTooltip(item.blockers) : undefined,
         onSelect: () => (item.blocked ? setConfirmStart(true) : runStart()),
       }

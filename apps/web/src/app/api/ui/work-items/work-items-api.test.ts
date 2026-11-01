@@ -602,6 +602,36 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
       expect((await call(startRoute.POST, urlId(blocked), { method: "POST" })).status).toBe(200);
       expect(acme.delegateOf(blocked.id)).toBe(acme.viewer.id);
     });
+    it("refuses a feature, with Start disabled for the same reason, and starts its epic and a task", async () => {
+      const feature = ready("Feature", { identifier: "ENG-900" });
+      const epic = ready("Epic", { identifier: "ENG-901", parentId: feature.id });
+      ready("Story", { identifier: "ENG-902", parentId: epic.id });
+      const reason =
+        "ENG-900 is a feature: it holds epics (ENG-901). Each epic is started on its own: " +
+        "start each epic instead.";
+
+      const shown = await detail(feature);
+      expect(shown.actions.start).toBe(false);
+      expect(shown.startRefusal).toBe(reason);
+      expect(await call(startRoute.POST, urlId(feature), { method: "POST" })).toEqual({
+        status: 400,
+        body: expect.objectContaining({ error: reason, code: "feature" }),
+      });
+      // Nothing was delegated, so no session, run or job follows.
+      expect(acme.delegateOf(feature.id)).toBeUndefined();
+      expect(await kinds(feature)).toEqual([]);
+
+      const epicDetail = await detail(epic);
+      expect(epicDetail.actions.start).toBe(true);
+      expect(epicDetail.startRefusal).toBeUndefined();
+      expect((await call(startRoute.POST, urlId(epic), { method: "POST" })).status).toBe(200);
+      expect(acme.delegateOf(epic.id)).toBe(acme.viewer.id);
+
+      const task = ready("Standalone task", { identifier: "ENG-903" });
+      expect((await detail(task)).actions.start).toBe(true);
+      expect((await call(startRoute.POST, urlId(task), { method: "POST" })).status).toBe(200);
+      expect(acme.delegateOf(task.id)).toBe(acme.viewer.id);
+    });
   });
 
   it("Triage now starts triage once; a second request while it runs is a conflict", async () => {

@@ -237,6 +237,7 @@ export function describeWorkItemTrackerContract(
         ["startTriage", (t: WorkItemTracker, ref: string) => t.startTriage(ref)],
         ["delegateToOmniralph", (t: WorkItemTracker, ref: string) => t.delegateToOmniralph(ref)],
         ["stories", (t: WorkItemTracker, ref: string) => t.stories(ref)],
+        ["feature", (t: WorkItemTracker, ref: string) => t.feature(ref)],
         ["comments", (t: WorkItemTracker, ref: string) => t.comments(ref)],
       ])("%s throws WorkItemNotFoundError", async (_name, change) => {
         await expect(change(tracker, h.missingRef)).rejects.toBeInstanceOf(WorkItemNotFoundError);
@@ -853,6 +854,65 @@ export function describeWorkItemTrackerContract(
       it("answers no stories for an item with neither", async () => {
         const seeded = await h.seed({ teamId: teamA, title: "Idea", state: "backlog" });
         expect(await tracker.stories(seeded.identifier)).toEqual([]);
+      });
+    });
+
+    describe("feature", () => {
+      /** A feature holding an epic (with a story) and a task directly under it. */
+      const seedFeature = async () => {
+        const feature = await h.seed({ teamId: teamA, title: "Feature", state: "todo" });
+        const epic = await h.seed({
+          teamId: teamA,
+          title: "Epic",
+          state: "todo",
+          parentId: feature.id,
+        });
+        const story = await h.seed({
+          teamId: teamA,
+          title: "Story",
+          state: "todo",
+          parentId: epic.id,
+        });
+        const task = await h.seed({
+          teamId: teamA,
+          title: "Task",
+          state: "todo",
+          parentId: feature.id,
+        });
+        return { feature, epic, story, task };
+      };
+
+      it("finds a feature with its epics, also through a task directly under it", async () => {
+        const { feature, epic, task } = await seedFeature();
+        const found = {
+          feature: expect.objectContaining({ id: feature.id, identifier: feature.identifier }),
+          epics: [epic.identifier],
+        };
+        expect(await tracker.feature(feature.identifier)).toEqual(found);
+        expect(await tracker.feature(task.id)).toEqual({
+          ...found,
+          via: expect.objectContaining({ id: task.id, identifier: task.identifier }),
+        });
+      });
+
+      it("answers null for an epic, its story and a standalone task", async () => {
+        const { epic, story } = await seedFeature();
+        const standalone = await h.seed({ teamId: teamA, title: "Alone", state: "todo" });
+        expect(await tracker.feature(epic.id)).toBeNull();
+        expect(await tracker.feature(story.id)).toBeNull();
+        expect(await tracker.feature(standalone.id)).toBeNull();
+      });
+
+      it("leaves canceled sub-issues out", async () => {
+        const epic = await h.seed({ teamId: teamA, title: "Epic", state: "todo" });
+        const story = await h.seed({
+          teamId: teamA,
+          title: "Story",
+          state: "todo",
+          parentId: epic.id,
+        });
+        await h.seed({ teamId: teamA, title: "Dropped", state: "canceled", parentId: story.id });
+        expect(await tracker.feature(epic.id)).toBeNull();
       });
     });
 

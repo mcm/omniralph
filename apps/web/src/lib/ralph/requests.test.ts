@@ -664,10 +664,10 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
 
       // Linear can't be read: refused too.
       tracker.failures.set("getIssue", new Error("timed out"));
-      expect(await reply(run!, "/ralph")).toEqual({ kind: "open_questions" });
+      expect(await reply(run!, "/ralph")).toEqual({ kind: "feature" });
       tracker.failures.delete("getIssue");
       expect(last(run!.trackerSessionId, "error")).toContain(
-        "I couldn't check the issue for open questions in Linear, so I didn't start: timed out.",
+        "I couldn't load the issue from Linear, so I didn't switch to coding: timed out.",
       );
       expect(await getRun(db, run!.id)).toMatchObject({ mode: "request", status: "completed" });
 

@@ -466,6 +466,25 @@ describe("the toolbar", () => {
     expect(requests("POST", "/api/ui/work-items/linear-issue-420/triage")).toHaveLength(0);
   });
 
+  it("disables Start epic on a feature, saying why", async () => {
+    const user = userEvent.setup();
+    const reason =
+      "SOC-412 is a feature: it holds epics (SOC-413). Each epic is started on its own: " +
+      "start each epic instead.";
+    details["linear-issue-412"] = detailOf(workItemRow(), {
+      startRefusal: reason,
+      actions: { ...detailOf(workItemRow()).actions, start: false },
+    });
+    renderBacklog();
+    await loaded();
+    const start = within(toolbar()).getByRole("button", { name: "Start epic" });
+    expect(start.getAttribute("aria-disabled")).toBe("true");
+    await user.hover(start);
+    expect((await screen.findByRole("tooltip")).textContent).toBe(reason);
+    await user.click(start);
+    expect(requests("POST", "/api/ui/work-items/linear-issue-412/start")).toHaveLength(0);
+  });
+
   it("opens the editor from Edit PRD, switching to the PRD tab", async () => {
     renderBacklog({ search: "tab=stories" });
     nav.router.replace.mockImplementation((href: string) => {
