@@ -56,6 +56,8 @@ export interface Story {
   issueId?: string;
   /** A Fix (it has one of the tracker's fix labels) or a Story (new work); absent: a Story. */
   kind?: "fix" | "story";
+  /** The epic requirements the story owns, from its `Covers:` line (`FR-2`), in order. */
+  covers?: string[];
   identifier?: string;
   url?: string;
 }
@@ -87,6 +89,8 @@ export interface Epic {
    * keyed by `normalizeRepoPath` of the repository's full path; absent when there are none.
    */
   repositoryQualityGates?: Record<string, string[]>;
+  /** A new-format epic's requirements (`## Requirements`); absent for a legacy PRD or a plain issue. */
+  requirements?: Array<{ id: string; text: string }>;
   stories: Story[];
   /** Open work items outside the epic that block one of its stories: tracker ID -> identifier (e.g. "ENG-99"). */
   externalIssues?: Record<string, string>;

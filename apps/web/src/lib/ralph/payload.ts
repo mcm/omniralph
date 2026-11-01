@@ -166,7 +166,7 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
       trackerIssueId: row.trackerIssueId,
       url: url(story.url),
       description: headOf(story.description),
-      kind: workItemKind(story.labels ?? [], input.fixLabels),
+      kind: story.kind === "fix" ? "fix" : workItemKind(story.labels ?? [], input.fixLabels),
     },
     stories: storyList(epic, input.stories).slice(0, 500),
     commitMessage: storyCommitMessage(run.kind, identifier, story.title),

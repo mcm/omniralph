@@ -11,7 +11,11 @@
  *
  * Stories are described by the tracker's own fields only: identifier, title, priority, child order,
  * state, labels and "blocks" relations. Title prefixes (`US-001: …`) and body metadata are not parsed.
+ *
+ * A description in one of the planning formats (an epic, story or fix, see `@omniralph/planning`)
+ * is read with `parseWorkItem`; any other is read as before, as a legacy PRD or story body.
  */
+import { parseWorkItem, workItemFormat } from "@omniralph/planning";
 import { type ParsedPrd, parseBranchLine, parsePrd, prdQualityGates } from "./prd.js";
 import {
   buildStoryIssueBody,
@@ -19,6 +23,7 @@ import {
   parseStoryBody,
   storyRank,
   stripLegacyMetadata,
+  type StoryBody,
 } from "./story-body.js";
 import { EXTERNAL_DEP_PREFIX, type Epic, type Story, type StoryStatus } from "./types.js";
 
@@ -115,14 +120,50 @@ export function parsePrepareBlocks(text: string): string[] {
   return commands;
 }
 
+/**
+ * The legacy PRD of a description (markdown user stories or prd.json), or null. A description in
+ * one of the planning formats is never read as one: it has no PRD stories and no PRD quality gates.
+ */
+export function parseLegacyPrd(text: string | undefined | null): ParsedPrd | null {
+  return workItemFormat(text) ? null : parsePrd(text);
+}
+
+/** What a story's work item body says: a story or fix in the planning formats, else a legacy body. */
+export interface StoryIssueBody extends StoryBody {
+  kind?: "fix" | "story";
+  covers?: string[];
+}
+
+/**
+ * A story work item's body: a new-format story or fix (`parseWorkItem`: its kind and `Covers:`
+ * requirements too), else the legacy body (`parseStoryBody`). A body in the epic format is a legacy
+ * body here: a story is a task. A legacy `## Ralph Metadata` section is never part of the story.
+ */
+export function storyIssueBody(text: string | undefined | null): StoryIssueBody {
+  const legacy = parseStoryBody(text);
+  const item = parseWorkItem(stripLegacyMetadata(text ?? ""));
+  if (!item || item.format === "epic") return legacy;
+  return {
+    description: item.description,
+    acceptanceCriteria: item.acceptanceCriteria,
+    kind: item.format,
+    ...(item.covers.length > 0 && { covers: item.covers }),
+    ...(legacy.legacyRalphPriority !== undefined && {
+      legacyRalphPriority: legacy.legacyRalphPriority,
+    }),
+  };
+}
+
 /** The fields of a story that come straight from its work item. */
-function issueStory(issue: EpicIssue, body = parseStoryBody(issue.description)) {
+function issueStory(issue: EpicIssue, body = storyIssueBody(issue.description)) {
   return {
     key: issue.id,
     storyId: issue.identifier,
     title: issue.title.trim(),
     description: body.description,
     acceptanceCriteria: body.acceptanceCriteria,
+    ...(body.kind !== undefined && { kind: body.kind }),
+    ...(body.covers !== undefined && { covers: body.covers }),
     priority: storyRank(issue.priority, body.legacyRalphPriority),
     ...(issue.subIssueSortOrder !== undefined && { sortOrder: issue.subIssueSortOrder }),
     issueId: issue.id,
@@ -196,12 +237,13 @@ export function withManualOptions<S extends Story>(story: S, opts: EpicOptions):
 /** The branch an epic builds on: the PRD's branch name, else a `Branch:` line, else the tracker's suggestion. */
 export function epicBranchName(
   issue: Pick<EpicIssue, "description" | "branchName">,
-  prd: ParsedPrd | null = parsePrd(issue.description),
+  prd: ParsedPrd | null = parseLegacyPrd(issue.description),
 ): string {
   return prd?.branchName || parseBranchLine(issue.description) || issue.branchName;
 }
 
 function epicBase(issue: EpicIssue, prd: ParsedPrd | null): Omit<Epic, "kind" | "stories"> {
+  const item = parseWorkItem(issue.description);
   return {
     issueId: issue.id,
     identifier: issue.identifier,
@@ -213,13 +255,28 @@ function epicBase(issue: EpicIssue, prd: ParsedPrd | null): Omit<Epic, "kind" | 
     ...(issue.projectName !== undefined && { projectName: issue.projectName }),
     ...(issue.teamKey !== undefined && { teamKey: issue.teamKey }),
     branchName: epicBranchName(issue, prd),
-    ...(prd?.qualityGates.length || prd?.repositoryQualityGates
-      ? {
-          qualityGates: prd.qualityGates,
-          ...(prd.repositoryQualityGates && { repositoryQualityGates: prd.repositoryQualityGates }),
-        }
-      : prdQualityGates(issue.description)),
+    ...(item?.format === "epic" && { requirements: item.requirements }),
+    ...epicQualityGates(issue.description, prd, item !== null),
   };
+}
+
+/**
+ * The PRD quality gates of an epic: none for a description in the planning formats (its stories
+ * run only the repo's checks), else the legacy PRD's `## Quality Gates`.
+ */
+function epicQualityGates(
+  description: string,
+  prd: ParsedPrd | null,
+  planningFormat: boolean,
+): Pick<Epic, "qualityGates" | "repositoryQualityGates"> {
+  if (planningFormat) return { qualityGates: [] };
+  if (prd?.qualityGates.length || prd?.repositoryQualityGates) {
+    return {
+      qualityGates: prd.qualityGates,
+      ...(prd.repositoryQualityGates && { repositoryQualityGates: prd.repositoryQualityGates }),
+    };
+  }
+  return prdQualityGates(description);
 }
 
 /** A parent issue with sub-issues: each sub-issue is a story. */
@@ -232,7 +289,7 @@ export function childrenEpic(
   const externalIssues: Record<string, string> = {};
   const stories = children.map((c) => storyFromIssue(c, keys, externalIssues, opts));
   return {
-    ...epicBase(parent, parsePrd(parent.description)),
+    ...epicBase(parent, parseLegacyPrd(parent.description)),
     kind: "children",
     stories,
     externalIssues,

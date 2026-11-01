@@ -5,10 +5,12 @@ import {
   childrenEpic,
   materializationPlan,
   openRootBlockers,
+  parseLegacyPrd,
   parsePrepareBlocks,
   prdEpic,
   singleIssueEpic,
   statusFromStateType,
+  storyIssueBody,
   withManualOptions,
 } from "./epic.js";
 import { parsePrd } from "./prd.js";
@@ -330,5 +332,138 @@ describe("openRootBlockers", () => {
         { id: "y", identifier: "OPS-2", stateType: "completed" },
       ]),
     ).toEqual([{ id: "x", identifier: "OPS-1" }]);
+  });
+});
+
+const NEW_EPIC = `> Branch: feat/reviews
+
+## Problem
+
+Reviews arrive late.
+
+## Scope
+
+### In
+
+- Inline comments
+
+### Out
+
+- Analytics
+
+## Requirements
+
+- FR-1: The system must comment on each flagged line.
+- FR-2: WHEN a review finishes, the system must post a summary.`;
+
+const NEW_STORY = `As a reviewer, I want inline comments so that feedback sits where it applies.
+
+Covers: FR-1
+
+## Acceptance Criteria
+
+- [ ] A flagged line has a comment`;
+
+const NEW_FIX = `## Current behavior
+
+The summary is posted twice.
+
+## Expected behavior
+
+One summary.
+
+## Unchanged behavior
+
+New reviews still post a summary.
+
+## Acceptance Criteria
+
+- [ ] A retried review leaves one summary`;
+
+describe("planning-format work items", () => {
+  it("reads a new-format epic's stories and fixes into the story model, with no PRD gates", () => {
+    const epic = childrenEpic(issue({ title: "Reviews", description: NEW_EPIC }), [
+      child({ description: NEW_STORY }),
+      child({ description: NEW_FIX }),
+    ]);
+    expect(epic).toMatchObject({
+      kind: "children",
+      title: "Reviews",
+      description: NEW_EPIC,
+      branchName: "feat/reviews",
+      qualityGates: [],
+      requirements: [
+        { id: "FR-1", text: "The system must comment on each flagged line." },
+        { id: "FR-2", text: "WHEN a review finishes, the system must post a summary." },
+      ],
+    });
+    expect(epic).not.toHaveProperty("repositoryQualityGates");
+    expect(epic.stories[0]).toMatchObject({
+      kind: "story",
+      covers: ["FR-1"],
+      description: "As a reviewer, I want inline comments so that feedback sits where it applies.",
+      acceptanceCriteria: ["A flagged line has a comment"],
+    });
+    expect(epic.stories[1]).toMatchObject({
+      kind: "fix",
+      acceptanceCriteria: ["A retried review leaves one summary"],
+    });
+    expect(epic.stories[1]?.description).toContain("## Expected behavior\n\nOne summary.");
+    expect(epic.stories[1]).not.toHaveProperty("covers");
+  });
+
+  it("never reads Quality Gates from a new-format epic", () => {
+    const epic = childrenEpic(
+      issue({ description: `${NEW_EPIC}\n\n## Quality Gates\n- \`pnpm test\`` }),
+      [child()],
+    );
+    expect(epic.qualityGates).toEqual([]);
+  });
+
+  it("reads a mixed epic: a new-format epic whose tasks are still legacy story bodies", () => {
+    const epic = childrenEpic(issue({ description: NEW_EPIC }), [
+      child({ description: LEGACY_BODY("US-001", 2) }),
+      child({ description: "Add the button\n\n## Acceptance Criteria\n- [ ] It shows" }),
+      child({ description: NEW_STORY }),
+    ]);
+    expect(epic.qualityGates).toEqual([]);
+    expect(
+      epic.stories.map((s) => [s.description, s.acceptanceCriteria, s.kind, s.covers]),
+    ).toEqual([
+      ["Do US-001", ["US-001 works"], undefined, undefined],
+      ["Add the button", ["It shows"], undefined, undefined],
+      [
+        "As a reviewer, I want inline comments so that feedback sits where it applies.",
+        ["A flagged line has a comment"],
+        "story",
+        ["FR-1"],
+      ],
+    ]);
+    expect(epic.stories[0]?.priority).toBe(2);
+  });
+
+  it("reads a standalone fix as a single-issue epic framed as a fix", () => {
+    const epic = singleIssueEpic(issue({ description: NEW_FIX }));
+    expect(epic.qualityGates).toEqual([]);
+    expect(epic.stories[0]).toMatchObject({
+      kind: "fix",
+      acceptanceCriteria: ["A retried review leaves one summary"],
+    });
+  });
+
+  it("reads a legacy PRD with the legacy parser, gates included, and never a new-format epic", () => {
+    expect(parseLegacyPrd(PRD)).toEqual(parsePrd(PRD));
+    expect(parseLegacyPrd(NEW_EPIC)).toBeNull();
+    const epic = childrenEpic(issue({ description: PRD }), [child()]);
+    expect(epic.qualityGates).toEqual(["pnpm lint"]);
+    expect(epic).not.toHaveProperty("requirements");
+  });
+
+  it("keeps a legacy priority and drops Ralph Metadata from a new-format story body", () => {
+    const body = storyIssueBody(
+      `${NEW_STORY}\n\n## Ralph Metadata\n- **Story ID:** US-004\n- **Ralph Priority:** 1`,
+    );
+    expect(body).toMatchObject({ kind: "story", legacyRalphPriority: 1 });
+    expect(body.description).not.toContain("Ralph");
   });
 });

@@ -6,19 +6,23 @@
  *                                         canceled ones (an epic turned back into a plain
  *                                         issue) don't count: it loads as below.
  *  2. It is a sub-issue itself         -> its parent's epic, focused on this story.
- *  3. Its description holds a PRD      -> `prd`: each PRD story is created as a sub-issue
+ *  3. Its description holds a legacy   -> `prd`: each PRD story is created as a sub-issue
+ *     PRD (`parseLegacyPrd`)
  *                                         (priority, order, blocks relations, manual label),
  *                                         then the issue loads as `children`. With
  *                                         `completePrd`, a PRD issue that already has
  *                                         sub-issues (a materialization that failed half
  *                                         way) gets the missing ones, matched by title.
  *  4. Anything else                    -> `single`: the issue itself is the only story.
+ *
+ * A description in the planning formats (an epic, story or fix) is never read as a legacy
+ * PRD: the builders read it with `parseWorkItem`, and its stories run only the repo's checks.
  */
 import {
   childrenEpic,
   DEFAULT_MANUAL_LABELS,
   materializationPlan,
-  parsePrd,
+  parseLegacyPrd,
   prdEpic,
   singleIssueEpic,
   type Epic,
@@ -232,7 +236,7 @@ export async function loadEpic(
   const children = await tracker.getChildren(issue.id);
   if (children.some((child) => child.stateType !== "canceled")) {
     const epicOptions = await epicOptionsFor(options, issue);
-    const prd = options.completePrd ? parsePrd(issue.description) : null;
+    const prd = options.completePrd ? parseLegacyPrd(issue.description) : null;
     const created = prd
       ? await materializePrd(tracker, issue, prd, epicOptions.manualLabels[0] ?? "manual", children)
       : [];
@@ -258,7 +262,7 @@ export async function loadEpic(
     return { epic, root: parent, kind: "children", focusStoryId: issue.id, materialized: 0 };
   }
 
-  const prd = parsePrd(issue.description);
+  const prd = parseLegacyPrd(issue.description);
   if (prd && options.materialize === false) {
     return { epic: prdEpic(epicIssue(issue), prd), root: issue, kind: "prd", materialized: 0 };
   }
@@ -296,7 +300,8 @@ export async function reloadEpic(
   if (run.kind === "single") return singleIssueEpic(epicIssue(issue));
   const children = await tracker.getChildren(issue.id);
   // A mention's PRD whose stories were never created: its PRD stories, for context.
-  const prd = run.mode === "request" && children.length === 0 ? parsePrd(issue.description) : null;
+  const prd =
+    run.mode === "request" && children.length === 0 ? parseLegacyPrd(issue.description) : null;
   if (prd) return prdEpic(epicIssue(issue), prd);
   return loadChildrenEpic(tracker, issue, children, await epicOptionsFor(options, issue));
 }

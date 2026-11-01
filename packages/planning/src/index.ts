@@ -57,3 +57,23 @@ export {
   TRIAGE_UNDERSTAND_STEP,
   renderTriageMethodology,
 } from "./methodology/triage.js";
+
+export {
+  findSection,
+  isPlanningFormat,
+  parseCriteria,
+  parseRequirements,
+  parseWorkItem,
+  requirementId,
+  sectionKey,
+  splitSections,
+  workItemFormat,
+} from "./work-item/parse.js";
+export type {
+  ParsedWorkItem,
+  Requirement,
+  WorkItemFormat,
+  WorkItemSection,
+} from "./work-item/parse.js";
+export { OPEN_QUESTIONS_SECTION, isOutcomeCriterion, lintWorkItem } from "./work-item/lint.js";
+export type { LintCode, LintOptions, LintProblem } from "./work-item/lint.js";

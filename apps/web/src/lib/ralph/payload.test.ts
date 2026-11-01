@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type RalphRun, type RalphStory, type Repository, type ScmConnection } from "@omniralph/db";
-import type { Epic, Story } from "@omniralph/ralph";
+import { childrenEpic, type Epic, type EpicIssue, type Story } from "@omniralph/ralph";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -118,6 +118,49 @@ describe("story quality gates", () => {
     expect(payload.qualityGates).toEqual(["make check"]);
     expect(payload.prdQualityGates).toEqual([]);
     expect(storyQualityGates("single", epic(), repository(), coding())).toEqual([]);
+  });
+
+  it("are only the repo's checks for a new-format epic, and its legacy PRD's gates otherwise", () => {
+    const issueOf = (id: string, description: string): EpicIssue => ({
+      id,
+      identifier: id.toUpperCase(),
+      title: id,
+      description,
+      branchName: "feat/epic",
+      stateType: "unstarted",
+      labels: [],
+    });
+    const fix = issueOf(
+      "issue-2",
+      "## Current behavior\n\nCrashes.\n\n## Expected behavior\n\nNo crash.\n\n## Unchanged behavior\n\nThe rest.\n\n## Acceptance Criteria\n\n- [ ] No crash",
+    );
+    const payloadOf = (description: string) => {
+      const built = childrenEpic(issueOf("issue-1", description), [{ issue: fix, blockers: [] }]);
+      const fixStory = built.stories[0]!;
+      return buildStoryPayload({
+        coding: coding(),
+        run: run("children"),
+        lane,
+        repository: repository({ checks: ["pnpm check"] }),
+        connection,
+        epic: built,
+        stories: built.stories,
+        story: fixStory,
+        row: row as RalphStory,
+      });
+    };
+
+    const fresh = payloadOf(
+      "## Problem\n\nCrashes.\n\n## Scope\n\n### In\n\n- Stop it\n\n### Out\n\n- Nothing\n\n## Requirements\n\n- FR-1: The system must not crash.\n\n## Quality Gates\n\n- `pnpm lint`",
+    );
+    expect(fresh.qualityGates).toEqual(["pnpm check"]);
+    expect(fresh.prdQualityGates).toEqual([]);
+    // A fix-format body is a fix even without a fix label.
+    expect(fresh.story.kind).toBe("fix");
+
+    const legacy = payloadOf("Build it.\n\n## Quality Gates\n\n- `pnpm lint`");
+    expect(legacy.qualityGates).toEqual(["pnpm check", "pnpm lint"]);
+    expect(legacy.prdQualityGates).toEqual(["pnpm lint"]);
   });
 
   it("are what the describe-pr job reports as the verification", () => {
