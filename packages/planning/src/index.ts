@@ -59,6 +59,18 @@ export {
 } from "./methodology/triage.js";
 
 export {
+  COVERED_REQUIREMENTS_HEADING,
+  COVERED_REQUIREMENTS_NOTE,
+  CRITERIA_AS_EVIDENCE_NOTE,
+  EPIC_CONTEXT_HEADING,
+  EPIC_CONTEXT_NOTE,
+  FIX_TASK_NOTE,
+  UNKNOWN_REQUIREMENT_TEXT,
+  splitFixDescription,
+} from "./methodology/task-prompt.js";
+export type { FixDescription } from "./methodology/task-prompt.js";
+
+export {
   findSection,
   isPlanningFormat,
   parseCriteria,

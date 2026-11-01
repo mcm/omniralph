@@ -44,6 +44,7 @@ Use `papaparse`.
 ```
 
 ### Acceptance Criteria
+Your task is done when every criterion below holds. A criterion is evidence to check, not a test to write: confirm it in the code, the output of a command or the behavior of the running software. Write tests where the repo's conventions call for them on new behavior, never just to prove a criterion. A test that only asserts a file exists or what a config contains doesn't satisfy a criterion.
 - [ ] ```
 The export button downloads `widgets.csv`
 ```

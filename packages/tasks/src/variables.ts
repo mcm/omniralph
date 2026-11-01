@@ -435,6 +435,21 @@ export const VARIABLES: readonly VariableDefinition[] = [
         "Kind of the story: `Fix` (a bug, by the tracker's fix labels) or `Story` (new work).",
       ],
       [
+        "epic.planning",
+        STORY_TRIGGERS,
+        "True when the epic is in the planning format (`## Problem`, `## Scope`, `## Requirements`): its description is background for the story, not a PRD.",
+      ],
+      [
+        "story.fix",
+        STORY_TRIGGERS,
+        "A Fix's behavior sections (`current`, `expected`, `unchanged`); null for a Story.",
+      ],
+      [
+        "story.covers.items.id",
+        STORY_TRIGGERS,
+        "Identifier of an epic requirement the story owns, from its `Covers:` line (e.g. `FR-2`); `story.covers` is null without any.",
+      ],
+      [
         "story.repository",
         STORY_TRIGGERS,
         "Repository the story is worked in, when it isn't the epic's main one (else null).",
@@ -478,7 +493,30 @@ export const VARIABLES: readonly VariableDefinition[] = [
     trust: "untrusted",
     fence: "markdown",
     triggers: STORY_TRIGGERS,
-    description: "Description of the story, without its acceptance criteria (null when blank).",
+    description:
+      "Description of the story, without its acceptance criteria, `Covers:` line or a Fix's behavior sections (null when blank).",
+  },
+  ...(
+    [
+      ["story.fix.current", "## Current behavior"],
+      ["story.fix.expected", "## Expected behavior"],
+      ["story.fix.unchanged", "## Unchanged behavior"],
+    ] as const
+  ).map(([name, section]): VariableDefinition => ({
+    name,
+    source: "trigger",
+    trust: "untrusted",
+    fence: "markdown",
+    triggers: STORY_TRIGGERS,
+    description: `A Fix's \`${section}\` section (null when it has none, or for a Story).`,
+  })),
+  {
+    name: "story.covers.items.text",
+    source: "trigger",
+    trust: "untrusted",
+    triggers: STORY_TRIGGERS,
+    description:
+      "Text of the requirement in the epic's `## Requirements` (null when the epic doesn't have it).",
   },
   {
     name: "story.acceptanceCriteria.items",

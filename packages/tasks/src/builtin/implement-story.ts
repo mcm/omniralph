@@ -1,11 +1,23 @@
 /**
  * Story runs (`ralph.story` before the port): one attempt at one story of an
  * epic delegated in the tracker, in the run's branch worktree. The prompt is
- * ralph's story prompt (`buildStoryPrompt` in `@omniralph/ralph`): the PRD,
- * the story list, the story and how to work it. The story-specific rules of
+ * ralph's story prompt (`buildStoryPrompt` in `@omniralph/ralph`): the epic
+ * (a PRD, or background for a planning-format epic), the story list, the story
+ * and how to work it. The wording that comes from the methodology (the epic as
+ * context, a Fix's framing, criteria as evidence) is `@omniralph/planning`'s. The story-specific rules of
  * ralph's story system prompt close it, since the engineer persona's system
  * prompt is mode-neutral. Omniralph commits, runs the gates and pushes.
  */
+import {
+  COVERED_REQUIREMENTS_HEADING,
+  COVERED_REQUIREMENTS_NOTE,
+  CRITERIA_AS_EVIDENCE_NOTE,
+  EPIC_CONTEXT_HEADING,
+  EPIC_CONTEXT_NOTE,
+  FIX_SECTIONS,
+  FIX_TASK_NOTE,
+  UNKNOWN_REQUIREMENT_TEXT,
+} from "@omniralph/planning";
 import type { PlaybookInput } from "../playbooks.js";
 import { ENGINEER_PERSONA } from "./engineer.js";
 
@@ -19,16 +31,34 @@ You are working an epic one user story at a time (the coding loop).
 
 // Guidance is fenced item by item, without the list bullets of today's prompt (a fence can't be
 // indented under a bullet).
-const STORY_TEMPLATE = `You are working through a PRD epic from {{tracker.name}}, one user story per session.
+const STORY_TEMPLATE = `{{#epic.planning}}
+You are working through an epic from {{tracker.name}}, one task per session.
+Each session starts with a fresh context: the epic, the progress log and the repo are your memory.
+
+## Epic: {{epic.title}} ({{epic.identifier}})
+{{/epic.planning}}
+{{^epic.planning}}
+You are working through a PRD epic from {{tracker.name}}, one user story per session.
 Each session starts with a fresh context: the PRD, the progress log and the repository are your memory.
 
 ## PRD: {{epic.title}} ({{epic.identifier}})
+{{/epic.planning}}
 ### Progress: {{stories.completed}}/{{stories.total}} stories complete
 
 {{#epic.prd}}
+{{#epic.planning}}
+### ${EPIC_CONTEXT_HEADING}
+${EPIC_CONTEXT_NOTE}
+
+<epic-context>
+{{epic.prd}}
+</epic-context>
+{{/epic.planning}}
+{{^epic.planning}}
 <prd-document>
 {{epic.prd}}
 </prd-document>
+{{/epic.planning}}
 
 {{/epic.prd}}
 ### All Stories
@@ -46,6 +76,10 @@ Each session starts with a fresh context: the PRD, the progress log and the repo
 {{tracker.name}} issue: {{story.identifier}}{{#story.url}} ({{story.url}}){{/story.url}}
 {{/story.identifier}}
 Kind: {{story.kind}}
+{{#story.fix}}
+
+${FIX_TASK_NOTE}
+{{/story.fix}}
 
 {{#story.repository}}
 Repository: \`{{story.repository}}\`. This story belongs in this repository rather than the epic's main one, and this worktree is a checkout of it: make every change here.
@@ -56,8 +90,32 @@ Repository: \`{{story.repository}}\`. This story belongs in this repository rath
 {{story.description}}
 
 {{/story.description}}
+{{#story.fix.current}}
+### ${FIX_SECTIONS.current}
+{{story.fix.current}}
+
+{{/story.fix.current}}
+{{#story.fix.expected}}
+### ${FIX_SECTIONS.expected}
+{{story.fix.expected}}
+
+{{/story.fix.expected}}
+{{#story.fix.unchanged}}
+### ${FIX_SECTIONS.unchanged}
+{{story.fix.unchanged}}
+
+{{/story.fix.unchanged}}
+{{#story.covers}}
+### ${COVERED_REQUIREMENTS_HEADING}
+${COVERED_REQUIREMENTS_NOTE}
+{{#items}}
+- {{id}}: {{#text}}{{text}}{{/text}}{{^text}}${UNKNOWN_REQUIREMENT_TEXT}{{/text}}
+{{/items}}
+
+{{/story.covers}}
 {{#story.acceptanceCriteria}}
 ### Acceptance Criteria
+${CRITERIA_AS_EVIDENCE_NOTE}
 {{#items}}
 - [ ] {{.}}
 {{/items}}
@@ -119,7 +177,12 @@ Review each one with \`git stash show -p --include-untracked <sha>\` and apply w
 
 {{/recentProgress}}
 ## Workflow
+{{#epic.planning}}
+1. Read the epic context above for background, then build only what this task asks for.
+{{/epic.planning}}
+{{^epic.planning}}
 1. Study the PRD context above to understand the bigger picture.
+{{/epic.planning}}
 2. Read the progress log at \`{{progressFile}}\` for status, learnings and gotchas.
 3. Implement ONLY this story ({{story.id}}), satisfying every acceptance criterion. Do not start other stories. Implement it end to end: no TODOs, stubs or placeholders for anything its acceptance criteria cover. The tests and error handling its new code needs are part of this story, not later work.
 4. Run the quality gates and fix any failures.

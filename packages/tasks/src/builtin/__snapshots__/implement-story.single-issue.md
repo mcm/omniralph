@@ -11,6 +11,8 @@ Each session starts with a fresh context: the PRD, the progress log and the repo
 Linear issue: ENG-7
 Kind: Fix
 
+This task is a Fix: make the current behavior become the expected behavior, and keep the unchanged behavior working exactly as it is. Add a regression test only where the affected code already has tests.
+
 ### Description
 ```markdown
 The date picker shows UTC. It should show local time.

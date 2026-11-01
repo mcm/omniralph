@@ -267,6 +267,87 @@ describe("prompt", () => {
     expect(prompt("fix")).not.toContain("Kind: Story");
   });
 
+  describe("a planning-format epic", () => {
+    const planning: Epic = {
+      ...epic,
+      description:
+        "## Problem\nSlow reviews.\n\n## Requirements\n- FR-1: The system must badge tasks.",
+      qualityGates: [],
+      requirements: [
+        { id: "FR-1", text: "The system must badge tasks." },
+        { id: "FR-2", text: "The system must sort by priority." },
+      ],
+    };
+    const build = (over: Partial<Story>, e: Epic = planning) =>
+      buildStoryPrompt({
+        trackerName: "Linear",
+        epic: e,
+        story: { ...epic.stories[1]!, ...over },
+        progressFile: "/tmp/p.md",
+        attempt: 1,
+        maxAttempts: 3,
+      });
+
+    it("shows the epic as context, not as a PRD", () => {
+      const p = build({});
+      expect(p).toContain("## Epic: Task Priority (ENG-1)");
+      expect(p).toMatch(
+        /### Epic Context \(background, not your task\)\n.+\n\n<epic-context>\n## Problem/,
+      );
+      expect(p).not.toContain("<prd-document>");
+      expect(p).not.toContain("## PRD:");
+      // A legacy PRD keeps its framing.
+      const legacy = build({}, epic);
+      expect(legacy).toContain("## PRD: Task Priority (ENG-1)");
+      expect(legacy).toContain("<prd-document>\nThe PRD body");
+      expect(legacy).not.toContain("<epic-context>");
+    });
+
+    it("lists the covered requirements with the epic's text, flagging unknown ones", () => {
+      const p = build({ covers: ["FR-2", "FR-7", "the badge"] });
+      expect(p).toContain(
+        "- FR-2: The system must sort by priority.\n- FR-7: (not among the epic's requirements)\n\n### Acceptance Criteria",
+      );
+      expect(p).not.toContain("the badge");
+      expect(build({})).not.toContain("### Requirements This Task Covers");
+    });
+
+    it("frames a Fix by its behavior sections, apart from the rest of its description", () => {
+      const p = build({
+        kind: "fix",
+        description:
+          "Seen on Safari.\n\n## Current behavior\nBadges vanish.\n\n## Unchanged behavior\nSorting stays.",
+      });
+      expect(p).toContain("Kind: Fix\n\nThis task is a Fix:");
+      expect(p).toContain(
+        "### Description\nSeen on Safari.\n\n### Current behavior\nBadges vanish.",
+      );
+      expect(p).toContain("### Unchanged behavior\nSorting stays.");
+      expect(p).not.toContain("### Expected behavior");
+      expect(p).toContain("regression test only where the affected code already has tests");
+      // A Story's own `##` sections stay in its description.
+      const story = build({ description: "Lead.\n\n## Current behavior\nKept." });
+      expect(story).toContain("### Description\nLead.\n\n## Current behavior\nKept.");
+      expect(story).not.toContain("This task is a Fix");
+    });
+  });
+
+  it("says criteria are evidence to check, not tests to write", () => {
+    const p = buildStoryPrompt({
+      trackerName: "Linear",
+      epic,
+      story: epic.stories[1]!,
+      progressFile: "/tmp/p.md",
+      attempt: 1,
+      maxAttempts: 3,
+    });
+    const [, criteria = ""] = p.split("### Acceptance Criteria\n");
+    expect(criteria).toMatch(
+      /^Your task is done when every criterion below holds\. A criterion is evidence to check, not a test to write/,
+    );
+    expect(criteria).toContain("- [ ] badge shows");
+  });
+
   it("drops duplicate commands, ignoring whitespace", () => {
     expect(uniqueCommands([" pnpm test", "pnpm  test", "", "pnpm lint", "pnpm test"])).toEqual([
       "pnpm test",
