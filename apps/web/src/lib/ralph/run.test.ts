@@ -93,6 +93,7 @@ import { describePrPayload, ralphJobPayload } from "./coding";
 import { bindBuiltinPlaybooks, bindCodingPlaybook } from "./testing";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { FOLLOW_UP_MARK } from "./outcome";
+import { relationViolations } from "./relations";
 import { RECONCILE_STALE_MS } from "./due";
 import { reconcileRuns } from "./reconcile";
 import type { Adapter } from "chat";
@@ -1991,6 +1992,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
       `blocking **ENG-52**`,
     );
+    // Follow-ups are tasks of the epic, so their relations stay inside it.
+    expect(grant.parentId).toBe(epic.id);
+    expect(await relationViolations(tracker, epic.id)).toEqual([]);
 
     // Second now waits for the manual follow-up.
     expect(await activeJobs(run.id)).toEqual([]);
@@ -2080,6 +2084,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const index = [...tracker.issues.values()].find((i) => i.title === "Add an index")!;
     expect(tracker.blocks.get(first.id)).toBeUndefined();
     expect(tracker.blocks.get(validate.id)).toEqual([first.id, index.id]);
+    expect(index.parentId).toBe(epic.id);
+    expect(await relationViolations(tracker, epic.id)).toEqual([]);
     expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
       `Filed **${index.identifier}** as a new story of **ENG-55**, blocking **ENG-57**.`,
     );

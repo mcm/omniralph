@@ -17,7 +17,7 @@ const notDone = (issue: Pick<IssueSummary, "stateType">) =>
 /**
  * Reads work items as the dependency rules see them (role and epic), each once per check.
  */
-class PlannedItems {
+export class PlannedItems {
   private readonly issues = new Map<string, Promise<IssueSummary>>();
   private readonly children = new Map<string, Promise<IssueSummary[]>>();
   private readonly planned = new Map<string, Promise<PlannedItem>>();

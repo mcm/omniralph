@@ -29,6 +29,7 @@ import { BUILTIN_PLAYBOOK_SOURCE } from "@/lib/playbooks";
 import { jobHooks } from "@/lib/sinks";
 import type { IssueSummary } from "@omniralph/tracker";
 import { loadEpic } from "@/lib/ralph/epic-loader";
+import { relationViolations } from "@/lib/ralph/relations";
 import {
   applyTriageJob,
   onTriageJobCompleted,
@@ -523,7 +524,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       created: [],
       reformatted: [own.identifier],
       ignored: [
-        `blocker \`ENG-404\` of ${own.identifier} isn't a sibling sub-issue`,
+        `blocker \`ENG-404\` of ${own.identifier} isn't a work item`,
         `\`${foreign.id}\` isn't a sub-issue of ${issue.identifier}`,
       ],
     });
@@ -534,6 +535,79 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     const body = JSON.stringify(responses(sessionId));
     expect(body).toContain("Ignored sub-issue updates:");
     expect(body).toContain(`isn't a sub-issue of ${issue.identifier}`);
+  });
+
+  it("blocks a sub-issue on another epic instead of a task in it, following the dependency rules", async () => {
+    const issue = addIssue({ title: "Export widgets as CSV" });
+    const story = linear.add({ title: "Story", parentId: issue.id, stateType: "backlog" });
+    linear.add({ title: "Validate the epic", parentId: issue.id, stateType: "backlog" });
+    const otherEpic = linear.add({ title: "Auth epic", stateType: "unstarted" });
+    const otherTask = linear.add({ title: "Login", parentId: otherEpic.id, stateType: "backlog" });
+    const thirdEpic = linear.add({ title: "Billing epic", stateType: "backlog" });
+    linear.add({ title: "Invoices", parentId: thirdEpic.id, stateType: "backlog" });
+    const standalone = linear.add({ title: "Upgrade Node", stateType: "backlog" });
+    const feature = linear.add({ title: "Platform", stateType: "backlog" });
+    const featureEpic = linear.add({ title: "Platform epic", parentId: feature.id });
+    linear.add({ title: "Platform task", parentId: featureEpic.id });
+    const updates = [
+      update(story, {
+        blockedBy: [
+          otherTask.identifier,
+          thirdEpic.identifier,
+          standalone.identifier,
+          issue.identifier,
+          feature.identifier,
+        ],
+      }),
+    ];
+    const { job } = await completedJob(
+      issue,
+      result({ outcome: "reformat", size: "L", subIssueUpdates: updates }),
+    );
+
+    const applied = await applyTriageJob(deps(), job);
+    expect(applied).toMatchObject({ status: "applied", reformatted: [story.identifier] });
+    // The other epic blocks the story, not its task; an epic and a standalone task as they are.
+    expect((await linear.getBlockers(story.id)).map((b) => b.id)).toEqual([
+      otherEpic.id,
+      thirdEpic.id,
+      standalone.id,
+    ]);
+    expect(linear.blocks.get(story.id)).not.toContain(otherTask.id);
+    // Its own epic and a feature are left out, with why.
+    expect(applied).toMatchObject({
+      ignored: [
+        `blocker ${issue.identifier} breaks the dependency rules: ${story.identifier} is blocked by ${issue.identifier}: ${story.identifier} is a task in ${issue.identifier}, so it can't be blocked by its own epic.`,
+        `blocker ${feature.identifier} breaks the dependency rules: ${story.identifier} is blocked by ${feature.identifier}: ${feature.identifier} is a feature, and work can't be blocked by a feature.`,
+      ],
+    });
+    expect(await relationViolations(linear, issue.id)).toEqual([]);
+  });
+
+  it("ignores a task blocker whose epic is a feature's", async () => {
+    const issue = addIssue();
+    const story = linear.add({ title: "Story", parentId: issue.id, stateType: "backlog" });
+    linear.add({ title: "Validate the epic", parentId: issue.id, stateType: "backlog" });
+    const feature = linear.add({ title: "Platform" });
+    const task = linear.add({ title: "Loose task", parentId: feature.id });
+    const featureEpic = linear.add({ title: "Platform epic", parentId: feature.id });
+    linear.add({ title: "Platform task", parentId: featureEpic.id });
+    const { job } = await completedJob(
+      issue,
+      result({
+        outcome: "reformat",
+        size: "L",
+        subIssueUpdates: [update(story, { blockedBy: [task.identifier] })],
+      }),
+    );
+
+    const applied = await applyTriageJob(deps(), job);
+    expect(applied).toMatchObject({
+      ignored: [
+        `blocker ${task.identifier} of ${story.identifier} is a task in ${feature.identifier}, a feature, so it breaks the dependency rules`,
+      ],
+    });
+    expect(await linear.getBlockers(story.id)).toEqual([]);
   });
 
   it("changes nothing in a reformat when one sub-issue is started", async () => {

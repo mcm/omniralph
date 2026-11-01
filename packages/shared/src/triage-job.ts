@@ -98,7 +98,7 @@ export const TriageSubIssueUpdate = z.object({
   title: z.string().trim().min(1).max(255),
   body: z.string().trim().min(1).max(MAX_DOCUMENT_LENGTH),
   priority: StoryPriority,
-  /** Tracker IDs of the sibling sub-issues it is blocked by. */
+  /** Tracker IDs of the sibling sub-issues, and identifiers of work items outside the issue, it is blocked by. */
   blockedBy: z.array(TrackerId).max(100).default([]),
 });
 export type TriageSubIssueUpdate = z.infer<typeof TriageSubIssueUpdate>;
