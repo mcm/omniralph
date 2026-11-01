@@ -1,5 +1,15 @@
 # @omniralph/agent
 
+## 2.0.2
+
+### Patch Changes
+
+- [#111](https://github.com/mcm/omniralph/pull/111) [`960cff4`](https://github.com/mcm/omniralph/commit/960cff4d14ff342cd7486e6c0edff1610e286ce3) Thanks [@omniralph](https://github.com/apps/omniralph)! - Report failing access-token refreshes in the heartbeat (`tokenRefresh`: since when, how many attempts, the last error and when the access and refresh tokens expire), so Fleet can warn before the agent goes offline.
+
+- [#111](https://github.com/mcm/omniralph/pull/111) [`b1a0b67`](https://github.com/mcm/omniralph/commit/b1a0b671c30f3ea609422f1abc4ec377a85ed04f) Thanks [@omniralph](https://github.com/apps/omniralph)! - Approved worktree commands no longer inherit the agent process's `GIT_CONFIG_*` overrides, so they never see a git credential helper.
+
+- [#114](https://github.com/mcm/omniralph/pull/114) [`43cfdc3`](https://github.com/mcm/omniralph/commit/43cfdc3ec06536ba66ed5084df9c4a0f8ac8810a) Thanks [@mcm](https://github.com/mcm)! - Record review sessions' transcripts in the control panel, send tool-call parameters up to the server's 10,000-character limit instead of cutting them at 500, open links to the control panel in a new tab, and use the updated status colors (finished is green, running is lavender, stopped is amber).
+
 ## 2.0.1
 
 ### Patch Changes
