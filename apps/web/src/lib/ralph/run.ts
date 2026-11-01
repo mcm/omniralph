@@ -6,6 +6,7 @@
  * idempotent (calling it again with nothing new changes nothing).
  */
 import type { TrackerGateway } from "@omniralph/tracker";
+import type { DependencyViolation } from "@omniralph/planning";
 import {
   agentAcceptedTaskTypes,
   getAgent,
@@ -89,6 +90,7 @@ import {
 } from "./conversation";
 import { gatherRunAttachments, payloadAttachments } from "./attachments";
 import { reloadEpic, runEpicOptions } from "./epic-loader";
+import { relationsWaitingMessage, relationViolations } from "./relations";
 import { deleteRunHiddenRefs } from "./hidden-refs";
 import { mainBranch, routeStories, storyLane, type StoryLanes } from "./lanes";
 import { postActivity, quietly } from "./notify";
@@ -361,7 +363,11 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
     ? []
     : openRootBlockers(epic, await deps.tracker.getBlockers(trackerIssueId));
 
-  if (rootBlockers.length === 0) {
+  // Relations breaking the dependency rules hold the epic up until they're fixed (checked
+  // again on every advance: a reply, `/continue`, a webhook or the reconcile cron).
+  const violations = allDone ? [] : await relationViolations(deps.tracker, trackerIssueId);
+
+  if (rootBlockers.length === 0 && violations.length === 0) {
     const focused = run.focusStoryId
       ? stories.find((s) => s.issueId === run.focusStoryId && isStoryReady(s, stories))
       : undefined;
@@ -386,6 +392,7 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   const [requests] = await pendingRequestLanes(tx, run);
   if (requests) return enqueueRequest(deps, tx, run, { epic, stories, ...requests });
 
+  if (violations.length > 0) return waitOnRelations(deps, tx, run, { epic, rows, violations });
   if (rootBlockers.length === 0 && allDone) {
     // The PR/MR step failed: a reply (which clears the error) retries it.
     if (run.status === "waiting" && run.error) {
@@ -1072,9 +1079,40 @@ async function waitingRefs(
 /** Whether a run waits on the same issues (jsonb doesn't keep key order, so compare IDs). */
 const sameWaitingOn = (a: RalphWaitingOn | null, b: RalphWaitingOn) => {
   const ids = (w: RalphWaitingOn) =>
-    JSON.stringify([w.blockers.map((i) => i.id), w.manual.map((i) => i.id)]);
+    JSON.stringify([w.blockers.map((i) => i.id), w.manual.map((i) => i.id), w.relations ?? []]);
   return !!a && ids(a) === ids(b);
 };
+
+/**
+ * A blocks relation of the epic or its tasks breaks the dependency rules: the run waits with
+ * `waiting_on.relations` naming them, posting why when it starts waiting on them or they change.
+ */
+async function waitOnRelations(
+  deps: RalphDeps,
+  tx: RalphTransaction,
+  run: RalphRun,
+  input: { epic: Epic; rows: RalphStory[]; violations: DependencyViolation[] },
+): Promise<AdvanceResult> {
+  const output = await takeRequestOutput(tx, run);
+  if (output) {
+    await postActivity(conversationFor(run, deps), { type: "thought", body: output });
+  }
+  const waitingOn: RalphWaitingOn = {
+    blockers: [],
+    manual: [],
+    relations: input.violations.map((violation) => violation.message),
+  };
+  if (run.status === "waiting" && sameWaitingOn(run.waitingOn, waitingOn)) {
+    return { action: "waiting", run, waitingOn };
+  }
+  const updated = (await updateRun(tx, run.id, { status: "waiting", waitingOn })) ?? run;
+  await publishPlan(conversationFor(run, deps), input.rows);
+  await postActivity(conversationFor(run, deps), {
+    type: "elicitation",
+    body: relationsWaitingMessage(input.epic.identifier, input.violations),
+  });
+  return { action: "waiting", run: updated, waitingOn };
+}
 
 /**
  * No story can run now: the run waits, with `waiting_on` listing the open

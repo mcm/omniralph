@@ -1,6 +1,6 @@
 import "server-only";
 import type { TrackerStateMapping } from "@omniralph/db";
-import { DEFAULT_FIX_LABELS, workItemKind } from "@omniralph/planning";
+import { DEFAULT_FIX_LABELS, workItemKind, type DependencyViolation } from "@omniralph/planning";
 import { DEFAULT_MANUAL_LABELS, isManualIssue, parsePrd } from "@omniralph/ralph";
 import {
   hasCapability,
@@ -22,6 +22,7 @@ import {
   type WorkflowStateType,
 } from "@omniralph/tracker";
 import { featureToRun, type FeatureFound } from "@/lib/ralph/feature";
+import { relationViolations } from "@/lib/ralph/relations";
 import { trackerExtras, trackerName } from "@/lib/tracker/adapters";
 import { readRoutingIssue } from "@/lib/tracker/routing-issue";
 import {
@@ -468,6 +469,11 @@ export class GatewayWorkItemTracker implements WorkItemTracker {
   async feature(ref: WorkItemRef): Promise<FeatureFound | null> {
     const issue = await this.issue(ref);
     return featureToRun(this.gateway, issue.id);
+  }
+
+  async relationViolations(ref: WorkItemRef): Promise<DependencyViolation[]> {
+    const issue = await this.issue(ref);
+    return relationViolations(this.gateway, issue.id);
   }
 
   async stories(ref: WorkItemRef): Promise<WorkItemStory[]> {

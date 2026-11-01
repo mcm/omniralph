@@ -57,6 +57,8 @@ import {
   type LoadedEpic,
 } from "./epic-loader";
 import { featureMessage, featureToRun, type FeatureFound } from "./feature";
+import { relationsMessage, relationViolations } from "./relations";
+import type { DependencyViolation } from "@omniralph/planning";
 import { routeStories } from "./lanes";
 import { applyGuidance, deliverToRunningJob } from "./messages";
 import { postActivity, quietly } from "./notify";
@@ -94,6 +96,8 @@ export type StartOutcome =
   | { status: "open_questions"; identifier: string }
   /** An epic-mode start on a feature (a work item holding epics), or a task directly under one: no run. */
   | { status: "feature"; identifier: string }
+  /** An epic-mode start on work whose blocks relations break the dependency rules: no run. */
+  | { status: "relations"; violations: DependencyViolation[] }
   /** The issue (or its epic) has a label its repository's blocked labels name: no run. */
   | { status: "blocked_labels"; labels: string[] }
   /** No ralph-enabled repository at all. */
@@ -206,8 +210,9 @@ async function refuseOpenQuestions(
 }
 
 /**
- * Refuses an epic-mode start that would build a feature (posting why), then one whose PRD
- * still has open questions; null when it may start.
+ * Refuses an epic-mode start that would build a feature (posting why), then one whose blocks
+ * relations break the dependency rules, then one whose PRD still has open questions; null when
+ * it may start.
  */
 async function refuseEpicStart(
   deps: RalphDeps,
@@ -227,6 +232,21 @@ async function refuseEpicStart(
   if (feature) {
     await post(deps, event, { type: "response", body: featureMessage(feature) });
     return { status: "feature", identifier: feature.feature.identifier };
+  }
+  let violations: DependencyViolation[];
+  try {
+    violations = await relationViolations(deps.tracker, event.issueId);
+  } catch (error) {
+    console.error(`Checking the relations of ${event.issueId} failed`, error);
+    await post(deps, event, {
+      type: "error",
+      body: `I couldn't load the issue's relations from ${trackerName(deps.tracker.provider)}, so I didn't start: ${message(error)}. Delegate or mention me again to retry.`,
+    });
+    return { status: "load_failed", error: message(error) };
+  }
+  if (violations.length > 0) {
+    await post(deps, event, { type: "response", body: relationsMessage(violations) });
+    return { status: "relations", violations };
   }
   return refuseOpenQuestions(deps, event);
 }

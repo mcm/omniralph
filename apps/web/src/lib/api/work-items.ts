@@ -111,7 +111,7 @@ export const workItemActivitySchema = z.object({
 
 /** What the user can do with the item now (any member may; these follow its state). */
 export const workItemActionsSchema = z.object({
-  /** Start epic: Ready to start, with no run, and not a feature (`startRefusal`). */
+  /** Start epic: Ready to start, with no run, and nothing refusing it (`startRefusal`). */
   start: z.boolean(),
   /** Triage now: no triage queued or running, and no run. */
   triage: z.boolean(),
@@ -146,7 +146,8 @@ export const workItemDetailSchema = workItemRowSchema.extend({
   actions: workItemActionsSchema,
   /**
    * Why Start epic is refused, when it is (absent otherwise): it's a feature, a work item
-   * holding epics, or a task directly under one. `actions.start` is false then.
+   * holding epics, or a task directly under one; or a blocks relation of its work breaks the
+   * dependency rules. `actions.start` is false then.
    */
   startRefusal: z.string().optional(),
   /**

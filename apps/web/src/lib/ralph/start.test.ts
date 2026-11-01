@@ -908,6 +908,143 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     });
   });
 
+  describe("dependency rules", () => {
+    /** ENG-80, an epic with the tasks ENG-81 and ENG-82; OPS-90, another epic with the task OPS-91. */
+    const addEpics = () => {
+      const epic = tracker.add({ identifier: "ENG-80", title: "Epic" });
+      const first = tracker.add({ identifier: "ENG-81", title: "First", parentId: epic.id });
+      const second = tracker.add({ identifier: "ENG-82", title: "Second", parentId: epic.id });
+      const other = tracker.add({ identifier: "OPS-90", title: "Other epic", teamKey: "OPS" });
+      const otherTask = tracker.add({
+        identifier: "OPS-91",
+        title: "Their task",
+        teamKey: "OPS",
+        parentId: other.id,
+      });
+      return { epic, first, second, other, otherTask };
+    };
+    const noRun = async () => {
+      expect(await db.select().from(ralphRuns)).toEqual([]);
+      expect(await db.select().from(jobs)).toEqual([]);
+    };
+
+    it("starts a valid epic: blocked by another epic, a standalone task and its own task", async () => {
+      const { epic, first, second, other } = addEpics();
+      const standalone = tracker.add({ identifier: "OPS-92", title: "Alone", teamKey: "OPS" });
+      await tracker.createBlocksRelation(other.id, epic.id);
+      await tracker.createBlocksRelation(standalone.id, second.id);
+      await tracker.createBlocksRelation(first.id, second.id);
+      expect(await startRun(created(epic.id), deps())).toMatchObject({
+        status: "started",
+        run: { trackerIdentifier: "ENG-80" },
+      });
+    });
+
+    it("refuses an epic whose task is blocked by a task in another epic, naming the fix", async () => {
+      const { epic, second, otherTask } = addEpics();
+      await tracker.createBlocksRelation(otherTask.id, second.id);
+      const event = created(epic.id);
+      const outcome = await startRun(event, deps());
+      expect(outcome).toMatchObject({
+        status: "relations",
+        violations: [
+          {
+            blocker: { identifier: "OPS-91" },
+            blocked: { identifier: "ENG-82" },
+            reason: "task-in-other-epic",
+            blockOn: { identifier: "OPS-90" },
+          },
+        ],
+      });
+      const [response] = tracker.bodies(event.sessionId, "response");
+      expect(response).toContain("I won't start this: this relation breaks the dependency rules.");
+      expect(response).toContain(
+        "- ENG-82 is blocked by OPS-91: OPS-91 is a task in another epic, OPS-90. " +
+          "Block ENG-82 on OPS-90 instead.",
+      );
+      expect(response).toContain("then delegate me again.");
+      await noRun();
+    });
+
+    it("refuses an epic blocked by a task (another epic's, or its own), listing each relation", async () => {
+      const { epic, first, otherTask } = addEpics();
+      await tracker.createBlocksRelation(otherTask.id, epic.id);
+      await tracker.createBlocksRelation(first.id, epic.id);
+      const event = created(epic.id);
+      const outcome = await startRun(event, deps());
+      expect(outcome).toMatchObject({
+        status: "relations",
+        violations: [
+          { blocker: { identifier: "OPS-91" }, reason: "task-in-other-epic" },
+          { blocker: { identifier: "ENG-81" }, reason: "own-task" },
+        ],
+      });
+      const [response] = tracker.bodies(event.sessionId, "response");
+      expect(response).toContain("these relations break the dependency rules");
+      expect(response).toContain("Block ENG-80 on OPS-90 instead.");
+      expect(response).toContain("ENG-81 is a task in ENG-80, so it can't block its own epic.");
+      await noRun();
+    });
+
+    it("refuses a delegated task of an epic whose relations break the rules", async () => {
+      const { first, second, otherTask } = addEpics();
+      await tracker.createBlocksRelation(otherTask.id, second.id);
+      expect(await startRun(created(first.id), deps())).toMatchObject({ status: "relations" });
+      await noRun();
+    });
+
+    it("refuses a standalone task blocked by a task in an epic", async () => {
+      const { otherTask } = addEpics();
+      const standalone = tracker.add({ identifier: "ENG-83", title: "Alone" });
+      await tracker.createBlocksRelation(otherTask.id, standalone.id);
+      const event = created(standalone.id);
+      expect(await startRun(event, deps())).toMatchObject({
+        status: "relations",
+        violations: [{ blocked: { identifier: "ENG-83" }, blockOn: { identifier: "OPS-90" } }],
+      });
+      expect(tracker.bodies(event.sessionId, "response")[0]).toContain(
+        "Block ENG-83 on OPS-90 instead.",
+      );
+      await noRun();
+    });
+
+    it("ignores canceled blockers and tasks already done", async () => {
+      const { epic, first, otherTask } = addEpics();
+      await tracker.createBlocksRelation(otherTask.id, first.id);
+      await tracker.setIssueState(first.id, { type: "completed" });
+      const dropped = tracker.add({
+        identifier: "OPS-93",
+        title: "Dropped",
+        teamKey: "OPS",
+        parentId: otherTask.parentId,
+        stateType: "canceled",
+        stateName: "Canceled",
+      });
+      await tracker.createBlocksRelation(dropped.id, epic.id);
+      expect(await startRun(created(epic.id), deps())).toMatchObject({ status: "started" });
+    });
+
+    it("refuses a `/coding` mention and a `/coding` reply on a mention's run", async () => {
+      const { epic, second, otherTask } = addEpics();
+      await tracker.createBlocksRelation(otherTask.id, second.id);
+      const coding = created(epic.id, { commentBody: "@omniralph /coding go" });
+      expect(await startRun(coding, deps())).toMatchObject({ status: "relations" });
+      await noRun();
+
+      const mention = created(epic.id, { commentBody: "@omniralph what is left here?" });
+      expect(await startRun(mention, deps())).toMatchObject({ status: "started" });
+      const reply = await handleReply(
+        { kind: "session_prompted", sessionId: mention.sessionId, body: "/coding" },
+        deps(),
+      );
+      expect(reply).toEqual({ kind: "relations" });
+      expect(tracker.bodies(mention.sessionId, "response").at(-1)).toContain(
+        "then reply `/coding` again.",
+      );
+      expect((await getRunBySession(db, mention.sessionId))?.mode).toBe("request");
+    });
+  });
+
   describe("blocked labels", () => {
     it("refuses a delegation or mention of an issue with a default blocked label, before materializing", async () => {
       const issue = tracker.add({

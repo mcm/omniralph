@@ -1934,6 +1934,11 @@ export interface RalphWaitingOn {
   blockers: RalphIssueRef[];
   /** Manual stories a person has to finish. */
   manual: RalphIssueRef[];
+  /**
+   * Blocks relations of the epic or its tasks that break the dependency rules (each one's
+   * message): the run waits until they're fixed, checking again whenever it advances.
+   */
+  relations?: string[];
 }
 
 /**
