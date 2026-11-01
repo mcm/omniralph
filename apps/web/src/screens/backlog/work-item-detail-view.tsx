@@ -38,13 +38,7 @@ import { KindBadge } from "@/components/work-items/kind";
 import { ManualTaskChecklist } from "@/components/work-items/manual-task-checklist";
 import { PrdView } from "@/components/work-items/prd-view";
 import { WORK_ITEM_STATE_TONES } from "@/components/work-items/state-tones";
-import {
-  START_BLOCKED_DESCRIPTION,
-  START_EPIC,
-  TRIAGE_NOW,
-  startBlockedTitle,
-  startsWhenTooltip,
-} from "@/components/work-items/start-triage-buttons";
+import { START_EPIC, TRIAGE_NOW } from "@/components/work-items/start-triage-buttons";
 import {
   triagingTooltip,
   useCancelWorkItem,
@@ -57,6 +51,7 @@ import type { TrackerProvider } from "@omniralph/tracker";
 import { ApiError } from "@/lib/api/client";
 import { trackerLabel } from "@/lib/api/trackers";
 import type { WorkItemDetail, WorkItemRoute } from "@/lib/api/work-items";
+import { startHoldReason, triageHoldReason } from "@/lib/work-items/hold-reasons";
 import { backlogItemHref, parseBacklogFilters, parseWorkItemTab, type WorkItemTab } from "./url";
 import { WorkItemDetailSkeleton } from "./backlog-skeletons";
 import "./work-item-detail.css";
@@ -195,7 +190,6 @@ function WorkItemDetailContent({
   const cancel = useCancelWorkItem();
 
   const [editRequested, setEditRequested] = useState(false);
-  const [confirmStart, setConfirmStart] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [changingRepo, setChangingRepo] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -221,16 +215,16 @@ function WorkItemDetailContent({
         icon: IconPlayerPlay,
         solid: true,
         disabled: !item.actions.start || start.isPending,
-        disabledReason: item.startRefusal,
-        tooltip: item.blocked ? startsWhenTooltip(item.blockers) : undefined,
-        onSelect: () => (item.blocked ? setConfirmStart(true) : runStart()),
+        disabledReason: startHoldReason(item) ?? item.startRefusal,
+        onSelect: runStart,
       }
     : {
         label: TRIAGE_NOW,
         icon: IconSparkles,
         solid: true,
         disabled: triaging || !item.actions.triage,
-        disabledReason: triaging ? triagingTooltip(item.identifier) : undefined,
+        disabledReason:
+          triageHoldReason(item) ?? (triaging ? triagingTooltip(item.identifier) : undefined),
         onSelect: () => triage.mutate(item),
       };
   const actions = [
@@ -332,16 +326,6 @@ function WorkItemDetailContent({
           )}
         </TabPanel>
       </Tabs>
-      {item.blocked ? (
-        <ConfirmDialog
-          open={confirmStart}
-          onOpenChange={setConfirmStart}
-          title={startBlockedTitle(item.identifier)}
-          description={START_BLOCKED_DESCRIPTION}
-          confirmLabel={START_EPIC}
-          onConfirm={runStart}
-        />
-      ) : null}
       <ConfirmDialog
         open={confirmRemove}
         onOpenChange={setConfirmRemove}

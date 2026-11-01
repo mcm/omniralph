@@ -24,6 +24,7 @@ export function workItemRow(overrides: Partial<WorkItemRow> = {}): WorkItemRow {
     blockers: [],
     blockedLabels: [],
     manual: false,
+    manualLabels: [],
     triageRunning: false,
     source: { kind: "project", id: "project-portal", name: "Portal" },
     ...overrides,

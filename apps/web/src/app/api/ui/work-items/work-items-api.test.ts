@@ -41,6 +41,11 @@ import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import type { IssueSummary } from "@omniralph/tracker";
 import { handleLinearWebhook } from "@/lib/tracker/linear/ingest";
 import { signBody, AGENT_SESSION_MARKER } from "@omniralph/tracker/linear";
+import {
+  BLOCKED_START_MESSAGE,
+  MANUAL_START_MESSAGE,
+  MANUAL_TRIAGE_MESSAGE,
+} from "@/lib/work-items/hold-reasons";
 
 vi.mock("server-only", () => ({}));
 
@@ -422,8 +427,9 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
         "Om left 2 open questions",
         "Om triaged it (size M)",
       ]);
+      // Its blockers keep Start epic off; it can still be triaged.
       expect(view.actions).toEqual({
-        start: true,
+        start: false,
         triage: true,
         editPrd: true,
         changeRepo: true,
@@ -440,7 +446,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
       });
       expect(await detail(epic)).toMatchObject({
         triageRunning: true,
-        actions: { triage: false, start: true },
+        actions: { triage: false, start: false },
       });
       await db.delete(triageRuns).where(eq(triageRuns.id, active.id));
       const [run] = await db
@@ -469,28 +475,61 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
 
     it("classes it blocked by a blocked label and manual by a manual label, ignoring case", async () => {
       const holds = async (issue: Pick<IssueSummary, "id">) => {
-        const { blocked, blockers, blockedLabels, manual } = await detail(issue);
-        return { blocked, blockers, blockedLabels, manual };
+        const { blocked, blockers, blockedLabels, manual, manualLabels, actions } =
+          await detail(issue);
+        return {
+          blocked,
+          blockers,
+          blockedLabels,
+          manual,
+          manualLabels,
+          start: actions.start,
+          triage: actions.triage,
+        };
       };
       expect(await holds(ready("Plain"))).toEqual({
         blocked: false,
         blockers: [],
         blockedLabels: [],
         manual: false,
+        manualLabels: [],
+        start: true,
+        triage: true,
       });
-      // The default blocked labels: under-review and blocked.
+      // The default blocked labels: under-review and blocked. It can be triaged, not started.
       expect(await holds(ready("Label blocked", { labels: ["Blocked"] }))).toEqual({
         blocked: true,
         blockers: [],
         blockedLabels: ["Blocked"],
         manual: false,
+        manualLabels: [],
+        start: false,
+        triage: true,
       });
-      // The default manual label, on an item a blocked label also holds.
+      // The default manual label, on an item a blocked label also holds: a person's job.
       expect(await holds(refine("By hand", { labels: ["MANUAL", "under-review"] }))).toEqual({
         blocked: true,
         blockers: [],
         blockedLabels: ["under-review"],
         manual: true,
+        manualLabels: ["MANUAL"],
+        start: false,
+        triage: false,
+      });
+      expect(await holds(ready("Ready by hand", { labels: ["manual"] }))).toMatchObject({
+        manual: true,
+        start: false,
+        triage: false,
+      });
+      // Blocked by a relation: it can be triaged, not started.
+      const blocker = ready("Blocker");
+      const relationBlocked = ready("Relation blocked");
+      acme.blocks.set(relationBlocked.id, [blocker.id]);
+      expect(await holds(relationBlocked)).toMatchObject({
+        blocked: true,
+        blockers: [blocker.identifier],
+        start: false,
+        triage: true,
       });
     });
 
@@ -613,21 +652,55 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
       });
     });
 
-    it("refuses an item that needs refining, and starts a blocked one", async () => {
+    it("refuses an item that needs refining, a manual one and a blocked one, delegating nothing", async () => {
       const unrefined = refine("Rough idea");
       expect(await call(startRoute.POST, urlId(unrefined), { method: "POST" })).toEqual({
         status: 400,
         body: expect.objectContaining({
           error: "Only a work item that's Ready to start can be started.",
+          code: "not_ready",
         }),
       });
       expect(acme.delegateOf(unrefined.id)).toBeUndefined();
 
+      const refused = async (issue: IssueSummary, code: string, error: string) => {
+        expect(await call(startRoute.POST, urlId(issue), { method: "POST" })).toEqual({
+          status: 400,
+          body: expect.objectContaining({ error, code }),
+        });
+        expect(acme.delegateOf(issue.id)).toBeUndefined();
+        expect(await kinds(issue)).toEqual([]);
+      };
       const blocker = ready("Blocker first");
-      const blocked = ready("Blocked");
-      acme.blocks.set(blocked.id, [blocker.id]);
-      expect((await call(startRoute.POST, urlId(blocked), { method: "POST" })).status).toBe(200);
-      expect(acme.delegateOf(blocked.id)).toBe(acme.viewer.id);
+      const relationBlocked = ready("Blocked");
+      acme.blocks.set(relationBlocked.id, [blocker.id]);
+      await refused(relationBlocked, "blocked", BLOCKED_START_MESSAGE);
+      await refused(
+        ready("On hold", { labels: ["Under-Review"] }),
+        "blocked",
+        BLOCKED_START_MESSAGE,
+      );
+      await refused(ready("By hand", { labels: ["manual"] }), "manual", MANUAL_START_MESSAGE);
+      // Manual and blocked: refused as manual.
+      const both = ready("By hand, blocked", { labels: ["manual", "blocked"] });
+      await refused(both, "manual", MANUAL_START_MESSAGE);
+
+      // An existing run answers first, then readiness.
+      await db.insert(ralphRuns).values({
+        organizationId: state.orgId,
+        trackerIssueId: both.id,
+        trackerIdentifier: both.identifier,
+        trackerSessionId: `session-${randomUUID()}`,
+        kind: "children",
+        status: "running",
+      });
+      expect((await call(startRoute.POST, urlId(both), { method: "POST" })).body).toMatchObject({
+        code: "run_exists",
+      });
+      const unrefinedManual = refine("Rough, by hand", { labels: ["manual"] });
+      expect(
+        (await call(startRoute.POST, urlId(unrefinedManual), { method: "POST" })).body,
+      ).toMatchObject({ code: "not_ready" });
     });
     it("refuses work whose relations break the dependency rules, with Start disabled for the same reason", async () => {
       const other = ready("Other epic", { identifier: "ENG-910" });
@@ -708,6 +781,37 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
       body: expect.objectContaining({ error: "Om is already triaging SOC-412." }),
     });
     expect(await kinds(idea)).toEqual(["triage_requested"]);
+  });
+
+  it("Triage now accepts a blocked item, by a relation or a label, and refuses a manual one", async () => {
+    const blocker = ready("Blocker");
+    const relationBlocked = refine("Blocked idea");
+    acme.blocks.set(relationBlocked.id, [blocker.id]);
+    const labelBlocked = refine("Idea on hold", { labels: ["blocked"] });
+    for (const item of [relationBlocked, labelBlocked]) {
+      expect(await call(triageRoute.POST, urlId(item), { method: "POST" })).toEqual({
+        status: 200,
+        body: { ok: true },
+      });
+      expect(await kinds(item)).toEqual(["triage_requested"]);
+    }
+
+    const manual = refine("Errand", { labels: ["Manual", "blocked"] });
+    expect(await call(triageRoute.POST, urlId(manual), { method: "POST" })).toEqual({
+      status: 400,
+      body: expect.objectContaining({ error: MANUAL_TRIAGE_MESSAGE, code: "manual" }),
+    });
+    expect(acme.issues.get(manual.id)!.labels).not.toContain("coding:triage");
+    expect(await kinds(manual)).toEqual([]);
+
+    // A triage already running answers first.
+    await createTriageRun(db, {
+      organizationId: state.orgId,
+      trackerIssueId: manual.id,
+      trackerSessionId: `triage-${randomUUID()}`,
+      trigger: "label",
+    });
+    expect((await call(triageRoute.POST, urlId(manual), { method: "POST" })).status).toBe(409);
   });
 
   describe("Edit PRD", () => {

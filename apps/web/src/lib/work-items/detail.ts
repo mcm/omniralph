@@ -117,14 +117,23 @@ export function workItemActions(input: {
   group: WorkItemDetail["group"];
   run: WorkItemDetail["run"];
   triageRunning: boolean;
+  /** Blocked (by relations or a blocked label): it can be triaged, not started. */
+  blocked: boolean;
+  /** A person's job (a manual label): it can be neither started nor triaged. */
+  manual: boolean;
   /** Why it can't be started whatever its state (a feature, or relations breaking the rules), if so. */
   startRefusal?: string;
 }): WorkItemActions {
   const hasRun = input.run !== null;
   const working = input.run !== null && isActiveRunStatus(input.run.status);
   return {
-    start: input.group === "ready" && !hasRun && input.startRefusal === undefined,
-    triage: !input.triageRunning && !hasRun,
+    start:
+      input.group === "ready" &&
+      !input.blocked &&
+      !input.manual &&
+      !hasRun &&
+      input.startRefusal === undefined,
+    triage: !input.manual && !input.triageRunning && !hasRun,
     editPrd: !working,
     changeRepo: !hasRun,
     move: input.group === "ready" && !hasRun,
@@ -199,8 +208,11 @@ export async function loadWorkItemDetail(
 
   const group = groupFor(item);
   const triageRunning = activeTriage !== null;
+  const holds = workItemHolds(item, labels);
   const startRefusal =
-    group === "ready" && run === null ? await startRefusalFor(tracker, item) : undefined;
+    group === "ready" && run === null && !holds.blocked && !holds.manual
+      ? await startRefusalFor(tracker, item)
+      : undefined;
   return {
     id: workItemUrlId(item.tracker, item.id),
     tracker: item.tracker,
@@ -212,7 +224,7 @@ export async function loadWorkItemDetail(
     kind: item.kind,
     size: sizes.get(item.id) ?? null,
     group,
-    ...workItemHolds(item, labels),
+    ...holds,
     source: workItemSource(item),
     state: item.state,
     description: item.description,
@@ -236,7 +248,14 @@ export async function loadWorkItemDetail(
     activity: workItemActivity({ events, triageRuns, comments }),
     triageRunning,
     run,
-    actions: workItemActions({ group, run, triageRunning, startRefusal }),
+    actions: workItemActions({
+      group,
+      run,
+      triageRunning,
+      blocked: holds.blocked,
+      manual: holds.manual,
+      startRefusal,
+    }),
     ...(startRefusal !== undefined && { startRefusal }),
   };
 }
