@@ -122,6 +122,8 @@ export interface RepositoryCodingUpdate {
   openPullRequestEarly?: boolean;
   historyRewrite?: RepositoryHistoryRewrite;
   respondToReviewsAndCi?: boolean;
+  /** The commands that must pass after every story and request, in order. */
+  checks?: string[];
 }
 
 export type RepositoryHistoryRewrite = Repository["historyRewrite"];
@@ -150,6 +152,7 @@ export async function updateRepositoryCoding(
       ...(input.respondToReviewsAndCi !== undefined && {
         respondToReviewsAndCi: input.respondToReviewsAndCi,
       }),
+      ...(input.checks !== undefined && { checks: input.checks }),
       // Always set, so a save that changes nothing still returns the row.
       updatedAt: new Date(),
     })

@@ -210,9 +210,11 @@ export const DEFAULT_MAX_ITERATIONS_PER_RUN = 50;
 export const CODING_MAX_FIX_ROUNDS = 20;
 /** Review and CI fix rounds a lane's PR gets when its request playbook sets none. */
 export const DEFAULT_FIX_ROUNDS = 3;
-/** Most verify commands of a coding playbook (`MAX_VERIFY_COMMANDS` in `@omniralph/shared`). */
-export const MAX_VERIFY_COMMANDS = 50;
-/** Longest verify or worktree setup command. */
+/** Most checks of a repo (its Coding card's commands that must pass after every story). */
+export const MAX_CHECKS = 50;
+/** Most verify commands of a coding playbook: as many as a repo's checks. */
+export const MAX_VERIFY_COMMANDS = MAX_CHECKS;
+/** Longest check, verify or worktree setup command. */
 export const MAX_CODING_COMMAND_LENGTH = 4000;
 /** Longest wait for an answer about a merged lane's unmerged commits (a week). */
 export const MAX_UNMERGED_BRANCH_TIMEOUT_MINUTES = 7 * 24 * 60;
@@ -229,12 +231,15 @@ export const DEFAULT_PR_DESCRIPTION_TASK_ID = "builtin:describe-pr";
 
 const FixRounds = z.int().min(0).max(CODING_MAX_FIX_ROUNDS);
 
-/** A one-line shell command (a verify command or the worktree setup command). */
-const CodingCommand = z
+/** A one-line shell command (a repo's check, a verify command or the worktree setup command). */
+export const CodingCommand = z
   .string()
   .trim()
-  .min(1)
-  .max(MAX_CODING_COMMAND_LENGTH)
+  .min(1, "Enter a command.")
+  .max(
+    MAX_CODING_COMMAND_LENGTH,
+    `Commands can be at most ${MAX_CODING_COMMAND_LENGTH.toLocaleString("en-US")} characters.`,
+  )
   // eslint-disable-next-line no-control-regex
   .regex(/^[^\u0000-\u001f\u007f]+$/, "Commands are one line, without control characters.");
 

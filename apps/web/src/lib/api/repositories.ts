@@ -265,6 +265,8 @@ export const codingCardSchema = z.object({
   historyRewrite: z.enum(RALPH_HISTORY_REWRITE_POLICIES),
   /** Fix review comments and CI failures on its runs' PRs. */
   respondToReviewsAndCi: z.boolean(),
+  /** The commands that must pass after every story and request on the repo, in order. */
+  checks: z.array(z.string()),
   /** Read-only: the story playbook's review and CI fix rounds ("up to 3 rounds each"). */
   roundLimits: z.object({ review: z.number(), fix: z.number() }),
   /**

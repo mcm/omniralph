@@ -2,6 +2,7 @@
  * Forms of the control panel's Repository › Settings pages. The pages validate with these before submitting, and the server
  * actions validate again before saving.
  */
+import { CodingCommand, MAX_CHECKS } from "@omniralph/tasks";
 import { z } from "zod";
 import { ReviewDepthSchema } from "./review-depth.js";
 
@@ -147,8 +148,8 @@ export const RALPH_EPIC_STATE_TYPES = ["started", "completed"] as const;
 
 /**
  * A repo's coding policy, which the Repos page's Coding card saves with its work item match
- * (`PUT /api/ui/repositories/{id}/coding`): the whole of it, and nothing else (models, commands
- * and round limits are its story and request playbooks').
+ * (`PUT /api/ui/repositories/{id}/coding`): the whole of it, and nothing else (models, setup
+ * commands and round limits are its story and request playbooks').
  */
 export const RepositoryCodingInput = z.strictObject({
   /**
@@ -169,6 +170,8 @@ export const RepositoryCodingInput = z.strictObject({
   historyRewrite: z.enum(RALPH_HISTORY_REWRITE_POLICIES, { error: "Choose a policy." }),
   /** Fix review comments, `@bot` requests and failed CI on its runs' PRs. */
   respondToReviewsAndCi: z.boolean({ error: "Choose on or off." }),
+  /** The commands that must pass after every story and request on it, in order. */
+  checks: z.array(CodingCommand).max(MAX_CHECKS, `Add at most ${MAX_CHECKS} checks.`),
 });
 export type RepositoryCodingInput = z.infer<typeof RepositoryCodingInput>;
 

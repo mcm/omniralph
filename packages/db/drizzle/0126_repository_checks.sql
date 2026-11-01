@@ -1,0 +1,1 @@
+ALTER TABLE "repositories" ADD COLUMN "checks" text[] DEFAULT '{}'::text[] NOT NULL;

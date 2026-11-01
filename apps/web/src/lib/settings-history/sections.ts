@@ -126,6 +126,7 @@ function repositoryCodingFields(provider: Repository["provider"]): SettingsField
     },
     respondToReviewsAndCi: { label: "Fix review comments and CI failures" },
     historyRewrite: { label: "Rewrite history" },
+    checks: { label: "Checks" },
   };
 }
 
@@ -144,6 +145,7 @@ async function readRepositoryCoding(
     openPullRequestEarly: onOff(repository.openPullRequestEarly),
     respondToReviewsAndCi: onOff(repository.respondToReviewsAndCi),
     historyRewrite: HISTORY_REWRITE_LABELS[repository.historyRewrite],
+    checks: repository.checks,
   };
 }
 

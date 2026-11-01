@@ -152,7 +152,7 @@ repository's switches.
 A repository's coding policy is six settings: on/off, the work item match and the four below.
 Admins save all six together, the Repos page's Coding card, with
 `PUT /api/ui/repositories/{id}/coding`. It takes exactly
-`{ codingEnabled, workItemMatch, codingInstructions, openPullRequestEarly, historyRewrite, respondToReviewsAndCi }`
+`{ codingEnabled, workItemMatch, codingInstructions, openPullRequestEarly, historyRewrite, respondToReviewsAndCi, checks }`
 (`workItemMatch` null for none) and answers 400 for any other key. It saves in one transaction,
 turning Coding off before removing the match and setting the match before turning Coding on, and
 checks the match rules on the result: turning Coding on with a new match in one save works, and so
@@ -167,6 +167,7 @@ rounds, read-only) and the [conflicting matches](#work-item-matches).
 | **Open the pull request early** (`openPullRequestEarly`)          | off          | Open a draft PR/MR after the first story is pushed, update it as stories land and mark it ready at the end. Off: the PR/MR is opened when every story is done. A story playbook that pushes only at the end never opens one early.                                                                                    |
 | **Rewrite history** (`historyRewrite`)                            | `when-asked` | Whether a request may rebase and push with `--force-with-lease`: `when-asked` (only when the request asks for it), `always` (on its own whenever the branch needs the base branch or a cleanup: it rebases instead of ever merging, so PRs/MRs keep a linear history) or `never` (it merges the base branch instead). |
 | **Fix review comments and CI failures** (`respondToReviewsAndCi`) | on           | Omniralph's review findings and `@bot` requests on the run's PR/MR, and a failed CI run on its head commit, become requests, up to the playbook's rounds.                                                                                                                                                             |
+| **Checks** (`checks`)                                             | none         | The commands that must pass after every story and request on the repository, in order: each one line, without control characters, at most 4,000 characters, and at most 50 of them. Set by hand on each repository.                                                                                                   |
 
 Everything else a run works with lives in one place: the repository's story and request playbooks
 (`storyPlaybookId`, `requestPlaybookId`, by default `builtin:implement-story` and

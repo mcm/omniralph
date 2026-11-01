@@ -221,6 +221,23 @@ export function codingInstructionsEffect(): FieldEffect {
   };
 }
 
+const checkCount = (count: number) =>
+  count === 0 ? "None" : count === 1 ? "1 check" : `${count} checks`;
+
+/** The Checks list: added, edited, removed or reordered commands. */
+export function checksEffect(from: readonly string[], to: readonly string[]): FieldEffect {
+  return {
+    id: "checks",
+    label: "Checks",
+    from: checkCount(from.length),
+    to: checkCount(to.length),
+    effect:
+      to.length === 0
+        ? "New stories and requests run no repo checks."
+        : "New stories and requests run these checks, in order, after their changes.",
+  };
+}
+
 /** "Open a draft PR after the first story" (MR on GitLab). */
 export function openPullRequestEarlyEffect(provider: CodeHost, to: boolean): FieldEffect {
   const request = requestNoun(provider);

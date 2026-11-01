@@ -100,6 +100,7 @@ const baseCoding: CodingCardInput = {
   openPullRequestEarly: false,
   historyRewrite: "when-asked",
   respondToReviewsAndCi: true,
+  checks: [],
 };
 
 async function getHistory(query: Record<string, string>) {

@@ -293,6 +293,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/repositories/{id}", () => {
       openPullRequestEarly: false,
       historyRewrite: "always",
       respondToReviewsAndCi: true,
+      checks: [],
       roundLimits: { review: 3, fix: 3 },
       routingRules: [],
     });

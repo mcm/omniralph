@@ -323,6 +323,7 @@ describe.skipIf(!databaseAvailable)(
           openPullRequestEarly: false,
           historyRewrite: "never",
           respondToReviewsAndCi: true,
+          checks: [],
         }),
       );
       expect(changes.map((change) => change.resource)).toContain("repository");
