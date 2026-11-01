@@ -4,7 +4,7 @@ import { ShortcutProvider, UiProvider, type LinkProps } from "@omniralph/ui";
 import { QueryClientProvider, useQuery, type QueryClient } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { CurrentUserProvider, type SessionUser } from "@/components/current-user";
 import { LiveProvider } from "@/components/live/live-provider";
 import { changeEvent, fakeAbly, fakeToken } from "@/components/live/live-test-utils";
@@ -462,6 +462,31 @@ describe("Show blocked and Show manual", () => {
     renderBacklog({ search: "manual=show" });
     await waitFor(() => expect(rows()).toHaveLength(4));
     expect(headings()).toEqual(["Ready to start 1", "Needs refining 1", "Manual 2"]);
+  });
+
+  it.each([
+    ["shows nothing beside the list while both are off", "", null],
+    ["shows Up next's first row while it's shown", "blocked=show", "linear-issue-413"],
+    ["shows Manual's first row while only it's shown", "manual=show", "linear-issue-415"],
+  ])("on a wide screen with no item in the URL, %s", async (_name, search, shown) => {
+    onTestFinished(
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+        width: 1200,
+      } as DOMRect).mockRestore,
+    );
+    backlog = backlogOf([blockedRow(), manualRow()]);
+    renderBacklog({ search });
+    await waitFor(() => expect(requests("/api/ui/backlog").length).toBeGreaterThan(0));
+    if (shown) {
+      await waitFor(() =>
+        expect(screen.getByTestId("detail").textContent).toBe(`Detail of ${shown}`),
+      );
+    } else {
+      await waitFor(() =>
+        expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(NOTHING_IN_BACKLOG),
+      );
+      expect(screen.queryByTestId("detail")).toBeNull();
+    }
   });
 
   it("leave the empty state at Nothing in the backlog when every item is hidden", async () => {
