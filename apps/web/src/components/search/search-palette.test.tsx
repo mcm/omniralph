@@ -56,6 +56,7 @@ const workItem: SearchResult = {
     url: "https://linear.app/acme/issue/SOC-1720",
     organization: ACME,
     repository: null,
+    kind: null,
     size: "S",
     group: "ready",
     blocked: false,

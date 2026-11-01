@@ -341,6 +341,30 @@ describe("the bar", () => {
     expect(within(badges).queryByRole("img", { name: /^Size/ })).toBeNull();
   });
 
+  it("shows a task's kind after the identifier, Fix or Story, and none on an epic", async () => {
+    const badgeTexts = () =>
+      [...article().querySelectorAll(".or-backlog-detail__badges > *")].map(
+        (badge) =>
+          badge.querySelector(".or-ref__text")?.textContent ?? badge.getAttribute("aria-label"),
+      );
+    details["linear-issue-412"] = detailOf(workItemRow({ kind: "fix" }));
+    const { unmount } = renderBacklog();
+    await loaded();
+    expect(badgeTexts()).toEqual(["SOC-412", "Fix", "Size M"]);
+    unmount();
+
+    details["linear-issue-412"] = detailOf(workItemRow({ kind: "story" }));
+    const second = renderBacklog();
+    await loaded();
+    expect(badgeTexts()).toEqual(["SOC-412", "Story", "Size M"]);
+    second.unmount();
+
+    details["linear-issue-412"] = detailOf(workItemRow({ kind: null }));
+    renderBacklog();
+    await loaded();
+    expect(badgeTexts()).toEqual(["SOC-412", "Size M"]);
+  });
+
   it("on phone heads the detail with ‹ Backlog, and the CSS moves the badges under the title", async () => {
     const { container } = renderBacklog({ search: "repo=" + REPO_PORTAL });
     await loaded();

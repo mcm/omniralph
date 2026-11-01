@@ -54,6 +54,8 @@ export interface Story {
   labels?: string[];
   /** Present when the story is backed by a work item in a tracker. */
   issueId?: string;
+  /** A Fix (it has one of the tracker's fix labels) or a Story (new work); absent: a Story. */
+  kind?: "fix" | "story";
   identifier?: string;
   url?: string;
 }

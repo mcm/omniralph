@@ -50,6 +50,7 @@ function workItem(overrides: Partial<WorkItemDetail> = {}): WorkItemDetail {
     url: "https://linear.app/acme/issue/SOC-412",
     organization: { id: ORG, name: "Acme", role: "admin" },
     repository: { id: "repo-1", provider: "github", fullPath: "acme/customer-portal" },
+    kind: null,
     size: "M",
     group: null,
     blocked: false,

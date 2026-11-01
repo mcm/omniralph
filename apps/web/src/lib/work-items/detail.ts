@@ -209,6 +209,7 @@ export async function loadWorkItemDetail(
     url: item.url,
     organization: { id: organization.id, name: organization.name, role: organization.role },
     repository: route.outcome === "repository" ? route.repository : null,
+    kind: item.kind,
     size: sizes.get(item.id) ?? null,
     group,
     blocked: item.blocked,

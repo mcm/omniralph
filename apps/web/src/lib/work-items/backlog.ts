@@ -266,6 +266,7 @@ export async function loadOrganizationBacklog(deps: {
               provider: repository.provider,
               fullPath: repository.fullPath,
             },
+            kind: item.kind,
             size: sizes.get(item.id) ?? null,
             group,
             blocked: item.blocked,

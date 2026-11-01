@@ -23,6 +23,7 @@ import {
   setJobRalphStory,
   updateStory,
   upsertStories,
+  getIntegration,
   type Database,
   type RalphLane,
   type RalphMessage,
@@ -593,6 +594,7 @@ async function enqueueStory(
     story,
     row,
     attachments: payloadAttachments(attachments, story.key),
+    fixLabels: (await getIntegration(deps.db, run.organizationId, run.trackerProvider))?.fixLabels,
   });
   const taskId = storyTaskFor(found.repository);
   const routed = await codingJobInput({ taskId, trigger: "tracker.delegated" }, payload, playbooks);

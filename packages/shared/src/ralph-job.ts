@@ -135,6 +135,9 @@ const RalphIssue = z.object({
 
 export const RALPH_EPIC_KINDS = ["children", "prd", "single"] as const;
 export const RALPH_STORY_LIST_STATUSES = ["open", "in_progress", "completed", "cancelled"] as const;
+/** A task's kind: a Fix (a bug, by the tracker's fix labels) or a Story (new work). */
+export const RALPH_STORY_KINDS = ["fix", "story"] as const;
+export type RalphStoryKind = (typeof RALPH_STORY_KINDS)[number];
 
 /** Longest tracker attachment a ralph job downloads. */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -192,6 +195,8 @@ export const RalphStoryPayload = RalphJobBase.extend({
     trackerIssueId: z.string().min(1).max(64),
     url: z.url().nullable().default(null),
     description: z.string().max(MAX_DOCUMENT_LENGTH),
+    /** `fix` when the work item has one of the tracker's fix labels, else `story`. */
+    kind: z.enum(RALPH_STORY_KINDS).default("story"),
   }),
   /** Every story of the epic in order (the prompt lists them); may be empty. */
   stories: z.array(RalphStoryListItem).max(500).default([]),

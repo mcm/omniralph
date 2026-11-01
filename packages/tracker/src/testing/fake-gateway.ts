@@ -617,6 +617,15 @@ export class FakeTrackerGateway implements TrackerGateway {
     };
     delete summary.delegateId;
     if (delegateId) summary.delegateId = delegateId;
+    delete summary.hasSubIssues;
+    if (this.hasOpenChildren(issue.id)) summary.hasSubIssues = true;
     return summary;
+  }
+
+  /** Whether the issue has sub-issues that aren't canceled (`hasSubIssues`). */
+  private hasOpenChildren(issueId: string): boolean {
+    return [...this.issues.values()].some(
+      (i) => i.parentId === issueId && i.stateType !== "canceled",
+    );
   }
 }

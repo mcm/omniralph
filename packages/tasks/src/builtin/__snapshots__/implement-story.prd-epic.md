@@ -32,6 +32,7 @@ pnpm export --all
 
 ## Your Task: ENG-12 - Export widgets as CSV
 Linear issue: ENG-12 (https://linear.app/acme/issue/ENG-12)
+Kind: Story
 
 Repository: `acme/exporter`. This story belongs in this repository rather than the epic's main one, and this worktree is a checkout of it: make every change here.
 

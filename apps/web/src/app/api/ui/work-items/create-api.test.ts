@@ -265,6 +265,7 @@ describe.skipIf(!databaseAvailable)("creating work items", () => {
           url: issue!.url,
           organization: { id: state.orgId, name: "Acme" },
           repository: { id: repos.portal, provider: "github", fullPath: "acme/customer-portal" },
+          kind: "story",
           size: null,
           group: "ready",
           blocked: false,

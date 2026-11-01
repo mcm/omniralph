@@ -110,7 +110,8 @@ Each session starts with a fresh context: the PRD, the progress log and the repo
 {{/if}}
 ## Your Task: {{storyId}} - {{storyTitle}}
 {{#if storyIdentifier}}{{trackerName}} issue: {{storyIdentifier}}{{#if storyUrl}} ({{storyUrl}}){{/if}}
-{{/if}}
+{{/if}}Kind: {{storyKind}}
+
 {{#if repository}}Repository: \`{{repository}}\`. This story belongs in this repository rather than the epic's main one, and this worktree is a checkout of it: make every change here.
 {{/if}}
 {{#if storyDescription}}
@@ -284,6 +285,14 @@ function storyGates(ctx: Pick<PromptContext, "epic" | "checks">): {
   return { checks, qualityGates };
 }
 
+/** How a story's kind reads in its prompt. */
+export type StoryKindLabel = "Fix" | "Story";
+
+/** `Fix` for a fix, else `Story` (a story without a kind is new work). */
+export function storyKindLabel(story: Pick<Story, "kind">): StoryKindLabel {
+  return story.kind === "fix" ? "Fix" : "Story";
+}
+
 export function buildStoryPrompt(ctx: PromptContext, template = DEFAULT_STORY_TEMPLATE): string {
   const { epic, story } = ctx;
   const completed = completedCount(epic);
@@ -303,6 +312,7 @@ export function buildStoryPrompt(ctx: PromptContext, template = DEFAULT_STORY_TE
     storyTitle: story.title,
     storyIdentifier: story.identifier,
     storyUrl: story.url,
+    storyKind: storyKindLabel(story),
     repository: story.repo?.name,
     storyDescription: story.description.trim() || undefined,
     acceptanceCriteria: story.acceptanceCriteria.map((c) => `- [ ] ${c}`).join("\n") || undefined,
@@ -740,6 +750,8 @@ export interface StoryTemplateContext {
     identifier: string | null;
     url: string | null;
     title: string;
+    /** `Fix` (a bug, by the tracker's fix labels) or `Story` (new work). */
+    kind: StoryKindLabel;
     /** The repository it's worked in, when not the epic's main one. */
     repository: string | null;
     /** Trimmed; null when blank. */
@@ -788,6 +800,7 @@ export function storyTemplateContext(ctx: PromptContext): StoryTemplateContext {
       identifier: story.identifier || null,
       url: story.url || null,
       title: oneLine(story.title),
+      kind: storyKindLabel(story),
       repository: story.repo?.name ?? null,
       description: story.description.trim() || null,
       acceptanceCriteria: templateList(story.acceptanceCriteria),

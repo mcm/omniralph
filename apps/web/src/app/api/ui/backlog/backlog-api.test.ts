@@ -385,6 +385,8 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       url: items.urgent!.url,
       organization: { id: orgs.Acme, name: "Acme", role: "member" },
       repository: { id: repos["acme/api"], provider: "github", fullPath: "acme/api" },
+      // ENG-11 is its sub-issue: an epic, so no kind.
+      kind: null,
       size: "XS",
       group: "ready",
       blocked: false,

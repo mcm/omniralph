@@ -886,8 +886,13 @@ or state may be in both. Members read the mapping, with every team's workflow st
 errors for an invalid one). Work items also carry `blockedBy` (open issues with a "blocks"
 relation to it; done and canceled ones left out) and `blocked`.
 
-Every work item has a kind: a **Fix** when it carries one of the connection's fix labels (matched
-ignoring case), else a **Story**. The fix labels default to `Bug`; admins change them in the "Fix
+Every task (a work item with no sub-issues that aren't canceled) has a kind: a **Fix** when it
+carries one of the connection's fix labels (matched ignoring case), else a **Story**. Epics and
+features have none. The Backlog rows and the work item page's header show a task's kind as a Fix or
+Story badge after its identifier (`kind` in the work item APIs: `fix`, `story` or null). Each story
+job carries its story's kind (`story.kind` in the payload), and the story prompt says it on one line
+under the issue line ("Kind: Fix" or "Kind: Story"; the `story.kind` template variable); a story
+listed only in a PRD is a Story. The fix labels default to `Bug`; admins change them in the "Fix
 label" card on the Linear connection page (Settings › Connections › Linear), beside the work item
 states. Members read them from `GET /api/ui/trackers/{integrationId}/fix-labels`; admins save them
 with `PUT` and `{ "fixLabels": ["Bug", "Regression"] }` (trimmed, duplicates dropped ignoring case;

@@ -212,6 +212,7 @@ export async function createWorkItem(
         provider: repository.provider,
         fullPath: repository.fullPath,
       },
+      kind: item.kind,
       size: null,
       // A new item in a state of neither readiness (e.g. Triage) shows in Needs refining.
       group: groupFor(item) ?? "refine",

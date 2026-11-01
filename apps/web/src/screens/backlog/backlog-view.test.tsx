@@ -250,6 +250,20 @@ describe("the Backlog list", () => {
     expect(screen.queryAllByRole("img", { name: "Blocked" })).toHaveLength(1);
   });
 
+  it("shows a task's kind after its identifier, Fix or Story, and none on an epic", async () => {
+    backlog = backlogOf([
+      workItemRow({ kind: "fix" }),
+      { ...blockedRow(), kind: "story" },
+      { ...refineRow(), kind: null },
+    ]);
+    renderBacklog();
+    await waitFor(() => expect(rows()).toHaveLength(3));
+    const [fix, story, epic] = rows() as [HTMLElement, HTMLElement, HTMLElement];
+    expect(badges(fix)).toEqual(["SOC-412", "Fix", "acme/portal", "Size M"]);
+    expect(badges(story)).toEqual(["SOC-413", "Story", "acme/web", "Blocked"]);
+    expect(badges(epic)).toEqual(["SOC-420", "Size S"]);
+  });
+
   it("leads the badges with the organization under All organizations", async () => {
     backlog = backlogOf([
       workItemRow(),

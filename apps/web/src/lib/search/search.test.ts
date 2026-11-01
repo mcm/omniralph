@@ -104,6 +104,7 @@ describe.skipIf(!databaseAvailable)("search", () => {
       url: `https://linear.app/acme/issue/${identifier}`,
       organization,
       repository: null,
+      kind: null,
       size: null,
       group: "ready",
       blocked: false,

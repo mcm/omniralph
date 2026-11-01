@@ -101,6 +101,7 @@ const SINGLE_ISSUE: Epic = {
       title: "Fix the date picker",
       description: "The date picker shows UTC. It should show local time.",
       status: "in_progress",
+      kind: "fix",
     }),
   ],
 };
