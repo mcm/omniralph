@@ -298,7 +298,7 @@ function WorkItemDetailContent({
         route={item.route}
         onChooseRepo={item.actions.changeRepo ? () => setChangingRepo(true) : undefined}
       />
-      {item.manual ? (
+      {item.manual || item.route.outcome === "manual" ? (
         <ManualTaskChecklist workItemId={item.id} markDone showDescription={false} />
       ) : null}
       <Tabs<WorkItemTab>

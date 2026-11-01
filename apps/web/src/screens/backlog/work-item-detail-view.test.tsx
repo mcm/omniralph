@@ -124,6 +124,9 @@ function detailOf(row: WorkItemRow, overrides: Partial<WorkItemDetail> = {}): Wo
   };
 }
 
+/** The blocked row's item, unblocked, as the Backlog lists it (a blocked one is in Up next). */
+const reminderRow = () => ({ ...blockedRow(), blocked: false, blockers: [] });
+
 const blockedDetail = () =>
   detailOf(blockedRow(), {
     blockedBy: [
@@ -287,7 +290,7 @@ beforeEach(() => {
   nav.router.push.mockReset();
   backlog = backlogOf([
     workItemRow(),
-    blockedRow(),
+    reminderRow(),
     workItemRow({ id: "linear-issue-414", identifier: "SOC-414", title: "Archive old invoices" }),
     refineRow(),
   ]);
@@ -763,7 +766,7 @@ describe("Start epic", () => {
     );
     expect(requests("POST", "/api/ui/work-items/linear-issue-412/start")).toHaveLength(1);
 
-    backlog = backlogOf([blockedRow(), backlog.groups.readyToStart[2]!, refineRow()]);
+    backlog = backlogOf([reminderRow(), backlog.groups.readyToStart[2]!, refineRow()]);
     await act(async () => response.resolve(jsonResponse({ ok: true })));
     await waitFor(() => expect(ui.toast).toHaveBeenCalledWith("Om is starting SOC-412"));
     expect(listTitles("Ready to start")).toEqual([
@@ -865,7 +868,7 @@ describe("the other actions", () => {
     });
 
     backlog = backlogOf([
-      blockedRow(),
+      reminderRow(),
       backlog.groups.readyToStart[2]!,
       { ...workItemRow(), group: "refine" },
       refineRow(),

@@ -1,5 +1,6 @@
 import "server-only";
 import {
+  getTrackerLabels,
   latestTriageSizes,
   listActiveTriageIssueIds,
   listLatestIssueRuns,
@@ -23,6 +24,7 @@ import { DEFAULT_TRACKER_PROVIDER, getConnectedTrackerProvider } from "@/lib/tra
 import { cachedBacklog } from "./backlog-cache";
 import { getWorkItemTracker } from "./get-tracker";
 import { groupFor } from "./group";
+import { workItemHolds } from "./holds";
 import {
   LIST_CANDIDATES_MAX_LIMIT,
   TrackerNotConnectedError,
@@ -196,7 +198,8 @@ export function compareBacklogEntries(a: BacklogEntry, b: BacklogEntry): number 
  * candidate filter (with their routing fields, so routing them asks the tracker nothing
  * more), less sub-issues, items of no listed readiness, items delegated to another agent and
  * items with a run; each routed with the saved settings, keeping those that route to a repo
- * with Coding on or ask (a tie); sized from their newest triage. In list order.
+ * with Coding on or ask (a tie); sized from their newest triage; classed blocked or manual
+ * with the organization's tracker labels (`workItemHolds`). In list order.
  */
 export async function loadOrganizationBacklog(deps: {
   db: Database;
@@ -220,11 +223,12 @@ export async function loadOrganizationBacklog(deps: {
     return [{ item, group }];
   });
   const ids = listed.map(({ item }) => item.id);
-  const [runs, choices, sizes, triaging] = await Promise.all([
+  const [runs, choices, sizes, triaging, labels] = await Promise.all([
     listLatestIssueRuns(db, organizationId, ids),
     listWorkItemOverrides(db, organizationId, tracker.kind, ids),
     latestTriageSizes(db, organizationId, ids),
     listActiveTriageIssueIds(db, organizationId, ids),
+    getTrackerLabels(db, organizationId),
   ]);
   const unstarted = listed.filter(({ item }) => !runs.has(item.id));
 
@@ -269,8 +273,7 @@ export async function loadOrganizationBacklog(deps: {
             kind: item.kind,
             size: sizes.get(item.id) ?? null,
             group,
-            blocked: item.blocked,
-            blockers: item.blockedBy.map((blocker) => blocker.identifier),
+            ...workItemHolds(item, labels),
             triageRunning: triaging.has(item.id),
             source: item.project
               ? {
@@ -425,10 +428,17 @@ export async function loadBacklog(
       (!filters.source || workItemSourceValue(row) === filters.source) &&
       (!filters.repo || row.repository?.id === filters.repo),
   );
+  const actionable = rows.filter((row) => !row.manual && !row.blocked);
+  const readyFirst = (held: WorkItemRow[]) => [
+    ...held.filter((row) => row.group === "ready"),
+    ...held.filter((row) => row.group === "refine"),
+  ];
   return {
     groups: {
-      readyToStart: rows.filter((row) => row.group === "ready"),
-      needsRefining: rows.filter((row) => row.group === "refine"),
+      readyToStart: actionable.filter((row) => row.group === "ready"),
+      needsRefining: actionable.filter((row) => row.group === "refine"),
+      upNext: readyFirst(rows.filter((row) => row.blocked && !row.manual)),
+      manual: readyFirst(rows.filter((row) => row.manual)),
     },
     filters: {
       sources: [...sources.values()].sort(
@@ -453,15 +463,22 @@ export async function loadBacklogCounts(
   return { readyToStart, needsRefining: rows.length - readyToStart, total: rows.length };
 }
 
-/** `GET /api/ui/backlog/up-next`: the first Ready to start and Needs refining rows. */
+/**
+ * `GET /api/ui/backlog/up-next`: the first Ready to start rows Om can start (neither blocked
+ * nor manual) and the first Needs refining rows it can triage (not manual; blocked ones can).
+ */
 export async function loadBacklogUpNext(
   deps: BacklogDeps,
   organizations: readonly ScopedOrganization[],
 ): Promise<BacklogUpNext> {
   const { rows } = await loadScope(deps, organizations);
   return {
-    readyToStart: rows.filter((row) => row.group === "ready").slice(0, UP_NEXT_READY),
-    needsRefining: rows.filter((row) => row.group === "refine").slice(0, UP_NEXT_REFINING),
+    readyToStart: rows
+      .filter((row) => row.group === "ready" && !row.blocked && !row.manual)
+      .slice(0, UP_NEXT_READY),
+    needsRefining: rows
+      .filter((row) => row.group === "refine" && !row.manual)
+      .slice(0, UP_NEXT_REFINING),
   };
 }
 

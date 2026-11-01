@@ -23,7 +23,16 @@ import { SHORTCUTS } from "@/lib/shortcuts";
 import { LOADING_BACKLOG } from "./backlog-skeletons";
 import { BacklogView } from "./backlog-view";
 import { useBacklogCounts } from "./queries";
-import { backlogOf, BETA_ID, blockedRow, REPO_WEB, refineRow, workItemRow } from "./test-fixtures";
+import {
+  backlogOf,
+  BETA_ID,
+  blockedRow,
+  labelBlockedRow,
+  manualRow,
+  REPO_WEB,
+  refineRow,
+  workItemRow,
+} from "./test-fixtures";
 
 const nav = vi.hoisted(() => ({
   search: new URLSearchParams(),
@@ -173,11 +182,14 @@ const choices = (menu: HTMLElement) =>
     .map((item) => item.querySelector(".or-menu__label")!.textContent);
 const split = (container: HTMLElement) => container.querySelector(".or-split")!;
 
+/** The blocked row's item, unblocked: a Ready to start row of acme/web via the SOC team. */
+const reminderRow = () => ({ ...blockedRow(), blocked: false, blockers: [] });
+
 beforeEach(() => {
   holdBacklog = false;
   releaseBacklog = null;
   nav.router.push.mockReset();
-  backlog = backlogOf([workItemRow(), blockedRow(), refineRow()]);
+  backlog = backlogOf([workItemRow(), reminderRow(), refineRow()]);
   serve();
 });
 afterEach(() => {
@@ -233,34 +245,43 @@ describe("the Backlog list", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Needs refining 1" })).toBeTruthy();
   });
 
-  it("gives each row the tracker mark, the title and the identifier, repo, size and Blocked badges in order", async () => {
+  it("gives each row the tracker mark, the title and the identifier, repo and size badges in order", async () => {
     renderBacklog();
     await waitFor(() => expect(rows()).toHaveLength(3));
-    const [ready, blocked, refine] = rows() as [HTMLElement, HTMLElement, HTMLElement];
+    const [ready, unsized, refine] = rows() as [HTMLElement, HTMLElement, HTMLElement];
     const avatar = ready.querySelector(".or-row-avatar")!;
     expect(within(avatar as HTMLElement).getByRole("img", { name: "Linear" })).toBeTruthy();
     expect(ready.querySelector(".or-dot")).toBeNull();
     expect(within(ready).getByRole("link", { name: "Export invoices as CSV" })).toBeTruthy();
     expect(badges(ready)).toEqual(["SOC-412", "acme/portal", "Size M"]);
-    // No size when unknown; Blocked last, only when blocked.
-    expect(badges(blocked)).toEqual(["SOC-413", "acme/web", "Blocked"]);
-    expect(within(blocked).getByRole("img", { name: "Blocked" }).textContent).toBe("Blocked");
+    // No size when unknown.
+    expect(badges(unsized)).toEqual(["SOC-413", "acme/web"]);
     // No repo yet while routing asks.
     expect(badges(refine)).toEqual(["SOC-420", "Size S"]);
-    expect(screen.queryAllByRole("img", { name: "Blocked" })).toHaveLength(1);
+    expect(screen.queryAllByRole("img", { name: "Blocked" })).toHaveLength(0);
+  });
+
+  it("lists neither blocked (by relations or a label) nor manual items in Ready to start and Needs refining", async () => {
+    backlog = backlogOf([workItemRow(), blockedRow(), labelBlockedRow(), manualRow(), refineRow()]);
+    renderBacklog();
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    expect(titles()).toEqual(["Export invoices as CSV", "Rough idea: dunning emails"]);
+    expect(
+      screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent),
+    ).toEqual(["Ready to start 1", "Needs refining 1"]);
   });
 
   it("shows a task's kind after its identifier, Fix or Story, and none on an epic", async () => {
     backlog = backlogOf([
       workItemRow({ kind: "fix" }),
-      { ...blockedRow(), kind: "story" },
+      { ...reminderRow(), kind: "story" },
       { ...refineRow(), kind: null },
     ]);
     renderBacklog();
     await waitFor(() => expect(rows()).toHaveLength(3));
     const [fix, story, epic] = rows() as [HTMLElement, HTMLElement, HTMLElement];
     expect(badges(fix)).toEqual(["SOC-412", "Fix", "acme/portal", "Size M"]);
-    expect(badges(story)).toEqual(["SOC-413", "Story", "acme/web", "Blocked"]);
+    expect(badges(story)).toEqual(["SOC-413", "Story", "acme/web"]);
     expect(badges(epic)).toEqual(["SOC-420", "Size S"]);
   });
 
@@ -305,8 +326,8 @@ describe("the filters", () => {
   });
 
   it("read the URL, send it to the API and keep it on row links and the back link", async () => {
-    backlog = backlogOf([blockedRow()], {
-      filters: backlogOf([workItemRow(), blockedRow()]).filters,
+    backlog = backlogOf([reminderRow()], {
+      filters: backlogOf([workItemRow(), reminderRow()]).filters,
     });
     const search = `source=linear%3Ateam%3Ateam-soc&repo=${REPO_WEB}`;
     const { container } = renderBacklog({ search });
@@ -538,7 +559,7 @@ describe("live updates", () => {
         identifier: "SOC-999",
         title: "Triaged just now",
       });
-      backlog = backlogOf([workItemRow(), blockedRow(), newcomer]);
+      backlog = backlogOf([workItemRow(), reminderRow(), newcomer]);
       act(() =>
         live
           .current()
@@ -562,7 +583,7 @@ describe("live updates", () => {
 
 describe("wording", () => {
   it("has no Live indicator, hint text, keyboard shortcuts or Ralph", async () => {
-    backlog = backlogOf([workItemRow(), blockedRow(), refineRow()], {
+    backlog = backlogOf([workItemRow(), reminderRow(), refineRow()], {
       unavailable: [
         {
           organization: { id: BETA_ID, name: "NETbuilder", role: "member" },

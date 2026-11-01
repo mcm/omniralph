@@ -69,6 +69,8 @@ async function updateBacklogRows(
           groups: {
             readyToStart: rows(previous.groups.readyToStart),
             needsRefining: rows(previous.groups.needsRefining),
+            upNext: rows(previous.groups.upNext ?? []),
+            manual: rows(previous.groups.manual ?? []),
           },
         }
       : previous,
@@ -160,14 +162,18 @@ export function useTriageWorkItem() {
 }
 
 /** Removes the item from every cached group, and returns nothing to put back. */
-function withoutItem(
-  groups: { readyToStart: WorkItemRow[]; needsRefining: WorkItemRow[] },
+function withoutItem<Groups extends Partial<Record<keyof Backlog["groups"], WorkItemRow[]>>>(
+  groups: Groups,
   id: string,
-) {
-  return {
-    readyToStart: groups.readyToStart.filter((row) => row.id !== id),
-    needsRefining: groups.needsRefining.filter((row) => row.id !== id),
-  };
+): Groups {
+  const next = { ...groups };
+  for (const key of Object.keys(next) as (keyof Groups)[]) {
+    const rows = next[key];
+    if (Array.isArray(rows)) {
+      next[key] = rows.filter((row: WorkItemRow) => row.id !== id) as Groups[keyof Groups];
+    }
+  }
+  return next;
 }
 
 /** Moves a Ready to start row to Needs refining (first, until the refetch orders it). */

@@ -109,6 +109,8 @@ describe.skipIf(!databaseAvailable)("search", () => {
       group: "ready",
       blocked: false,
       blockers: [],
+      blockedLabels: [],
+      manual: false,
       triageRunning: false,
       source: { kind: "team", id: "team-1", name: "SOC" },
     };

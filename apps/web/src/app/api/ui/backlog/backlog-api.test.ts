@@ -9,10 +9,12 @@ import {
   saveIntegration,
   saveWorkItemMatch,
   setIntegrationStateMapping,
+  setTrackerLabels,
   setWorkItemRepository,
   triageRuns,
   upsertScmConnection,
   users,
+  withSettingsChanges,
   type Database,
   type TrackerStateMapping,
   type WorkItemMatchFields,
@@ -105,6 +107,7 @@ const { BACKLOG_CANDIDATE_CAP, trackerUnavailableReason } =
   await import("@/lib/work-items/backlog");
 const { handleLinearWebhook } = await import("@/lib/tracker/linear/ingest");
 const { changeMessage } = await import("@/lib/live/publisher");
+const { trackedTrackerLabels } = await import("@/lib/settings-history/sections");
 
 type Handler = (
   request: Request,
@@ -128,6 +131,13 @@ const getBacklog = async (search: Record<string, string> = {}) => {
   return backlogSchema.parse(response.body);
 };
 const identifiers = (rows: WorkItemRow[]) => rows.map((row) => row.identifier);
+/** Every row of the four groups, in group order. */
+const allRows = (groups: Backlog["groups"]) => [
+  ...groups.readyToStart,
+  ...groups.needsRefining,
+  ...groups.upNext,
+  ...groups.manual,
+];
 
 const databaseAvailable = testDatabaseAvailable();
 
@@ -358,7 +368,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
 
   it("lists the active organization's work items that route to a repo with Coding on, by group and order", async () => {
     const backlog = await getBacklog();
-    for (const row of [...backlog.groups.readyToStart, ...backlog.groups.needsRefining]) {
+    for (const row of allRows(backlog.groups)) {
       expect(workItemRowSchema.strict().parse(row)).toEqual(row);
       expect(row.organization).toEqual({ id: orgs.Acme, name: "Acme", role: "member" });
     }
@@ -370,13 +380,11 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       "ENG-5",
       "ENG-4",
     ]);
-    expect(identifiers(backlog.groups.needsRefining)).toEqual(["ENG-8", "ENG-7", "ENG-6"]);
-    const byIdentifier = new Map(
-      [...backlog.groups.readyToStart, ...backlog.groups.needsRefining].map((row) => [
-        row.identifier,
-        row,
-      ]),
-    );
+    expect(identifiers(backlog.groups.needsRefining)).toEqual(["ENG-7", "ENG-6"]);
+    // Blocked by ENG-9: in Up next.
+    expect(identifiers(backlog.groups.upNext)).toEqual(["ENG-8"]);
+    expect(backlog.groups.manual).toEqual([]);
+    const byIdentifier = new Map(allRows(backlog.groups).map((row) => [row.identifier, row]));
     expect(byIdentifier.get("ENG-2")).toEqual({
       id: `linear-${items.urgent!.id}`,
       tracker: "linear",
@@ -391,6 +399,8 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       group: "ready",
       blocked: false,
       blockers: [],
+      blockedLabels: [],
+      manual: false,
       triageRunning: false,
       source: { kind: "team", id: "team-1", name: "ENG" },
     });
@@ -405,6 +415,8 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       group: "refine",
       blocked: true,
       blockers: ["ENG-9"],
+      blockedLabels: [],
+      manual: false,
     });
     expect(byIdentifier.get("ENG-7")).toMatchObject({ group: "refine", blocked: false });
     expect(backlog.unavailable).toEqual([]);
@@ -424,7 +436,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       .returning();
     try {
       const { groups } = await getBacklog();
-      const triaging = [...groups.readyToStart, ...groups.needsRefining]
+      const triaging = allRows(groups)
         .filter((row) => row.triageRunning)
         .map((row) => row.identifier);
       expect(triaging).toEqual(["ENG-7"]);
@@ -435,9 +447,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
 
   it("returns sizes as triage gave them, from one query per fill", async () => {
     const { groups } = await getBacklog();
-    const sizes = Object.fromEntries(
-      [...groups.readyToStart, ...groups.needsRefining].map((row) => [row.identifier, row.size]),
-    );
+    const sizes = Object.fromEntries(allRows(groups).map((row) => [row.identifier, row.size]));
     expect(sizes).toEqual({
       "ENG-2": "XS",
       "ENG-3": "S",
@@ -480,10 +490,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
     const filtered = async (search: Record<string, string>) => {
       const backlog = await getBacklog(search);
       expect(backlog.filters).toEqual(unfiltered.filters);
-      return [
-        ...identifiers(backlog.groups.readyToStart),
-        ...identifiers(backlog.groups.needsRefining),
-      ];
+      return identifiers(allRows(backlog.groups));
     };
     expect(await filtered({ source: project })).toEqual(["ENG-5"]);
     expect(await filtered({ repo: repos["acme/web"]! })).toEqual(["ENG-4"]);
@@ -491,9 +498,9 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       "ENG-2",
       "ENG-3",
       "ENG-1",
-      "ENG-8",
       "ENG-7",
       "ENG-6",
+      "ENG-8",
     ]);
     expect(await filtered({ source: project, repo: repos["acme/api"]! })).toEqual([]);
     expect(await filtered({ source: "linear:team:nope" })).toEqual([]);
@@ -534,7 +541,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
 
   it("spans every membership with organization=all, skips one without Linear and reports one whose Linear fails", async () => {
     const backlog = await getBacklog({ organization: "all" });
-    const rows = [...backlog.groups.readyToStart, ...backlog.groups.needsRefining];
+    const rows = allRows(backlog.groups);
     expect(new Set(rows.map((row) => row.organization.id))).toEqual(
       new Set([orgs.Acme, orgs.Other, orgs.Mapped]),
     );
@@ -573,7 +580,12 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
     await connectLinear(orgId, unmatched);
     const backlog = await getBacklog({ organization: orgId });
     expect(backlog.setup).toBe("no_work_item_match");
-    expect(backlog.groups).toEqual({ readyToStart: [], needsRefining: [] });
+    expect(backlog.groups).toEqual({
+      readyToStart: [],
+      needsRefining: [],
+      upNext: [],
+      manual: [],
+    });
     expect(unmatched.issueLists).toEqual([]);
   });
 
@@ -676,5 +688,118 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       total: 1,
     });
     expect(Date.now() - webhookAt).toBeLessThan(5_000);
+  });
+  it("groups blocked items (by relations or a blocked label) in Up next and manual ones in Manual, with the organization's labels", async () => {
+    const orgId = await organization("Held");
+    await repo(orgId, "held/api", {});
+    const web = await repo(orgId, "held/web", { labels: ["frontend"] });
+    await setTrackerLabels(
+      db,
+      orgId,
+      { manualLabels: ["By Hand"], blockedLabels: ["On Hold"] },
+      null,
+    );
+    const held = new FakeLinearGateway();
+    const ready = (identifier: string, partial: Partial<IssueSummary> = {}) =>
+      held.add({ identifier, title: identifier, stateType: "unstarted", ...partial });
+    const refine = (identifier: string, partial: Partial<IssueSummary> = {}) =>
+      held.add({ identifier, title: identifier, stateType: "backlog", ...partial });
+    ready("HLD-1", { priority: 2 });
+    // A blocked label, matched ignoring case.
+    const labelBlocked = ready("HLD-2", { priority: 3, labels: ["on hold"] });
+    // Blocked by a relation, and more urgent: still after Up next's Ready to start items.
+    const relationBlocked = refine("HLD-3", { priority: 1 });
+    const blocker = held.add({ identifier: "HLD-9", title: "Blocker", stateType: "started" });
+    held.blocks.set(relationBlocked.id, [blocker.id]);
+    const manual = ready("HLD-4", { priority: 4, labels: ["by hand"] });
+    // Manual and blocked: manual wins.
+    refine("HLD-5", { priority: 1, labels: ["BY HAND", "On hold"] });
+    // The default labels, which this organization doesn't use.
+    ready("HLD-6", { priority: 3, labels: ["manual"] });
+    ready("HLD-7", { priority: 4, labels: ["blocked"] });
+    await connectLinear(orgId, held);
+    for (const item of [labelBlocked, manual]) {
+      await setWorkItemRepository(db, {
+        organizationId: orgId,
+        tracker: "linear",
+        externalId: item.id,
+        repositoryId: web,
+        userId: null,
+      });
+    }
+    const scope = { organization: orgId };
+
+    const backlog = await getBacklog(scope);
+    expect(identifiers(backlog.groups.readyToStart)).toEqual(["HLD-1", "HLD-6", "HLD-7"]);
+    expect(backlog.groups.needsRefining).toEqual([]);
+    expect(identifiers(backlog.groups.upNext)).toEqual(["HLD-2", "HLD-3"]);
+    expect(identifiers(backlog.groups.manual)).toEqual(["HLD-4", "HLD-5"]);
+    const byIdentifier = new Map(allRows(backlog.groups).map((row) => [row.identifier, row]));
+    const holds = (identifier: string) => {
+      const { blocked, blockers, blockedLabels, manual } = byIdentifier.get(identifier)!;
+      return { blocked, blockers, blockedLabels, manual };
+    };
+    expect(holds("HLD-1")).toEqual({
+      blocked: false,
+      blockers: [],
+      blockedLabels: [],
+      manual: false,
+    });
+    expect(holds("HLD-2")).toEqual({
+      blocked: true,
+      blockers: [],
+      blockedLabels: ["on hold"],
+      manual: false,
+    });
+    expect(holds("HLD-3")).toEqual({
+      blocked: true,
+      blockers: ["HLD-9"],
+      blockedLabels: [],
+      manual: false,
+    });
+    expect(holds("HLD-4")).toEqual({
+      blocked: false,
+      blockers: [],
+      blockedLabels: [],
+      manual: true,
+    });
+    expect(holds("HLD-5")).toEqual({
+      blocked: true,
+      blockers: [],
+      blockedLabels: ["On hold"],
+      manual: true,
+    });
+
+    // The Repo filter applies to Up next and Manual too.
+    const filtered = await getBacklog({ ...scope, repo: web });
+    expect(filtered.groups).toMatchObject({ readyToStart: [], needsRefining: [] });
+    expect(identifiers(filtered.groups.upNext)).toEqual(["HLD-2"]);
+    expect(identifiers(filtered.groups.manual)).toEqual(["HLD-4"]);
+
+    // Up next in the Inbox: Ready to start only what can start; Needs refining keeps blocked
+    // items (they can be triaged), not manual ones.
+    const next = backlogUpNextSchema.parse((await call<BacklogUpNext>(upNext.GET, scope)).body);
+    expect(identifiers(next.readyToStart)).toEqual(["HLD-1", "HLD-6", "HLD-7"]);
+    expect(identifiers(next.needsRefining)).toEqual(["HLD-3"]);
+    // The counts keep counting every listed item.
+    expect((await call<BacklogCounts>(counts.GET, scope)).body).toEqual({
+      readyToStart: 5,
+      needsRefining: 2,
+      total: 7,
+    });
+
+    // Saving the labels drops the cached Backlog: the next read groups with the new ones.
+    held.issueLists = [];
+    await captureChanges(() =>
+      withSettingsChanges(db, { userId: null, name: "Ada" }, trackedTrackerLabels(orgId), (tx) =>
+        setTrackerLabels(tx, orgId, { manualLabels: ["manual"], blockedLabels: ["blocked"] }, null),
+      ),
+    );
+    const relabeled = await getBacklog(scope);
+    expect(held.issueLists).toHaveLength(1);
+    expect(identifiers(relabeled.groups.readyToStart)).toEqual(["HLD-1", "HLD-2", "HLD-4"]);
+    expect(identifiers(relabeled.groups.needsRefining)).toEqual(["HLD-5"]);
+    expect(identifiers(relabeled.groups.upNext)).toEqual(["HLD-7", "HLD-3"]);
+    expect(identifiers(relabeled.groups.manual)).toEqual(["HLD-6"]);
   });
 });

@@ -123,6 +123,7 @@ export function storyDetail(overrides: Partial<WorkItemDetail> = {}): WorkItemDe
     group: null,
     blocked: false,
     blockers: [],
+    blockedLabels: [],
     source: { kind: "team", id: "team-1", name: "TOOL" },
     state: { category: "todo", name: "Todo" },
     description: "Rotate them.\n\n- [x] Export the old cert\n- [ ] Install the new one\n",

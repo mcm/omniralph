@@ -41,10 +41,19 @@ export const backlogRepoOptionSchema = z.object({
 });
 
 export const backlogSchema = z.object({
-  /** Each group in list order: tracker priority (Urgent first, No priority last), then most recently updated. */
+  /**
+   * Each item in exactly one group. Each group (and each part of Up next and Manual) in list
+   * order: tracker priority (Urgent first, No priority last), then most recently updated.
+   */
   groups: z.object({
+    /** Ready to start, neither blocked nor manual. */
     readyToStart: z.array(workItemRowSchema),
+    /** Needs refining, neither blocked nor manual. */
     needsRefining: z.array(workItemRowSchema),
+    /** Blocked and not manual: its Ready to start items, then its Needs refining ones. */
+    upNext: z.array(workItemRowSchema),
+    /** Manual (blocked or not): its Ready to start items, then its Needs refining ones. */
+    manual: z.array(workItemRowSchema),
   }),
   /** The filters' options: the values of the unfiltered list. */
   filters: z.object({
@@ -79,7 +88,10 @@ export const backlogCountsSchema = z.object({
 });
 export type BacklogCounts = z.infer<typeof backlogCountsSchema>;
 
-/** Up next in the empty Inbox: the first Ready to start and Needs refining rows. */
+/**
+ * Up next in the empty Inbox: the first Ready to start rows that are neither blocked nor
+ * manual, and the first Needs refining rows that aren't manual (blocked ones may be triaged).
+ */
 export const backlogUpNextSchema = z.object({
   readyToStart: z.array(workItemRowSchema).max(3),
   needsRefining: z.array(workItemRowSchema).max(2),
