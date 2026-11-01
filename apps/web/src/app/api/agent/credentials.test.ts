@@ -494,7 +494,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
             story: {
               identifier: "TOOL-83",
               title: "Add the ralph capability",
-              linearIssueId: "30ed0e14-6d6a-4dba-8962-4c010fca69af",
+              trackerIssueId: "30ed0e14-6d6a-4dba-8962-4c010fca69af",
               description: "As a developer...",
             },
             commitMessage: "feat(TOOL-83): Add the ralph capability",
@@ -505,6 +505,7 @@ describe.skipIf(!databaseAvailable)("credential broker and repo pinning", () => 
         const requestPayload = (runId: string) =>
           RalphRequestPayload.parse({
             ...jobBase(runId),
+            source: "tracker",
             requests: [{ id: randomUUID(), text: "push this" }],
           });
 

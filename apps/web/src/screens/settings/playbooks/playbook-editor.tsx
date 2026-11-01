@@ -650,11 +650,11 @@ function PlaybookForm({
             error={errorAt(errors, "tools.agent")}
           />
           <ToolChoices
-            legend="Linear tools"
-            names={options.tools.linear}
-            selected={draft.tools.linear}
-            onChange={(linear) => setTools({ linear })}
-            error={errorAt(errors, "tools.linear")}
+            legend="Tracker tools"
+            names={options.tools.tracker}
+            selected={draft.tools.tracker}
+            onChange={(tracker) => setTools({ tracker })}
+            error={errorAt(errors, "tools.tracker")}
           />
           <Field label="MCP servers">
             <TokenInput
@@ -679,9 +679,9 @@ function PlaybookForm({
                 onCheckedChange={(shell) => setToolSettings({ shell })}
               />
               <Checkbox
-                label="Read Linear"
-                checked={draft.toolSettings.linearRead}
-                onCheckedChange={(linearRead) => setToolSettings({ linearRead })}
+                label="Read the tracker"
+                checked={draft.toolSettings.trackerRead}
+                onCheckedChange={(trackerRead) => setToolSettings({ trackerRead })}
               />
               <Checkbox
                 label="Network"

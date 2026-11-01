@@ -41,7 +41,7 @@ kind) and concurrency (pool) are separate levers.**
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Harness**          | A host running `omniralph-harness` (package `@omniralph/harness`, config `~/.config/omniralph/harness.json`). Formerly "agent": tables `harnesses`, `harness_enrollments`, `harness_refresh_tokens`, `harness_audit`, `harness_repo_pins`, API `/api/harness/*`, JWT audience `omniralph-harness`, pages **Harnesses** and **Settings › Harnesses**. |
 | **Agent definition** | A reusable persona: system prompt (`append` to or `replace` the Claude Code preset), tools (built-in, harness, Linear, MCP servers), skills, reference docs, model, and the task types it suits.                                                                                                                                                     |
-| **Task definition**  | One task on one agent: task type, triggers, prompt template, optional `systemAppend`, tool settings (`shell`, `linearRead`, `network`), output schema, sink, pool, model, token budget, per-variable limits, idle timeout and turn cap.                                                                                                              |
+| **Task definition**  | One task on one agent: task type, triggers, prompt template, optional `systemAppend`, tool settings (`shell`, `trackerRead`, `network`), output schema, sink, pool, model, token budget, per-variable limits, idle timeout and turn cap.                                                                                                             |
 | **Task type**        | How the harness runs a task: `query`, `review` or `coding`. A fixed lifecycle per type, in harness code.                                                                                                                                                                                                                                             |
 | **Run spec**         | Everything one run needs, resolved by the control panel at claim time and sent with the job.                                                                                                                                                                                                                                                         |
 | **Sink**             | Control-panel code, keyed by kind, that validates and applies a run's output.                                                                                                                                                                                                                                                                        |
@@ -351,10 +351,10 @@ active legacy `review.run` jobs and renamed run-spec ones `review.task`.)
 
 A run-spec job gets two job tokens (both `typ: "job"`, 900 s, renewed by the heartbeat):
 
-| Kind        | Held by                                                                                                                                  | Scopes                                                                                          |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `lifecycle` | The harness, for its own git calls (syncing and checking out the repository)                                                             | `credentials:read`; `credentials:write` only for `coding` runs                                  |
-| `session`   | The Claude session: `OMNIRALPH_JOB_TOKEN` / `OMNIRALPH_JOB_TOKEN_FILE` in its env, its git credential helper, the `omniralph` MCP server | `credentials:read`, `run:activity`, `run:attachments`, `linear:read`; never `credentials:write` |
+| Kind        | Held by                                                                                                                                  | Scopes                                                                                           |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `lifecycle` | The harness, for its own git calls (syncing and checking out the repository)                                                             | `credentials:read`; `credentials:write` only for `coding` runs                                   |
+| `session`   | The Claude session: `OMNIRALPH_JOB_TOKEN` / `OMNIRALPH_JOB_TOKEN_FILE` in its env, its git credential helper, the `omniralph` MCP server | `credentials:read`, `run:activity`, `run:attachments`, `tracker:read`; never `credentials:write` |
 
 The credential broker (`/api/harness/credentials`) decides push access by token kind and task
 type: only a `coding` run's `lifecycle` token (or, on the legacy coding path, a legacy `ralph.*`
@@ -382,10 +382,10 @@ token:
   ralph-only: they accept any running job whose token has `run:activity` or `run:attachments`, and
   store activities and permission requests per job (`run_activities`,
   `run_permission_requests`).
-- The read-only Linear tools `linear_get_issue`, `linear_list_comments`, `linear_search_issues` and
-  `linear_get_document`, served by the control panel under `/api/harness/runs/{id}/linear/*`,
-  scoped to the run's organization and the `linear:read` scope. A session gets them only when its
-  agent lists them and the task turns on `linearRead`. Every Linear write goes through a sink.
+- The read-only Linear tools `tracker_get_issue`, `tracker_list_comments`, `tracker_search_issues` and
+  `tracker_get_document`, served by the control panel under `/api/agent/runs/{id}/tracker/*`,
+  scoped to the run's organization and the `tracker:read` scope. A session gets them only when its
+  agent lists them and the task turns on `trackerRead`. Every Linear write goes through a sink.
 
 A session is offered the agent's harness tools that its task type allows
 (`HARNESS_TOOLS_BY_TASK_TYPE`). Without any, no server is attached.

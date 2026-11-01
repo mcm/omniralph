@@ -16,7 +16,7 @@ export * from "./chat-ask.js";
 export * from "./run-spec.js";
 export * from "./run-result.js";
 export * from "./usage.js";
-export * from "./run-linear.js";
+export * from "./run-tracker.js";
 export * from "./correlation.js";
 export * from "./claude-code-tools.js";
 export * from "./text.js";

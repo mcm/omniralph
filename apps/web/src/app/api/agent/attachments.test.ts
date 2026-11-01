@@ -214,7 +214,7 @@ describe.skipIf(!databaseAvailable)("GET /api/agent/jobs/{id}/attachments/{attac
       jobId: job!.id,
       agentId,
       kind: "session",
-      scopes: ["credentials:read", "run:activity", "run:attachments", "linear:read"],
+      scopes: ["credentials:read", "run:activity", "run:attachments", "tracker:read"],
     });
     return { jobId: job!.id, session };
   }

@@ -48,7 +48,7 @@ import {
 } from "@omniralph/db";
 import { labelsInclude, projectIs, setRoutingRules, teamIs } from "@/lib/routing/testing";
 import {
-  CODING_TASKS_MIN_AGENT_VERSION,
+  TRACKER_PROTOCOL_MIN_AGENT_VERSION,
   MAX_JOB_DELIVERIES,
   QUERY_TASKS_MIN_AGENT_VERSION,
   RalphPushPayload,
@@ -306,7 +306,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       agentId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+      agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -439,7 +439,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const routing = (taskId: string) => ({
       taskType: "coding",
       taskId,
-      minAgentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+      minAgentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
     });
 
     it("builds a 3-story epic in priority and blocker order, then completes", async () => {
@@ -498,7 +498,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         settings: { model: "opus", setupCommand: null },
         attempt: 1,
         epic: { identifier: "ENG-1", title: "Epic", kind: "children" },
-        story: { identifier: "ENG-4", title: "Gamma", linearIssueId: gamma.id },
+        story: { identifier: "ENG-4", title: "Gamma", trackerIssueId: gamma.id },
         commitMessage: "feat(ENG-4): Gamma",
         qualityGates: ["pnpm test", "pnpm lint"],
         lastFeedback: null,
@@ -820,7 +820,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const payload = await work(run.id, { commitSha: sha(5) });
       expect(payload).toMatchObject({
         epic: { identifier: "ENG-80", kind: "single", prd: "" },
-        story: { identifier: "ENG-80", linearIssueId: issue.id },
+        story: { identifier: "ENG-80", trackerIssueId: issue.id },
         commitMessage: "ENG-80: Fix the login bug",
       });
       // The issue stays open for review; no story comment.
@@ -855,7 +855,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+        agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1032,7 +1032,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         name: "Careful story",
         role,
         definition: { ...definition, promptTemplate: `Be careful.\n${definition.promptTemplate}` },
-        requirements: { minAgentVersion: CODING_TASKS_MIN_AGENT_VERSION },
+        requirements: { minAgentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION },
         createdBy: null,
       });
       await db
@@ -1151,7 +1151,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           agentId: agentA,
           acceptedTaskTypes: ["query", "coding"],
           pools: ["short", "long"],
-          agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+          agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
           maxDeliveries: MAX_JOB_DELIVERIES,
         });
         expect(started.claim?.job.id).toBe(job.id);
@@ -1165,7 +1165,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+        agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(gaveUp).toMatchObject({
@@ -1193,7 +1193,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+        agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1263,7 +1263,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+        agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1322,7 +1322,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         agentId: agentB,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+        agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1680,7 +1680,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+      agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
@@ -1706,7 +1706,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         agentId: agentA,
         acceptedTaskTypes: ["query", "coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+        agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       expect(claim?.job.id).toBe(job.id);
@@ -1717,7 +1717,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     await finishOnA();
     expect((await activeJob(run.id)).targetAgentId).toBe(agentA);
     await recordAgentHeartbeat(db, agentA, {
-      version: CODING_TASKS_MIN_AGENT_VERSION,
+      version: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
       acceptedTaskTypes: ["query", "review"],
     });
     await finishOnA();
@@ -1744,7 +1744,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+      agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);
@@ -2271,7 +2271,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+      agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(claim?.job.id).toBe(job.id);

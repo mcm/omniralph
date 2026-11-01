@@ -28,7 +28,7 @@ import {
   type RalphRun,
 } from "@omniralph/db";
 import {
-  CODING_TASKS_MIN_AGENT_VERSION,
+  TRACKER_PROTOCOL_MIN_AGENT_VERSION,
   MAX_JOB_DELIVERIES,
   RalphCleanupPayload,
   type RalphCleanupResult,
@@ -375,7 +375,7 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
       agentId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+      agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);

@@ -1,8 +1,7 @@
 /**
  * The read-only tracker tools of a run, served under
- * `/api/agent/runs/{id}/linear/*` with the run's organization's
- * tracker (see `@omniralph/shared` `run-linear.ts`); the route and tool names
- * are renamed with the agent protocol.
+ * `/api/agent/runs/{id}/tracker/*` with the run's organization's
+ * tracker (see `@omniralph/shared` `run-tracker.ts`).
  */
 import "server-only";
 import {
@@ -15,8 +14,8 @@ import {
   type TrackerGateway,
 } from "@omniralph/tracker";
 import { getJobForAgent, type Job } from "@omniralph/db";
-import type { RunLinearComment, RunLinearDocument, RunLinearIssue } from "@omniralph/shared";
-import type { LinearTool } from "@omniralph/tasks";
+import type { RunTrackerComment, RunTrackerDocument, RunTrackerIssue } from "@omniralph/shared";
+import type { TrackerTool } from "@omniralph/tasks";
 import { requireJob } from "@/lib/agent-auth/verify";
 import { jobIdParam, notFound, type JobRouteContext } from "@/lib/agent-api/jobs";
 import { getDb } from "@/lib/db";
@@ -24,20 +23,20 @@ import { getTrackerGateway, TrackerNotConnectedError } from "@/lib/tracker/clien
 import { organizationPlaybooks, type PlaybookSource } from "@/lib/playbooks";
 
 /**
- * The Linear tools a job's run may call: those its playbook lists, when it
- * turns on `toolSettings.linearRead`. None for a legacy job or an unknown
+ * The tracker tools a job's run may call: those its playbook lists, when it
+ * turns on `toolSettings.trackerRead`. None for a legacy job or an unknown
  * playbook.
  */
-export async function runLinearTools(
+export async function runTrackerTools(
   job: Pick<Job, "taskId">,
   playbooks: PlaybookSource,
-): Promise<LinearTool[]> {
+): Promise<TrackerTool[]> {
   if (job.taskId === null) return [];
   const playbook = await playbooks.getPlaybook(job.taskId);
-  return playbook?.toolSettings.linearRead ? playbook.tools.linear : [];
+  return playbook?.toolSettings.trackerRead ? playbook.tools.tracker : [];
 }
 
-export function runLinearIssue(issue: IssueSummary): RunLinearIssue {
+export function runTrackerIssue(issue: IssueSummary): RunTrackerIssue {
   return {
     id: issue.id,
     identifier: issue.identifier,
@@ -55,7 +54,7 @@ export function runLinearIssue(issue: IssueSummary): RunLinearIssue {
   };
 }
 
-export function runLinearComment(comment: IssueComment): RunLinearComment {
+export function runTrackerComment(comment: IssueComment): RunTrackerComment {
   return {
     body: comment.body,
     ...(comment.author && { author: comment.author }),
@@ -63,7 +62,7 @@ export function runLinearComment(comment: IssueComment): RunLinearComment {
   };
 }
 
-export function runLinearDocument(document: TrackerDocument): RunLinearDocument {
+export function runTrackerDocument(document: TrackerDocument): RunTrackerDocument {
   return {
     id: document.id,
     title: document.title,
@@ -80,21 +79,22 @@ function failed(status: number, error: string, reason: string): Response {
 }
 
 /**
- * Serves one Linear tool call of a run: authenticates the run's token
- * (`linear:read`, so the session token), checks the job runs on the calling
- * agent and its task may use `tool` (`runLinearTools`, else 403
- * `linear_tool_not_allowed`), then answers `read`'s result as JSON, read with
- * the gateway of the job's organization. 409 `linear_not_connected` when the
- * organization has no Linear workspace, 404 `linear_not_found` when Linear
- * rejects the ID, 502 `linear_failed` for any other Linear error.
+ * Serves one tracker tool call of a run: authenticates the run's token
+ * (`tracker:read`, so the session token), checks the job runs on the calling
+ * agent and its task may use `tool` (`runTrackerTools`, else 403
+ * `tracker_tool_not_allowed`), then answers `read`'s result as JSON, read with
+ * the gateway of the job's organization. 409 `tracker_not_connected` when the
+ * organization has no tracker connected, 404 `tracker_not_found` when the
+ * tracker rejects the ID or lacks what the tool reads (e.g. documents), 502
+ * `tracker_failed` for any other tracker error.
  */
-export async function serveRunLinearTool(
+export async function serveRunTrackerTool(
   req: Request,
   ctx: JobRouteContext,
-  tool: LinearTool,
+  tool: TrackerTool,
   read: (tracker: TrackerGateway) => Promise<unknown>,
 ): Promise<Response> {
-  const principal = await requireJob(req, "linear:read");
+  const principal = await requireJob(req, "tracker:read");
   if (principal instanceof Response) return principal;
   const jobId = await jobIdParam(ctx);
   if (!jobId) return notFound();
@@ -102,9 +102,9 @@ export async function serveRunLinearTool(
   const db = getDb();
   const job = await getJobForAgent(db, jobId, principal.agentId);
   if (!job) return notFound();
-  const tools = await runLinearTools(job, organizationPlaybooks(db, job.organizationId));
+  const tools = await runTrackerTools(job, organizationPlaybooks(db, job.organizationId));
   if (!tools.includes(tool)) {
-    return Response.json({ error: "linear_tool_not_allowed" }, { status: 403 });
+    return Response.json({ error: "tracker_tool_not_allowed" }, { status: 403 });
   }
 
   try {
@@ -114,18 +114,18 @@ export async function serveRunLinearTool(
     if (error instanceof TrackerNotConnectedError) {
       return failed(
         409,
-        "linear_not_connected",
-        "the run's organization has no Linear workspace connected",
+        "tracker_not_connected",
+        "the run's organization has no tracker connected",
       );
     }
     const reason = error instanceof Error ? error.message : String(error);
     // The tool reads what this tracker doesn't have (e.g. documents).
-    if (error instanceof TrackerCapabilityError) return failed(404, "linear_not_found", reason);
-    // Linear answers a read of an unknown issue (its comments, say) with an invalid input error.
+    if (error instanceof TrackerCapabilityError) return failed(404, "tracker_not_found", reason);
+    // Linear, for one, answers a read of an unknown issue (its comments, say) with an invalid input error.
     if (error instanceof TrackerNotFoundError || error instanceof TrackerInvalidInputError) {
-      return failed(404, "linear_not_found", reason);
+      return failed(404, "tracker_not_found", reason);
     }
-    console.error(`Linear tool ${tool} failed`, error);
-    return failed(502, "linear_failed", reason);
+    console.error(`Tracker tool ${tool} failed`, error);
+    return failed(502, "tracker_failed", reason);
   }
 }

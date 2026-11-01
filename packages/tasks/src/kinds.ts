@@ -63,14 +63,14 @@ export type SinkKind = (typeof SINK_KINDS)[number];
 export const AGENT_TOOLS = ["post_activity", "ask_permission", "get_attachment", "ship"] as const;
 export type AgentTool = (typeof AGENT_TOOLS)[number];
 
-/** Read-only Linear tools, served by the control panel through the same MCP server. */
-export const LINEAR_TOOLS = [
-  "linear_get_issue",
-  "linear_list_comments",
-  "linear_search_issues",
-  "linear_get_document",
+/** Read-only issue tracker tools, served by the control panel through the same MCP server. */
+export const TRACKER_TOOLS = [
+  "tracker_get_issue",
+  "tracker_list_comments",
+  "tracker_search_issues",
+  "tracker_get_document",
 ] as const;
-export type LinearTool = (typeof LINEAR_TOOLS)[number];
+export type TrackerTool = (typeof TRACKER_TOOLS)[number];
 
 /** The agent tools each task type allows; `ship` is for coding runs only. */
 export const AGENT_TOOLS_BY_TASK_TYPE: Record<TaskType, readonly AgentTool[]> = {

@@ -286,17 +286,17 @@ describe("runQueryTask", () => {
       expect(agentToolRules(calls[0]?.options)).toEqual(["mcp__omniralph__ask_permission"]);
     });
 
-    it("attaches the agent's Linear tools when the task turns on linearRead", async () => {
+    it("attaches the agent's Linear tools when the task turns on trackerRead", async () => {
       const agent = agentFixture({
-        tools: { builtin: ["Read"], linear: ["linear_get_issue", "linear_search_issues"] },
+        tools: { builtin: ["Read"], tracker: ["tracker_get_issue", "tracker_search_issues"] },
       });
       const on = await run(
-        spec({ agent, task: taskFixture({ toolSettings: { linearRead: true } }) }),
+        spec({ agent, task: taskFixture({ toolSettings: { trackerRead: true } }) }),
       );
       expect(Object.keys(on.calls[0]?.options?.mcpServers ?? {})).toEqual(["omniralph"]);
       expect(agentToolRules(on.calls[0]?.options)).toEqual([
-        "mcp__omniralph__linear_get_issue",
-        "mcp__omniralph__linear_search_issues",
+        "mcp__omniralph__tracker_get_issue",
+        "mcp__omniralph__tracker_search_issues",
       ]);
 
       const off = await run(spec({ agent }));
@@ -698,10 +698,10 @@ describe("runQueryTask", () => {
       });
       expect(Object.keys(call?.options.mcpServers ?? {})).toEqual(["omniralph"]);
       expect(linearRules(call?.options)).toEqual([
-        "mcp__omniralph__linear_get_issue",
-        "mcp__omniralph__linear_list_comments",
-        "mcp__omniralph__linear_search_issues",
-        "mcp__omniralph__linear_get_document",
+        "mcp__omniralph__tracker_get_issue",
+        "mcp__omniralph__tracker_list_comments",
+        "mcp__omniralph__tracker_search_issues",
+        "mcp__omniralph__tracker_get_document",
       ]);
       expect(call?.options.systemPrompt).toEqual({
         type: "preset",

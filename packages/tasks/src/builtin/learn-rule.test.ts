@@ -57,7 +57,7 @@ describe("builtin:learn-rule", () => {
   it("runs with the rule writer persona as a query task with no tools and no preset", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "replace",
-      tools: { builtin: [], agent: [], linear: [], mcpServers: [] },
+      tools: { builtin: [], agent: [], tracker: [], mcpServers: [] },
       model: "claude-sonnet-5-5",
     });
     expect(task).toMatchObject({
@@ -67,7 +67,7 @@ describe("builtin:learn-rule", () => {
       sink: "learned-rule",
       model: "claude-sonnet-5-5",
       tokenBudget: { tokens: 5000 },
-      toolSettings: { shell: false, linearRead: false, network: false },
+      toolSettings: { shell: false, trackerRead: false, network: false },
     });
     expect(
       validateTemplate(task.promptTemplate, availableVariables("query", task.triggers)),

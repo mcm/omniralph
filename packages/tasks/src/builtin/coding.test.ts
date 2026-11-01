@@ -210,7 +210,7 @@ describe("builtin:implement-story", () => {
       maxIterationsPerRun: 50,
       pushTiming: "per-story",
       prDescriptionTaskId: "builtin:describe-pr",
-      toolSettings: { shell: true, linearRead: false, network: true },
+      toolSettings: { shell: true, trackerRead: false, network: true },
     });
     expect(storyTask.draftPullRequest).toBeUndefined();
     expect(

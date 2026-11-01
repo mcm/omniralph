@@ -7,7 +7,7 @@ import {
   CORRELATION_OUTPUT_SCHEMA,
   CUSTOM_PLAYBOOK_ROLES,
   getBuiltinPlaybook,
-  LINEAR_TOOLS,
+  TRACKER_TOOLS,
   Playbook,
 } from "@omniralph/tasks";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -102,7 +102,7 @@ const customPlaybook = Playbook.parse({
   systemPrompt: "You are a careful engineer.",
   promptTemplate: "Implement {{story.title}}.",
   model: "claude-opus-5-5",
-  tools: { builtin: ["Read"], agent: ["ship"], linear: [], mcpServers: [] },
+  tools: { builtin: ["Read"], agent: ["ship"], tracker: [], mcpServers: [] },
   setupCommands: [{ name: "deps", command: "pnpm install", timeoutSeconds: 60 }],
   variableLimits: { "story.description": 4000 },
   coding: { verifyCommands: ["pnpm test"], maxAttemptsPerStory: 5 },
@@ -142,7 +142,7 @@ const formOptions: PlaybookFormOptions = {
     { value: "claude-opus-5-5", displayName: "Opus 5.5" },
     { value: "claude-sonnet-5-5", displayName: "Sonnet 5.5" },
   ],
-  tools: { builtin: [...CLAUDE_CODE_TOOLS], agent: [...AGENT_TOOLS], linear: [...LINEAR_TOOLS] },
+  tools: { builtin: [...CLAUDE_CODE_TOOLS], agent: [...AGENT_TOOLS], tracker: [...TRACKER_TOOLS] },
   mcpServers: ["@omniralph/code-graph:graph"],
   prDescriptionPlaybooks: [{ id: "builtin:describe-pr", name: "Describe a PR", builtin: true }],
   hostTools: ["gh", "opengrep"],
@@ -314,7 +314,7 @@ describe("creating a playbook", () => {
       "Sonnet 5.5",
     ]);
     expect(optionLabels(field("Token budget"))).toEqual(["No limit", "A number of tokens"]);
-    for (const group of ["Built-in tools", "Agent tools", "Linear tools", "Access"]) {
+    for (const group of ["Built-in tools", "Agent tools", "Tracker tools", "Access"]) {
       expect(screen.getByRole("group", { name: group })).toBeTruthy();
     }
     expect(screen.getByRole("region", { name: "Coding" })).toBeTruthy();
@@ -409,10 +409,10 @@ describe("creating a playbook", () => {
       tools: {
         builtin: ["Grep", "Read"],
         agent: ["ship"],
-        linear: [],
+        tracker: [],
         mcpServers: ["@omniralph/code-graph:graph"],
       },
-      toolSettings: { shell: true, linearRead: false, network: false },
+      toolSettings: { shell: true, trackerRead: false, network: false },
       requires: { installables: ["@omniralph/code-graph"], hostTools: ["semgrep"] },
       setupCommands: [
         { name: "deps", command: "pnpm install" },
@@ -572,7 +572,7 @@ describe("editing a playbook", () => {
             model: "Story playbooks need a model an agent reports.",
             "setupCommands.0.name": "Use lowercase letters, digits and _, starting with a letter",
             "tools.agent": "A story playbook can't use get_attachment.",
-            "toolSettings.linearRead": "Linear tools need Read Linear on.",
+            "toolSettings.trackerRead": "Tracker tools need Read the tracker on.",
             outputSchema: "A story playbook can't declare an output schema.",
           },
         },
@@ -597,7 +597,7 @@ describe("editing a playbook", () => {
     ).toBeTruthy();
     expect(
       within(screen.getByRole("group", { name: "Access" })).getByText(
-        "Linear tools need Read Linear on.",
+        "Tracker tools need Read the tracker on.",
       ),
     ).toBeTruthy();
     // An error no field shows goes above the form.

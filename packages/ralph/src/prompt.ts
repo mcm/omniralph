@@ -439,8 +439,8 @@ export function buildDescribePrPrompt(ctx: DescribePrPromptContext): string {
 /** Whether a request may rewrite the branch's history (the repo's `history_rewrite`). */
 export type HistoryRewritePolicy = "when-asked" | "always" | "never";
 
-/** Where a request session's requests come from: a Linear agent session or a chat thread. */
-export type RequestSource = "linear" | "chat";
+/** Where a request session's requests come from: the tracker (its session or comments) or a chat thread. */
+export type RequestSource = "tracker" | "chat";
 
 /** Marks a request session's prompt (tests and logs tell it apart from story sessions by this). */
 export const REQUEST_HEADING = "## Request from your team";
@@ -453,7 +453,7 @@ export const REQUEST_HEADING = "## Request from your team";
  */
 export function requestSystemAppend(
   historyRewrite: HistoryRewritePolicy = "when-asked",
-  source: RequestSource = "linear",
+  source: RequestSource = "tracker",
   options: { ship?: boolean } = {},
 ): string {
   if (options.ship) return shipSystemAppend(source);
@@ -506,7 +506,7 @@ export interface RequestPromptContext {
   /**
    * Where the requests come from. A chat request's epic is a stand-in (the
    * run's reference and the request's first line, no stories), so its prompt
-   * names neither Linear nor a story status. Default "linear".
+   * names neither Linear nor a story status. Default "tracker".
    */
   source?: RequestSource;
   /** The branch of the worktree the session runs in. */

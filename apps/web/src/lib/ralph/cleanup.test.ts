@@ -25,7 +25,7 @@ import {
 } from "@omniralph/db";
 import { teamIs, setRoutingRules } from "@/lib/routing/testing";
 import {
-  CODING_TASKS_MIN_AGENT_VERSION,
+  TRACKER_PROTOCOL_MIN_AGENT_VERSION,
   MAX_JOB_DELIVERIES,
   RalphCleanupPayload,
   type RalphCleanupResult,
@@ -180,7 +180,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
       agentId: agentA,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+      agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);

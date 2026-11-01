@@ -1,5 +1,5 @@
 /**
- * Ralph: building a delegated Linear epic story by story.
+ * Ralph: building a delegated epic (a work item in the tracker) story by story.
  * The control panel orchestrates the run; agents run its jobs. Stories,
  * requests and PR/MR descriptions are coding and query runs of the
  * repository's tasks, whose `jobs.type` names the run step:
@@ -7,7 +7,7 @@
  * - `ralph.story`: a coding run of one attempt at one story in the epic's
  *   branch worktree (Claude session, quality gates, commit, push).
  * - `ralph.describe-pr`: a query run that writes the PR/MR title and body.
- * - `ralph.request`: a coding run doing what a request from the Linear
+ * - `ralph.request`: a coding run doing what a request from the tracker
  *   thread asks (a mention, or a reply no story took) in a lane's branch worktree.
  * - `ralph.push`: a coding run with no session that pushes a lane's branch.
  *
@@ -24,6 +24,7 @@
 import { z } from "zod";
 import { RalphRunInvoker } from "./correlation.js";
 import { JobRepository } from "./protocol.js";
+import { JobTrackerProvider } from "./run-tracker.js";
 import { CommitSha } from "./review-job.js";
 import { RALPH_HISTORY_REWRITE_POLICIES } from "./settings.js";
 import { TokenUsage } from "./usage.js";
@@ -117,9 +118,12 @@ const RalphJobBase = z.object({
   settings: RalphJobSettings,
 });
 
-/** A Linear issue as the agent sees it (untrusted text; quoted into prompts). */
+/** The tracker the run's work items live in. */
+const RalphTrackerProvider = JobTrackerProvider.default("linear");
+
+/** A work item as the agent sees it (untrusted text; quoted into prompts). */
 const RalphIssue = z.object({
-  /** Linear identifier, e.g. `TOOL-83`. */
+  /** The tracker's identifier, e.g. `TOOL-83`. */
   identifier: z.string().min(1).max(64),
   title: z.string().max(1000),
 });
@@ -127,7 +131,7 @@ const RalphIssue = z.object({
 export const RALPH_EPIC_KINDS = ["children", "prd", "single"] as const;
 export const RALPH_STORY_LIST_STATUSES = ["open", "in_progress", "completed", "cancelled"] as const;
 
-/** Longest Linear attachment a ralph job downloads. */
+/** Longest tracker attachment a ralph job downloads. */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 /** Attachments a ralph job downloads at most (not counting those its agent has cached). */
 export const MAX_ATTACHMENT_DOWNLOADS_PER_JOB = 20;
@@ -136,14 +140,14 @@ export const MAX_ATTACHMENT_DOWNLOADS_PER_JOB = 20;
 export const RalphAttachmentId = z.string().regex(/^[0-9a-f]{32}$/);
 
 /**
- * A file uploaded to Linear (a pasted screenshot, a mockup, a PDF) that the
+ * A file uploaded to the tracker (a pasted screenshot, a mockup, a PDF) that the
  * job may download through `GET /api/agent/jobs/{id}/attachments/{attachmentId}`.
  */
 export const RalphAttachment = z.object({
   id: RalphAttachmentId,
-  /** The name Linear stores with the upload (e.g. `mockup.png`), when known. */
+  /** The name the tracker stores with the upload (e.g. `mockup.png`), when known. */
   title: z.string().min(1).max(500).nullable(),
-  /** Where it was referenced, e.g. `TOOL-83 description`, `comment on TOOL-84 by Ana`, `Linear thread`. */
+  /** Where it was referenced, e.g. `TOOL-83 description`, `comment on TOOL-84 by Ana`, `Linear thread` (the tracker's name). */
   sources: z.array(z.string().min(1).max(500)).min(1).max(50),
 });
 export type RalphAttachment = z.infer<typeof RalphAttachment>;
@@ -164,6 +168,8 @@ export type RalphStoryListItem = z.infer<typeof RalphStoryListItem>;
 
 /** Trigger context of a `ralph.story` coding run: one attempt at one story. */
 export const RalphStoryPayload = RalphJobBase.extend({
+  /** The tracker the epic and its stories live in. */
+  trackerProvider: RalphTrackerProvider,
   /** The `ralph_stories` row. */
   storyId: z.uuid(),
   /** 1 on the story's first attempt (queue redeliveries keep the attempt). */
@@ -176,7 +182,8 @@ export const RalphStoryPayload = RalphJobBase.extend({
     prd: z.string().max(MAX_DOCUMENT_LENGTH),
   }),
   story: RalphIssue.extend({
-    linearIssueId: z.string().min(1).max(64),
+    /** The work item's ID in the tracker. */
+    trackerIssueId: z.string().min(1).max(64),
     url: z.url().nullable().default(null),
     description: z.string().max(MAX_DOCUMENT_LENGTH),
   }),
@@ -197,7 +204,7 @@ export const RalphStoryPayload = RalphJobBase.extend({
   lastFeedback: z.string().max(20_000).nullable(),
   /** Replies from the agent session, oldest first. */
   guidance: z.array(z.string().max(20_000)).max(100),
-  /** The Linear attachments in the story's scope: its own, and those of the epic and thread. */
+  /** The tracker attachments in the story's scope: its own, and those of the epic and thread. */
   attachments: RalphAttachments,
 });
 export type RalphStoryPayload = z.infer<typeof RalphStoryPayload>;
@@ -250,7 +257,7 @@ export type RalphStoryMetric = z.infer<typeof RalphStoryMetric>;
 /** Outcome of a `ralph.story` coding run (`/api/agent/jobs/{id}/result`). */
 export const RalphStoryResult = z.object({
   status: z.enum(RALPH_STORY_STATUSES),
-  /** What was done, or what is in the way; posted to Linear. */
+  /** What was done, or what is in the way; posted to the tracker. */
   summary: z.string().max(20_000),
   /** The pushed story commit; absent when nothing was committed. */
   commitSha: CommitSha.optional(),
@@ -368,17 +375,16 @@ export type WorktreeExecPayload = RalphPreparePayload;
 export const WorktreeExecResult = RalphPrepareResult;
 export type WorktreeExecResult = RalphPrepareResult;
 
-/** Where a run's requests come from: a Linear agent session or a chat thread. */
-export const RALPH_REQUEST_SOURCES = ["linear", "chat"] as const;
+/** Where a run's requests come from: the tracker (an agent session or the work item's comments) or a chat thread. */
+export const RALPH_REQUEST_SOURCES = ["tracker", "chat"] as const;
 export type RalphRequestSource = (typeof RALPH_REQUEST_SOURCES)[number];
 
 /** Trigger context of a `ralph.request` coding run: a lane's pending requests, done in one Claude session. */
 export const RalphRequestPayload = RalphJobBase.extend({
-  /**
-   * Where the requests come from. Older control panels don't send it (Linear);
-   * older agents ignore it and prompt as for Linear.
-   */
-  source: z.enum(RALPH_REQUEST_SOURCES).default("linear"),
+  /** The tracker the epic lives in (a chat request's too, when it builds an epic). */
+  trackerProvider: RalphTrackerProvider,
+  /** Where the requests come from. */
+  source: z.enum(RALPH_REQUEST_SOURCES),
   epic: RalphIssue.extend({
     kind: z.enum(RALPH_EPIC_KINDS).default("children"),
     url: z.url().nullable().default(null),
@@ -405,7 +411,7 @@ export const RalphRequestPayload = RalphJobBase.extend({
    * the job goes to the agent holding that session's files.
    */
   resumeSessionId: z.string().min(1).max(200).nullable().default(null),
-  /** Every Linear attachment of the run (the epic, its stories and the thread). */
+  /** Every tracker attachment of the run (the epic, its stories and the thread). */
   attachments: RalphAttachments,
   /**
    * `/ship`: the session prepares one commit and describes it; the job
@@ -460,7 +466,7 @@ export type RalphFindingOutcome = z.infer<typeof RalphFindingOutcome>;
 
 /** Outcome of a `ralph.request` coding run. */
 export const RalphRequestResult = z.object({
-  /** For the Linear thread: what the session did, or why it couldn't (`error`). */
+  /** For the tracker thread: what the session did, or why it couldn't (`error`). */
   summary: z.string().max(20_000),
   /** Set when the session failed or ended without a valid structured result. */
   error: z.string().max(20_000).nullable().default(null),
@@ -601,7 +607,7 @@ export type WorktreeCleanupResult = RalphCleanupResult;
  * A tool call a running ralph job's session needs a person's approval for
  * (the repository's Claude Code settings `ask` about it):
  * `POST /api/agent/jobs/{id}/permissions`. The control panel asks in the
- * run's Linear agent session.
+ * run's tracker session.
  */
 export const RalphPermissionRequest = z.object({
   /** Chosen by the agent; the answer is read back with it. */
@@ -623,7 +629,7 @@ export type RalphPermissionStatus = (typeof RALPH_PERMISSION_STATUSES)[number];
 /** `GET /api/agent/jobs/{id}/permissions/{requestId}`: the answer so far. */
 export const RalphPermissionAnswer = z.object({
   status: z.enum(RALPH_PERMISSION_STATUSES),
-  /** Who answered in Linear, when known. */
+  /** Who answered in the tracker, when known. */
   answeredBy: z.string().nullable().default(null),
 });
 export type RalphPermissionAnswer = z.infer<typeof RalphPermissionAnswer>;
@@ -634,7 +640,7 @@ export const RalphActivity = z.object({
   body: z.string().trim().min(1).max(10_000),
   /** An action's parameter (e.g. the command or file); ignored for thoughts. */
   parameter: z.string().max(10_000).optional(),
-  /** Replaced by the session's next activity in Linear. */
+  /** Replaced by the session's next activity in the tracker. */
   ephemeral: z.boolean().default(false),
 });
 export type RalphActivity = z.infer<typeof RalphActivity>;

@@ -44,7 +44,7 @@ describe("RunSpecAgent", () => {
       ...agent,
       description: "",
       systemPromptMode: "append",
-      tools: { builtin: [], agent: [], linear: [], mcpServers: [] },
+      tools: { builtin: [], agent: [], tracker: [], mcpServers: [] },
       referenceDocs: [],
       model: null,
       fallbackModel: null,
@@ -60,7 +60,7 @@ describe("RunSpecAgent", () => {
       tools: {
         builtin: ["Read", "Grep", "Glob"],
         agent: ["post_activity"],
-        linear: ["linear_get_issue"],
+        tracker: ["tracker_get_issue"],
         mcpServers: ["code-graph"],
       },
       referenceDocs: [{ name: "rubric", content: "Be precise." }],
@@ -95,8 +95,8 @@ describe("RunSpecAgent", () => {
       ["tools.agent.0"],
     );
     expect(
-      issues(RunSpecAgent.safeParse({ ...agent, tools: { linear: ["linear_save_issue"] } })),
-    ).toEqual(["tools.linear.0"]);
+      issues(RunSpecAgent.safeParse({ ...agent, tools: { tracker: ["linear_save_issue"] } })),
+    ).toEqual(["tools.tracker.0"]);
   });
 });
 
@@ -107,7 +107,7 @@ describe("TaskDefinition", () => {
       description: "",
       setupCommands: [],
       teardownCommands: [],
-      toolSettings: { shell: false, linearRead: false, network: false },
+      toolSettings: { shell: false, trackerRead: false, network: false },
       tokenBudget: { tokens: 5000 },
     });
     expect(parsed.systemAppend).toBeUndefined();

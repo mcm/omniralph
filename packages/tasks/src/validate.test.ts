@@ -7,6 +7,7 @@ import {
   getBuiltinTask,
   AGENT_VERSION_BY_TASK_TYPE,
   AGENT_VERSION_FOR_COMMANDS,
+  AGENT_VERSION_FOR_TRACKER,
   RunSpecAgent,
   validateTaskDefinition,
   VARIABLES,
@@ -384,7 +385,14 @@ describe("deriveTaskRequirements", () => {
       installables: [],
       hostTools: [],
     });
-    expect(task(coding).requirements.minAgentVersion).toBe(AGENT_VERSION_BY_TASK_TYPE.coding);
+    // Coding runs' ralph payloads carry the tracker fields, so they need the tracker protocol.
+    expect(task(coding).requirements.minAgentVersion).toBe(AGENT_VERSION_FOR_TRACKER);
+  });
+
+  it("needs the tracker protocol release when the task turns on the tracker tools", () => {
+    const reader = { ...query, toolSettings: { ...query.toolSettings, trackerRead: true } };
+    expect(task(reader).requirements.minAgentVersion).toBe(AGENT_VERSION_FOR_TRACKER);
+    expect(task(query).requirements.minAgentVersion).not.toBe(AGENT_VERSION_FOR_TRACKER);
   });
 
   it("needs the release that runs setup and teardown commands when the task has any", () => {

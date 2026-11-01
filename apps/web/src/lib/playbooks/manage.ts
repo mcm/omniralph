@@ -17,7 +17,7 @@ import {
   CUSTOM_PLAYBOOK_ROLES,
   INSTALLABLE_MCP_SERVER_SEPARATOR,
   isBuiltinId,
-  LINEAR_TOOLS,
+  TRACKER_TOOLS,
   playbookRequirements,
   playbookTaskType,
   type Playbook,
@@ -156,7 +156,7 @@ async function savedPlaybook(db: Database, user: OrgUser, id: string): Promise<S
 
 /**
  * What the playbook editor offers: the roles a custom playbook can take, the models the
- * organization's non-revoked agents report, the built-in, agent and Linear tool names, the
+ * organization's non-revoked agents report, the built-in, agent and tracker tool names, the
  * MCP servers of the installables its agents report (`<package>:<server>`), the PR
  * description playbooks a story or request playbook can name and the host tool names to
  * suggest (those its agents report with a path and those its playbooks require).
@@ -175,7 +175,11 @@ export async function loadPlaybookFormOptions(
   return {
     roles: [...CUSTOM_PLAYBOOK_ROLES],
     models: models.map(({ value, displayName }) => ({ value, displayName })),
-    tools: { builtin: [...CLAUDE_CODE_TOOLS], agent: [...AGENT_TOOLS], linear: [...LINEAR_TOOLS] },
+    tools: {
+      builtin: [...CLAUDE_CODE_TOOLS],
+      agent: [...AGENT_TOOLS],
+      tracker: [...TRACKER_TOOLS],
+    },
     mcpServers: installables.flatMap(({ name, mcpServers }) =>
       mcpServers.map((server) => `${name}${INSTALLABLE_MCP_SERVER_SEPARATOR}${server}`),
     ),

@@ -13,12 +13,12 @@
   "tools": {
     "builtin": [],
     "agent": [],
-    "linear": [],
+    "tracker": [],
     "mcpServers": []
   },
   "toolSettings": {
     "shell": false,
-    "linearRead": false,
+    "trackerRead": false,
     "network": false
   },
   "model": "claude-sonnet-5-5",

@@ -27,7 +27,7 @@ import {
 } from "@omniralph/db";
 import { teamIs, projectIs, setRoutingRules } from "@/lib/routing/testing";
 import {
-  CODING_TASKS_MIN_AGENT_VERSION,
+  TRACKER_PROTOCOL_MIN_AGENT_VERSION,
   MAX_JOB_DELIVERIES,
   RalphRequestPayload,
   RalphStoryPayload,
@@ -210,7 +210,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       agentId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+      agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job.id);
@@ -799,7 +799,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
         agentId: agentA,
         acceptedTaskTypes: ["coding"],
         pools: ["short", "long"],
-        agentVersion: CODING_TASKS_MIN_AGENT_VERSION,
+        agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
         maxDeliveries: MAX_JOB_DELIVERIES,
       });
       await completeJob(db, {

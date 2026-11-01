@@ -46,7 +46,7 @@ const storyPayload = {
   story: {
     identifier: "TOOL-83",
     title: "Add the ralph capability",
-    linearIssueId: "30ed0e14-6d6a-4dba-8962-4c010fca69af",
+    trackerIssueId: "30ed0e14-6d6a-4dba-8962-4c010fca69af",
     description: "As a developer...",
   },
   commitMessage: "feat(TOOL-83): Add the ralph capability",
@@ -135,16 +135,26 @@ describe("ralph jobs", () => {
     const { storyId: _s, attempt: _a, story: _t, commitMessage: _c, ...base } = storyPayload;
     const payload = RalphRequestPayload.parse({
       ...base,
+      source: "tracker",
       requests: [{ id: "8b0b4a2e-7a0b-4f5e-9c43-2f1a5d1f2e3c", text: "push this" }],
     });
     expect(payload).toMatchObject({
       prUrl: null,
       historyRewrite: "when-asked",
       resumeSessionId: null,
-      // An older control panel's payload (no source) is a Linear request.
-      source: "linear",
+      source: "tracker",
     });
-    expect(RalphRequestPayload.safeParse({ ...base, requests: [] }).success).toBe(false);
+    // The source is required: an old control panel's `linear` (or none) is refused.
+    expect(RalphRequestPayload.safeParse({ ...base, requests: payload.requests }).success).toBe(
+      false,
+    );
+    expect(
+      RalphRequestPayload.safeParse({ ...base, source: "linear", requests: payload.requests })
+        .success,
+    ).toBe(false);
+    expect(
+      RalphRequestPayload.safeParse({ ...base, source: "tracker", requests: [] }).success,
+    ).toBe(false);
     const chat = { ...base, source: "chat", requests: payload.requests };
     expect(RalphRequestPayload.parse(chat).source).toBe("chat");
     expect(RalphRequestPayload.safeParse({ ...chat, source: "email" }).success).toBe(false);

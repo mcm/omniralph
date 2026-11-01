@@ -165,8 +165,8 @@ const PlaybookFields = z.object({
   /** Null for the Claude Code default. Review playbooks set none: the review depth does. */
   model: Model.nullable().default(null),
   fallbackModel: Model.nullable().default(null),
-  tools: PlaybookTools.default({ builtin: [], agent: [], linear: [], mcpServers: [] }),
-  toolSettings: ToolSettings.default({ shell: false, linearRead: false, network: false }),
+  tools: PlaybookTools.default({ builtin: [], agent: [], tracker: [], mcpServers: [] }),
+  toolSettings: ToolSettings.default({ shell: false, trackerRead: false, network: false }),
   /** Installables and host tools its runs need (its installable MCP servers add theirs). */
   requires: TaskRequires.optional(),
   /** Run in the working directory, in order, after checkout and before the session. */

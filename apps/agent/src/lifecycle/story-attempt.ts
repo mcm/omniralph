@@ -58,7 +58,7 @@ export interface StoryOptions {
   idleTimeoutMs?: number;
   /** How often the job token file git reads is refreshed (see `jobGitAccess`). */
   tokenRefreshMs?: number;
-  /** Request sessions: how long a permission question in Linear waits for an answer. */
+  /** Request sessions: how long a permission question in the tracker waits for an answer. */
   permissionTimeoutMs?: number;
   /** Request sessions: how often the answer to a permission question is polled for. */
   permissionPollIntervalMs?: number;
@@ -97,7 +97,7 @@ export function promptEpic(payload: RalphStoryPayload): { epic: Epic; story: Sto
     key: payload.story.identifier,
     storyId: payload.story.identifier,
     identifier: payload.story.identifier,
-    issueId: payload.story.linearIssueId,
+    issueId: payload.story.trackerIssueId,
     ...(payload.story.url && { url: payload.story.url }),
     title: payload.story.title,
     description: body.description,
@@ -286,7 +286,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
           .filter((e) => e.label.startsWith(prefix))
           .map((e) => ({ sha: e.sha, label: e.label, date: e.date }));
 
-        // Files attached in Linear, downloaded through the control panel (which holds the token).
+        // Files attached in the tracker, downloaded through the control panel (which holds the token).
         const attachments = await jobAttachments({
           attachments: payload.attachments,
           epicIdentifier: payload.epic.identifier,
@@ -323,7 +323,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
             ],
             signal: ctx.signal,
             onEvent: (event) => relay.event(event),
-            // Replies from the Linear thread reach the live session (see `jobMessages`).
+            // Replies from the tracker thread reach the live session (see `jobMessages`).
             onInjector: (inject) => ctx.setMessageInjector?.(inject),
           });
           const after = await readFile(progressFile, "utf8").catch(() => payload.progress);
@@ -564,7 +564,7 @@ function gateFailureText(failure: GateFailure): string {
   return `the quality gate \`${failure.gate}\` failed${exit}:${failing}\n\n\`\`\`\n${tail(output, MAX_FEEDBACK_OUTPUT)}\n\`\`\``;
 }
 
-/** A gate's environment: no colours, so its output reads as plain text in Linear. */
+/** A gate's environment: no colours, so its output reads as plain text in the tracker. */
 function gateEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   // FORCE_COLOR wins over NO_COLOR (and Node warns when both are set).
   const { FORCE_COLOR: _force, ...rest } = env;

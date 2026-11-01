@@ -42,7 +42,7 @@ describe("builtin:ask-about-code", () => {
   it("runs with the code explainer persona as a query task with read-only file tools and no preset", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "replace",
-      tools: { builtin: ["Read", "Grep", "Glob"], agent: [], linear: [], mcpServers: [] },
+      tools: { builtin: ["Read", "Grep", "Glob"], agent: [], tracker: [], mcpServers: [] },
       model: "claude-sonnet-5-5",
     });
     expect(task).toMatchObject({
@@ -53,7 +53,7 @@ describe("builtin:ask-about-code", () => {
       model: "claude-sonnet-5-5",
       tokenBudget: { tokens: 50_000 },
       maxTurns: 30,
-      toolSettings: { shell: false, linearRead: false, network: false },
+      toolSettings: { shell: false, trackerRead: false, network: false },
     });
     expect(task.outputSchema).toBeUndefined();
     expect(

@@ -16,7 +16,7 @@ const ALL_BUILTIN = [
 ];
 
 const agent = (builtin: string[]) => ({
-  tools: { builtin, agent: [], linear: [], mcpServers: [] },
+  tools: { builtin, agent: [], tracker: [], mcpServers: [] },
 });
 
 const permissions = (

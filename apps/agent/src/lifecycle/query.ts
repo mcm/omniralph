@@ -25,7 +25,7 @@ import { ActivityRelay } from "../tools/activities.js";
 import {
   createOmniralphServer,
   offeredAgentTools,
-  offeredLinearTools,
+  offeredTrackerTools,
   type OmniralphServerOptions,
 } from "../tools/omniralph-server.js";
 import { runSetupCommands, runTeardownCommands } from "./commands.js";
@@ -149,8 +149,8 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
  *    settings ∩ the repository's narrowing, the run's model, token budget
  *    and turn cap, and `sessionEnv()` (the session token, never the
  *    lifecycle token). The agent's Omniralph tools (`tools.agent`, capped by
- *    the task type) and its read-only Linear tools (`tools.linear`, when the
- *    task turns on `linearRead`) come from the in-process `omniralph` MCP
+ *    the task type) and its read-only tracker tools (`tools.tracker`, when the
+ *    task turns on `trackerRead`) come from the in-process `omniralph` MCP
  *    server, which calls the control panel with the session token too; with
  *    none, no server is attached. The installable MCP servers the agent lists
  *    (`<package>:<server>`) are attached from the installed packages.
@@ -249,7 +249,7 @@ export async function runQueryTask(
       jobId: spec.jobId,
       sessionToken: ctx.sessionToken,
       tools: spec.agent.tools.agent,
-      linearTools: offeredLinearTools(spec.agent.tools, spec.task.toolSettings),
+      trackerTools: offeredTrackerTools(spec.agent.tools, spec.task.toolSettings),
       taskType: spec.taskType,
       tmpDir: runTmpDir,
       signal: ctx.signal,

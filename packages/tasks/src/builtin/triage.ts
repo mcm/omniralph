@@ -14,11 +14,11 @@ export const PLANNER_PERSONA = {
   tools: {
     builtin: ["Read", "Grep", "Glob"],
     agent: [],
-    linear: [
-      "linear_get_issue",
-      "linear_list_comments",
-      "linear_search_issues",
-      "linear_get_document",
+    tracker: [
+      "tracker_get_issue",
+      "tracker_list_comments",
+      "tracker_search_issues",
+      "tracker_get_document",
     ],
     mcpServers: [],
   },
@@ -380,7 +380,7 @@ export const TRIAGE_PLAYBOOK: PlaybookInput = {
   ...PLANNER_PERSONA,
   promptTemplate: TRIAGE_TEMPLATE,
   systemAppend: TRIAGE_SYSTEM_APPEND,
-  toolSettings: { shell: false, linearRead: true, network: false },
+  toolSettings: { shell: false, trackerRead: true, network: false },
   outputSchema: TRIAGE_OUTPUT_SCHEMA,
   // Ralph's story model (`DEFAULT_STORY_MODEL`), with no token budget, as before the port.
   model: "opus",

@@ -18,7 +18,7 @@ import {
 } from "@omniralph/db";
 import { parseInstruction, triageTemplateContext } from "@omniralph/ralph";
 import {
-  LINEAR_STATE_TYPES,
+  TRACKER_STATE_TYPES,
   TRIAGE_RUN_JOB_TYPE,
   type TriageBlocker,
   type TriageOutcome,
@@ -73,9 +73,9 @@ const MAX_DOCUMENT = 200_000;
 const MAX_COMMENT = 20_000;
 const MAX_ITEMS = 500;
 
-type StateType = (typeof LINEAR_STATE_TYPES)[number];
+type StateType = (typeof TRACKER_STATE_TYPES)[number];
 const stateType = (type: string): StateType =>
-  (LINEAR_STATE_TYPES as readonly string[]).includes(type) ? (type as StateType) : "unstarted";
+  (TRACKER_STATE_TYPES as readonly string[]).includes(type) ? (type as StateType) : "unstarted";
 
 const cut = (text: string, n: number) => (text.length > n ? text.slice(0, n) : text);
 
@@ -293,6 +293,7 @@ export async function enqueueTriage(
   if (!task) throw new Error(`the built-in task ${TRIAGE_TASK_ID} is missing`);
   const trigger = {
     triageRunId: run.id,
+    trackerProvider: run.trackerProvider,
     ...triageTemplateContext({
       issue: {
         identifier: issue.identifier,

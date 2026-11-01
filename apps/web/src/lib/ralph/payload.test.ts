@@ -215,7 +215,7 @@ describe("story quality gates", () => {
     expect(request.qualityGates).toEqual(["pnpm test", "pnpm lint", "pnpm build"]);
   });
 
-  it("say whether a request comes from Linear or a chat thread", () => {
+  it("say whether a request comes from the tracker or a chat thread", () => {
     const request = (origin: RalphRun["origin"]) =>
       buildRequestPayload({
         coding: coding(),
@@ -228,7 +228,8 @@ describe("story quality gates", () => {
         requests: [{ id: randomUUID(), text: "fix the typo" }],
         resumeSessionId: null,
       });
-    expect(request("tracker").source).toBe("linear");
+    expect(request("tracker").source).toBe("tracker");
+    expect(request("tracker").trackerProvider).toBe("linear");
     expect(request("chat").source).toBe("chat");
   });
 });

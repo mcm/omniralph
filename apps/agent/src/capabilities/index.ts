@@ -86,7 +86,7 @@ export interface JobContext {
   logger: Logger;
   /**
    * Registers the job's live Claude session for messages from the control
-   * panel (`jobMessages`, e.g. Linear replies to a ralph run), or unregisters
+   * panel (`jobMessages`, e.g. tracker replies to a ralph run), or unregisters
    * it (`undefined`) once the session takes no more input. Messages arriving
    * while none is registered are rejected, and the control panel applies them
    * another way.

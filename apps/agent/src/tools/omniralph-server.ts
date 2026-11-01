@@ -8,22 +8,22 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { attachmentFileName } from "@omniralph/ralph";
 import {
-  DEFAULT_LINEAR_SEARCH_RESULTS,
+  DEFAULT_TRACKER_SEARCH_RESULTS,
   RALPH_PULL_REQUEST_ACTIONS,
-  LinearEntityId,
-  MAX_LINEAR_COMMENTS,
-  MAX_LINEAR_SEARCH_QUERY,
-  MAX_LINEAR_SEARCH_RESULTS,
-  RunLinearCommentsResponse,
-  RunLinearDocumentResponse,
-  RunLinearIssueResponse,
-  RunLinearSearchResponse,
+  TrackerEntityId,
+  MAX_TRACKER_COMMENTS,
+  MAX_TRACKER_SEARCH_QUERY,
+  MAX_TRACKER_SEARCH_RESULTS,
+  RunTrackerCommentsResponse,
+  RunTrackerDocumentResponse,
+  RunTrackerIssueResponse,
+  RunTrackerSearchResponse,
 } from "@omniralph/shared";
 import {
   AGENT_TOOLS_BY_TASK_TYPE,
   type AgentTools,
   type AgentTool,
-  type LinearTool,
+  type TrackerTool,
   type TaskType,
   type ToolSettings,
 } from "@omniralph/tasks";
@@ -46,8 +46,8 @@ export const SERVED_AGENT_TOOLS: readonly AgentTool[] = [
   "ship",
 ];
 
-/** The name a session's permission rules use for an agent or Linear tool. */
-export function omniralphToolName(name: AgentTool | LinearTool): string {
+/** The name a session's permission rules use for an agent or tracker tool. */
+export function omniralphToolName(name: AgentTool | TrackerTool): string {
   return `mcp__${OMNIRALPH_SERVER}__${name}`;
 }
 
@@ -58,12 +58,12 @@ export interface OmniralphServerOptions {
   /** The control panel's URL. */
   server: string;
   jobId: string;
-  /** The run's session token (`run:activity`, `run:attachments`, `linear:read`); never the lifecycle token. */
+  /** The run's session token (`run:activity`, `run:attachments`, `tracker:read`); never the lifecycle token. */
   sessionToken: () => string;
   /** The Omniralph tools the agent lists (`tools.agent`). */
   tools: readonly AgentTool[];
-  /** The read-only Linear tools of the run (`offeredLinearTools`), served by the control panel. */
-  linearTools?: readonly LinearTool[];
+  /** The read-only tracker tools of the run (`offeredTrackerTools`), served by the control panel. */
+  trackerTools?: readonly TrackerTool[];
   /** The run's task type: caps `tools` (`ship` is for coding runs only). */
   taskType: TaskType;
   /**
@@ -119,12 +119,12 @@ export function offeredAgentTools(
   );
 }
 
-/** The Linear tools of the agent's list, when the task turns on `toolSettings.linearRead`; none otherwise. */
-export function offeredLinearTools(
-  tools: Pick<AgentTools, "linear">,
-  settings: Pick<ToolSettings, "linearRead">,
-): LinearTool[] {
-  return settings.linearRead ? [...new Set(tools.linear)] : [];
+/** The tracker tools of the agent's list, when the task turns on `toolSettings.trackerRead`; none otherwise. */
+export function offeredTrackerTools(
+  tools: Pick<AgentTools, "tracker">,
+  settings: Pick<ToolSettings, "trackerRead">,
+): TrackerTool[] {
+  return settings.trackerRead ? [...new Set(tools.tracker)] : [];
 }
 
 /**
@@ -262,18 +262,20 @@ export function omniralphTools(options: OmniralphServerOptions): SdkMcpToolDefin
     );
   }
 
-  definitions.push(...linearTools(options));
+  definitions.push(...trackerTools(options));
   return definitions;
 }
 
 /**
- * The definitions of the run's Linear tools (`linearTools`), read through
- * `/api/agent/runs/{id}/linear/*` with the session token: the control panel
- * holds the Linear token and decides what the run may read. Results are JSON.
+ * The definitions of the run's tracker tools (`trackerTools`), read through
+ * `/api/agent/runs/{id}/tracker/*` with the session token: the control panel
+ * holds the tracker token and decides what the run may read (it leaves
+ * `tracker_get_document` out of the run spec when the tracker has no
+ * documents). Results are JSON.
  */
-function linearTools(options: OmniralphServerOptions): SdkMcpToolDefinition[] {
-  const offered = new Set(options.linearTools ?? []);
-  const base = `${options.server}/api/agent/runs/${encodeURIComponent(options.jobId)}/linear`;
+function trackerTools(options: OmniralphServerOptions): SdkMcpToolDefinition[] {
+  const offered = new Set(options.trackerTools ?? []);
+  const base = `${options.server}/api/agent/runs/${encodeURIComponent(options.jobId)}/tracker`;
   const read = async <S extends z.ZodType>(what: string, url: string, schema: S) => {
     try {
       const body = await getJson(options.fetch ?? fetch, url, schema, options.sessionToken(), {
@@ -284,75 +286,75 @@ function linearTools(options: OmniralphServerOptions): SdkMcpToolDefinition[] {
       return failure(what, error);
     }
   };
-  const issueId = LinearEntityId.describe("The issue's identifier (e.g. ENG-123) or ID");
+  const issueId = TrackerEntityId.describe("The issue's identifier (e.g. ENG-123) or ID");
   const definitions: SdkMcpToolDefinition[] = [];
 
-  if (offered.has("linear_get_issue")) {
+  if (offered.has("tracker_get_issue")) {
     definitions.push(
       tool(
-        "linear_get_issue",
-        "Reads a Linear issue: title, description (Markdown), state, priority, labels, team, project and parent.",
+        "tracker_get_issue",
+        "Reads a work item from the issue tracker: title, description (Markdown), state, priority, labels, team, project and parent.",
         { issueId },
         async (args) =>
           read(
             "reading the issue",
             `${base}/issues/${encodeURIComponent(args.issueId)}`,
-            RunLinearIssueResponse,
+            RunTrackerIssueResponse,
           ),
       ) as unknown as SdkMcpToolDefinition,
     );
   }
 
-  if (offered.has("linear_list_comments")) {
+  if (offered.has("tracker_list_comments")) {
     definitions.push(
       tool(
-        "linear_list_comments",
-        `Lists the comments on a Linear issue, oldest first (the most recent ${MAX_LINEAR_COMMENTS}; \`omitted\` counts older ones).`,
+        "tracker_list_comments",
+        `Lists the comments on a work item in the issue tracker, oldest first (the most recent ${MAX_TRACKER_COMMENTS}; \`omitted\` counts older ones).`,
         { issueId },
         async (args) =>
           read(
             "listing the comments",
             `${base}/issues/${encodeURIComponent(args.issueId)}/comments`,
-            RunLinearCommentsResponse,
+            RunTrackerCommentsResponse,
           ),
       ) as unknown as SdkMcpToolDefinition,
     );
   }
 
-  if (offered.has("linear_search_issues")) {
+  if (offered.has("tracker_search_issues")) {
     definitions.push(
       tool(
-        "linear_search_issues",
-        "Searches the Linear workspace's issues by text (titles and descriptions), best match first.",
+        "tracker_search_issues",
+        "Searches the issue tracker's work items by text (titles and descriptions), best match first.",
         {
-          query: z.string().trim().min(1).max(MAX_LINEAR_SEARCH_QUERY),
+          query: z.string().trim().min(1).max(MAX_TRACKER_SEARCH_QUERY),
           first: z
             .int()
             .min(1)
-            .max(MAX_LINEAR_SEARCH_RESULTS)
+            .max(MAX_TRACKER_SEARCH_RESULTS)
             .optional()
-            .describe(`How many issues to return (default ${DEFAULT_LINEAR_SEARCH_RESULTS})`),
+            .describe(`How many issues to return (default ${DEFAULT_TRACKER_SEARCH_RESULTS})`),
         },
         async (args) => {
           const params = new URLSearchParams({ query: args.query });
           if (args.first !== undefined) params.set("first", String(args.first));
-          return read("searching issues", `${base}/issues?${params}`, RunLinearSearchResponse);
+          return read("searching issues", `${base}/issues?${params}`, RunTrackerSearchResponse);
         },
       ) as unknown as SdkMcpToolDefinition,
     );
   }
 
-  if (offered.has("linear_get_document")) {
+  if (offered.has("tracker_get_document")) {
     definitions.push(
       tool(
-        "linear_get_document",
-        "Reads a Linear document (e.g. a PRD or design doc) by its ID or the slug ID at the end of its URL; its content is Markdown.",
-        { documentId: LinearEntityId.describe("The document's ID or slug ID") },
+        "tracker_get_document",
+        "Reads a document from the issue tracker (e.g. a PRD or design doc) by its ID or the slug ID at the end of its URL; its content is Markdown.",
+        { documentId: TrackerEntityId.describe("The document's ID or slug ID") },
         async (args) =>
           read(
             "reading the document",
             `${base}/documents/${encodeURIComponent(args.documentId)}`,
-            RunLinearDocumentResponse,
+            RunTrackerDocumentResponse,
           ),
       ) as unknown as SdkMcpToolDefinition,
     );
@@ -362,7 +364,7 @@ function linearTools(options: OmniralphServerOptions): SdkMcpToolDefinition[] {
 }
 
 /**
- * The in-process MCP server `omniralph` serving a run's agent and Linear
+ * The in-process MCP server `omniralph` serving a run's agent and tracker
  * tools (see `omniralphTools`), with the rules that allow them; null when the
  * agent gets none, so no server is attached at all.
  */
@@ -372,7 +374,7 @@ export function createOmniralphServer(options: OmniralphServerOptions): Omniralp
   return {
     config: createSdkMcpServer({ name: OMNIRALPH_SERVER, tools }),
     allowedTools: tools.map((definition) =>
-      omniralphToolName(definition.name as AgentTool | LinearTool),
+      omniralphToolName(definition.name as AgentTool | TrackerTool),
     ),
   };
 }

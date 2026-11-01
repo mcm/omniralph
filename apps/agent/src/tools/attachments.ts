@@ -16,7 +16,7 @@ import {
 import type { FetchFn } from "../api.js";
 import type { Logger } from "../logger.js";
 
-/** Directory (under `workspaceRoot`) holding the Linear attachments of every epic, one folder each. */
+/** Directory (under `workspaceRoot`) holding the tracker attachments of every epic, one folder each. */
 export const ATTACHMENTS_DIR = ".attachments";
 
 const DOWNLOAD_TIMEOUT_MS = 120_000;
@@ -59,7 +59,7 @@ async function readCapped(res: Response, max: number): Promise<Buffer | string> 
 /**
  * Downloads attachments through the control panel
  * (`GET /api/agent/jobs/{id}/attachments/{attachmentId}`), which fetches them
- * from Linear with its own token.
+ * from the tracker with its own token.
  */
 export function controlPanelFetcher(options: ControlPanelFetcherOptions): AttachmentFetcher {
   const fetchFn = options.fetch ?? fetch;
@@ -196,7 +196,7 @@ export async function collectAttachments(options: {
   if (failed.length > 0) {
     options.logger?.warn(
       { failed: failed.map((f) => ({ id: f.id, error: f.error })) },
-      "some Linear attachments could not be downloaded",
+      "some tracker attachments could not be downloaded",
     );
   }
   const failureNote = failedAttachmentsNote(unreported, files.length);
@@ -234,7 +234,7 @@ export async function jobAttachments(options: {
     if (collected.failureNote) options.report(collected.failureNote);
     return collected;
   } catch (error) {
-    options.logger.warn({ err: error }, "downloading the Linear attachments failed");
+    options.logger.warn({ err: error }, "downloading the tracker attachments failed");
     return { dir, files: [] };
   }
 }

@@ -9,7 +9,7 @@ import { RUBRIC_DOCS } from "./rubric.js";
 export const REVIEWER_PERSONA = {
   systemPrompt: "You are Omniralph, an automated code reviewer.",
   systemPromptMode: "replace",
-  tools: { builtin: ["Read", "Grep", "Glob"], agent: [], linear: [], mcpServers: [] },
+  tools: { builtin: ["Read", "Grep", "Glob"], agent: [], tracker: [], mcpServers: [] },
   // The review rubric; a review renders the parts for the diff's languages (`{{rubric}}`).
   referenceDocs: [...RUBRIC_DOCS],
 } satisfies PlaybookPersona;

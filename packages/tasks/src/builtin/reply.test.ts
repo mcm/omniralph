@@ -55,7 +55,7 @@ describe("builtin:reply-to-finding", () => {
   it("runs with the reviewer persona as a query task with read-only file tools and no preset", () => {
     expect(agent).toMatchObject({
       systemPromptMode: "replace",
-      tools: { builtin: ["Read", "Grep", "Glob"], agent: [], linear: [], mcpServers: [] },
+      tools: { builtin: ["Read", "Grep", "Glob"], agent: [], tracker: [], mcpServers: [] },
       model: "claude-sonnet-5-5",
     });
     expect(task).toMatchObject({
@@ -66,7 +66,7 @@ describe("builtin:reply-to-finding", () => {
       model: "claude-sonnet-5-5",
       tokenBudget: { tokens: 20_000 },
       maxTurns: 10,
-      toolSettings: { shell: false, linearRead: false, network: false },
+      toolSettings: { shell: false, trackerRead: false, network: false },
     });
     expect(task.outputSchema).toBeUndefined();
     expect(

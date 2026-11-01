@@ -50,7 +50,7 @@ export const REPLY_PLAYBOOK: PlaybookInput = {
   ...REVIEWER_PERSONA,
   promptTemplate: REPLY_TEMPLATE,
   systemAppend: REPLY_SYSTEM_APPEND,
-  toolSettings: { shell: false, linearRead: false, network: false },
+  toolSettings: { shell: false, trackerRead: false, network: false },
   // Standard review depth's model before the precedence fix, set explicitly so runs keep it.
   model: "claude-sonnet-5-5",
   // A tenth of the Standard depth's 200,000, as before the precedence fix.

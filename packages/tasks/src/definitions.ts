@@ -17,7 +17,7 @@ import {
 import {
   AGENT_TOOLS,
   AGENT_TOOLS_BY_TASK_TYPE,
-  LINEAR_TOOLS,
+  TRACKER_TOOLS,
   SINK_KINDS,
   TASK_TYPES,
   TRIGGER_KINDS,
@@ -28,7 +28,7 @@ export const TaskTypeSchema = z.enum(TASK_TYPES);
 export const TriggerKindSchema = z.enum(TRIGGER_KINDS);
 export const SinkKindSchema = z.enum(SINK_KINDS);
 export const AgentToolSchema = z.enum(AGENT_TOOLS);
-export const LinearToolSchema = z.enum(LINEAR_TOOLS);
+export const TrackerToolSchema = z.enum(TRACKER_TOOLS);
 
 const Name = z.string().trim().min(1).max(200);
 const Description = z.string().max(2000);
@@ -47,8 +47,8 @@ export const AgentTools = z.object({
   builtin: z.array(z.string().min(1).max(100)).default([]),
   /** Agent tools from the `omniralph` MCP server. */
   agent: z.array(AgentToolSchema).default([]),
-  /** Read-only Linear tools (need `toolSettings.linearRead`). */
-  linear: z.array(LinearToolSchema).default([]),
+  /** Read-only tracker tools (need `toolSettings.trackerRead`). */
+  tracker: z.array(TrackerToolSchema).default([]),
   /**
    * An installable's MCP servers, as `<package>:<server>`
    * (`@omniralph/code-graph:graph`): runs then require that installable.
@@ -94,7 +94,7 @@ export const RunSpecAgent = z.looseObject({
   description: Description.default(""),
   systemPrompt: z.string(),
   systemPromptMode: z.enum(SYSTEM_PROMPT_MODES).default("append"),
-  tools: AgentTools.default({ builtin: [], agent: [], linear: [], mcpServers: [] }),
+  tools: AgentTools.default({ builtin: [], agent: [], tracker: [], mcpServers: [] }),
   referenceDocs: z.array(NamedContent).default([]),
   /** The playbook's model; null for the Claude Code default. Never a review run's. */
   model: Model.nullable().default(null),
@@ -106,8 +106,8 @@ export type RunSpecAgentInput = z.input<typeof RunSpecAgent>;
 export const ToolSettings = z.object({
   /** Shell access (`Bash`) in the session. */
   shell: z.boolean().default(false),
-  /** The read-only Linear tools. */
-  linearRead: z.boolean().default(false),
+  /** The read-only tracker tools. */
+  trackerRead: z.boolean().default(false),
   /** Network access beyond the control panel. */
   network: z.boolean().default(false),
 });
@@ -319,7 +319,7 @@ export const TaskDefinition = z
     setupCommands: z.array(SetupCommand).max(MAX_SETUP_COMMANDS).default([]),
     /** Run in the working directory, in order, after finish, whatever happened. */
     teardownCommands: z.array(TeardownCommand).max(MAX_SETUP_COMMANDS).default([]),
-    toolSettings: ToolSettings.default({ shell: false, linearRead: false, network: false }),
+    toolSettings: ToolSettings.default({ shell: false, trackerRead: false, network: false }),
     /** Installables and host tools the task's runs need (the agent's installable MCP servers add theirs). */
     requires: TaskRequires.optional(),
     /** JSON schema the session's output must match; query tasks only. */

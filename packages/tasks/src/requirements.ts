@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { AgentTools, TaskDefinition } from "./definitions.js";
+import type { AgentTools, TaskDefinition, ToolSettings } from "./definitions.js";
 import { parseInstallableMcpServerRef } from "./installables.js";
 import type { TaskType } from "./kinds.js";
 import { templateVariables } from "./template.js";
@@ -37,6 +37,27 @@ export const AGENT_VERSION_BY_TASK_TYPE: Record<TaskType, string> = {
  */
 export const AGENT_VERSION_FOR_COMMANDS = "0.10.0";
 
+/**
+ * The first agent release that speaks the tracker-neutral protocol: the
+ * `tracker_*` tools under `/api/agent/runs/{id}/tracker/*` with the
+ * `tracker:read` scope (`tools.tracker`, `toolSettings.trackerRead`) and the
+ * ralph payloads' `trackerIssueId`, `trackerProvider` and `source: "tracker"`
+ * (`TRACKER_PROTOCOL_MIN_AGENT_VERSION` in `@omniralph/shared`). Older agents
+ * know only the Linear names, so runs that use any of it carry this version.
+ */
+export const AGENT_VERSION_FOR_TRACKER = "2.1.0";
+
+/**
+ * Whether runs of `task` use the tracker protocol (`AGENT_VERSION_FOR_TRACKER`):
+ * it turns on the read-only tracker tools, or it is a coding task, whose runs'
+ * ralph payloads carry the tracker fields.
+ */
+export function usesTrackerProtocol(
+  task: Pick<TaskDefinition, "taskType"> & { toolSettings?: Pick<ToolSettings, "trackerRead"> },
+): boolean {
+  return task.taskType === "coding" || task.toolSettings?.trackerRead === true;
+}
+
 const VERSION = /^v?(\d+)\.(\d+)\.(\d+)/;
 
 /** The higher of two `x.y.z` versions (`a` when they're equal or `b` doesn't parse). */
@@ -56,7 +77,7 @@ type RequirementFields = Pick<
   TaskDefinition,
   "taskType" | "triggers" | "promptTemplate" | "setupCommands" | "teardownCommands"
 > &
-  Partial<Pick<TaskDefinition, "requires">>;
+  Partial<Pick<TaskDefinition, "requires" | "toolSettings">>;
 
 /** The fields of a run spec's agent its requirements come from. */
 export type RequirementAgentFields = { tools: Pick<AgentTools, "mcpServers"> };
@@ -83,7 +104,8 @@ export function deriveAgentRequirements(
 
 /**
  * What a run of `task` (on `agent`) needs: the agent release that runs its
- * task type, its setup and teardown commands (if any) and every task-type
+ * task type, its setup and teardown commands (if any), the tracker protocol
+ * (if it uses it, `usesTrackerProtocol`) and every task-type
  * variable its template uses (`minAgentVersion` in `catalog`), whichever is
  * highest; and the installables and host tools of `deriveAgentRequirements`.
  */
@@ -97,6 +119,7 @@ export function deriveTaskRequirements(
   if (task.setupCommands.length > 0 || task.teardownCommands.length > 0) {
     versions.push(AGENT_VERSION_FOR_COMMANDS);
   }
+  if (usesTrackerProtocol(task)) versions.push(AGENT_VERSION_FOR_TRACKER);
   for (const name of templateVariables(task.promptTemplate, taskVariables(task, catalog))) {
     const entry = entries.get(name);
     if (entry?.source === "taskType" && entry.minAgentVersion !== undefined) {

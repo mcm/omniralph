@@ -341,7 +341,7 @@ describe("request prompt", () => {
 
   it("is about the Linear issue and its stories by default", () => {
     const p = buildRequestPrompt({ ...base, epic: linearEpic });
-    expect(buildRequestPrompt({ ...base, epic: linearEpic, source: "linear" })).toBe(p);
+    expect(buildRequestPrompt({ ...base, epic: linearEpic, source: "tracker" })).toBe(p);
     expect(p).toContain("You are working on Linear ENG-1: Task Priority.");
     expect(p).toContain("## Status: 1/2 stories complete");
     expect(p).toContain("<prd-document>\nThe PRD body\n</prd-document>");
@@ -376,7 +376,7 @@ describe("request prompt", () => {
   });
 
   it("has a system prompt for each source", () => {
-    expect(requestSystemAppend("when-asked", "linear")).toBe(requestSystemAppend("when-asked"));
+    expect(requestSystemAppend("when-asked", "tracker")).toBe(requestSystemAppend("when-asked"));
     expect(requestSystemAppend()).toContain("a request in a Linear agent session about a PRD epic");
     expect(requestSystemAppend()).toContain("posted to the Linear thread");
     const chat = requestSystemAppend("never", "chat");

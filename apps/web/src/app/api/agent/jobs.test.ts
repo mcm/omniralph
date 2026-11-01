@@ -574,7 +574,7 @@ describe.skipIf(!databaseAvailable)("job dispatch and agent API", () => {
         jobId,
         agentId: agent.agentId,
         kind: "session",
-        scopes: ["credentials:read", "run:activity", "run:attachments", "linear:read"],
+        scopes: ["credentials:read", "run:activity", "run:attachments", "tracker:read"],
       });
     });
 

@@ -27,7 +27,7 @@ import {
   BUILTIN_PLAYBOOKS,
   CUSTOM_PLAYBOOK_ROLES,
   getBuiltinPlaybook,
-  LINEAR_TOOLS,
+  TRACKER_TOOLS,
 } from "@omniralph/tasks";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -362,7 +362,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
         tools: {
           builtin: [...CLAUDE_CODE_TOOLS],
           agent: [...AGENT_TOOLS],
-          linear: [...LINEAR_TOOLS],
+          tracker: [...TRACKER_TOOLS],
         },
         mcpServers: ["@omniralph/code-graph:graph", "@omniralph/code-graph:search"],
         prDescriptionPlaybooks: [

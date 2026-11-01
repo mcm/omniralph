@@ -131,7 +131,7 @@ export interface StoryPayloadInput {
   stories: readonly Story[];
   story: Story;
   row: RalphStory;
-  /** The Linear attachments in the story's scope (`payloadAttachments`). */
+  /** The tracker attachments in the story's scope (`payloadAttachments`). */
   attachments?: readonly RalphAttachment[];
 }
 
@@ -145,6 +145,7 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
     branch: lane.branch,
     baseBranch: lane.baseBranch,
     settings: jobSettings(repository, input.coding),
+    trackerProvider: run.trackerProvider,
     storyId: row.id,
     attempt: row.attempts + 1,
     epic: {
@@ -157,7 +158,7 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
     story: {
       identifier,
       title: story.title.slice(0, 1000),
-      linearIssueId: row.trackerIssueId,
+      trackerIssueId: row.trackerIssueId,
       url: url(story.url),
       description: headOf(story.description),
     },
@@ -316,7 +317,8 @@ export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPay
     branch: lane.branch,
     baseBranch: lane.baseBranch,
     settings: jobSettings(repository, input.coding),
-    source: run.origin === "chat" ? "chat" : "linear",
+    source: run.origin === "chat" ? "chat" : "tracker",
+    trackerProvider: run.trackerProvider,
     epic: {
       identifier: epic.identifier,
       title: epic.title.slice(0, 1000),
