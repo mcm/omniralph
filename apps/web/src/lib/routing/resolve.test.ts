@@ -57,7 +57,7 @@ describe.skipIf(!databaseAvailable)("resolveRoute", () => {
   let docs: string;
   let linear: FakeLinearGateway;
 
-  const deps = (): RouteDeps => ({ db, organizationId: orgId, linear });
+  const deps = (): RouteDeps => ({ db, organizationId: orgId, tracker: linear });
   const rules = async (...list: Array<[string, RoutingQuery]>) => {
     const saved = await replaceRoutingRules(
       db,

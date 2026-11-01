@@ -43,7 +43,7 @@ export interface ReconcileTotals {
  * those too), leave the schedule. Failures are logged and counted.
  */
 export async function reconcileDueRuns(
-  deps: Omit<RalphDeps, "organizationId" | "linear">,
+  deps: Omit<RalphDeps, "organizationId" | "tracker">,
   runIds: readonly string[],
 ): Promise<{ reconciled: number; failed: number }> {
   const totals = { reconciled: 0, failed: 0 };
@@ -73,7 +73,7 @@ export async function reconcileDueRuns(
     }
     for (const run of gateway.runs) {
       try {
-        const ralph = { ...deps, organizationId, linear: gateway.linear };
+        const ralph = { ...deps, organizationId, tracker: gateway.tracker };
         await advanceRun(run.id, ralph);
         await startPendingCleanups(ralph, run.id);
         totals.reconciled += 1;
@@ -94,7 +94,7 @@ export async function reconcileDueRuns(
  * so the next invocation tries again. Failures are logged and counted.
  */
 export async function reconcileDueLanes(
-  deps: Omit<RalphDeps, "organizationId" | "linear">,
+  deps: Omit<RalphDeps, "organizationId" | "tracker">,
   laneIds: readonly string[],
   now = new Date(),
 ): Promise<{ checked: number; started: number; expired: number; failed: number }> {
@@ -107,13 +107,13 @@ export async function reconcileDueLanes(
   const gateways = new Map<string, TrackerGateway>();
   for (const { lane, run } of lanes) {
     const { organizationId } = run;
-    let linear = gateways.get(organizationId);
-    if (!linear) {
-      linear = lazyTrackerGateway({ db: deps.db, organizationId });
-      gateways.set(organizationId, linear);
+    let tracker = gateways.get(organizationId);
+    if (!tracker) {
+      tracker = lazyTrackerGateway({ db: deps.db, organizationId });
+      gateways.set(organizationId, tracker);
     }
     try {
-      const done = await reconcileLane({ ...deps, organizationId, linear }, lane, now);
+      const done = await reconcileLane({ ...deps, organizationId, tracker }, lane, now);
       totals.checked += 1;
       if (done === "started") totals.started += 1;
       if (done === "expired") totals.expired += 1;
@@ -134,19 +134,22 @@ async function dueRunsGateway(
   deps: Pick<RalphDeps, "db">,
   organizationId: string,
   runs: RalphRun[],
-): Promise<{ linear: TrackerGateway; runs: RalphRun[] }> {
+): Promise<{ tracker: TrackerGateway; runs: RalphRun[] }> {
   if (runs.every((run) => run.origin === "chat")) {
-    return { linear: await getTrackerGatewayOrDisconnected({ db: deps.db, organizationId }), runs };
+    return {
+      tracker: await getTrackerGatewayOrDisconnected({ db: deps.db, organizationId }),
+      runs,
+    };
   }
   try {
-    return { linear: await getTrackerGateway({ db: deps.db, organizationId }), runs };
+    return { tracker: await getTrackerGateway({ db: deps.db, organizationId }), runs };
   } catch (error) {
     if (!(error instanceof TrackerNotConnectedError)) throw error;
   }
   const trackerRuns = runs.filter((run) => run.origin !== "chat");
   for (const run of trackerRuns) await scheduleRun(run.id, null);
   return {
-    linear: disconnectedTrackerGateway(),
+    tracker: disconnectedTrackerGateway(),
     runs: runs.filter((run) => run.origin === "chat"),
   };
 }
@@ -158,7 +161,7 @@ async function dueRunsGateway(
  * The counts are summed over the organizations.
  */
 export async function reconcileAllOrganizations(
-  deps: Omit<RalphDeps, "organizationId" | "linear">,
+  deps: Omit<RalphDeps, "organizationId" | "tracker">,
   now = new Date(),
 ): Promise<ReconcileTotals> {
   const { db } = deps;
@@ -186,9 +189,9 @@ export async function reconcileAllOrganizations(
 
   const withTracker = await listTrackerOrganizationIds(db);
   for (const organizationId of withTracker) {
-    let linear;
+    let tracker;
     try {
-      linear = await getTrackerGateway({ db, organizationId });
+      tracker = await getTrackerGateway({ db, organizationId });
     } catch (error) {
       // Disconnected meanwhile.
       if (error instanceof TrackerNotConnectedError) continue;
@@ -196,15 +199,15 @@ export async function reconcileAllOrganizations(
       totals.failed += 1;
       continue;
     }
-    await reconcile({ ...deps, organizationId, linear });
+    await reconcile({ ...deps, organizationId, tracker });
   }
 
   const trackerOrganizations = new Set(withTracker);
   for (const organizationId of await listChatRunOrganizationIds(db)) {
     if (trackerOrganizations.has(organizationId)) continue;
-    let linear;
+    let tracker;
     try {
-      linear = await getTrackerGatewayOrDisconnected({ db, organizationId });
+      tracker = await getTrackerGatewayOrDisconnected({ db, organizationId });
     } catch (error) {
       console.error(
         `Reconciling the chat ralph runs of organization ${organizationId} failed`,
@@ -213,7 +216,7 @@ export async function reconcileAllOrganizations(
       totals.failed += 1;
       continue;
     }
-    await reconcile({ ...deps, organizationId, linear }, "chat");
+    await reconcile({ ...deps, organizationId, tracker }, "chat");
   }
   return totals;
 }

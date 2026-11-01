@@ -132,7 +132,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
   const ralph = (): RalphDeps => ({
     db,
     organizationId: orgId,
-    linear: fakeRalphTracker(),
+    tracker: fakeRalphTracker(),
     dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => scm.asAdapter(),
     chat: {
@@ -866,7 +866,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
       await startRequestJob(job!);
       const deps = ralph();
       expect(
-        await askPermission({ db, linear: async () => deps.linear, chat: deps.chat }, job!, {
+        await askPermission({ db, tracker: async () => deps.tracker, chat: deps.chat }, job!, {
           requestId: REQUEST_ID,
           tool: "Bash",
           detail: "git commit -m 'Fix the typo'",
@@ -968,7 +968,7 @@ describe.skipIf(!databaseAvailable)("start_work", () => {
 
       await startRequestJob(job!);
       const deps = ralph();
-      await askPermission({ db, linear: async () => deps.linear, chat: deps.chat }, job!, {
+      await askPermission({ db, tracker: async () => deps.tracker, chat: deps.chat }, job!, {
         requestId: REQUEST_ID,
         tool: "Bash",
         detail: "git push",

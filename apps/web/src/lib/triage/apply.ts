@@ -50,9 +50,9 @@ import { lockedIssues, lockedMessage, type TriageDeps } from "./start";
 
 export interface TriageApplyDeps {
   db: Database;
-  linear: TrackerGateway;
-  /** The work item tracker the issue's state changes go through (default: over `linear`). */
-  tracker?: WorkItemTracker;
+  tracker: TrackerGateway;
+  /** The work item tracker the issue's state changes go through (default: over `tracker`). */
+  workItems?: WorkItemTracker;
 }
 
 /** What the job handlers use: also what starts the job a pending reply asks for. */
@@ -285,7 +285,7 @@ interface SubIssueReformat {
  * non-canceled sub-issue. Nothing is ever canceled, deleted or reparented.
  */
 export async function reformatSubIssues(
-  linear: TrackerGateway,
+  tracker: TrackerGateway,
   issue: IssueSummary,
   children: readonly IssueSummary[],
   updates: TriageAgentOutput["subIssueUpdates"],
@@ -307,14 +307,14 @@ export async function reformatSubIssues(
       done.ignored.push(`${child.identifier} is ${child.stateName || child.stateType}`);
       continue;
     }
-    await linear.updateIssue(child.id, {
+    await tracker.updateIssue(child.id, {
       ...(update.title !== child.title && { title: update.title }),
       ...(update.body.trim() !== child.description.trim() && { description: update.body.trim() }),
       ...(update.priority !== child.priority && { priority: update.priority }),
     });
     done.reformatted.push(child);
 
-    const existing = new Set((await linear.getBlockers(child.id)).map((b) => b.id));
+    const existing = new Set((await tracker.getBlockers(child.id)).map((b) => b.id));
     for (const ref of update.blockedBy) {
       const blocker = byRef.get(ref);
       if (!blocker || blocker.id === child.id) {
@@ -322,7 +322,7 @@ export async function reformatSubIssues(
         continue;
       }
       if (existing.has(blocker.id) || blocker.stateType === "canceled") continue;
-      await linear.createBlocksRelation(blocker.id, child.id);
+      await tracker.createBlocksRelation(blocker.id, child.id);
       existing.add(blocker.id);
       done.relations += 1;
     }
@@ -332,7 +332,7 @@ export async function reformatSubIssues(
   if (live.length > 0 && !live.some((c) => VALIDATION_TITLE.test(c.title.trim()))) {
     const priorities = live.map((c) => c.priority).filter((p) => p > 0);
     const orders = children.map((c) => c.subIssueSortOrder).filter((o) => o !== undefined);
-    const validation = await linear.createIssue({
+    const validation = await tracker.createIssue({
       teamId: issue.teamId,
       parentId: issue.id,
       title: VALIDATION_STORY_TITLE,
@@ -342,7 +342,7 @@ export async function reformatSubIssues(
       ...(issue.projectName && { projectName: issue.projectName }),
     });
     for (const child of live) {
-      await linear.createBlocksRelation(child.id, validation.id);
+      await tracker.createBlocksRelation(child.id, validation.id);
       done.relations += 1;
     }
     done.validation = validation;
@@ -355,7 +355,7 @@ export async function reformatSubIssues(
  * claimed (finished) before any Linear write, so a replayed result is ignored.
  */
 export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<ApplyTriageOutcome> {
-  const { db, linear } = deps;
+  const { db, tracker: gateway } = deps;
   const run = await currentRun(db, job);
   if (!run) return { status: "ignored" };
   const sessionId = run.linearAgentSessionId;
@@ -365,9 +365,9 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
     const claimed = await finishTriageRunJob(db, run.id, job.id, "failed", read.result);
     if (!claimed) return { status: "ignored" };
     await failCompletedJob(db, job.id, read.problem);
-    await postActivity(trackerConversation(linear, sessionId, run.linearIssueId), {
+    await postActivity(trackerConversation(gateway, sessionId, run.linearIssueId), {
       type: "error",
-      body: `Triage didn't produce a usable PRD, so I changed nothing in ${trackerName(linear.provider)}: ${read.problem}. Mention me with \`/triage\` to try again.`,
+      body: `Triage didn't produce a usable PRD, so I changed nothing in ${trackerName(gateway.provider)}: ${read.problem}. Mention me with \`/triage\` to try again.`,
     });
     return { status: "invalid", problem: read.problem };
   }
@@ -378,9 +378,9 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
 
   const fail = async (error: unknown): Promise<ApplyTriageOutcome> => {
     await setTriageRunStatus(db, run.id, "failed");
-    await postActivity(trackerConversation(linear, sessionId, run.linearIssueId), {
+    await postActivity(trackerConversation(gateway, sessionId, run.linearIssueId), {
       type: "error",
-      body: `I couldn't apply the triage to ${trackerName(linear.provider)}: ${errorMessage(error)}`,
+      body: `I couldn't apply the triage to ${trackerName(gateway.provider)}: ${errorMessage(error)}`,
     });
     return { status: "failed", error: errorMessage(error) };
   };
@@ -388,8 +388,8 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   let issue: IssueSummary;
   let children: IssueSummary[];
   try {
-    issue = await linear.getIssue(run.linearIssueId);
-    children = await linear.getChildren(issue.id);
+    issue = await gateway.getIssue(run.linearIssueId);
+    children = await gateway.getChildren(issue.id);
   } catch (error) {
     return fail(error);
   }
@@ -398,9 +398,9 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   const locked = lockedIssues(issue, children);
   if (locked.length > 0) {
     await setTriageRunStatus(db, run.id, "stopped");
-    await postActivity(trackerConversation(linear, sessionId, run.linearIssueId), {
+    await postActivity(trackerConversation(gateway, sessionId, run.linearIssueId), {
       type: "response",
-      body: lockedMessage(issue, locked, trackerName(linear.provider)),
+      body: lockedMessage(issue, locked, trackerName(gateway.provider)),
     });
     return { status: "in_progress", issues: locked };
   }
@@ -417,11 +417,11 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
         openQuestions: triage.openQuestions,
       });
       if (description !== issue.description.trim()) {
-        await linear.updateIssue(issue.id, { description });
+        await gateway.updateIssue(issue.id, { description });
       }
     } else {
       const description = triagedDescription(triage);
-      await linear.updateIssue(issue.id, {
+      await gateway.updateIssue(issue.id, {
         ...(triage.title !== issue.title && { title: triage.title }),
         ...(description !== issue.description.trim() && { description }),
       });
@@ -431,7 +431,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
       triage.outcome === "reformat" &&
       (children.length > 0 || triage.subIssueUpdates.length > 0)
     ) {
-      reformat = await reformatSubIssues(linear, issue, children, triage.subIssueUpdates);
+      reformat = await reformatSubIssues(gateway, issue, children, triage.subIssueUpdates);
       if (reformat.validation) created = [reformat.validation];
       if (reformat.reformatted.length > 0) {
         notes.push(
@@ -451,7 +451,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
       if (children.length === 0) {
         const [manualLabel] = await runManualLabels(db, { organizationId: job.organizationId });
         created = await createPlannedSubIssues(
-          linear,
+          gateway,
           issue,
           storyPlan(triage.stories),
           manualLabel ?? "manual",
@@ -464,8 +464,8 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
     }
 
     const tracker =
-      deps.tracker ??
-      (await workItemTrackerFor({ db, organizationId: run.organizationId, gateway: linear }));
+      deps.workItems ??
+      (await workItemTrackerFor({ db, organizationId: run.organizationId, gateway }));
     await tracker.setState(issue.id, { readiness });
   } catch (error) {
     return fail(error);
@@ -473,12 +473,15 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
 
   if (triage.openQuestions.length > 0) {
     await quietly(`Commenting the open questions on ${issue.identifier}`, () =>
-      linear.addComment(issue.id, openQuestionsComment(issue, triage.openQuestions)),
+      gateway.addComment(issue.id, openQuestionsComment(issue, triage.openQuestions)),
     );
   }
   // Before the final response: a later delegation to Om must be a change Linear acts on.
-  await releaseTriageDelegation({ db, organizationId: run.organizationId, linear }, issue.id);
-  await postActivity(trackerConversation(linear, sessionId, run.linearIssueId), {
+  await releaseTriageDelegation(
+    { db, organizationId: run.organizationId, tracker: gateway },
+    issue.id,
+  );
+  await postActivity(trackerConversation(gateway, sessionId, run.linearIssueId), {
     type: "response",
     body: appliedMessage(issue, triage, created, readiness, notes, reformat ? children.length : 0),
   });
@@ -512,13 +515,13 @@ export async function onTriageJobStarted(
     return { skip: true, reason: "skipped" };
   }
 
-  let linear: TrackerGateway;
+  let tracker: TrackerGateway;
   let issue: IssueSummary;
   let locked: string[];
   try {
-    linear = deps?.linear ?? (await defaultDeps(db, run)).linear;
-    issue = await linear.getIssue(run.linearIssueId);
-    locked = lockedIssues(issue, await linear.getChildren(issue.id));
+    tracker = deps?.tracker ?? (await defaultDeps(db, run)).tracker;
+    issue = await tracker.getIssue(run.linearIssueId);
+    locked = lockedIssues(issue, await tracker.getChildren(issue.id));
   } catch (error) {
     console.warn(`Re-checking the issue of triage job ${job.id} failed`, error);
     return { skip: false };
@@ -526,11 +529,11 @@ export async function onTriageJobStarted(
   if (locked.length === 0) return { skip: false };
   if (!(await finishTriageRunJob(db, run.id, job.id, "stopped"))) return { skip: false };
   await skipJobAndClearDue(db, job, { reason: "The issue is in progress or done" });
-  await postActivity(trackerConversation(linear, run.linearAgentSessionId, run.linearIssueId), {
+  await postActivity(trackerConversation(tracker, run.linearAgentSessionId, run.linearIssueId), {
     type: "response",
-    body: lockedMessage(issue, locked, trackerName(linear.provider)),
+    body: lockedMessage(issue, locked, trackerName(tracker.provider)),
   });
-  await removeTriageLabelQuietly(linear, run.linearIssueId);
+  await removeTriageLabelQuietly(tracker, run.linearIssueId);
   return { skip: true, reason: "skipped" };
 }
 
@@ -549,7 +552,7 @@ export async function onTriageJobCompleted(
     const applyDeps = deps ?? (await defaultDeps(db, run));
     const outcome = await applyTriageJob(applyDeps, job);
     if (outcome.status !== "ignored") {
-      await removeTriageLabelQuietly(applyDeps.linear, run.linearIssueId);
+      await removeTriageLabelQuietly(applyDeps.tracker, run.linearIssueId);
       await continueWithPendingReply(db, run.id, applyDeps);
     }
   } catch (error) {
@@ -576,20 +579,20 @@ export async function onTriageJobFinishedWithoutResult(
     const claimed = await finishTriageRunJob(db, run.id, job.id, status);
     if (!claimed) return;
     const jobDeps = deps ?? (await defaultDeps(db, run));
-    const { linear } = jobDeps;
+    const { tracker } = jobDeps;
     await postActivity(
-      trackerConversation(linear, run.linearAgentSessionId, run.linearIssueId),
+      trackerConversation(tracker, run.linearAgentSessionId, run.linearIssueId),
       status === "failed"
         ? {
             type: "error",
-            body: `Triage failed${error ? `: ${error}` : ""}. Nothing changed in ${trackerName(linear.provider)}; mention me with \`/triage\` to try again.`,
+            body: `Triage failed${error ? `: ${error}` : ""}. Nothing changed in ${trackerName(tracker.provider)}; mention me with \`/triage\` to try again.`,
           }
         : {
             type: "response",
-            body: `Triage was canceled. Nothing changed in ${trackerName(linear.provider)}.`,
+            body: `Triage was canceled. Nothing changed in ${trackerName(tracker.provider)}.`,
           },
     );
-    await removeTriageLabelQuietly(linear, run.linearIssueId);
+    await removeTriageLabelQuietly(tracker, run.linearIssueId);
     await continueWithPendingReply(db, run.id, jobDeps);
   } catch (err) {
     console.error(`Recording the end of triage job ${job.id} failed`, err);
@@ -611,7 +614,7 @@ async function continueWithPendingReply(
     {
       db,
       organizationId: run.organizationId,
-      linear: deps.linear,
+      tracker: deps.tracker,
       dispatcher: deps.dispatcher ?? getDispatcher(),
       adapterFor: deps.adapterFor ?? scmAdapterFor,
     },
@@ -620,5 +623,5 @@ async function continueWithPendingReply(
 }
 
 async function defaultDeps(db: Database, run: TriageRun): Promise<TriageApplyDeps> {
-  return { db, linear: await getTrackerGateway({ db, organizationId: run.organizationId }) };
+  return { db, tracker: await getTrackerGateway({ db, organizationId: run.organizationId }) };
 }

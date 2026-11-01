@@ -211,14 +211,14 @@ async function strand(
  * note for each.
  */
 export async function settleStrandedMessages(
-  linear: TrackerGateway,
+  tracker: TrackerGateway,
   tx: RalphTransaction,
   run: RalphRun,
   now = new Date(),
 ): Promise<void> {
   for (const message of await listStrandedMessages(tx, run.id)) {
     const note = await strand(tx, run, message, now);
-    await postActivity(conversationFor(run, { linear }), note);
+    await postActivity(conversationFor(run, { tracker }), note);
   }
 }
 
@@ -236,8 +236,8 @@ export interface JobMessageAcks {
  * already, are ignored.
  */
 export async function exchangeJobMessages(
-  /** `linear` gives the gateway of an organization's workspace (each run's is told). */
-  deps: { db: Database; linear: (organizationId: string) => Promise<TrackerGateway> },
+  /** `tracker` gives the gateway of an organization's workspace (each run's is told). */
+  deps: { db: Database; tracker: (organizationId: string) => Promise<TrackerGateway> },
   agentId: string,
   runningJobIds: readonly string[],
   acks: JobMessageAcks,
@@ -269,14 +269,14 @@ export async function exchangeJobMessages(
   const linearOf = (organizationId: string) => () => {
     let gateway = gateways.get(organizationId);
     if (!gateway) {
-      gateway = deps.linear(organizationId);
+      gateway = deps.tracker(organizationId);
       gateways.set(organizationId, gateway);
     }
     return gateway;
   };
   for (const note of notes) {
-    const linear = linearOf(note.run.organizationId);
-    await postActivity(conversationFor(note.run, { linear }), note.content);
+    const tracker = linearOf(note.run.organizationId);
+    await postActivity(conversationFor(note.run, { tracker }), note.content);
   }
   const pending = await listUndeliveredJobMessages(deps.db, runningJobIds);
   return pending.map((m) => ({ jobId: m.jobId!, messageId: m.id, text: m.text }));

@@ -505,7 +505,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
           secret: SECRET,
           handle: (event, context) =>
             handleTrackerEvent(event, context, {
-              linear: acme,
+              tracker: acme,
               dispatcher: new PostgresDispatcher({ db }),
               adapterFor: () => fakeAdapter,
             }),

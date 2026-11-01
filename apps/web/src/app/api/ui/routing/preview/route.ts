@@ -25,7 +25,7 @@ export const POST = apiHandler(
     );
     const rules = await listRoutingRules(db, organizationId);
     return {
-      results: await routeIssues({ db, organizationId, linear: tracker }, body.identifiers, rules),
+      results: await routeIssues({ db, organizationId, tracker }, body.identifiers, rules),
     };
   },
 );

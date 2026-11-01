@@ -165,7 +165,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     gateway.current = linear;
   });
 
-  const deps = () => ({ db, linear });
+  const deps = () => ({ db, tracker: linear });
 
   /** A triage run of `issue` whose current job completed with `jobResult`. */
   const completedJob = async (issue: IssueSummary, jobResult: unknown) => {
@@ -759,7 +759,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
         throw new Error("Linear is down");
       },
     } as unknown as FakeLinearGateway;
-    expect(await onTriageJobStarted(db, job, { db, linear: failing })).toEqual({ skip: false });
+    expect(await onTriageJobStarted(db, job, { db, tracker: failing })).toEqual({ skip: false });
     expect((await getTriageRun(db, run.id))?.status).toBe("running");
   });
 

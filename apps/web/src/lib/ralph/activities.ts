@@ -22,10 +22,10 @@ export type RelayOutcome =
  * Activities of a finished run are dropped, so a stopped run stays quiet.
  */
 export async function relayActivity(
-  /** `linear` gives the gateway of an organization's workspace; `chat` posts chat runs (default: the chat bot). */
+  /** `tracker` gives the gateway of an organization's workspace; `chat` posts chat runs (default: the chat bot). */
   deps: {
     db: Database;
-    linear: (organizationId: string) => Promise<TrackerGateway>;
+    tracker: (organizationId: string) => Promise<TrackerGateway>;
     chat?: ChatSource;
   },
   job: Pick<Job, "ralphRunId">,
@@ -35,7 +35,7 @@ export async function relayActivity(
   if (!run) return { forwarded: false, reason: "no_run" };
   if (FINISHED_RUN_STATUSES.has(run.status)) return { forwarded: false, reason: "run_finished" };
   const conversation = conversationFor(run, {
-    linear: () => deps.linear(run.organizationId),
+    tracker: () => deps.tracker(run.organizationId),
     chat: deps.chat,
   });
   await conversation.post(activityContent(activity), { ephemeral: activity.ephemeral });

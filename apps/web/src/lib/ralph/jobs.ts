@@ -66,7 +66,7 @@ export async function defaultDeps(db: Database, organizationId: string): Promise
   return {
     db,
     organizationId,
-    linear: lazyTrackerGateway({ db, organizationId }),
+    tracker: lazyTrackerGateway({ db, organizationId }),
     dispatcher: getDispatcher(),
     adapterFor: scmAdapterFor,
   };

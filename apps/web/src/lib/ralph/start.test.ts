@@ -90,7 +90,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   let orgId: string;
   let repoId: string;
   let otherRepoId: string;
-  let linear: FakeLinearGateway;
+  let tracker: FakeLinearGateway;
   let defaultBranchCalls: string[];
   let sessionSeq = 0;
 
@@ -104,7 +104,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   const deps = (): StartRunDeps => ({
     db,
     organizationId: orgId,
-    linear,
+    tracker,
     dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => fakeAdapter,
   });
@@ -195,12 +195,12 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     await setCodingEnabled(db, otherRepoId);
     await setTrackerLabels(db, orgId, null, null);
     await setRules([otherRepoId, labels("frontend")], [repoId, team("ENG")]);
-    linear = new FakeLinearGateway();
+    tracker = new FakeLinearGateway();
     defaultBranchCalls = [];
   });
 
   it("records a work_item change and drops the Backlog cache when it creates a run", async () => {
-    const issue = linear.add({ identifier: "ENG-1", title: "Single", stateType: "unstarted" });
+    const issue = tracker.add({ identifier: "ENG-1", title: "Single", stateType: "unstarted" });
     await cachedBacklog(orgId, async () => ({ entries: [], truncated: false }));
     expect(hasCachedBacklog(orgId)).toBe(true);
     const { result, changes } = await captureChanges(() => startRun(created(issue.id), deps()));
@@ -216,21 +216,21 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   });
 
   it("starts a children epic: run, stories, started state, description and plan", async () => {
-    const epic = linear.add({
+    const epic = tracker.add({
       identifier: "ENG-1",
       title: "Priorities",
       description: "Epic.\n\n> Branch: feat/prio",
       stateType: "backlog",
     });
-    const a = linear.add({ identifier: "ENG-2", title: "Store", parentId: epic.id });
-    const b = linear.add({
+    const a = tracker.add({ identifier: "ENG-2", title: "Store", parentId: epic.id });
+    const b = tracker.add({
       identifier: "ENG-3",
       title: "Access",
       parentId: epic.id,
       labels: ["Manual"],
     });
-    linear.add({ identifier: "ENG-4", title: "Show", parentId: epic.id, stateType: "completed" });
-    await linear.createBlocksRelation(a.id, b.id);
+    tracker.add({ identifier: "ENG-4", title: "Show", parentId: epic.id, stateType: "completed" });
+    await tracker.createBlocksRelation(a.id, b.id);
 
     const event = created(epic.id);
     const outcome = await startRun(event, deps());
@@ -256,25 +256,25 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       ["ENG-3", "Access", "manual", 1],
       ["ENG-4", "Show", "completed", 2],
     ]);
-    expect(linear.issues.get(epic.id)?.stateType).toBe("started");
-    const [thought] = linear.bodies(event.sessionId, "thought");
+    expect(tracker.issues.get(epic.id)?.stateType).toBe("started");
+    const [thought] = tracker.bodies(event.sessionId, "thought");
     expect(thought).toContain("**ENG-1** is an epic with 3 stories (1 already done)");
     expect(thought).toContain(`\`acme/api\` (routed by ${BY_ENG}) on branch \`feat/prio\``);
     expect(thought).toContain("Manual steps for a person: **ENG-3**");
-    expect(linear.plan(event.sessionId)).toEqual([
+    expect(tracker.plan(event.sessionId)).toEqual([
       { content: "ENG-2: Store", status: "inProgress" },
       { content: "ENG-3: Access (manual)", status: "pending" },
       { content: "ENG-4: Show", status: "completed" },
     ]);
-    expect(linear.bodies(event.sessionId, "error")).toEqual([]);
+    expect(tracker.bodies(event.sessionId, "error")).toEqual([]);
   });
 
   it("materializes a PRD's stories as sub-issues and loads it as an epic", async () => {
-    const epic = linear.add({ identifier: "ENG-10", title: "PRD", description: PRD });
+    const epic = tracker.add({ identifier: "ENG-10", title: "PRD", description: PRD });
     const event = created(epic.id);
     await startRun(event, deps());
 
-    const children = await linear.getChildren(epic.id);
+    const children = await tracker.getChildren(epic.id);
     expect(
       children.map((c) => [c.title, c.priority, c.subIssueSortOrder, c.labels, c.description]),
     ).toEqual([
@@ -289,7 +289,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       ["Show priority", 1, 2, [], "## Acceptance Criteria\n- [ ] badge shows"],
     ]);
     const [store, , show] = children;
-    expect(linear.blocks.get(show!.id)).toEqual([store!.id]);
+    expect(tracker.blocks.get(show!.id)).toEqual([store!.id]);
 
     const run = await withLane(await getRunBySession(db, event.sessionId));
     expect(run).toMatchObject({ kind: "prd", branch: "feat/priorities", baseBranch: "develop" });
@@ -298,10 +298,10 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       ["Grant database access", "manual"],
       ["Show priority", "pending"],
     ]);
-    expect(linear.bodies(event.sessionId, "thought")[0]).toContain(
+    expect(tracker.bodies(event.sessionId, "thought")[0]).toContain(
       "Created 3 story sub-issues from the PRD",
     );
-    expect(linear.plan(event.sessionId)?.map((step) => step.status)).toEqual([
+    expect(tracker.plan(event.sessionId)?.map((step) => step.status)).toEqual([
       "inProgress",
       "pending",
       "pending",
@@ -316,10 +316,10 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       null,
     );
     // A children epic: the custom labels (any case) mark manual stories, `manual` no longer does.
-    const epic = linear.add({ identifier: "ENG-20", title: "Epic" });
-    linear.add({ identifier: "ENG-21", title: "Code", parentId: epic.id, labels: ["manual"] });
-    linear.add({ identifier: "ENG-22", title: "DNS", parentId: epic.id, labels: ["By Hand"] });
-    linear.add({ identifier: "ENG-23", title: "Keys", parentId: epic.id, labels: ["OPS"] });
+    const epic = tracker.add({ identifier: "ENG-20", title: "Epic" });
+    tracker.add({ identifier: "ENG-21", title: "Code", parentId: epic.id, labels: ["manual"] });
+    tracker.add({ identifier: "ENG-22", title: "DNS", parentId: epic.id, labels: ["By Hand"] });
+    tracker.add({ identifier: "ENG-23", title: "Keys", parentId: epic.id, labels: ["OPS"] });
     const event = created(epic.id);
     await startRun(event, deps());
     const run = await getRunBySession(db, event.sessionId);
@@ -330,9 +330,9 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     ]);
 
     // A delegated sub-issue loads its parent's epic with the same labels.
-    const parent = linear.add({ identifier: "ENG-30", title: "Epic" });
-    const story = linear.add({ identifier: "ENG-31", title: "Code", parentId: parent.id });
-    linear.add({ identifier: "ENG-32", title: "DNS", parentId: parent.id, labels: ["by hand"] });
+    const parent = tracker.add({ identifier: "ENG-30", title: "Epic" });
+    const story = tracker.add({ identifier: "ENG-31", title: "Code", parentId: parent.id });
+    tracker.add({ identifier: "ENG-32", title: "DNS", parentId: parent.id, labels: ["by hand"] });
     const focused = created(story.id);
     await startRun(focused, deps());
     const focusedRun = await getRunBySession(db, focused.sessionId);
@@ -342,10 +342,10 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     ]);
 
     // A PRD's manual story is created with the first label.
-    const prd = linear.add({ identifier: "ENG-40", title: "PRD", description: PRD });
+    const prd = tracker.add({ identifier: "ENG-40", title: "PRD", description: PRD });
     const prdEvent = created(prd.id);
     await startRun(prdEvent, deps());
-    expect((await linear.getChildren(prd.id)).map((c) => [c.title, c.labels])).toEqual([
+    expect((await tracker.getChildren(prd.id)).map((c) => [c.title, c.labels])).toEqual([
       ["Store priority", []],
       ["Grant database access", ["by hand"]],
       ["Show priority", []],
@@ -359,19 +359,19 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   });
 
   it("creates the PRD stories an interrupted materialization left out, once", async () => {
-    const epic = linear.add({ identifier: "ENG-15", title: "PRD", description: PRD });
+    const epic = tracker.add({ identifier: "ENG-15", title: "PRD", description: PRD });
     // The first try created one sub-issue, then failed.
-    const store = linear.add({ identifier: "ENG-16", title: "Store priority", parentId: epic.id });
+    const store = tracker.add({ identifier: "ENG-16", title: "Store priority", parentId: epic.id });
     const event = created(epic.id);
     await startRun(event, deps());
 
-    const children = await linear.getChildren(epic.id);
+    const children = await tracker.getChildren(epic.id);
     expect(children.map((c) => c.title)).toEqual([
       "Store priority",
       "Grant database access",
       "Show priority",
     ]);
-    expect(linear.blocks.get(children[2]!.id)).toEqual([store.id]);
+    expect(tracker.blocks.get(children[2]!.id)).toEqual([store.id]);
     const run = await getRunBySession(db, event.sessionId);
     expect(run).toMatchObject({ kind: "prd" });
     expect((await listStories(db, run!.id)).map((s) => s.title)).toEqual([
@@ -379,13 +379,13 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       "Grant database access",
       "Show priority",
     ]);
-    expect(linear.bodies(event.sessionId, "thought")[0]).toContain(
+    expect(tracker.bodies(event.sessionId, "thought")[0]).toContain(
       "Created 2 story sub-issues from the PRD",
     );
   });
 
   it("treats a plain issue as a single story", async () => {
-    const issue = linear.add({ identifier: "ENG-20", title: "Fix the login bug" });
+    const issue = tracker.add({ identifier: "ENG-20", title: "Fix the login bug" });
     const event = created(issue.id);
     await startRun(event, deps());
     const run = await withLane(await getRunBySession(db, event.sessionId));
@@ -397,21 +397,21 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     expect(
       (await listStories(db, run!.id)).map((s) => [s.linearIssueId, s.identifier, s.status]),
     ).toEqual([[issue.id, "ENG-20", "running"]]);
-    expect(linear.issues.get(issue.id)?.stateType).toBe("started");
-    expect(linear.plan(event.sessionId)).toEqual([
+    expect(tracker.issues.get(issue.id)?.stateType).toBe("started");
+    expect(tracker.plan(event.sessionId)).toEqual([
       { content: "ENG-20: Fix the login bug", status: "inProgress" },
     ]);
   });
 
   it("treats an issue whose sub-issues are all canceled as a single story", async () => {
-    const issue = linear.add({ identifier: "ENG-25", title: "Former epic" });
-    linear.add({
+    const issue = tracker.add({ identifier: "ENG-25", title: "Former epic" });
+    tracker.add({
       identifier: "ENG-26",
       title: "Dropped",
       parentId: issue.id,
       stateType: "canceled",
     });
-    linear.add({ identifier: "ENG-27", title: "Also", parentId: issue.id, stateType: "canceled" });
+    tracker.add({ identifier: "ENG-27", title: "Also", parentId: issue.id, stateType: "canceled" });
     const event = created(issue.id);
     await startRun(event, deps());
     const run = await withLane(await getRunBySession(db, event.sessionId));
@@ -419,18 +419,18 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     expect(
       (await listStories(db, run!.id)).map((s) => [s.linearIssueId, s.identifier, s.status]),
     ).toEqual([[issue.id, "ENG-25", "running"]]);
-    expect(linear.issues.get(issue.id)?.stateType).toBe("started");
+    expect(tracker.issues.get(issue.id)?.stateType).toBe("started");
   });
 
   it("keeps an issue with canceled and open sub-issues a children epic", async () => {
-    const epic = linear.add({ identifier: "ENG-35", title: "Epic" });
-    linear.add({
+    const epic = tracker.add({ identifier: "ENG-35", title: "Epic" });
+    tracker.add({
       identifier: "ENG-36",
       title: "Dropped",
       parentId: epic.id,
       stateType: "canceled",
     });
-    linear.add({ identifier: "ENG-37", title: "Kept", parentId: epic.id });
+    tracker.add({ identifier: "ENG-37", title: "Kept", parentId: epic.id });
     const event = created(epic.id);
     await startRun(event, deps());
     const run = await getRunBySession(db, event.sessionId);
@@ -439,9 +439,9 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   });
 
   it("loads a delegated sub-issue's epic, focused on that story", async () => {
-    const epic = linear.add({ identifier: "ENG-30", title: "Epic", stateType: "started" });
-    linear.add({ identifier: "ENG-31", title: "One", parentId: epic.id });
-    const two = linear.add({ identifier: "ENG-32", title: "Two", parentId: epic.id });
+    const epic = tracker.add({ identifier: "ENG-30", title: "Epic", stateType: "started" });
+    tracker.add({ identifier: "ENG-31", title: "One", parentId: epic.id });
+    const two = tracker.add({ identifier: "ENG-32", title: "Two", parentId: epic.id });
     const event = created(two.id);
     await startRun(event, deps());
     const run = await getRunBySession(db, event.sessionId);
@@ -452,11 +452,11 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       focusStoryId: two.id,
     });
     expect((await listStories(db, run!.id)).map((s) => s.identifier)).toEqual(["ENG-31", "ENG-32"]);
-    expect(linear.bodies(event.sessionId, "thought")[0]).toContain("I'll start with ENG-32");
+    expect(tracker.bodies(event.sessionId, "thought")[0]).toContain("I'll start with ENG-32");
   });
 
   it("routes by the first rule that matches; without any ralph-enabled repository explains how to enable one", async () => {
-    const labelled = linear.add({ identifier: "ENG-40", title: "UI", labels: ["Frontend"] });
+    const labelled = tracker.add({ identifier: "ENG-40", title: "UI", labels: ["Frontend"] });
     const event = created(labelled.id);
     await startRun(event, deps());
     expect(await getRunBySession(db, event.sessionId)).toMatchObject({
@@ -467,10 +467,10 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     await setRules();
     await updateRepositoryCoding(db, repoId, { codingEnabled: false });
     await updateRepositoryCoding(db, otherRepoId, { codingEnabled: false });
-    const elsewhere = linear.add({ identifier: "OPS-1", title: "Infra", teamKey: "OPS" });
+    const elsewhere = tracker.add({ identifier: "OPS-1", title: "Infra", teamKey: "OPS" });
     const unroutable = created(elsewhere.id);
     expect(await startRun(unroutable, deps())).toEqual({ status: "unroutable" });
-    const [error] = linear.bodies(unroutable.sessionId, "error");
+    const [error] = tracker.bodies(unroutable.sessionId, "error");
     expect(error).toContain("no repo has Coding on");
     expect(error).toContain("work item match");
     expect(error).toContain("**Coding** switch under **Repos**");
@@ -478,12 +478,12 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     expect(error).not.toContain("[repo=");
 
     expect(await db.select().from(ralphRuns)).toHaveLength(1);
-    expect(linear.issues.get(elsewhere.id)?.stateType).toBe("unstarted");
+    expect(tracker.issues.get(elsewhere.id)?.stateType).toBe("unstarted");
   });
 
   it("doesn't build an issue whose rule routes to a repository with coding off", async () => {
     await updateRepositoryCoding(db, otherRepoId, { codingEnabled: false });
-    const issue = linear.add({
+    const issue = tracker.add({
       identifier: "ENG-55",
       title: "Docs",
       labels: ["frontend"],
@@ -492,14 +492,14 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     });
     const event = created(issue.id);
     expect(await startRun(event, deps())).toEqual({ status: "manual", repository: "acme/web" });
-    expect(linear.bodies(event.sessionId, "response")).toEqual([
+    expect(tracker.bodies(event.sessionId, "response")).toEqual([
       "This routes to `acme/web` (rule 1), which has coding off, so it's for a person.",
     ]);
     // No run, no stories materialized from its PRD, and its state is left alone.
     expect(await db.select().from(ralphRuns)).toEqual([]);
-    expect(await linear.getChildren(issue.id)).toEqual([]);
-    expect(linear.stateChanges).toEqual([]);
-    expect(linear.issues.get(issue.id)?.stateType).toBe("backlog");
+    expect(await tracker.getChildren(issue.id)).toEqual([]);
+    expect(tracker.stateChanges).toEqual([]);
+    expect(tracker.issues.get(issue.id)?.stateType).toBe("backlog");
 
     // A mention asking for work is refused the same way.
     const mention = created(issue.id, { commentBody: "@omniralph fix the typo" });
@@ -511,12 +511,12 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     // Coding off blocks it: its rule makes the issue manual.
     await updateRepositoryCoding(db, otherRepoId, { codingEnabled: false });
     await updateRepositoryCoding(db, repoId, { codingEnabled: false });
-    const blocked = created(linear.add({ identifier: "ENG-51", title: "Blocked" }).id);
+    const blocked = created(tracker.add({ identifier: "ENG-51", title: "Blocked" }).id);
     expect(await startRun(blocked, deps())).toEqual({ status: "manual", repository: "acme/api" });
 
     // Coding on builds it.
     await setCodingEnabled(db, repoId);
-    const on = created(linear.add({ identifier: "ENG-53", title: "On" }).id);
+    const on = created(tracker.add({ identifier: "ENG-53", title: "On" }).id);
     expect(await startRun(on, deps())).toMatchObject({ status: "started" });
     expect(await getRunBySession(db, on.sessionId)).toMatchObject({ repositoryId: repoId });
   });
@@ -524,11 +524,11 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   describe("the repository question", () => {
     const reply = (sessionId: string, body: string) =>
       handleReply({ kind: "session_prompted", sessionId, body }, deps());
-    const selects = () => linear.activities.filter((a) => a.options?.signal === "select");
+    const selects = () => tracker.activities.filter((a) => a.options?.signal === "select");
 
     it("asks which repository when nothing matches, then continues with the reply", async () => {
-      const epic = linear.add({ identifier: "OPS-10", title: "Infra", teamKey: "OPS" });
-      linear.add({ identifier: "OPS-11", title: "One", teamKey: "OPS", parentId: epic.id });
+      const epic = tracker.add({ identifier: "OPS-10", title: "Infra", teamKey: "OPS" });
+      tracker.add({ identifier: "OPS-11", title: "One", teamKey: "OPS", parentId: epic.id });
       const event = created(epic.id);
       const outcome = await startRun(event, deps());
       expect(outcome).toMatchObject({ status: "selecting" });
@@ -541,17 +541,17 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
         pendingElicitation: { kind: "repository", repositoryIds: [repoId, otherRepoId] },
       });
       expect(await db.select().from(jobs)).toEqual([]);
-      expect(linear.issues.get(epic.id)?.stateType).toBe("unstarted");
+      expect(tracker.issues.get(epic.id)?.stateType).toBe("unstarted");
       const [ask] = selects();
       expect(ask?.content).toMatchObject({ type: "elicitation" });
       expect(ask?.options?.signalMetadata).toEqual({
         options: [{ value: "acme/api" }, { value: "acme/web" }],
       });
-      expect(linear.bodies(event.sessionId, "elicitation")[0]).toContain(
+      expect(tracker.bodies(event.sessionId, "elicitation")[0]).toContain(
         "Which repository should I work in for this issue?",
       );
-      expect(linear.bodies(event.sessionId, "elicitation")[0]).not.toContain("[repo=");
-      expect(linear.bodies(event.sessionId, "elicitation")[0]).toContain(
+      expect(tracker.bodies(event.sessionId, "elicitation")[0]).not.toContain("[repo=");
+      expect(tracker.bodies(event.sessionId, "elicitation")[0]).toContain(
         "Settings › Advanced › Routing rules",
       );
 
@@ -562,7 +562,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       // An unmatched reply re-asks; a matching one picks the repository and starts.
       expect(await reply(event.sessionId, "mobile")).toEqual({ kind: "repository_selection" });
       expect(selects()).toHaveLength(2);
-      expect(linear.bodies(event.sessionId, "elicitation")[1]).toContain(
+      expect(tracker.bodies(event.sessionId, "elicitation")[1]).toContain(
         `I couldn't match "mobile" to a repository. Which one should I use?`,
       );
       expect((await getRun(db, run.id))?.repositoryId).toBeNull();
@@ -583,10 +583,10 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
         guidance: [],
       });
       expect(defaultBranchCalls).toEqual(["acme/web"]);
-      expect(linear.bodies(event.sessionId, "thought")).toContainEqual(
+      expect(tracker.bodies(event.sessionId, "thought")).toContainEqual(
         expect.stringContaining("Using `acme/web`."),
       );
-      expect(linear.issues.get(epic.id)?.stateType).toBe("started");
+      expect(tracker.issues.get(epic.id)?.stateType).toBe("started");
       const [job] = await db.select().from(jobs);
       expect(job).toMatchObject({ type: "ralph.story", repositoryId: otherRepoId });
 
@@ -599,14 +599,14 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
         repositoryId: otherRepoId,
         routedBy: "your selection",
       });
-      expect(linear.bodies(again.sessionId, "thought")[0]).toContain(
+      expect(tracker.bodies(again.sessionId, "thought")[0]).toContain(
         "Building it in `acme/web` (routed by your selection)",
       );
       expect(selects()).toHaveLength(2);
     });
 
     it("matches a reply by number, and asks again when a stopped run resumes", async () => {
-      const issue = linear.add({ identifier: "OPS-15", title: "Infra", teamKey: "OPS" });
+      const issue = tracker.add({ identifier: "OPS-15", title: "Infra", teamKey: "OPS" });
       const event = created(issue.id);
       await startRun(event, deps());
       const run = (await getRunBySession(db, event.sessionId))!;
@@ -634,7 +634,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     });
 
     it("keeps a repository a human picked, and the current one when routing would have to ask", async () => {
-      const epic = linear.add({ identifier: "OPS-20", title: "Infra", teamKey: "OPS" });
+      const epic = tracker.add({ identifier: "OPS-20", title: "Infra", teamKey: "OPS" });
       const first = created(epic.id);
       await startRun(first, deps());
       await reply(first.sessionId, "web");
@@ -644,7 +644,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       // Team routing to api now matches, but the human's pick wins.
       await updateRun(db, picked.id, { status: "failed" });
       await db.delete(jobs);
-      linear.issues.get(epic.id)!.teamKey = "ENG";
+      tracker.issues.get(epic.id)!.teamKey = "ENG";
       const second = created(epic.id);
       await startRun(second, deps());
       expect(await getRunBySession(db, second.sessionId)).toMatchObject({
@@ -653,7 +653,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       });
 
       // Routed by label to web; once the label is gone routing can't decide, so it stays in web.
-      const other = linear.add({
+      const other = tracker.add({
         identifier: "OPS-21",
         title: "Other",
         teamKey: "OPS",
@@ -665,7 +665,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       expect(routed).toMatchObject({ repositoryId: otherRepoId, routedBy: BY_FRONTEND });
       await updateRun(db, routed.id, { status: "failed" });
       await db.delete(jobs);
-      linear.issues.get(other.id)!.labels = [];
+      tracker.issues.get(other.id)!.labels = [];
       const fourth = created(other.id);
       expect(await startRun(fourth, deps())).toMatchObject({ status: "started", created: true });
       expect(await getRunBySession(db, fourth.sessionId)).toMatchObject({
@@ -676,7 +676,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     });
 
     it("ignores a `[repo=…]` tag in the description", async () => {
-      const tagged = linear.add({
+      const tagged = tracker.add({
         identifier: "OPS-41",
         title: "Tagged",
         teamKey: "OPS",
@@ -684,14 +684,14 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       });
       const event = created(tagged.id);
       expect(await startRun(event, deps())).toMatchObject({ status: "selecting" });
-      const [question] = linear.bodies(event.sessionId, "elicitation");
+      const [question] = tracker.bodies(event.sessionId, "elicitation");
       expect(question).not.toContain("[repo=");
       expect(question).toContain("Which repository should I work in for this issue?");
     });
   });
 
   it("re-routing to another repository moves the run there and leaves the earlier work alone", async () => {
-    const epic = linear.add({ identifier: "ENG-45", title: "UI", labels: ["Frontend"] });
+    const epic = tracker.add({ identifier: "ENG-45", title: "UI", labels: ["Frontend"] });
     const first = created(epic.id);
     await startRun(first, deps());
     const previous = (await getRunBySession(db, first.sessionId))!;
@@ -705,7 +705,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     await db.delete(jobs);
 
     // Without its label, its team sends it to api.
-    linear.issues.get(epic.id)!.labels = [];
+    tracker.issues.get(epic.id)!.labels = [];
     const second = created(epic.id);
     await startRun(second, deps());
     const moved = await withLane(await getRunBySession(db, second.sessionId));
@@ -716,7 +716,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       prUrl: null,
     });
     expect(moved?.branch).not.toBe("custom/branch");
-    const [note] = linear.bodies(second.sessionId, "thought");
+    const [note] = tracker.bodies(second.sessionId, "thought");
     expect(note).toBe(
       "Routing now sends this to `acme/api` instead of `acme/web`, so I'm working there. " +
         "The earlier work in `acme/web` stays as it is (branch `custom/branch`, " +
@@ -731,48 +731,48 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   });
 
   it("a bare mention with no instruction does nothing", async () => {
-    const issue = linear.add({ identifier: "ENG-50", title: "Question" });
+    const issue = tracker.add({ identifier: "ENG-50", title: "Question" });
     const event = created(issue.id, { commentBody: "@omniralph" });
     expect(await startRun(event, deps())).toEqual({ status: "nothing" });
-    expect(linear.bodies(event.sessionId, "response")).toEqual([
+    expect(tracker.bodies(event.sessionId, "response")).toEqual([
       "Nothing to do: the mention didn't include a request. Delegate the issue to me to work the epic.",
     ]);
     expect(await db.select().from(ralphRuns)).toEqual([]);
-    expect(linear.issues.get(issue.id)?.stateType).toBe("unstarted");
+    expect(tracker.issues.get(issue.id)?.stateType).toBe("unstarted");
   });
 
   describe("open questions", () => {
     const QUESTIONS = `${PRD}\n## Open Questions\n\n1. Which column type?\n`;
 
     it("refuses a delegation while the PRD has open questions", async () => {
-      const issue = linear.add({ identifier: "ENG-60", title: "PRD", description: QUESTIONS });
+      const issue = tracker.add({ identifier: "ENG-60", title: "PRD", description: QUESTIONS });
       const event = created(issue.id);
       expect(await startRun(event, deps())).toEqual({
         status: "open_questions",
         identifier: "ENG-60",
       });
-      const [response] = linear.bodies(event.sessionId, "response");
+      const [response] = tracker.bodies(event.sessionId, "response");
       expect(response).toContain("**ENG-60** still has open questions");
       expect(response).toContain("reply in the triage session");
       expect(await db.select().from(ralphRuns)).toEqual([]);
       // Nothing materialized, no state change.
-      expect(await linear.getChildren(issue.id)).toEqual([]);
-      expect(linear.issues.get(issue.id)?.stateType).toBe("unstarted");
+      expect(await tracker.getChildren(issue.id)).toEqual([]);
+      expect(tracker.issues.get(issue.id)?.stateType).toBe("unstarted");
     });
 
     it("refuses a delegated sub-issue of an epic with open questions, and `/ralph` mentions", async () => {
-      const epic = linear.add({
+      const epic = tracker.add({
         identifier: "ENG-61",
         title: "Epic",
         description: "Epic.\n\n## Open Questions\n\n1. Which team?",
       });
-      const story = linear.add({ identifier: "ENG-62", title: "Store", parentId: epic.id });
+      const story = tracker.add({ identifier: "ENG-62", title: "Store", parentId: epic.id });
       const event = created(story.id);
       expect(await startRun(event, deps())).toEqual({
         status: "open_questions",
         identifier: "ENG-61",
       });
-      expect(linear.bodies(event.sessionId, "response")[0]).toContain(
+      expect(tracker.bodies(event.sessionId, "response")[0]).toContain(
         "the epic **ENG-61** still has open questions",
       );
 
@@ -782,7 +782,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     });
 
     it("starts issues without open questions, and request-mode mentions regardless", async () => {
-      const issue = linear.add({
+      const issue = tracker.add({
         identifier: "ENG-63",
         title: "Plain",
         description: "Do it.\n\n## Open Questions\n\n",
@@ -792,7 +792,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
         created: true,
       });
 
-      const asked = linear.add({ identifier: "ENG-64", title: "PRD", description: QUESTIONS });
+      const asked = tracker.add({ identifier: "ENG-64", title: "PRD", description: QUESTIONS });
       expect(
         await startRun(
           created(asked.id, { commentBody: "@omniralph what does this need?" }),
@@ -802,24 +802,24 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     });
 
     it("refuses a delegation when Linear can't be read for the check", async () => {
-      const issue = linear.add({ identifier: "ENG-65", title: "PRD", description: PRD });
-      linear.failures.set("getIssue", new Error("rate limited"));
+      const issue = tracker.add({ identifier: "ENG-65", title: "PRD", description: PRD });
+      tracker.failures.set("getIssue", new Error("rate limited"));
       const event = created(issue.id);
       expect(await startRun(event, deps())).toEqual({
         status: "load_failed",
         error: "rate limited",
       });
-      expect(linear.bodies(event.sessionId, "error")[0]).toContain(
+      expect(tracker.bodies(event.sessionId, "error")[0]).toContain(
         "I couldn't check the issue for open questions in Linear, so I didn't start: rate limited.",
       );
       expect(await db.select().from(ralphRuns)).toEqual([]);
-      expect(linear.issues.get(issue.id)?.stateType).toBe("unstarted");
+      expect(tracker.issues.get(issue.id)?.stateType).toBe("unstarted");
     });
   });
 
   describe("blocked labels", () => {
     it("refuses a delegation or mention of an issue with a default blocked label, before materializing", async () => {
-      const issue = linear.add({
+      const issue = tracker.add({
         identifier: "ENG-70",
         title: "PRD",
         description: PRD,
@@ -830,14 +830,14 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
         status: "blocked_labels",
         labels: ["Under-Review"],
       });
-      const [response] = linear.bodies(event.sessionId, "response");
+      const [response] = tracker.bodies(event.sessionId, "response");
       expect(response).toContain("I won't work on **ENG-70**");
       expect(response).toContain(
         "work items labeled `Under-Review` are blocked for Om in this organization",
       );
       expect(await db.select().from(ralphRuns)).toEqual([]);
-      expect(await linear.getChildren(issue.id)).toEqual([]);
-      expect(linear.issues.get(issue.id)?.stateType).toBe("unstarted");
+      expect(await tracker.getChildren(issue.id)).toEqual([]);
+      expect(tracker.issues.get(issue.id)?.stateType).toBe("unstarted");
 
       const mention = created(issue.id, { commentBody: "@omniralph fix the typo" });
       expect(await startRun(mention, deps())).toMatchObject({ status: "blocked_labels" });
@@ -845,8 +845,8 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     });
 
     it("refuses a delegated story of a blocked epic", async () => {
-      const epic = linear.add({ identifier: "ENG-71", title: "Epic", labels: ["blocked"] });
-      const story = linear.add({ identifier: "ENG-72", title: "Store", parentId: epic.id });
+      const epic = tracker.add({ identifier: "ENG-71", title: "Epic", labels: ["blocked"] });
+      const story = tracker.add({ identifier: "ENG-72", title: "Store", parentId: epic.id });
       const event = created(story.id);
       expect(await startRun(event, deps())).toEqual({
         status: "blocked_labels",
@@ -863,12 +863,12 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
         null,
       );
       // Routed to acme/api (team ENG) or acme/web (label frontend): refused either way.
-      const held = linear.add({ identifier: "ENG-73", title: "Held", labels: ["On Hold"] });
+      const held = tracker.add({ identifier: "ENG-73", title: "Held", labels: ["On Hold"] });
       expect(await startRun(created(held.id), deps())).toMatchObject({
         status: "blocked_labels",
         labels: ["On Hold"],
       });
-      const web = linear.add({
+      const web = tracker.add({
         identifier: "ENG-76",
         title: "UI",
         labels: ["Frontend", "on hold"],
@@ -878,16 +878,20 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
         labels: ["on hold"],
       });
       // `blocked` is no longer one of them.
-      const blocked = linear.add({ identifier: "ENG-74", title: "Fine", labels: ["blocked"] });
+      const blocked = tracker.add({ identifier: "ENG-74", title: "Fine", labels: ["blocked"] });
       expect(await startRun(created(blocked.id), deps())).toMatchObject({ status: "started" });
 
       await setTrackerLabels(db, orgId, { manualLabels: ["manual"], blockedLabels: [] }, null);
-      const ui = linear.add({ identifier: "ENG-75", title: "UI", labels: ["Frontend", "blocked"] });
+      const ui = tracker.add({
+        identifier: "ENG-75",
+        title: "UI",
+        labels: ["Frontend", "blocked"],
+      });
       expect(await startRun(created(ui.id), deps())).toMatchObject({ status: "started" });
     });
 
     it("refuses an unrouted issue with a blocked label instead of asking for a repository", async () => {
-      const issue = linear.add({
+      const issue = tracker.add({
         identifier: "OPS-70",
         title: "Infra",
         teamKey: "OPS",
@@ -898,13 +902,13 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
         status: "blocked_labels",
         labels: ["blocked"],
       });
-      expect(linear.bodies(refused.sessionId, "response")[0]).toContain(
+      expect(tracker.bodies(refused.sessionId, "response")[0]).toContain(
         "work items labeled `blocked` are blocked for Om in this organization",
       );
       expect(await db.select().from(ralphRuns)).toEqual([]);
 
       // Without a blocked label, every repository with coding on is offered.
-      const other = linear.add({ identifier: "OPS-71", title: "Infra", teamKey: "OPS" });
+      const other = tracker.add({ identifier: "OPS-71", title: "Infra", teamKey: "OPS" });
       const event = created(other.id);
       expect(await startRun(event, deps())).toMatchObject({ status: "selecting" });
       expect(
@@ -914,8 +918,8 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   });
 
   it("re-delegation reuses the previous run's branch, PR, guidance and progress", async () => {
-    const epic = linear.add({ identifier: "ENG-60", title: "Epic" });
-    linear.add({ identifier: "ENG-61", title: "One", parentId: epic.id });
+    const epic = tracker.add({ identifier: "ENG-60", title: "Epic" });
+    tracker.add({ identifier: "ENG-61", title: "One", parentId: epic.id });
     const first = created(epic.id);
     await startRun(first, deps());
     const previous = (await getRunBySession(db, first.sessionId))!;
@@ -942,14 +946,14 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       status: "running",
     });
     expect(run!.id).not.toBe(previous.id);
-    expect(linear.bodies(second.sessionId, "thought")[0]).toContain(
+    expect(tracker.bodies(second.sessionId, "thought")[0]).toContain(
       "Picking up where the previous session for this issue left off (https://github.com/acme/api/pull/7)",
     );
   });
 
   it("re-delegating an unfinished run supersedes it; a delegated story joins it", async () => {
-    const epic = linear.add({ identifier: "ENG-70", title: "Epic" });
-    const story = linear.add({ identifier: "ENG-71", title: "One", parentId: epic.id });
+    const epic = tracker.add({ identifier: "ENG-70", title: "Epic" });
+    const story = tracker.add({ identifier: "ENG-71", title: "One", parentId: epic.id });
     const first = created(epic.id);
     await startRun(first, deps());
     const previous = (await getRunBySession(db, first.sessionId))!;
@@ -962,7 +966,7 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
 
     const focused = created(story.id);
     expect(await startRun(focused, deps())).toMatchObject({ status: "already_running" });
-    expect(linear.bodies(focused.sessionId, "response")[0]).toContain(
+    expect(tracker.bodies(focused.sessionId, "response")[0]).toContain(
       "already being built in another session",
     );
     expect((await getRun(db, previous.id))?.status).toBe("running");
@@ -983,8 +987,8 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     expect((await listStories(db, previous.id)).map((s) => s.status)).toEqual(["pending"]);
     const [canceled] = await db.select().from(jobs).where(eq(jobs.id, job.id));
     expect(canceled).toMatchObject({ status: "canceled", cancelRequested: true });
-    expect(linear.bodies(first.sessionId, "response")[0]).toContain("delegated to me again");
-    expect(linear.bodies(first.sessionId, "response")[0]).toContain(
+    expect(tracker.bodies(first.sessionId, "response")[0]).toContain("delegated to me again");
+    expect(tracker.bodies(first.sessionId, "response")[0]).toContain(
       "https://github.com/acme/api/pull/7",
     );
     expect(await withLane(await getRunBySession(db, again.sessionId))).toMatchObject({
@@ -994,21 +998,21 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
   });
 
   it("a repeated session event doesn't start a second run", async () => {
-    const issue = linear.add({ identifier: "ENG-80", title: "Once" });
+    const issue = tracker.add({ identifier: "ENG-80", title: "Once" });
     const event = created(issue.id);
     await startRun(event, deps());
     const again = await startRun(event, deps());
     expect(again).toMatchObject({ status: "started", created: false });
     expect(await db.select().from(ralphRuns)).toHaveLength(1);
     // The run's description and its first story; nothing new for the repeat.
-    expect(linear.bodies(event.sessionId, "thought")).toHaveLength(2);
+    expect(tracker.bodies(event.sessionId, "thought")).toHaveLength(2);
     expect(await db.select().from(jobs)).toHaveLength(1);
   });
 
   describe("advanceRun", () => {
     it("is idempotent, syncs stories from Linear and re-posts the plan on changes", async () => {
-      const epic = linear.add({ identifier: "ENG-90", title: "Epic" });
-      const one = linear.add({
+      const epic = tracker.add({ identifier: "ENG-90", title: "Epic" });
+      const one = tracker.add({
         identifier: "ENG-91",
         title: "One",
         parentId: epic.id,
@@ -1017,9 +1021,9 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       const event = created(epic.id);
       await startRun(event, deps());
       const run = (await getRunBySession(db, event.sessionId))!;
-      const plans = () => linear.plans.get(event.sessionId) ?? [];
+      const plans = () => tracker.plans.get(event.sessionId) ?? [];
       const posted = plans().length;
-      const elicitations = linear.bodies(event.sessionId, "elicitation").length;
+      const elicitations = tracker.bodies(event.sessionId, "elicitation").length;
 
       // Waiting on the manual story: nothing changes, nothing is asked again.
       const first = await advanceRun(run.id, deps());
@@ -1031,13 +1035,13 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
         [{ content: "ENG-91: One (manual)", status: "pending" }],
         [{ content: "ENG-91: One (manual)", status: "pending" }],
       ]);
-      expect(linear.bodies(event.sessionId, "elicitation")).toHaveLength(elicitations);
+      expect(tracker.bodies(event.sessionId, "elicitation")).toHaveLength(elicitations);
 
       // A story added and one canceled in Linear: the new one runs.
-      linear.add({ identifier: "ENG-92", title: "Two", parentId: epic.id });
-      await linear.setIssueState(one.id, { type: "canceled" });
+      tracker.add({ identifier: "ENG-92", title: "Two", parentId: epic.id });
+      await tracker.setIssueState(one.id, { type: "canceled" });
       expect(await advanceRun(run.id, deps())).toMatchObject({ action: "enqueued" });
-      expect(linear.plan(event.sessionId)).toEqual([
+      expect(tracker.plan(event.sessionId)).toEqual([
         { content: "ENG-91: One", status: "canceled" },
         { content: "ENG-92: Two", status: "inProgress" },
       ]);
@@ -1047,9 +1051,9 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
       // A status change by the orchestrator updates the plan.
       await lockRun(db, run.id, async (tx, locked) => {
         const [, two] = await listStories(tx, run.id);
-        await updateStoryAndPlan(linear, tx, locked, two!, { status: "pending" });
+        await updateStoryAndPlan(tracker, tx, locked, two!, { status: "pending" });
       });
-      expect(linear.plan(event.sessionId)?.[1]).toEqual({
+      expect(tracker.plan(event.sessionId)?.[1]).toEqual({
         content: "ENG-92: Two",
         status: "pending",
       });
@@ -1062,14 +1066,14 @@ describe.skipIf(!databaseAvailable)("starting ralph runs from Linear delegations
     });
 
     it("runs one advance at a time per run", async () => {
-      const issue = linear.add({ identifier: "ENG-95", title: "Solo" });
+      const issue = tracker.add({ identifier: "ENG-95", title: "Solo" });
       const event = created(issue.id);
       await startRun(event, deps());
       const run = (await getRunBySession(db, event.sessionId))!;
       let inside = 0;
       let overlap = false;
-      const getIssue = linear.getIssue.bind(linear);
-      linear.getIssue = async (id: string) => {
+      const getIssue = tracker.getIssue.bind(tracker);
+      tracker.getIssue = async (id: string) => {
         inside += 1;
         if (inside > 1) overlap = true;
         await new Promise((r) => setTimeout(r, 30));

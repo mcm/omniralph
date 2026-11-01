@@ -136,10 +136,10 @@ export interface RalphDeps {
   db: Database;
   /**
    * The organization whose runs these are: routing only considers its
-   * repositories, and `linear` is its Linear workspace's gateway.
+   * repositories, and `tracker` is its tracker workspace's gateway.
    */
   organizationId: string;
-  linear: TrackerGateway;
+  tracker: TrackerGateway;
   dispatcher: JobDispatcher;
   /** The code-host adapter of a repository's connection (default branch, PRs/MRs). */
   adapterFor: (db: Database, connection: ScmConnection) => ScmAdapter;
@@ -224,7 +224,7 @@ export async function publishPlan(
  * updated plan. Returns the updated story, or null if it's gone.
  */
 export async function updateStoryAndPlan(
-  linear: TrackerGateway,
+  tracker: TrackerGateway,
   tx: RalphTransaction,
   run: RalphRun,
   story: RalphStory,
@@ -232,7 +232,7 @@ export async function updateStoryAndPlan(
 ): Promise<RalphStory | null> {
   const updated = await updateStory(tx, story.id, update);
   if (updated && updated.status !== story.status) {
-    await publishPlan(conversationFor(run, { linear }), await listStories(tx, run.id));
+    await publishPlan(conversationFor(run, { tracker }), await listStories(tx, run.id));
   }
   return updated;
 }
@@ -280,7 +280,7 @@ async function advance(runId: string, deps: RalphDeps): Promise<AdvanceResult> {
   const applied = await lockRun(deps.db, runId, async (tx, run) => {
     if (FINISHED_RUN_STATUSES.has(run.status)) return { busy: false };
     // Replies the ended job's session never got become guidance (or pending requests) first.
-    await settleStrandedMessages(deps.linear, tx, run);
+    await settleStrandedMessages(deps.tracker, tx, run);
     const stories = await applyJobOutcomes({ ...deps, tx, run });
     const pullRequest = await applyPullRequestJob(deps, tx, run);
     const preparation = await applyPreparationJob(deps, tx, run);
@@ -331,7 +331,7 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   }
   const { linearIssueId } = run;
 
-  const epic = await reloadEpic(deps.linear, run, await runEpicOptions(deps.db, run));
+  const epic = await reloadEpic(deps.tracker, run, await runEpicOptions(deps.db, run));
   // Stories routed to another repository get a lane there; those belonging nowhere here are manual.
   const rows = await syncStories(tx, run.id, epic, await routeStories(deps, tx, run, epic));
   const stories = storiesWithRunState(epic, rows, run.ignoreBlockers);
@@ -359,7 +359,7 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   // Blockers of the epic issue itself gate all of its stories (as in cyralph and Cyrus).
   const rootBlockers = run.ignoreBlockers
     ? []
-    : openRootBlockers(epic, await deps.linear.getBlockers(linearIssueId));
+    : openRootBlockers(epic, await deps.tracker.getBlockers(linearIssueId));
 
   if (rootBlockers.length === 0) {
     const focused = run.focusStoryId
@@ -573,7 +573,7 @@ async function enqueueStory(
   const found = await usableRepository(deps, tx, run, lane ?? undefined);
   if ("action" in found) return found;
 
-  const attachments = await gatherRunAttachments(deps.linear, tx, run, epic);
+  const attachments = await gatherRunAttachments(deps.tracker, tx, run, epic);
   const playbooks = organizationPlaybooks(deps.db, run.organizationId);
   const payload = buildStoryPayload({
     coding: await storyCodingSettings(found.repository, playbooks),
@@ -607,7 +607,7 @@ async function enqueueStory(
   if (found.lane.publish) await updateLane(tx, found.lane.id, { publish: null });
   if (run.kind !== "single" && story.status === "open") {
     await quietly(`Starting ${row.identifier} in Linear`, () =>
-      deps.linear.setIssueState(row.linearIssueId, { type: "started" }),
+      deps.tracker.setIssueState(row.linearIssueId, { type: "started" }),
     );
   }
   // The story's prompt carries the thread's requests as guidance: they're handled.
@@ -918,7 +918,7 @@ async function enqueueRequest(
       : null;
   // Attachments are Linear's; a chat run has none.
   const attachments = isLinearRun(run)
-    ? await gatherRunAttachments(deps.linear, tx, run, input.epic)
+    ? await gatherRunAttachments(deps.tracker, tx, run, input.epic)
     : [];
   const playbooks = organizationPlaybooks(deps.db, run.organizationId);
   const payload = buildRequestPayload({
@@ -1050,7 +1050,7 @@ const bold = (issues: readonly WaitingIssue[]) =>
 
 /** The issue refs stored in `waiting_on` (with titles, read from Linear for outside issues). */
 async function waitingRefs(
-  linear: TrackerGateway,
+  tracker: TrackerGateway,
   issues: readonly WaitingIssue[],
   known: ReadonlyMap<string, string>,
 ): Promise<RalphWaitingOn["blockers"]> {
@@ -1059,7 +1059,7 @@ async function waitingRefs(
       let title = known.get(id);
       if (title === undefined) {
         try {
-          title = (await linear.getIssue(id)).title;
+          title = (await tracker.getIssue(id)).title;
         } catch {
           title = identifier;
         }
@@ -1110,8 +1110,8 @@ async function wait(
     ...found.blockers.filter((b) => !rootBlockers.some((r) => r.id === b.id)),
   ];
   const waitingOn: RalphWaitingOn = {
-    blockers: await waitingRefs(deps.linear, blockers, titles),
-    manual: await waitingRefs(deps.linear, found.manual, titles),
+    blockers: await waitingRefs(deps.tracker, blockers, titles),
+    manual: await waitingRefs(deps.tracker, found.manual, titles),
   };
   await publishPlan(conversationFor(run, deps), rows);
   const all = [...waitingOn.blockers, ...waitingOn.manual];

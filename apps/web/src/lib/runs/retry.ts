@@ -188,7 +188,7 @@ async function retryTriage(
     {
       db,
       organizationId: run.organizationId,
-      linear: await getTrackerGatewayOrDisconnected({ db, organizationId: run.organizationId }),
+      tracker: await getTrackerGatewayOrDisconnected({ db, organizationId: run.organizationId }),
       dispatcher: getDispatcher(),
       adapterFor: scmAdapterFor,
     },

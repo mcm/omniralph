@@ -136,7 +136,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   let gitlabRepoId: string;
   let agentA: string;
   let agentB: string;
-  let linear: FakeLinearGateway;
+  let tracker: FakeLinearGateway;
   let dispatcher: PostgresDispatcher;
   let sessionSeq = 0;
 
@@ -146,7 +146,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   const deps = (): StartRunDeps => ({
     db,
     organizationId: orgId,
-    linear,
+    tracker,
     dispatcher,
     adapterFor: () => scm.asAdapter(),
     ...(chat && { chat }),
@@ -235,7 +235,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         },
       ])
       .returning({ id: agents.id })) as [{ id: string }, { id: string }];
-    linear = new FakeLinearGateway();
+    tracker = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
     chat = undefined;
@@ -443,30 +443,30 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("builds a 3-story epic in priority and blocker order, then completes", async () => {
-      const epic = linear.add({
+      const epic = tracker.add({
         identifier: "ENG-1",
         title: "Epic",
         description: `${EPIC_DESCRIPTION}\n> Branch: feat/epic`,
       });
-      const alpha = linear.add({
+      const alpha = tracker.add({
         identifier: "ENG-2",
         title: "Alpha",
         parentId: epic.id,
         priority: 3,
       });
-      const beta = linear.add({
+      const beta = tracker.add({
         identifier: "ENG-3",
         title: "Beta",
         parentId: epic.id,
         priority: 1,
       });
-      const gamma = linear.add({
+      const gamma = tracker.add({
         identifier: "ENG-4",
         title: "Gamma",
         parentId: epic.id,
         priority: 2,
       });
-      await linear.createBlocksRelation(gamma.id, beta.id);
+      await tracker.createBlocksRelation(gamma.id, beta.id);
 
       const run = await delegate(epic.id);
       const first = await activeJob(run.id);
@@ -519,8 +519,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           { identifier: "ENG-4", title: "Gamma", status: "open", manual: false, dependsOn: [] },
         ].map((s) => ({ ...s, repository: null })),
       ]);
-      expect(linear.issues.get(gamma.id)?.stateType).toBe("started");
-      expect(linear.plan(run.linearAgentSessionId)?.map((s) => s.status)).toEqual([
+      expect(tracker.issues.get(gamma.id)?.stateType).toBe("started");
+      expect(tracker.plan(run.linearAgentSessionId)?.map((s) => s.status)).toEqual([
         "pending",
         "pending",
         "inProgress",
@@ -528,8 +528,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
       // Gamma completes: Beta (priority 1, now unblocked) is next, on the sticky agent.
       await work(run.id, { commitSha: sha(1), summary: "Gamma done." });
-      expect(linear.issues.get(gamma.id)?.stateType).toBe("completed");
-      expect(linear.comments).toEqual([
+      expect(tracker.issues.get(gamma.id)?.stateType).toBe("completed");
+      expect(tracker.comments).toEqual([
         {
           issueId: gamma.id,
           body: `✅ Completed by Omniralph in \`${sha(1).slice(0, 10)}\` on \`feat/epic\`.\n\nGamma done.`,
@@ -627,13 +627,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         sha(2),
         sha(1),
       ]);
-      expect(linear.issues.get(alpha.id)?.stateType).toBe("completed");
-      expect(linear.plan(run.linearAgentSessionId)?.map((s) => s.status)).toEqual([
+      expect(tracker.issues.get(alpha.id)?.stateType).toBe("completed");
+      expect(tracker.plan(run.linearAgentSessionId)?.map((s) => s.status)).toEqual([
         "completed",
         "completed",
         "completed",
       ]);
-      expect(linear.bodies(run.linearAgentSessionId, "response")).toEqual([
+      expect(tracker.bodies(run.linearAgentSessionId, "response")).toEqual([
         [
           "Finished all 3 stories of **ENG-1** on `feat/epic`. Opened [Pull request #1](https://github.com/acme/api/pull/1), ready for review.",
           "",
@@ -664,7 +664,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         "getChangeRequestState",
         "getCiStatus",
       ]);
-      expect(linear.urls).toEqual([
+      expect(tracker.urls).toEqual([
         {
           sessionId: run.linearAgentSessionId,
           label: "Pull request #1",
@@ -672,14 +672,19 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         },
       ]);
       expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).toHaveLength(4);
-      expect(linear.bodies(run.linearAgentSessionId, "error")).toEqual([]);
+      expect(tracker.bodies(run.linearAgentSessionId, "error")).toEqual([]);
     });
 
     it("sends the first job to the pinned agent, then sticks to the agent that ran it until it's revoked", async () => {
       await pinRepositoryToAgent(db, { agentId: agentB, repositoryId: repoId });
-      const epic = linear.add({ identifier: "ENG-10", title: "Epic" });
+      const epic = tracker.add({ identifier: "ENG-10", title: "Epic" });
       for (const [i, title] of ["One", "Two", "Three"].entries()) {
-        linear.add({ identifier: `ENG-1${i + 1}`, title, parentId: epic.id, subIssueSortOrder: i });
+        tracker.add({
+          identifier: `ENG-1${i + 1}`,
+          title,
+          parentId: epic.id,
+          subIssueSortOrder: i,
+        });
       }
       const run = await delegate(epic.id);
       expect((await activeJob(run.id)).targetAgentId).toBe(agentB);
@@ -704,12 +709,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("retries a failed attempt with its feedback and completes", async () => {
-      const epic = linear.add({
+      const epic = tracker.add({
         identifier: "ENG-20",
         title: "Epic",
         description: EPIC_DESCRIPTION,
       });
-      linear.add({ identifier: "ENG-21", title: "Only", parentId: epic.id });
+      tracker.add({ identifier: "ENG-21", title: "Only", parentId: epic.id });
       const run = await delegate(epic.id);
 
       await work(run.id, {
@@ -718,7 +723,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         feedback: "The quality gate `pnpm test` failed:\n\n1 test failed",
       });
       expect(await storyStates(run.id)).toEqual([["ENG-21", "running", 1]]);
-      expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
         "**ENG-21** attempt 1/3 did not complete; retrying with feedback.",
       );
       const retry = await work(run.id, { commitSha: sha(9) });
@@ -736,11 +741,11 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("exhausts a story after 3 attempts and carries on with stories that don't depend on it", async () => {
-      const epic = linear.add({ identifier: "ENG-30", title: "Epic" });
-      const x = linear.add({ identifier: "ENG-31", title: "X", parentId: epic.id, priority: 1 });
-      const y = linear.add({ identifier: "ENG-32", title: "Y", parentId: epic.id, priority: 2 });
-      linear.add({ identifier: "ENG-33", title: "Z", parentId: epic.id, priority: 3 });
-      await linear.createBlocksRelation(x.id, y.id);
+      const epic = tracker.add({ identifier: "ENG-30", title: "Epic" });
+      const x = tracker.add({ identifier: "ENG-31", title: "X", parentId: epic.id, priority: 1 });
+      const y = tracker.add({ identifier: "ENG-32", title: "Y", parentId: epic.id, priority: 2 });
+      tracker.add({ identifier: "ENG-33", title: "Z", parentId: epic.id, priority: 3 });
+      await tracker.createBlocksRelation(x.id, y.id);
       const run = await delegate(epic.id);
 
       expect((await work(run.id, { jobError: "Agent crashed" })).story.identifier).toBe("ENG-31");
@@ -750,7 +755,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(third).toMatchObject({ attempt: 3 });
       expect(third.lastFeedback).toContain("reported the story incomplete");
 
-      const [error] = linear.bodies(run.linearAgentSessionId, "error");
+      const [error] = tracker.bodies(run.linearAgentSessionId, "error");
       expect(error).toContain("**ENG-31** did not complete after 3 attempts");
       expect(error).toContain("Stories that don't depend on it carry on.");
       // Z runs next; Y (blocked by X) never does.
@@ -761,14 +766,14 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         ["ENG-32", "pending", 0],
         ["ENG-33", "completed", 1],
       ]);
-      expect(linear.plan(run.linearAgentSessionId)?.map((s) => s.status)).toEqual([
+      expect(tracker.plan(run.linearAgentSessionId)?.map((s) => s.status)).toEqual([
         "canceled",
         "pending",
         "completed",
       ]);
       const paused = (await getRun(db, run.id))!;
       expect(paused).toMatchObject({ status: "waiting", waitingOn: { blockers: [], manual: [] } });
-      const [elicitation] = linear.bodies(run.linearAgentSessionId, "elicitation");
+      const [elicitation] = tracker.bodies(run.linearAgentSessionId, "elicitation");
       expect(elicitation).toContain("Paused with 1/3 stories complete");
       expect(elicitation).toContain("**ENG-31: X** didn't complete after 3 attempts");
       expect(elicitation).toContain("**ENG-32** is blocked by ENG-31");
@@ -777,12 +782,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("pauses with a readable gate failure and names the stuck story a chain waits on", async () => {
-      const epic = linear.add({ identifier: "ENG-40", title: "Epic" });
-      const x = linear.add({ identifier: "ENG-41", title: "X", parentId: epic.id, priority: 1 });
-      const y = linear.add({ identifier: "ENG-42", title: "Y", parentId: epic.id, priority: 2 });
-      const z = linear.add({ identifier: "ENG-43", title: "Z", parentId: epic.id, priority: 3 });
-      await linear.createBlocksRelation(x.id, y.id);
-      await linear.createBlocksRelation(y.id, z.id);
+      const epic = tracker.add({ identifier: "ENG-40", title: "Epic" });
+      const x = tracker.add({ identifier: "ENG-41", title: "X", parentId: epic.id, priority: 1 });
+      const y = tracker.add({ identifier: "ENG-42", title: "Y", parentId: epic.id, priority: 2 });
+      const z = tracker.add({ identifier: "ENG-43", title: "Z", parentId: epic.id, priority: 3 });
+      await tracker.createBlocksRelation(x.id, y.id);
+      await tracker.createBlocksRelation(y.id, z.id);
       const run = await delegate(epic.id);
       const output = Array.from({ length: 300 }, (_, i) => `\u001b[31mline ${i}\u001b[39m`);
       const feedback = [
@@ -796,8 +801,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         await work(run.id, { status: "failed", summary: "Gate failed", feedback });
       }
 
-      const [error] = linear.bodies(run.linearAgentSessionId, "error");
-      const [elicitation] = linear.bodies(run.linearAgentSessionId, "elicitation");
+      const [error] = tracker.bodies(run.linearAgentSessionId, "error");
+      const [elicitation] = tracker.bodies(run.linearAgentSessionId, "elicitation");
       for (const body of [error!, elicitation!]) {
         expect(body).toContain(
           "The agent reported the story complete, but the quality gate `pnpm test` failed (exit 1):\n\n```\n…\n",
@@ -810,7 +815,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("builds a single issue as one story", async () => {
-      const issue = linear.add({ identifier: "ENG-80", title: "Fix the login bug" });
+      const issue = tracker.add({ identifier: "ENG-80", title: "Fix the login bug" });
       const run = await delegate(issue.id);
       const payload = await work(run.id, { commitSha: sha(5) });
       expect(payload).toMatchObject({
@@ -819,13 +824,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         commitMessage: "ENG-80: Fix the login bug",
       });
       // The issue stays open for review; no story comment.
-      expect(linear.issues.get(issue.id)?.stateType).toBe("started");
-      expect(linear.comments).toEqual([]);
+      expect(tracker.issues.get(issue.id)?.stateType).toBe("started");
+      expect(tracker.comments).toEqual([]);
       const described = await describePr(run.id);
       expect(described.epic).toMatchObject({ identifier: "ENG-80", title: "Fix the login bug" });
       expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: 1 });
       expect(await storyStates(run.id)).toEqual([["ENG-80", "completed", 1]]);
-      expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "response")[0]).toContain(
         `Finished **ENG-80** on \`${issue.branchName}\`. Opened [Pull request #1]`,
       );
     });
@@ -865,12 +870,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     }
 
     it("works a mention's requests lane by lane, main lane first, then completes", async () => {
-      const epic = linear.add({
+      const epic = tracker.add({
         identifier: "ENG-60",
         title: "Epic",
         description: EPIC_DESCRIPTION,
       });
-      linear.add({ identifier: "ENG-61", title: "Story", parentId: epic.id });
+      tracker.add({ identifier: "ENG-61", title: "Story", parentId: epic.id });
       sessionSeq += 1;
       const sessionId = `session-${sessionSeq}`;
       await startRun(
@@ -936,7 +941,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
       expect(await activeJobs(run.id)).toEqual([]);
       expect((await getRun(db, run.id))?.status).toBe("completed");
-      const [response] = linear.bodies(sessionId, "response");
+      const [response] = tracker.bodies(sessionId, "response");
       expect(response).toContain("**acme/api**: Renamed it.");
       expect(response).toContain("**group/app**: Fixed CI.");
       expect(scm.changeRequests).toEqual([
@@ -951,13 +956,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         "claude-req-1",
       ]);
       // No story loop and no Linear state changes for a mention.
-      expect(linear.comments).toEqual([]);
+      expect(tracker.comments).toEqual([]);
       expect(await storyStates(run.id)).toEqual([["ENG-61", "pending", 0]]);
     });
 
     it("leaves coding runs queued for agents older than the coding lifecycle", async () => {
-      const epic = linear.add({ identifier: "ENG-67", title: "Epic" });
-      linear.add({ identifier: "ENG-68", title: "Only", parentId: epic.id });
+      const epic = tracker.add({ identifier: "ENG-67", title: "Epic" });
+      tracker.add({ identifier: "ENG-68", title: "Only", parentId: epic.id });
       const run = await delegate(epic.id);
       const job = await activeJob(run.id);
       expect(job).toMatchObject({ type: "ralph.story", ...routing("builtin:implement-story") });
@@ -984,8 +989,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         storyPlaybookId: "builtin:implement-story",
         requestPlaybookId: "builtin:handle-request",
       });
-      const epic = linear.add({ identifier: "ENG-171", title: "Epic" });
-      linear.add({ identifier: "ENG-172", title: "Only", parentId: epic.id });
+      const epic = tracker.add({ identifier: "ENG-171", title: "Epic" });
+      tracker.add({ identifier: "ENG-172", title: "Only", parentId: epic.id });
       const run = await delegate(epic.id);
       expect(await activeJob(run.id)).toMatchObject({
         type: "ralph.story",
@@ -1005,8 +1010,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         .update(repositories)
         .set({ storyPlaybookId: "builtin:describe-pr" })
         .where(eq(repositories.id, repoId));
-      const epic = linear.add({ identifier: "ENG-65", title: "Epic" });
-      linear.add({ identifier: "ENG-66", title: "Only", parentId: epic.id });
+      const epic = tracker.add({ identifier: "ENG-65", title: "Epic" });
+      tracker.add({ identifier: "ENG-66", title: "Only", parentId: epic.id });
       const run = await delegate(epic.id);
       // Not a coding task: the run can't go on.
       expect(await activeJobs(run.id)).toEqual([]);
@@ -1034,8 +1039,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         .update(repositories)
         .set({ storyPlaybookId: custom.id })
         .where(eq(repositories.id, repoId));
-      const epic = linear.add({ identifier: "ENG-69", title: "Epic" });
-      linear.add({ identifier: "ENG-70", title: "Only", parentId: epic.id });
+      const epic = tracker.add({ identifier: "ENG-69", title: "Epic" });
+      tracker.add({ identifier: "ENG-70", title: "Only", parentId: epic.id });
       const run = await delegate(epic.id);
       expect(await activeJob(run.id)).toMatchObject({ type: "ralph.story", ...routing(custom.id) });
       await work(run.id, { commitSha: sha(69) });
@@ -1044,12 +1049,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     /** A one-story epic whose story is done: the run is describing its PR. */
     async function describingRun(n: number): Promise<LinearRun> {
-      const epic = linear.add({
+      const epic = tracker.add({
         identifier: `ENG-${n}`,
         title: "Gadgets",
         description: `${EPIC_DESCRIPTION}\n> Branch: feat/gadgets-${n}`,
       });
-      linear.add({ identifier: `ENG-${n + 1}`, title: "Add gadgets", parentId: epic.id });
+      tracker.add({ identifier: `ENG-${n + 1}`, title: "Add gadgets", parentId: epic.id });
       const run = await delegate(epic.id);
       await work(run.id, { commitSha: sha(n) });
       const job = await activeJob(run.id);
@@ -1069,7 +1074,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       handleTrackerEvent(
         { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
         { db, organizationId: orgId, workspaceId: "org-1" },
-        { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+        { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
       );
 
     it("opens the PR with the describe run's title and body, the title fitted", async () => {
@@ -1104,7 +1109,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await describePr(run.id, { jobError: "the session ran out of turns" });
       const failed = (await withPullRequest(run.id))!;
       expect(failed).toMatchObject({ status: "waiting", prJobId: null, prNumber: null });
-      expect(linear.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
         "Every story is done, but I couldn't open the pull request: writing its description failed: the session ran out of turns.",
       );
       expect(await activeJobs(run.id)).toEqual([]);
@@ -1112,7 +1117,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await replyTo(run, "retry");
       await describePr(run.id, { invalid: true });
       expect(await withPullRequest(run.id)).toMatchObject({ status: "waiting", prNumber: null });
-      expect(linear.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
         "Every story is done, but I couldn't open the pull request: writing its description failed: the agent sent an invalid result.",
       );
       expect(scm.changeRequests).toEqual([]);
@@ -1128,8 +1133,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("counts redeliveries as one attempt, and a job that runs out of deliveries as a failed one", async () => {
-      const epic = linear.add({ identifier: "ENG-25", title: "Epic" });
-      linear.add({ identifier: "ENG-26", title: "Only", parentId: epic.id });
+      const epic = tracker.add({ identifier: "ENG-25", title: "Epic" });
+      tracker.add({ identifier: "ENG-26", title: "Only", parentId: epic.id });
       const run = await delegate(epic.id);
 
       // The agent crashes (lease lost) on every delivery: no outcome is reported.
@@ -1179,8 +1184,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("doesn't count a retried delivery (a rate limit) as an attempt", async () => {
-      const epic = linear.add({ identifier: "ENG-34", title: "Epic" });
-      linear.add({ identifier: "ENG-35", title: "Only", parentId: epic.id });
+      const epic = tracker.add({ identifier: "ENG-34", title: "Epic" });
+      tracker.add({ identifier: "ENG-35", title: "Only", parentId: epic.id });
       const run = await delegate(epic.id);
       const job = await activeJob(run.id);
       const { claim } = await claimJob(db, {
@@ -1214,7 +1219,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await updateRun(db, run.id, { iterations: MAX_ITERATIONS_PER_RUN });
       expect(await advanceRun(run.id, deps())).toMatchObject({ action: "waiting" });
       expect(await activeJobs(run.id)).toEqual([]);
-      expect(linear.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
         `I reached the per-run iteration cap (${MAX_ITERATIONS_PER_RUN} story attempts).`,
       );
     });
@@ -1345,13 +1350,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     it("ticks the stories in the lane's open pull request all at once, after the push", async () => {
       storyTaskWith({ pushTiming: "end" });
-      const epic = linear.add({
+      const epic = tracker.add({
         identifier: "ENG-175",
         title: "Sprockets",
         description: `${EPIC_DESCRIPTION}\n> Branch: feat/sprockets`,
       });
-      linear.add({ identifier: "ENG-176", title: "First", parentId: epic.id, priority: 1 });
-      linear.add({ identifier: "ENG-177", title: "Second", parentId: epic.id, priority: 2 });
+      tracker.add({ identifier: "ENG-176", title: "First", parentId: epic.id, priority: 1 });
+      tracker.add({ identifier: "ENG-177", title: "Second", parentId: epic.id, priority: 2 });
       const run = await delegate(epic.id);
       // A pull request a previous run opened for the branch, still on the lane.
       const body = "Sprockets.\n\n- [ ] ENG-176: First\n- [ ] ENG-177: Second";
@@ -1387,13 +1392,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       storyTaskWith({ pushTiming: "end" });
       // The repository asks for early drafts, but there is no branch until the end.
       await setEarly(true);
-      const epic = linear.add({
+      const epic = tracker.add({
         identifier: "ENG-170",
         title: "Widgets",
         description: `${EPIC_DESCRIPTION}\n> Branch: feat/widgets`,
       });
-      linear.add({ identifier: "ENG-171", title: "First", parentId: epic.id, priority: 1 });
-      linear.add({ identifier: "ENG-172", title: "Second", parentId: epic.id, priority: 2 });
+      tracker.add({ identifier: "ENG-171", title: "First", parentId: epic.id, priority: 1 });
+      tracker.add({ identifier: "ENG-172", title: "Second", parentId: epic.id, priority: 2 });
       const run = await delegate(epic.id);
 
       await work(run.id, onHiddenRef(run.id, sha(171)));
@@ -1417,7 +1422,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         status: "pushing",
         jobId: pushJob.id,
       });
-      expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "thought")).toContain(
         "All 2 stories are done. Pushing `feat/widgets`.",
       );
       const pushed = await push(run.id, { sha: sha(172) });
@@ -1479,13 +1484,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     it("deletes the hidden ref of a run that failed, and keeps one the result doesn't report", async () => {
       storyTaskWith({ pushTiming: "end" });
-      const epic = linear.add({
+      const epic = tracker.add({
         identifier: "ENG-180",
         title: "Gears",
         description: `${EPIC_DESCRIPTION}\n> Branch: feat/gears`,
       });
-      linear.add({ identifier: "ENG-181", title: "First", parentId: epic.id, priority: 1 });
-      linear.add({ identifier: "ENG-182", title: "Second", parentId: epic.id, priority: 2 });
+      tracker.add({ identifier: "ENG-181", title: "First", parentId: epic.id, priority: 1 });
+      tracker.add({ identifier: "ENG-182", title: "Second", parentId: epic.id, priority: 2 });
       const run = await delegate(epic.id);
       // The next story can't be enqueued: the repository's story task isn't a coding task.
       await db.update(repositories).set({ storyPlaybookId: "builtin:describe-pr" });
@@ -1504,12 +1509,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     it("keeps the hidden ref of a waiting or stopped run", async () => {
       storyTaskWith({ pushTiming: "end" });
-      const epic = linear.add({
+      const epic = tracker.add({
         identifier: "ENG-185",
         title: "Cogs",
         description: `${EPIC_DESCRIPTION}\n> Branch: feat/cogs`,
       });
-      linear.add({ identifier: "ENG-186", title: "Only", parentId: epic.id });
+      tracker.add({ identifier: "ENG-186", title: "Only", parentId: epic.id });
       const run = await delegate(epic.id);
       await work(run.id, onHiddenRef(run.id, sha(186)));
       await push(run.id, { jobError: "the remote rejected the push" });
@@ -1522,12 +1527,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     it("waits when the push fails, and a reply retries it", async () => {
       storyTaskWith({ pushTiming: "end" });
-      const epic = linear.add({
+      const epic = tracker.add({
         identifier: "ENG-175",
         title: "Sprockets",
         description: `${EPIC_DESCRIPTION}\n> Branch: feat/sprockets`,
       });
-      linear.add({ identifier: "ENG-176", title: "Only", parentId: epic.id });
+      tracker.add({ identifier: "ENG-176", title: "Only", parentId: epic.id });
       const run = await delegate(epic.id);
       await work(run.id, onHiddenRef(run.id, sha(176)));
       await push(run.id, { jobError: "the remote rejected the push: protected branch" });
@@ -1537,7 +1542,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         prJobId: null,
         prNumber: null,
       });
-      expect(linear.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
         "Every story is done, but I couldn't push `feat/sprockets`: the remote rejected the push: protected branch.",
       );
       expect(await activeJobs(run.id)).toEqual([]);
@@ -1545,7 +1550,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await handleTrackerEvent(
         { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "retry" },
         { db, organizationId: orgId, workspaceId: "org-1" },
-        { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+        { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
       );
       await push(run.id, { sha: sha(176) });
       await describePr(run.id);
@@ -1554,7 +1559,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     it("starts request runs from the run's hidden ref when pushing only at the end", async () => {
       const mention = async (identifier: string) => {
-        const epic = linear.add({ identifier, title: "Epic" });
+        const epic = tracker.add({ identifier, title: "Epic" });
         sessionSeq += 1;
         const sessionId = `session-${sessionSeq}`;
         await startRun(
@@ -1587,9 +1592,14 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       async ({ openPullRequestEarly, draft }) => {
         await setEarly(openPullRequestEarly);
         const n = 190 + (openPullRequestEarly ? 6 : 3);
-        const epic = linear.add({ identifier: `ENG-${n}`, title: "Gizmos" });
-        linear.add({ identifier: `ENG-${n + 1}`, title: "First", parentId: epic.id, priority: 1 });
-        linear.add({ identifier: `ENG-${n + 2}`, title: "Second", parentId: epic.id, priority: 2 });
+        const epic = tracker.add({ identifier: `ENG-${n}`, title: "Gizmos" });
+        tracker.add({ identifier: `ENG-${n + 1}`, title: "First", parentId: epic.id, priority: 1 });
+        tracker.add({
+          identifier: `ENG-${n + 2}`,
+          title: "Second",
+          parentId: epic.id,
+          priority: 2,
+        });
         const run = await delegate(epic.id);
 
         await work(run.id, { commitSha: sha(n) });
@@ -1607,8 +1617,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     it("takes the round cap from the story task: a story without a metric runs until it", async () => {
       storyTaskWith({ maxRoundsPerStory: 2 });
-      const epic = linear.add({ identifier: "ENG-310", title: "Epic" });
-      linear.add({ identifier: "ENG-311", title: "Validate", parentId: epic.id });
+      const epic = tracker.add({ identifier: "ENG-310", title: "Epic" });
+      tracker.add({ identifier: "ENG-311", title: "Validate", parentId: epic.id });
       const run = await delegate(epic.id);
 
       expect((await work(run.id, reviewRound(1))).story.identifier).toBe("ENG-311");
@@ -1624,7 +1634,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         attempts: 0,
         rounds: 2,
       });
-      const [error] = linear.bodies(run.linearAgentSessionId, "error");
+      const [error] = tracker.bodies(run.linearAgentSessionId, "error");
       expect(error).toContain("**ENG-311** reached its round cap (2 rounds) without completing");
       expect(error).not.toContain("Trend:");
       // Its follow-up still gets done.
@@ -1633,15 +1643,15 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     it("takes the attempt and iteration limits from the story task", async () => {
       storyTaskWith({ maxAttemptsPerStory: 2, maxIterationsPerRun: 3 });
-      const epic = linear.add({ identifier: "ENG-80", title: "Epic" });
-      linear.add({ identifier: "ENG-81", title: "X", parentId: epic.id, priority: 1 });
-      linear.add({ identifier: "ENG-82", title: "Y", parentId: epic.id, priority: 2 });
+      const epic = tracker.add({ identifier: "ENG-80", title: "Epic" });
+      tracker.add({ identifier: "ENG-81", title: "X", parentId: epic.id, priority: 1 });
+      tracker.add({ identifier: "ENG-82", title: "Y", parentId: epic.id, priority: 2 });
       const run = await delegate(epic.id);
 
       expect((await work(run.id, { jobError: "Agent crashed" })).story.identifier).toBe("ENG-81");
       const second = await work(run.id, { status: "failed", summary: "Nope" });
       expect(second).toMatchObject({ attempt: 2, story: { identifier: "ENG-81" } });
-      expect(linear.bodies(run.linearAgentSessionId, "error")[0]).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "error")[0]).toContain(
         "**ENG-81** did not complete after 2 attempts",
       );
       expect(await storyStates(run.id)).toEqual([
@@ -1653,16 +1663,16 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect((await work(run.id, { jobError: "Agent crashed" })).story.identifier).toBe("ENG-82");
       expect(await activeJobs(run.id)).toEqual([]);
       expect((await getRun(db, run.id))?.status).toBe("waiting");
-      expect(linear.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "elicitation").at(-1)).toContain(
         "I reached the per-run iteration cap (3 story attempts).",
       );
     });
   });
 
   it("goes back to the organization's ralph agents when the sticky agent was revoked before the next job", async () => {
-    const epic = linear.add({ identifier: "ENG-15", title: "Epic" });
-    linear.add({ identifier: "ENG-16", title: "One", parentId: epic.id, subIssueSortOrder: 0 });
-    linear.add({ identifier: "ENG-17", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
+    const epic = tracker.add({ identifier: "ENG-15", title: "Epic" });
+    tracker.add({ identifier: "ENG-16", title: "One", parentId: epic.id, subIssueSortOrder: 0 });
+    tracker.add({ identifier: "ENG-17", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
     const run = await delegate(epic.id);
     const job = await activeJob(run.id);
     const { claim } = await claimJob(db, {
@@ -1683,10 +1693,10 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
   it("sticks to an agent that hasn't reported its task types until it reports no coding", async () => {
     await db.update(agents).set({ reportedAcceptedTaskTypes: null }).where(eq(agents.id, agentA));
-    const epic = linear.add({ identifier: "ENG-38", title: "Epic" });
-    linear.add({ identifier: "ENG-39", title: "One", parentId: epic.id, subIssueSortOrder: 0 });
-    linear.add({ identifier: "ENG-40", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
-    linear.add({ identifier: "ENG-41", title: "Three", parentId: epic.id, subIssueSortOrder: 2 });
+    const epic = tracker.add({ identifier: "ENG-38", title: "Epic" });
+    tracker.add({ identifier: "ENG-39", title: "One", parentId: epic.id, subIssueSortOrder: 0 });
+    tracker.add({ identifier: "ENG-40", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
+    tracker.add({ identifier: "ENG-41", title: "Three", parentId: epic.id, subIssueSortOrder: 2 });
     const run = await delegate(epic.id);
     const finishOnA = async () => {
       const job = await activeJob(run.id);
@@ -1724,9 +1734,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         reportedAcceptedTaskTypes: ["coding"],
       })
       .returning();
-    const epic = linear.add({ identifier: "ENG-18", title: "Epic" });
-    linear.add({ identifier: "ENG-19", title: "One", parentId: epic.id, subIssueSortOrder: 0 });
-    linear.add({ identifier: "ENG-29", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
+    const epic = tracker.add({ identifier: "ENG-18", title: "Epic" });
+    tracker.add({ identifier: "ENG-19", title: "One", parentId: epic.id, subIssueSortOrder: 0 });
+    tracker.add({ identifier: "ENG-29", title: "Two", parentId: epic.id, subIssueSortOrder: 1 });
     const run = await delegate(epic.id);
     const job = await activeJob(run.id);
     const { claim } = await claimJob(db, {
@@ -1746,9 +1756,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   });
 
   it("runs a delegated sub-issue's story first, then the rest of the epic", async () => {
-    const epic = linear.add({ identifier: "ENG-27", title: "Epic" });
-    linear.add({ identifier: "ENG-28", title: "Urgent", parentId: epic.id, priority: 1 });
-    const focus = linear.add({ identifier: "ENG-29", title: "Asked for", parentId: epic.id });
+    const epic = tracker.add({ identifier: "ENG-27", title: "Epic" });
+    tracker.add({ identifier: "ENG-28", title: "Urgent", parentId: epic.id, priority: 1 });
+    const focus = tracker.add({ identifier: "ENG-29", title: "Asked for", parentId: epic.id });
     const run = await delegate(focus.id);
     expect(run).toMatchObject({ linearIdentifier: "ENG-27", focusStoryId: focus.id });
     expect((await work(run.id)).story.identifier).toBe("ENG-29");
@@ -1757,14 +1767,14 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   });
 
   it("waits while the epic itself is blocked and resumes from the Issue webhook", async () => {
-    const outside = linear.add({
+    const outside = tracker.add({
       identifier: "OPS-2",
       title: "Approve the budget",
       teamKey: "OPS",
     });
-    const epic = linear.add({ identifier: "ENG-36", title: "Epic" });
-    linear.add({ identifier: "ENG-37", title: "Only", parentId: epic.id });
-    await linear.createBlocksRelation(outside.id, epic.id);
+    const epic = tracker.add({ identifier: "ENG-36", title: "Epic" });
+    tracker.add({ identifier: "ENG-37", title: "Only", parentId: epic.id });
+    await tracker.createBlocksRelation(outside.id, epic.id);
     const run = await delegate(epic.id);
     expect(await activeJobs(run.id)).toEqual([]);
     expect(await getRun(db, run.id)).toMatchObject({
@@ -1772,20 +1782,20 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       waitingOn: { blockers: [expect.objectContaining({ identifier: "OPS-2" })], manual: [] },
     });
 
-    await linear.setIssueState(outside.id, { type: "completed" });
+    await tracker.setIssueState(outside.id, { type: "completed" });
     await handleTrackerEvent(
       { kind: "issue_state_changed", issueId: outside.id, removed: false },
       { db, organizationId: orgId, workspaceId: "org-1" },
-      { linear, dispatcher },
+      { tracker, dispatcher },
     );
     expect((await work(run.id)).story.identifier).toBe("ENG-37");
     expect((await getRun(db, run.id))?.status).toBe("completed");
   });
 
   it("sets a blocked story aside without retrying and carries on with the others", async () => {
-    const epic = linear.add({ identifier: "ENG-40", title: "Epic" });
-    linear.add({ identifier: "ENG-41", title: "Needs a key", parentId: epic.id, priority: 1 });
-    linear.add({ identifier: "ENG-42", title: "Other", parentId: epic.id, priority: 2 });
+    const epic = tracker.add({ identifier: "ENG-40", title: "Epic" });
+    tracker.add({ identifier: "ENG-41", title: "Needs a key", parentId: epic.id, priority: 1 });
+    tracker.add({ identifier: "ENG-42", title: "Other", parentId: epic.id, priority: 2 });
     const run = await delegate(epic.id);
     await work(run.id, {
       status: "blocked",
@@ -1795,7 +1805,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       ["ENG-41", "exhausted", 3],
       ["ENG-42", "running", 0],
     ]);
-    const [thought] = linear
+    const [thought] = tracker
       .bodies(run.linearAgentSessionId, "thought")
       .filter((b) => b.includes("is blocked"));
     expect(thought).toContain("**ENG-41** is blocked, so I'm setting it aside without retrying.");
@@ -1806,15 +1816,15 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     await work(run.id, { commitSha: sha(5) });
     expect((await getRun(db, run.id))?.status).toBe("waiting");
-    const [elicitation] = linear.bodies(run.linearAgentSessionId, "elicitation");
+    const [elicitation] = tracker.bodies(run.linearAgentSessionId, "elicitation");
     expect(elicitation).toContain("**ENG-41: Needs a key** is blocked:");
     expect(elicitation).toContain("I need an API key for the payment sandbox.");
   });
 
   it("records a blocked story's wip commit and logs it, still setting the story aside", async () => {
-    const epic = linear.add({ identifier: "ENG-45", title: "Epic" });
-    linear.add({ identifier: "ENG-46", title: "Needs a key", parentId: epic.id, priority: 1 });
-    linear.add({ identifier: "ENG-47", title: "Other", parentId: epic.id, priority: 2 });
+    const epic = tracker.add({ identifier: "ENG-45", title: "Epic" });
+    tracker.add({ identifier: "ENG-46", title: "Needs a key", parentId: epic.id, priority: 1 });
+    tracker.add({ identifier: "ENG-47", title: "Other", parentId: epic.id, priority: 2 });
     const run = await delegate(epic.id);
     await work(run.id, {
       status: "blocked",
@@ -1833,7 +1843,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(progress).toContain("ENG-46: Needs a key (blocked)");
     expect(progress).toContain(`committed as \`wip(ENG-46)\` in \`${sha(9).slice(0, 10)}\``);
     expect(progress).toContain("I need an API key.");
-    const [thought] = linear
+    const [thought] = tracker
       .bodies(run.linearAgentSessionId, "thought")
       .filter((b) => b.includes("is blocked"));
     expect(thought).toContain(`Its work so far is committed as \`${sha(9).slice(0, 10)}\`.`);
@@ -1841,13 +1851,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const other = storyPayload(await activeJob(run.id));
     expect(other.progress).toContain("ENG-46: Needs a key (blocked)");
     // Not a Linear completion: the story stays open.
-    const comments = linear.comments.filter((c) => c.issueId === blocked.linearIssueId);
+    const comments = tracker.comments.filter((c) => c.issueId === blocked.linearIssueId);
     expect(comments.map((c) => c.body).join("\n")).not.toContain("Completed by");
   });
 
   it("files follow-ups as sub-issues; an unfinished story's follow-ups block it", async () => {
-    const epic = linear.add({ identifier: "ENG-50", title: "Epic", projectName: "Epics" });
-    const first = linear.add({
+    const epic = tracker.add({ identifier: "ENG-50", title: "Epic", projectName: "Epics" });
+    const first = tracker.add({
       identifier: "ENG-51",
       title: "First",
       parentId: epic.id,
@@ -1855,12 +1865,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       projectName: "Platform",
       labels: ["backend", "db"],
     });
-    linear.routingFields.set(first.id, {
+    tracker.routingFields.set(first.id, {
       projectId: "project-platform",
       projectMilestoneId: "milestone-beta",
       cycle: "cycle-7",
     });
-    const second = linear.add({
+    const second = tracker.add({
       identifier: "ENG-52",
       title: "Second",
       parentId: epic.id,
@@ -1871,9 +1881,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     await work(run.id, {
       followUps: [{ title: "Add an index", description: "Queries are slow.", manual: false }],
     });
-    const index = [...linear.issues.values()].find((i) => i.title === "Add an index")!;
+    const index = [...tracker.issues.values()].find((i) => i.title === "Add an index")!;
     // The story's team, project, milestone, cycle, priority and labels.
-    expect(linear.created.find((c) => c.title === "Add an index")).toMatchObject({
+    expect(tracker.created.find((c) => c.title === "Add an index")).toMatchObject({
       teamId: first.teamId,
       parentId: epic.id,
       priority: 1,
@@ -1890,8 +1900,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
     expect(index.description).toContain(`${FOLLOW_UP_MARK} ENG-51.`);
     expect(await getFollowUpSource(db, orgId, index.id)).toBe(first.id);
-    expect(linear.blocks.get(first.id)).toBeUndefined();
-    expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+    expect(tracker.blocks.get(first.id)).toBeUndefined();
+    expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
       `Filed **${index.identifier}** as a new story of **ENG-50**.`,
     );
 
@@ -1903,11 +1913,11 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       followUps: [{ title: "Grant database access", description: "Grant the role.", manual: true }],
     });
     expect(unfinished.story.identifier).toBe("ENG-52");
-    const grant = [...linear.issues.values()].find((i) => i.title === "Grant database access")!;
+    const grant = [...tracker.issues.values()].find((i) => i.title === "Grant database access")!;
     expect(grant.labels).toEqual(["manual"]);
     expect(await getFollowUpSource(db, orgId, grant.id)).toBe(second.id);
-    expect(linear.blocks.get(second.id)).toEqual([grant.id]);
-    expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+    expect(tracker.blocks.get(second.id)).toEqual([grant.id]);
+    expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
       `blocking **ENG-52**`,
     );
 
@@ -1925,10 +1935,10 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   });
 
   it("files follow-ups without the story's cycle when Linear refuses it", async () => {
-    const epic = linear.add({ identifier: "ENG-150", title: "Epic" });
-    const story = linear.add({ identifier: "ENG-151", title: "Story", parentId: epic.id });
-    linear.routingFields.set(story.id, { cycle: "cycle-done" });
-    linear.closedCycles.add("cycle-done");
+    const epic = tracker.add({ identifier: "ENG-150", title: "Epic" });
+    const story = tracker.add({ identifier: "ENG-151", title: "Story", parentId: epic.id });
+    tracker.routingFields.set(story.id, { cycle: "cycle-done" });
+    tracker.closedCycles.add("cycle-done");
     const run = await delegate(epic.id);
 
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -1948,28 +1958,28 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     } finally {
       warn.mockRestore();
     }
-    const created = linear.created.filter((c) => c.parentId === epic.id);
+    const created = tracker.created.filter((c) => c.parentId === epic.id);
     expect(created.map((c) => c.title)).toEqual(["Add a cache", "Add metrics"]);
     expect(created.every((c) => c.cycleId === undefined)).toBe(true);
-    const cache = [...linear.issues.values()].find((i) => i.title === "Add a cache")!;
+    const cache = [...tracker.issues.values()].find((i) => i.title === "Add a cache")!;
     expect(await getFollowUpSource(db, orgId, cache.id)).toBe(story.id);
-    const thoughts = linear.bodies(run.linearAgentSessionId, "thought").join("\n");
+    const thoughts = tracker.bodies(run.linearAgentSessionId, "thought").join("\n");
     expect(thoughts).not.toContain("I couldn't file");
   });
 
   it("keeps recommendations on the story without filing them or holding it up", async () => {
-    const epic = linear.add({ identifier: "ENG-55", title: "Epic" });
-    linear.add({ identifier: "ENG-56", title: "First", parentId: epic.id, priority: 1 });
-    linear.add({ identifier: "ENG-57", title: "Second", parentId: epic.id, priority: 2 });
+    const epic = tracker.add({ identifier: "ENG-55", title: "Epic" });
+    tracker.add({ identifier: "ENG-56", title: "First", parentId: epic.id, priority: 1 });
+    tracker.add({ identifier: "ENG-57", title: "Second", parentId: epic.id, priority: 2 });
     const run = await delegate(epic.id);
-    const issues = linear.issues.size;
+    const issues = tracker.issues.size;
 
     await work(run.id, {
       recommendations: [
         { title: "Fix the parser upstream", description: "In acme/lib: drop our shim." },
       ],
     });
-    expect(linear.issues.size).toBe(issues);
+    expect(tracker.issues.size).toBe(issues);
     const first = (await listStories(db, run.id)).find((s) => s.identifier === "ENG-56")!;
     expect(first.status).toBe("completed");
     expect(first.recommendations).toEqual([
@@ -1982,24 +1992,24 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   });
 
   it("makes a completed story's follow-ups block the stories it blocks", async () => {
-    const epic = linear.add({ identifier: "ENG-55", title: "Epic" });
-    const first = linear.add({ identifier: "ENG-56", title: "First", parentId: epic.id });
-    const validate = linear.add({
+    const epic = tracker.add({ identifier: "ENG-55", title: "Epic" });
+    const first = tracker.add({ identifier: "ENG-56", title: "First", parentId: epic.id });
+    const validate = tracker.add({
       identifier: "ENG-57",
       title: "Validate the epic",
       parentId: epic.id,
       priority: 1,
     });
-    await linear.createBlocksRelation(first.id, validate.id);
+    await tracker.createBlocksRelation(first.id, validate.id);
     const run = await delegate(epic.id);
 
     await work(run.id, {
       followUps: [{ title: "Add an index", description: "Queries are slow.", manual: false }],
     });
-    const index = [...linear.issues.values()].find((i) => i.title === "Add an index")!;
-    expect(linear.blocks.get(first.id)).toBeUndefined();
-    expect(linear.blocks.get(validate.id)).toEqual([first.id, index.id]);
-    expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+    const index = [...tracker.issues.values()].find((i) => i.title === "Add an index")!;
+    expect(tracker.blocks.get(first.id)).toBeUndefined();
+    expect(tracker.blocks.get(validate.id)).toEqual([first.id, index.id]);
+    expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
       `Filed **${index.identifier}** as a new story of **ENG-55**, blocking **ENG-57**.`,
     );
 
@@ -2010,8 +2020,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   });
 
   it("counts a blocked result with follow-ups as a round, not an attempt, until its metric stalls", async () => {
-    const epic = linear.add({ identifier: "ENG-300", title: "Epic" });
-    linear.add({ identifier: "ENG-301", title: "Validate", parentId: epic.id });
+    const epic = tracker.add({ identifier: "ENG-300", title: "Epic" });
+    tracker.add({ identifier: "ENG-301", title: "Validate", parentId: epic.id });
     const run = await delegate(epic.id);
 
     for (const n of [1, 2]) {
@@ -2022,7 +2032,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         attempts: 0,
         rounds: n,
       });
-      expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
         `**ENG-301** round ${n}/8 filed follow-ups; it runs again once they're done.`,
       );
       // The follow-up blocks the story: it runs first.
@@ -2035,7 +2045,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       attempts: 0,
       rounds: 3,
     });
-    const [error] = linear.bodies(run.linearAgentSessionId, "error");
+    const [error] = tracker.bodies(run.linearAgentSessionId, "error");
     expect(error).toContain(
       "**ENG-301**'s critique score hasn't beaten its best (20) in 3 rounds, so I'm setting it aside after round 3.",
     );
@@ -2057,7 +2067,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     await handleTrackerEvent(
       { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "/continue" },
       { db, organizationId: orgId, workspaceId: "org-1" },
-      { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+      { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
     );
     const resumed = (await listStories(db, run.id)).find((s) => s.identifier === "ENG-301")!;
     expect(resumed).toMatchObject({
@@ -2075,14 +2085,14 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   });
 
   it("waits on an outside blocker and resumes when an Issue webhook says it's done", async () => {
-    const outside = linear.add({
+    const outside = tracker.add({
       identifier: "OPS-1",
       title: "Provision the queue",
       teamKey: "OPS",
     });
-    const epic = linear.add({ identifier: "ENG-60", title: "Epic" });
-    const story = linear.add({ identifier: "ENG-61", title: "Use the queue", parentId: epic.id });
-    await linear.createBlocksRelation(outside.id, story.id);
+    const epic = tracker.add({ identifier: "ENG-60", title: "Epic" });
+    const story = tracker.add({ identifier: "ENG-61", title: "Use the queue", parentId: epic.id });
+    await tracker.createBlocksRelation(outside.id, story.id);
 
     const run = await delegate(epic.id);
     expect(await activeJobs(run.id)).toEqual([]);
@@ -2093,7 +2103,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         manual: [],
       },
     });
-    const [elicitation] = linear.bodies(run.linearAgentSessionId, "elicitation");
+    const [elicitation] = tracker.bodies(run.linearAgentSessionId, "elicitation");
     expect(elicitation).toContain("0/1 stories are done; the rest are waiting on **OPS-1**");
     expect(elicitation).toContain("start anyway");
 
@@ -2102,14 +2112,14 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       handleTrackerEvent(
         { kind: "issue_state_changed", issueId, removed: false },
         { db, organizationId: orgId, workspaceId: "org-1" },
-        { linear, dispatcher },
+        { tracker, dispatcher },
       );
     await event("unrelated");
     await advanceRun(run.id, deps());
-    expect(linear.bodies(run.linearAgentSessionId, "elicitation")).toHaveLength(1);
+    expect(tracker.bodies(run.linearAgentSessionId, "elicitation")).toHaveLength(1);
     expect(await activeJobs(run.id)).toEqual([]);
 
-    await linear.setIssueState(outside.id, { type: "completed" });
+    await tracker.setIssueState(outside.id, { type: "completed" });
     await event(outside.id);
     expect(storyPayload(await activeJob(run.id))).toMatchObject({
       story: { identifier: "ENG-61" },
@@ -2118,22 +2128,22 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   });
 
   it("waits on a manual story and resumes when it's done", async () => {
-    const epic = linear.add({ identifier: "ENG-70", title: "Epic" });
-    linear.add({ identifier: "ENG-71", title: "Code", parentId: epic.id, subIssueSortOrder: 0 });
-    const manual = linear.add({
+    const epic = tracker.add({ identifier: "ENG-70", title: "Epic" });
+    tracker.add({ identifier: "ENG-71", title: "Code", parentId: epic.id, subIssueSortOrder: 0 });
+    const manual = tracker.add({
       identifier: "ENG-72",
       title: "Configure DNS",
       parentId: epic.id,
       labels: ["manual"],
       subIssueSortOrder: 1,
     });
-    const after = linear.add({
+    const after = tracker.add({
       identifier: "ENG-73",
       title: "Use DNS",
       parentId: epic.id,
       subIssueSortOrder: 2,
     });
-    await linear.createBlocksRelation(manual.id, after.id);
+    await tracker.createBlocksRelation(manual.id, after.id);
     const run = await delegate(epic.id);
 
     expect((await work(run.id)).story.identifier).toBe("ENG-71");
@@ -2144,15 +2154,15 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         manual: [{ id: manual.id, identifier: "ENG-72", title: "Configure DNS" }],
       },
     });
-    expect(linear.bodies(run.linearAgentSessionId, "elicitation")[0]).toContain(
+    expect(tracker.bodies(run.linearAgentSessionId, "elicitation")[0]).toContain(
       "1/3 stories are done; the rest are waiting on **ENG-72**",
     );
 
-    await linear.setIssueState(manual.id, { type: "completed" });
+    await tracker.setIssueState(manual.id, { type: "completed" });
     await handleTrackerEvent(
       { kind: "issue_state_changed", issueId: manual.id, removed: false },
       { db, organizationId: orgId, workspaceId: "org-1" },
-      { linear, dispatcher },
+      { tracker, dispatcher },
     );
     expect((await work(run.id)).story.identifier).toBe("ENG-73");
     expect(await getRun(db, run.id)).toMatchObject({ status: "completed" });
@@ -2168,28 +2178,28 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       );
     await withLabels(["by hand"]);
     try {
-      const epic = linear.add({ identifier: "ENG-150", title: "Epic" });
-      const dns = linear.add({
+      const epic = tracker.add({ identifier: "ENG-150", title: "Epic" });
+      const dns = tracker.add({
         identifier: "ENG-151",
         title: "Configure DNS",
         parentId: epic.id,
         labels: ["By Hand"],
         subIssueSortOrder: 0,
       });
-      linear.add({
+      tracker.add({
         identifier: "ENG-152",
         title: "Code",
         parentId: epic.id,
         labels: ["manual"],
         subIssueSortOrder: 1,
       });
-      const after = linear.add({
+      const after = tracker.add({
         identifier: "ENG-153",
         title: "Use DNS",
         parentId: epic.id,
         subIssueSortOrder: 2,
       });
-      await linear.createBlocksRelation(dns.id, after.id);
+      await tracker.createBlocksRelation(dns.id, after.id);
       const run = await delegate(epic.id);
 
       // `manual` isn't a manual label here; `by hand` is (ignoring case).
@@ -2199,13 +2209,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         followUps: [{ title: "Create the API key", description: "In the console.", manual: true }],
       });
       expect(unfinished.story.identifier).toBe("ENG-152");
-      const key = [...linear.issues.values()].find((i) => i.title === "Create the API key")!;
+      const key = [...tracker.issues.values()].find((i) => i.title === "Create the API key")!;
       // The story's labels, and the manual label.
       expect(key.labels).toEqual(["manual", "by hand"]);
 
       // The labels are read again on every advance: a label added in Linear counts.
       await withLabels(["by hand", "ops"]);
-      linear.issues.set(after.id, { ...after, labels: ["Ops"] });
+      tracker.issues.set(after.id, { ...after, labels: ["Ops"] });
       await advanceRun(run.id, deps());
       expect(await activeJobs(run.id)).toEqual([]);
       const waiting = (await withPullRequest(run.id))!;
@@ -2229,13 +2239,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
   /** A run waiting on an outside blocker that was just completed (without a webhook). */
   async function unblockedWaitingRun(): Promise<LinearRun> {
-    const outside = linear.add({ identifier: "OPS-9", title: "Outside", teamKey: "OPS" });
-    const epic = linear.add({ identifier: "ENG-90", title: "Epic" });
-    const story = linear.add({ identifier: "ENG-91", title: "Story", parentId: epic.id });
-    await linear.createBlocksRelation(outside.id, story.id);
+    const outside = tracker.add({ identifier: "OPS-9", title: "Outside", teamKey: "OPS" });
+    const epic = tracker.add({ identifier: "ENG-90", title: "Epic" });
+    const story = tracker.add({ identifier: "ENG-91", title: "Story", parentId: epic.id });
+    await tracker.createBlocksRelation(outside.id, story.id);
     const run = await delegate(epic.id);
     expect((await getRun(db, run.id))?.status).toBe("waiting");
-    await linear.setIssueState(outside.id, { type: "completed" });
+    await tracker.setIssueState(outside.id, { type: "completed" });
     return run;
   }
 
@@ -2246,7 +2256,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     expect(results.filter((r) => r.action === "busy")).toHaveLength(4);
     expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).toHaveLength(1);
     expect(
-      linear.bodies(run.linearAgentSessionId, "thought").filter((t) => t.startsWith("▶️")),
+      tracker.bodies(run.linearAgentSessionId, "thought").filter((t) => t.startsWith("▶️")),
     ).toHaveLength(1);
   });
 
@@ -2280,7 +2290,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   });
 
   it("skips a job whose run is over, and ignores outcomes of finished runs", async () => {
-    const issue = linear.add({ identifier: "ENG-95", title: "Solo" });
+    const issue = tracker.add({ identifier: "ENG-95", title: "Solo" });
     const run = await delegate(issue.id);
     const job = await activeJob(run.id);
     await updateRun(db, run.id, { status: "stopped" });
@@ -2293,22 +2303,22 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   describe("lanes", () => {
     /** An epic in project API (team ENG): ENG-2, then ENG-3 in `project`, then ENG-4 (needs ENG-3). */
     function crossRepo(project: string) {
-      const epic = linear.add({ identifier: "ENG-1", title: "Task priority", projectName: "API" });
-      const s1 = linear.add({
+      const epic = tracker.add({ identifier: "ENG-1", title: "Task priority", projectName: "API" });
+      const s1 = tracker.add({
         identifier: "ENG-2",
         title: "Add priority field",
         parentId: epic.id,
         projectName: "API",
         priority: 1,
       });
-      const s2 = linear.add({
+      const s2 = tracker.add({
         identifier: "ENG-3",
         title: "Show badge",
         parentId: epic.id,
         projectName: project,
         priority: 2,
       });
-      const s3 = linear.add({
+      const s3 = tracker.add({
         identifier: "ENG-4",
         title: "Sort by priority",
         parentId: epic.id,
@@ -2324,7 +2334,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await setCoding(false);
       try {
         const t = crossRepo("Web");
-        await linear.createBlocksRelation(t.s2.id, t.s3.id); // ENG-4 needs ENG-3
+        await tracker.createBlocksRelation(t.s2.id, t.s3.id); // ENG-4 needs ENG-3
         const run = await delegate(t.epic.id);
 
         expect((await work(run.id)).story.identifier).toBe("ENG-2");
@@ -2353,9 +2363,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           ],
           ["ENG-4", "pending", lanes[0]!.id, null],
         ]);
-        expect(linear.issues.get(t.s2.id)?.stateType).toBe("unstarted");
+        expect(tracker.issues.get(t.s2.id)?.stateType).toBe("unstarted");
         expect(
-          linear
+          tracker
             .bodies(run.linearAgentSessionId, "thought")
             .some((b) =>
               b.includes(
@@ -2363,17 +2373,17 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
               ),
             ),
         ).toBe(true);
-        expect(linear.plan(run.linearAgentSessionId)?.map((p) => p.content)).toContain(
+        expect(tracker.plan(run.linearAgentSessionId)?.map((p) => p.content)).toContain(
           "ENG-3: Show badge (manual: coding off)",
         );
         expect(scm.changeRequests).toEqual([]);
 
         // Someone does ENG-3 by hand: its dependent runs and the epic finishes.
-        await linear.setIssueState(t.s2.id, { type: "completed" });
+        await tracker.setIssueState(t.s2.id, { type: "completed" });
         await handleTrackerEvent(
           { kind: "issue_state_changed", issueId: t.s2.id, removed: false },
           { db, organizationId: orgId, workspaceId: "org-1" },
-          { linear, dispatcher },
+          { tracker, dispatcher },
         );
         expect((await work(run.id, { commitSha: sha(4) })).story.identifier).toBe("ENG-4");
         await describePr(run.id);
@@ -2479,7 +2489,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         ["ENG-4", main.id],
       ]);
       expect(
-        linear
+        tracker
           .bodies(run.linearAgentSessionId, "thought")
           .some((b) =>
             b.includes(
@@ -2505,9 +2515,9 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("keeps a story no rule routes in the epic's repository, as a sub-issue of the epic", async () => {
-      const epic = linear.add({ identifier: "ENG-1", title: "Epic", projectName: "API" });
+      const epic = tracker.add({ identifier: "ENG-1", title: "Epic", projectName: "API" });
       // No rule matches team OPS: the story routes as its parent, the epic.
-      const ops = linear.add({
+      const ops = tracker.add({
         identifier: "OPS-2",
         title: "Infra",
         parentId: epic.id,
@@ -2522,10 +2532,10 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         (await listStories(db, run.id)).map((s) => [s.identifier, s.status, s.laneId, s.elsewhere]),
       ).toEqual([["OPS-2", "running", lanes[0]!.id, null]]);
       expect(await activeJob(run.id)).toMatchObject({ repositoryId: repoId });
-      expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).not.toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).not.toContain(
         "belongs in",
       );
-      expect(linear.routingLoads).toContain(ops.id);
+      expect(tracker.routingLoads).toContain(ops.id);
     });
 
     it("sends each lane's jobs to its own agent when its repository is pinned to another", async () => {
@@ -2601,7 +2611,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       handleTrackerEvent(
         { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
         { db, organizationId: orgId, workspaceId: "org-1" },
-        { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+        { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
       );
 
     it("files a secondary lane's follow-ups so they're worked in that lane", async () => {
@@ -2628,12 +2638,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
             })
           ).story.identifier,
         ).toBe("ENG-3");
-        const style = [...linear.issues.values()].find((i) => i.title === "Style the badge")!;
-        const icon = [...linear.issues.values()].find((i) => i.title === "Upload the icon")!;
+        const style = [...tracker.issues.values()].find((i) => i.title === "Style the badge")!;
+        const icon = [...tracker.issues.values()].find((i) => i.title === "Upload the icon")!;
         // The story's project (not the epic's), and the organization's manual label.
         expect(style).toMatchObject({ parentId: t.epic.id, projectName: "Web", labels: [] });
         expect(icon).toMatchObject({ projectName: "Web", labels: ["ops"] });
-        expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+        expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
           `Filed **${style.identifier}**, **${icon.identifier}** as new stories of **ENG-1** in \`group/app\`.`,
         );
 
@@ -2668,8 +2678,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         );
       await rules([gitlabRepoId, labelsInclude("frontend")]);
       try {
-        const epic = linear.add({ identifier: "ENG-1", title: "Epic", projectName: "API" });
-        linear.add({
+        const epic = tracker.add({ identifier: "ENG-1", title: "Epic", projectName: "API" });
+        tracker.add({
           identifier: "GL-2",
           title: "By team",
           parentId: epic.id,
@@ -2677,7 +2687,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           teamKey: "GL",
           priority: 1,
         });
-        linear.add({
+        tracker.add({
           identifier: "ENG-3",
           title: "By label",
           parentId: epic.id,
@@ -2698,7 +2708,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
             })
           ).story.identifier,
         ).toBe("GL-2");
-        const byTeam = [...linear.issues.values()].find((i) => i.title === "Team follow-up")!;
+        const byTeam = [...tracker.issues.values()].find((i) => i.title === "Team follow-up")!;
         // The story's team (not the epic's) and no project.
         expect(byTeam).toMatchObject({ teamId: "team-gl", teamKey: "GL", labels: [] });
         expect(byTeam.projectName).toBeUndefined();
@@ -2712,7 +2722,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
             })
           ).story.identifier,
         ).toBe("ENG-3");
-        const byLabel = [...linear.issues.values()].find((i) => i.title === "Label follow-up")!;
+        const byLabel = [...tracker.issues.values()].find((i) => i.title === "Label follow-up")!;
         // All of the story's labels.
         expect(byLabel).toMatchObject({
           teamId: "team-1",
@@ -2742,7 +2752,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       );
       try {
         const t = crossRepo("API");
-        const tidy = linear.add({
+        const tidy = tracker.add({
           identifier: "ENG-5",
           title: "Tidy up",
           parentId: t.epic.id,
@@ -2766,7 +2776,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
             })
           ).story.identifier,
         ).toBe("ENG-3");
-        const style = [...linear.issues.values()].find((i) => i.title === "Style it")!;
+        const style = [...tracker.issues.values()].find((i) => i.title === "Style it")!;
         expect(await getFollowUpSource(db, orgId, style.id)).toBe(t.s2.id);
         // A reused open sub-issue is recorded too.
         expect(await getFollowUpSource(db, orgId, tidy.id)).toBe(t.s2.id);
@@ -2797,14 +2807,14 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           repositoryId: null,
           pendingElicitation: { kind: "repository" },
         });
-        expect(linear.bodies(run.linearAgentSessionId, "elicitation")[0]).toContain(
+        expect(tracker.bodies(run.linearAgentSessionId, "elicitation")[0]).toContain(
           "Which repository should I work in for this issue?",
         );
 
         await handleTrackerEvent(
           { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "group/app" },
           { db, organizationId: orgId, workspaceId: "org-1" },
-          { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+          { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
         );
         expect(await getRun(db, run.id)).toMatchObject({
           repositoryId: gitlabRepoId,
@@ -2823,7 +2833,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
             })
           ).story.identifier,
         ).toBe("ENG-2");
-        const followUp = [...linear.issues.values()].find((i) => i.title === "Follow it up")!;
+        const followUp = [...tracker.issues.values()].find((i) => i.title === "Follow it up")!;
         expect(await getFollowUpSource(db, orgId, followUp.id)).toBe(t.s1.id);
         expect(await laneOf(followUp.identifier)).toBe(lanes[0]!.id);
         expect(await activeJob(run.id)).toMatchObject({ repositoryId: gitlabRepoId });
@@ -2879,7 +2889,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           qualityGates: ["npm run check"],
           story: { identifier: "ENG-3" },
         });
-        expect(linear.comments.find((c) => c.issueId === t.s2.id)?.body).toContain(
+        expect(tracker.comments.find((c) => c.issueId === t.s2.id)?.body).toContain(
           `on \`${web.branch}\` in \`group/app\``,
         );
 
@@ -2891,7 +2901,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         const api = await describePr(run.id, { title: "API: priority" });
         expect(api).toMatchObject({ repositoryId: repoId, branch: main.branch });
         expect(api.stories.map((s) => s.identifier)).toEqual(["ENG-2", "ENG-4"]);
-        expect(linear.bodies(run.linearAgentSessionId, "thought").at(-1)).toBe(
+        expect(tracker.bodies(run.linearAgentSessionId, "thought").at(-1)).toBe(
           "All 3 stories are done. Writing the merge request description of `group/app`.",
         );
         const app = await describePr(run.id, { title: "Web: badge" });
@@ -2914,7 +2924,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           prNumber: appPr!.number,
           prUrl: appPr!.url,
         });
-        expect(linear.urls).toEqual([
+        expect(tracker.urls).toEqual([
           {
             sessionId: run.linearAgentSessionId,
             label: `Pull request #${apiPr!.number} (acme/api)`,
@@ -2927,7 +2937,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           },
         ]);
         expect((await getRun(db, run.id))?.status).toBe("completed");
-        const response = linear.bodies(run.linearAgentSessionId, "response").at(-1) ?? "";
+        const response = tracker.bodies(run.linearAgentSessionId, "response").at(-1) ?? "";
         expect(response).toContain(
           `- \`acme/api\`: Opened [Pull request #${apiPr!.number}](${apiPr!.url})`,
         );
@@ -2940,7 +2950,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     it("opens no PR in the epic's repository when every story went to another one", async () => {
       const t = crossRepo("Web");
-      for (const s of [t.s1, t.s3]) await linear.setIssueState(s.id, { type: "completed" });
+      for (const s of [t.s1, t.s3]) await tracker.setIssueState(s.id, { type: "completed" });
       const run = await delegate(t.epic.id);
       expect((await work(run.id, { commitSha: sha(44) })).story.identifier).toBe("ENG-3");
       const payload = await describePr(run.id);
@@ -2951,7 +2961,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const lanes = await listLanes(db, run.id);
       expect(lanes.find((l) => l.repositoryId === repoId)?.prNumber).toBeNull();
       // One PR/MR: no repository label in the response.
-      expect(linear.bodies(run.linearAgentSessionId, "response").at(-1)).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "response").at(-1)).toContain(
         `Opened [Merge request !${scm.changeRequests[0]!.number}](${scm.changeRequests[0]!.url}), ready for review.`,
       );
     });
@@ -2970,7 +2980,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(waiting).toMatchObject({ status: "waiting", prJobId: null });
       const [apiPr] = scm.changeRequests;
       expect(scm.changeRequests.map((c) => c.fullPath)).toEqual(["acme/api"]);
-      const elicitation = linear.bodies(run.linearAgentSessionId, "elicitation").at(-1) ?? "";
+      const elicitation = tracker.bodies(run.linearAgentSessionId, "elicitation").at(-1) ?? "";
       expect(elicitation).toContain(
         "Every story is done, but the last step didn't happen everywhere.",
       );
@@ -2982,7 +2992,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       );
       expect(elicitation).toContain("Reply with guidance (for example `retry`)");
       expect(waiting.error).toContain("In `group/app`:");
-      expect(linear.bodies(run.linearAgentSessionId, "response")).toEqual([]);
+      expect(tracker.bodies(run.linearAgentSessionId, "response")).toEqual([]);
 
       // Nothing happens until someone replies.
       expect(await advanceRun(run.id, deps())).toMatchObject({ action: "waiting" });
@@ -2993,10 +3003,10 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(await activeJobs(run.id)).toEqual([]);
       expect(await getRun(db, run.id)).toMatchObject({ status: "completed", error: null });
       expect(scm.changeRequests.map((c) => c.fullPath)).toEqual(["acme/api", "group/app"]);
-      const response = linear.bodies(run.linearAgentSessionId, "response").at(-1) ?? "";
+      const response = tracker.bodies(run.linearAgentSessionId, "response").at(-1) ?? "";
       expect(response).toContain(`\`acme/api\`: Opened [Pull request #${apiPr!.number}]`);
       expect(response).toContain("`group/app`: Opened [Merge request !");
-      expect(linear.urls.map((u) => u.url)).toEqual(scm.changeRequests.map((c) => c.url));
+      expect(tracker.urls.map((u) => u.url)).toEqual(scm.changeRequests.map((c) => c.url));
     });
 
     it("applies openPullRequestEarly per lane", async () => {
@@ -3009,7 +3019,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         expect(scm.changeRequests).toEqual([
           expect.objectContaining({ fullPath: "group/app", draft: true }),
         ]);
-        expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+        expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
           "Opened a draft merge request for `eng-1-branch` in `group/app`:",
         );
         const draft = scm.changeRequests[0]!.body;
@@ -3059,13 +3069,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
   describe("the pull/merge request", () => {
     /** A one-story epic whose story is done: the run is describing its PR/MR. */
     async function finishedRun(teamKey = "ENG"): Promise<LinearRun> {
-      const epic = linear.add({
+      const epic = tracker.add({
         identifier: `${teamKey}-100`,
         title: "Widgets",
         teamKey,
         description: `${EPIC_DESCRIPTION}\n> Branch: feat/widgets`,
       });
-      linear.add({
+      tracker.add({
         identifier: `${teamKey}-101`,
         title: "Add widgets",
         teamKey,
@@ -3074,7 +3084,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const run = await delegate(epic.id);
       await work(run.id, { commitSha: sha(11) });
       expect((await getRun(db, run.id))?.status).toBe("running");
-      expect(linear.bodies(run.linearAgentSessionId, "thought").at(-1)).toMatch(
+      expect(tracker.bodies(run.linearAgentSessionId, "thought").at(-1)).toMatch(
         /^All 1 story is done\. Writing the (pull|merge) request description\.$/,
       );
       return linearRun((await getRun(db, run.id))!);
@@ -3084,7 +3094,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       handleTrackerEvent(
         { kind: "session_prompted", sessionId: run.linearAgentSessionId, body },
         { db, organizationId: orgId, workspaceId: "org-1" },
-        { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+        { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
       );
 
     it("opens a merge request on GitLab", async () => {
@@ -3115,10 +3125,10 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(mr!.body).toMatch(
         /\n\n---\nLinear: \[GL-100\]\(https:\/\/linear\.app\/acme\/issue\/GL-100\) · _Opened by Omniralph\._$/,
       );
-      expect(linear.urls).toEqual([
+      expect(tracker.urls).toEqual([
         { sessionId: run.linearAgentSessionId, label: "Merge request !1", url },
       ]);
-      expect(linear.bodies(run.linearAgentSessionId, "response")).toEqual([
+      expect(tracker.bodies(run.linearAgentSessionId, "response")).toEqual([
         [
           `Finished all 1 story of **GL-100** on \`feat/widgets\`. Opened [Merge request !1](${url}), ready for review.`,
           "",
@@ -3154,7 +3164,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         prNumber: 7,
         prUrl: "https://github.com/acme/api/pull/7",
       });
-      expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "response")[0]).toContain(
         "Updated [Pull request #7](https://github.com/acme/api/pull/7), ready for review.",
       );
     });
@@ -3163,13 +3173,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await setCodingEnabled(db, repoId);
       await updateRepositoryCoding(db, repoId, { openPullRequestEarly: true });
       try {
-        const epic = linear.add({
+        const epic = tracker.add({
           identifier: "ENG-110",
           title: "Gadgets",
           description: `${EPIC_DESCRIPTION}\n> Branch: feat/gadgets`,
         });
-        linear.add({ identifier: "ENG-111", title: "First", parentId: epic.id, priority: 1 });
-        linear.add({ identifier: "ENG-112", title: "Second", parentId: epic.id, priority: 2 });
+        tracker.add({ identifier: "ENG-111", title: "First", parentId: epic.id, priority: 1 });
+        tracker.add({ identifier: "ENG-112", title: "Second", parentId: epic.id, priority: 2 });
         const run = await delegate(epic.id);
         expect(scm.changeRequests).toEqual([]);
 
@@ -3192,7 +3202,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           prNumber: 1,
           prUrl: "https://github.com/acme/api/pull/1",
         });
-        expect(linear.urls).toEqual([
+        expect(tracker.urls).toEqual([
           {
             sessionId: run.linearAgentSessionId,
             label: "Pull request #1",
@@ -3210,7 +3220,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         ]);
         expect(scm.changeRequests[0]!.body).toMatch(/^Adds gadgets\.\n\n---\nLinear: /);
         expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: 1 });
-        expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+        expect(tracker.bodies(run.linearAgentSessionId, "response")[0]).toContain(
           "Updated [Pull request #1]",
         );
       } finally {
@@ -3225,16 +3235,16 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       await setCodingEnabled(db, repoId);
       await updateRepositoryCoding(db, repoId, { openPullRequestEarly: true });
       try {
-        const epic = linear.add({ identifier: "ENG-115", title: "Doohickeys" });
-        linear.add({ identifier: "ENG-116", title: "First", parentId: epic.id, priority: 1 });
-        linear.add({ identifier: "ENG-117", title: "Second", parentId: epic.id, priority: 2 });
-        linear.add({ identifier: "ENG-118", title: "Third", parentId: epic.id, priority: 3 });
+        const epic = tracker.add({ identifier: "ENG-115", title: "Doohickeys" });
+        tracker.add({ identifier: "ENG-116", title: "First", parentId: epic.id, priority: 1 });
+        tracker.add({ identifier: "ENG-117", title: "Second", parentId: epic.id, priority: 2 });
+        tracker.add({ identifier: "ENG-118", title: "Third", parentId: epic.id, priority: 3 });
         const run = await delegate(epic.id);
         scm.failures.set("createChangeRequest", "Validation failed");
 
         await work(run.id, { commitSha: sha(23) });
         expect(scm.changeRequests).toEqual([]);
-        expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+        expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
           "I couldn't open a draft pull request yet (I'll try again after the next story): Validation failed",
         );
         expect(await withPullRequest(run.id)).toMatchObject({ status: "running", prNumber: null });
@@ -3271,16 +3281,16 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     it("ticks each pushed (or canceled) story in the draft's task list, leaving the rest of an edited body alone", async () => {
       await withEarlyDrafts(async () => {
-        const epic = linear.add({ identifier: "ENG-120", title: "Thingamajigs" });
-        linear.add({ identifier: "ENG-121", title: "First", parentId: epic.id, priority: 1 });
-        linear.add({ identifier: "ENG-12", title: "Second", parentId: epic.id, priority: 2 });
-        const third = linear.add({
+        const epic = tracker.add({ identifier: "ENG-120", title: "Thingamajigs" });
+        tracker.add({ identifier: "ENG-121", title: "First", parentId: epic.id, priority: 1 });
+        tracker.add({ identifier: "ENG-12", title: "Second", parentId: epic.id, priority: 2 });
+        const third = tracker.add({
           identifier: "ENG-1",
           title: "Third",
           parentId: epic.id,
           priority: 3,
         });
-        linear.add({ identifier: "ENG-122", title: "Fourth", parentId: epic.id, priority: 4 });
+        tracker.add({ identifier: "ENG-122", title: "Fourth", parentId: epic.id, priority: 4 });
         const run = await delegate(epic.id);
 
         await work(run.id, { commitSha: sha(31) });
@@ -3318,10 +3328,10 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
     it("retries ticking pushed stories that failed after the next story", async () => {
       await withEarlyDrafts(async () => {
-        const epic = linear.add({ identifier: "ENG-125", title: "Whatsits" });
-        linear.add({ identifier: "ENG-126", title: "First", parentId: epic.id, priority: 1 });
-        linear.add({ identifier: "ENG-127", title: "Second", parentId: epic.id, priority: 2 });
-        linear.add({ identifier: "ENG-128", title: "Third", parentId: epic.id, priority: 3 });
+        const epic = tracker.add({ identifier: "ENG-125", title: "Whatsits" });
+        tracker.add({ identifier: "ENG-126", title: "First", parentId: epic.id, priority: 1 });
+        tracker.add({ identifier: "ENG-127", title: "Second", parentId: epic.id, priority: 2 });
+        tracker.add({ identifier: "ENG-128", title: "Third", parentId: epic.id, priority: 3 });
         const run = await delegate(epic.id);
         await work(run.id, { commitSha: sha(34) });
         const [draft] = scm.changeRequests;
@@ -3329,7 +3339,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         scm.failures.set("updateChangeRequest", "Bad gateway");
         await work(run.id, { commitSha: sha(35) });
         expect(draft!.body).toContain("- [ ] ENG-127: Second");
-        expect(linear.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
+        expect(tracker.bodies(run.linearAgentSessionId, "thought").join("\n")).toContain(
           "I couldn't tick the pushed stories in the pull request yet (I'll try again after the next story): Bad gateway",
         );
         expect((await activeJob(run.id)).type).toBe("ralph.story");
@@ -3350,7 +3360,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           ...builtin,
           coding: { ...builtin.coding, epicCompletedState: state },
         });
-        linear.workflowStates = [
+        tracker.workflowStates = [
           { id: "s-todo", name: "Todo", type: "unstarted", position: 0 },
           { id: "s-progress", name: "In Progress", type: "started", position: 1 },
           { id: "s-review", name: "In Review", type: "started", position: 2 },
@@ -3364,7 +3374,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         }
       }
 
-      const epicOf = (run: LinearRun) => linear.issues.get(run.linearIssueId)!;
+      const epicOf = (run: LinearRun) => tracker.issues.get(run.linearIssueId)!;
 
       it("moves the epic to the named state once the pull request is opened", async () => {
         await withEpicCompletedState("in review", async () => {
@@ -3387,8 +3397,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
       it("moves it when nothing was committed and there is no pull request", async () => {
         await withEpicCompletedState("Shipped", async () => {
-          const epic = linear.add({ identifier: "ENG-130", title: "Nothing to do" });
-          linear.add({ identifier: "ENG-131", title: "Already done", parentId: epic.id });
+          const epic = tracker.add({ identifier: "ENG-130", title: "Nothing to do" });
+          tracker.add({ identifier: "ENG-131", title: "Already done", parentId: epic.id });
           const run = await delegate(epic.id);
           await work(run.id, {});
           expect((await getRun(db, run.id))?.status).toBe("completed");
@@ -3399,13 +3409,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       it("logs a Linear failure without failing the run", async () => {
         await withEpicCompletedState("In Review", async () => {
           const run = await finishedRun();
-          linear.failures.set("setIssueState", new Error("Linear is down"));
+          tracker.failures.set("setIssueState", new Error("Linear is down"));
           const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
           try {
             await describePr(run.id);
             expect(warn).toHaveBeenCalledWith(expect.stringContaining("Linear is down"));
           } finally {
-            linear.failures.delete("setIssueState");
+            tracker.failures.delete("setIssueState");
             warn.mockRestore();
           }
           expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: 1 });
@@ -3415,18 +3425,18 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
 
       it("leaves a single issue and an unset state alone", async () => {
         await withEpicCompletedState("In Review", async () => {
-          const issue = linear.add({ identifier: "ENG-132", title: "One fix" });
+          const issue = tracker.add({ identifier: "ENG-132", title: "One fix" });
           const run = await delegate(issue.id);
           await work(run.id, { commitSha: sha(30) });
           await describePr(run.id);
           expect((await getRun(db, run.id))?.status).toBe("completed");
-          expect(linear.stateChanges.filter((c) => c.target.name === "In Review")).toEqual([]);
+          expect(tracker.stateChanges.filter((c) => c.target.name === "In Review")).toEqual([]);
         });
         await withEpicCompletedState(null, async () => {
           const run = await finishedRun();
-          linear.stateChanges = [];
+          tracker.stateChanges = [];
           await describePr(run.id);
-          expect(linear.stateChanges).toEqual([]);
+          expect(tracker.stateChanges).toEqual([]);
         });
       });
     });
@@ -3442,13 +3452,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         waitingOn: { blockers: [], manual: [] },
       });
       expect(waiting.error).toContain("the session ended without a valid title and body");
-      const [error] = linear.bodies(run.linearAgentSessionId, "elicitation");
+      const [error] = tracker.bodies(run.linearAgentSessionId, "elicitation");
       expect(error).toContain(
         "Every story is done, but I couldn't open the pull request: writing its description failed: the session ended without a valid title and body.",
       );
       expect(error).toContain("Reply with guidance");
       expect(scm.changeRequests).toEqual([]);
-      expect(linear.bodies(run.linearAgentSessionId, "response")).toEqual([]);
+      expect(tracker.bodies(run.linearAgentSessionId, "response")).toEqual([]);
 
       // Nothing happens until someone replies.
       expect(await advanceRun(run.id, deps())).toMatchObject({ action: "waiting" });
@@ -3470,7 +3480,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       const run = await finishedRun();
       await describePr(run.id);
       expect(await withPullRequest(run.id)).toMatchObject({ status: "waiting", prNumber: null });
-      expect(linear.bodies(run.linearAgentSessionId, "elicitation")[0]).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "elicitation")[0]).toContain(
         "Every story is done, but I couldn't open the pull request: Resource not accessible by integration.",
       );
 
@@ -3482,12 +3492,12 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("completes without a pull request when no story committed anything", async () => {
-      const issue = linear.add({ identifier: "ENG-120", title: "Nothing to change" });
+      const issue = tracker.add({ identifier: "ENG-120", title: "Nothing to change" });
       const run = await delegate(issue.id);
       await work(run.id, {});
       expect(await withPullRequest(run.id)).toMatchObject({ status: "completed", prNumber: null });
       expect(await activeJobs(run.id)).toEqual([]);
-      expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "response")[0]).toContain(
         "Nothing was committed",
       );
     });
@@ -3548,7 +3558,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     }
 
     it("posts the start, the pull request and the completion to the thread, and nothing else", async () => {
-      const issue = linear.add({ identifier: "ENG-140", title: "Fix the login bug" });
+      const issue = tracker.add({ identifier: "ENG-140", title: "Fix the login bug" });
       const run = await delegateFromChat(issue.id);
 
       expect(run).toMatchObject({ origin: "linear", chatThreadId: threadId });
@@ -3581,13 +3591,13 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       // Its notices are posted, not recorded as run events for the responder.
       expect(await db.select().from(chatRunEvents)).toEqual([]);
       // The Linear session still has everything.
-      expect(linear.bodies(run.linearAgentSessionId, "response")[0]).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "response")[0]).toContain(
         "Finished **ENG-140**",
       );
     });
 
     it("posts the failure to the thread", async () => {
-      const issue = linear.add({ identifier: "ENG-141", title: "Doomed" });
+      const issue = tracker.add({ identifier: "ENG-141", title: "Doomed" });
       const run = await delegateFromChat(issue.id);
       await updateRepositoryCoding(db, repoId, { codingEnabled: false });
       try {
@@ -3610,14 +3620,14 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("doesn't tie a run delegated in Linear, or a mention, to a thread", async () => {
-      const issue = linear.add({ identifier: "ENG-142", title: "Plain" });
+      const issue = tracker.add({ identifier: "ENG-142", title: "Plain" });
       const run = await delegate(issue.id);
       expect(run.chatThreadId).toBeNull();
       expect(posted()).toEqual([]);
     });
 
     it("ignores a delegation older than an hour, and prunes it", async () => {
-      const issue = linear.add({ identifier: "ENG-143", title: "Late" });
+      const issue = tracker.add({ identifier: "ENG-143", title: "Late" });
       await createChatLinearDelegation(db, {
         organizationId: orgId,
         threadId,
@@ -3635,7 +3645,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
 
     it("skips the notifications when the thread is gone, without failing the run", async () => {
-      const issue = linear.add({ identifier: "ENG-144", title: "Orphan" });
+      const issue = tracker.add({ identifier: "ENG-144", title: "Orphan" });
       const run = await delegateFromChat(issue.id);
       chat = { ...chat!, adapters: {} };
       await work(run.id, { commitSha: sha(61) });

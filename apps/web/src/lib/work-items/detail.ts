@@ -64,7 +64,7 @@ export async function workItemRoute(deps: {
     createRouter({
       db,
       organizationId,
-      linear: {
+      tracker: {
         routingIssue: async (ref) => {
           const fields = await tracker.routingFields(ref);
           if (fields.issue.id === item.id) own = fields;

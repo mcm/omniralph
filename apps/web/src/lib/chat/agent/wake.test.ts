@@ -356,7 +356,7 @@ describe.skipIf(!databaseAvailable)("processThreadRunEvents", () => {
     };
     expect(
       await askPermission(
-        { db, linear: async () => fakeRalphTracker(), chat: source },
+        { db, tracker: async () => fakeRalphTracker(), chat: source },
         job,
         request,
         new Date(),

@@ -233,7 +233,7 @@ export async function loadOrganizationBacklog(deps: {
     db,
     organizationId,
     // A candidate's fields came with its page; anything else (a follow-up's source) is read.
-    linear: {
+    tracker: {
       routingIssue: async (ref) => prefetched.get(ref) ?? tracker.routingFields(ref),
     },
     rules,

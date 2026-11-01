@@ -144,7 +144,7 @@ async function applyStoryResult(
   result: RalphStoryResult,
   caps: StoryCaps,
 ): Promise<void> {
-  const { tx, linear } = ctx;
+  const { tx, tracker } = ctx;
   let run = ctx.run;
   if (result.progress !== undefined) {
     run = (await updateRun(tx, run.id, { progress: result.progress })) ?? run;
@@ -204,7 +204,7 @@ async function applyStoryResult(
   // A single issue stays open for review: its run's PR/MR is what finishes it.
   if (run.kind !== "single") {
     await quietly(`Completing ${story.identifier} in Linear`, () =>
-      linear.setIssueState(story.linearIssueId, { type: "completed" }),
+      tracker.setIssueState(story.linearIssueId, { type: "completed" }),
     );
     const lane = await storyLane(tx, run, story);
     // A story of another lane says which repository it was done in.
@@ -219,7 +219,7 @@ async function applyStoryResult(
       tail(result.summary.trim() || "Done.", 4000),
     ].join("\n");
     await quietly(`Commenting on ${story.identifier}`, () =>
-      linear.addComment(story.linearIssueId, note),
+      tracker.addComment(story.linearIssueId, note),
     );
   }
 
@@ -345,13 +345,13 @@ export async function fileFollowUps(
   followUps: readonly RalphFollowUp[],
   options: { blocking: boolean },
 ): Promise<void> {
-  const { linear, run } = ctx;
+  const { tracker, run } = ctx;
   if (followUps.length === 0 || run.kind === "single" || !isLinearRun(run)) return;
   let siblings;
   let parent;
   try {
-    parent = await linear.getIssue(run.linearIssueId);
-    siblings = await linear.getChildren(parent.id);
+    parent = await tracker.getIssue(run.linearIssueId);
+    siblings = await tracker.getChildren(parent.id);
   } catch (error) {
     console.warn(`${run.linearIdentifier}: could not read the epic to file follow-ups`, error);
     await postActivity(conversationFor(run, ctx), {
@@ -398,12 +398,12 @@ export async function fileFollowUps(
       // A reused open sub-issue too (unless it's the story itself).
       if (issue.id !== story.linearIssueId) {
         await recordFollowUpSource(ctx.tx, run.organizationId, issue.id, story.linearIssueId);
-        if (options.blocking) await linear.createBlocksRelation(issue.id, story.linearIssueId);
+        if (options.blocking) await tracker.createBlocksRelation(issue.id, story.linearIssueId);
       }
       for (const dependent of dependents) {
         // A reused follow-up may already block it, or be one of the dependents itself.
         if (dependent.issue.id === issue.id || dependent.blockerIds.has(issue.id)) continue;
-        await linear.createBlocksRelation(issue.id, dependent.issue.id);
+        await tracker.createBlocksRelation(issue.id, dependent.issue.id);
         dependent.blockerIds.add(issue.id);
       }
       filed.push(`**${issue.identifier}**`);
@@ -449,7 +449,7 @@ async function createFollowUp(
   target: FollowUpTarget,
   input: CreateIssueInput,
 ): Promise<IssueSummary> {
-  const { issue, extras } = await createIssueWithExtras(ctx.linear, input, target.extras);
+  const { issue, extras } = await createIssueWithExtras(ctx.tracker, input, target.extras);
   target.extras = extras;
   return issue;
 }
@@ -490,7 +490,7 @@ async function followUpTarget(
       : null;
   const [manualLabel = "manual"] = await runManualLabels(ctx.db, run);
   const where = { manualLabel, ...(repository && { repository: repository.fullPath }) };
-  const source = await readIssuePlacement(ctx.linear, story.linearIssueId).catch(
+  const source = await readIssuePlacement(ctx.tracker, story.linearIssueId).catch(
     (error: unknown) => {
       console.warn(`${run.linearIdentifier}: could not read ${story.identifier}'s fields`, error);
       return null;
@@ -535,7 +535,7 @@ async function openDependents(
       .filter((s) => s.id !== story.linearIssueId)
       .map(async (issue) => ({
         issue,
-        blockerIds: new Set((await ctx.linear.getBlockers(issue.id)).map((b) => b.id)),
+        blockerIds: new Set((await ctx.tracker.getBlockers(issue.id)).map((b) => b.id)),
       })),
   );
   return siblings.filter((s) => s.blockerIds.has(story.linearIssueId));

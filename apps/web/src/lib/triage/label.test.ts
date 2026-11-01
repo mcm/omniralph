@@ -113,7 +113,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
   const deps = (): TriageDeps => ({
     db,
     organizationId: orgId,
-    linear,
+    tracker: linear,
     dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => fakeAdapter,
   });
@@ -123,7 +123,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
       event,
       { db, organizationId: orgId, workspaceId: "ws-1" },
       {
-        linear,
+        tracker: linear,
         dispatcher: new PostgresDispatcher({ db }),
         adapterFor: () => fakeAdapter,
       },
@@ -270,7 +270,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
 
     await onTriageJobCompleted(db, await complete(run.currentJobId!, RESULT), {
       db,
-      linear,
+      tracker: linear,
     });
 
     expect((await getTriageRun(db, run.id))?.status).toBe("completed");
@@ -285,7 +285,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
     const run = (await getTriageRunBySession(db, "session-1"))!;
     const job = (await getJob(db, run.currentJobId!))!;
 
-    await onTriageJobFinishedWithoutResult(db, job, "failed", "boom", { db, linear });
+    await onTriageJobFinishedWithoutResult(db, job, "failed", "boom", { db, tracker: linear });
 
     expect((await getTriageRun(db, run.id))?.status).toBe("failed");
     expect(linear.bodies("session-1", "error")[0]).toContain("Triage failed: boom");
@@ -300,7 +300,10 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
     // An XL PRD without stories doesn't validate.
     const invalid = { ...RESULT, structured: { ...(RESULT.structured as object), size: "XL" } };
 
-    await onTriageJobCompleted(db, await complete(run.currentJobId!, invalid), { db, linear });
+    await onTriageJobCompleted(db, await complete(run.currentJobId!, invalid), {
+      db,
+      tracker: linear,
+    });
 
     expect((await getTriageRun(db, run.id))?.status).toBe("failed");
     expect(linear.issueUpdates).toEqual([]);
@@ -353,7 +356,7 @@ describe.skipIf(!databaseAvailable)("starting triage from a triage label", () =>
     const run = (await getTriageRunBySession(db, "session-1"))!;
     const job = (await getJob(db, run.currentJobId!))!;
 
-    await onTriageJobFinishedWithoutResult(db, job, "stopped", null, { db, linear });
+    await onTriageJobFinishedWithoutResult(db, job, "stopped", null, { db, tracker: linear });
 
     expect((await getTriageRun(db, run.id))?.status).toBe("stopped");
     expect(linear.bodies("session-1", "response")[0]).toContain("Triage was canceled");

@@ -69,7 +69,7 @@ describe.skipIf(!testDatabaseAvailable())("starting ralph runs through the Linea
   const deps = (): StartRunDeps => ({
     db,
     organizationId: orgId,
-    linear,
+    tracker: linear,
     dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => fakeAdapter,
   });
@@ -254,7 +254,7 @@ describe.skipIf(!testDatabaseAvailable())("starting ralph runs through the Linea
         secret: SECRET,
         handle: (event, context) =>
           handleTrackerEvent(event, context, {
-            linear,
+            tracker: linear,
             dispatcher: new PostgresDispatcher({ db }),
             adapterFor: () => fakeAdapter,
             chat,
@@ -332,7 +332,7 @@ describe.skipIf(!testDatabaseAvailable())("starting ralph runs through the Linea
           secret: SECRET,
           handle: (event, context) =>
             handleTrackerEvent(event, context, {
-              linear,
+              tracker: linear,
               dispatcher: new PostgresDispatcher({ db }),
               adapterFor: () => fakeAdapter,
             }),

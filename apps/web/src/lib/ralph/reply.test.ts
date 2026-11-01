@@ -90,7 +90,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
   let db: Database;
   let orgId: string;
   let agentA: string;
-  let linear: FakeLinearGateway;
+  let tracker: FakeLinearGateway;
   let dispatcher: PostgresDispatcher;
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
@@ -99,7 +99,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
   const deps = (): StartRunDeps => ({
     db,
     organizationId: orgId,
-    linear,
+    tracker,
     dispatcher,
     adapterFor: () => scm.asAdapter(),
   });
@@ -147,7 +147,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       .insert(agents)
       .values([{ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] }])
       .returning({ id: agents.id })) as [{ id: string }];
-    linear = new FakeLinearGateway();
+    tracker = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
   });
@@ -278,33 +278,38 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     );
 
   const last = (run: LinearRun, type: "thought" | "response" | "elicitation" | "error") =>
-    linear.bodies(run.linearAgentSessionId, type).at(-1) ?? "";
+    tracker.bodies(run.linearAgentSessionId, type).at(-1) ?? "";
 
   const storyStates = async (runId: string) =>
     (await listStories(db, runId)).map((s) => [s.identifier, s.status, s.attempts]);
 
   function twoStoryEpic(): { epic: IssueSummary; alpha: IssueSummary; beta: IssueSummary } {
-    const epic = linear.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
-    const alpha = linear.add({
+    const epic = tracker.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
+    const alpha = tracker.add({
       identifier: "ENG-2",
       title: "Alpha",
       parentId: epic.id,
       priority: 1,
     });
-    const beta = linear.add({ identifier: "ENG-3", title: "Beta", parentId: epic.id, priority: 2 });
+    const beta = tracker.add({
+      identifier: "ENG-3",
+      title: "Beta",
+      parentId: epic.id,
+      priority: 2,
+    });
     return { epic, alpha, beta };
   }
 
   /** An epic with a story, then a manual story with preparation commands blocked by it. */
   async function manualEpic() {
-    const epic = linear.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
-    const alpha = linear.add({
+    const epic = tracker.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
+    const alpha = tracker.add({
       identifier: "ENG-2",
       title: "Alpha",
       parentId: epic.id,
       priority: 1,
     });
-    const bucket = linear.add({
+    const bucket = tracker.add({
       identifier: "ENG-3",
       title: "Create the bucket",
       parentId: epic.id,
@@ -312,13 +317,13 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       labels: ["manual"],
       description: MANUAL_DESCRIPTION,
     });
-    await linear.createBlocksRelation(alpha.id, bucket.id);
+    await tracker.createBlocksRelation(alpha.id, bucket.id);
     const run = await delegate(epic.id);
     return { epic, alpha, bucket, run };
   }
 
   const selects = (run: LinearRun) =>
-    linear.activities.filter(
+    tracker.activities.filter(
       (a) => a.sessionId === run.linearAgentSessionId && a.options?.signal === "select",
     );
 
@@ -379,7 +384,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         ["ENG-3", "pending", 0],
       ]);
       expect(last(run, "response")).toMatch(/^Stopped\. I canceled the job that was running\./);
-      expect(linear.plan(run.linearAgentSessionId)?.[0]).toMatchObject({ status: "pending" });
+      expect(tracker.plan(run.linearAgentSessionId)?.[0]).toMatchObject({ status: "pending" });
 
       // The worktree is cleaned up keeping the branch, once the canceled job is through.
       expect(await laneCleanup(run)).toMatchObject({
@@ -396,7 +401,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       const branch = await branchOf(run);
       const cleanup = await activeJob(run.id);
       expect(cleanup.targetAgentId).toBe(agentA);
-      const responses = linear.bodies(run.linearAgentSessionId, "response").length;
+      const responses = tracker.bodies(run.linearAgentSessionId, "response").length;
       const cleaned = await cleanUp(run.id, { stashed: sha(7), stashes: [stashEntry(7)] });
       expect(cleaned).toMatchObject({
         branch,
@@ -407,7 +412,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       expect(await laneCleanup(run)).toMatchObject({ status: "done", keepBranch: "stopped" });
       // It asks nothing and says nothing; the stash is recorded on the lane.
       expect(selects(run)).toEqual([]);
-      expect(linear.bodies(run.linearAgentSessionId, "response")).toHaveLength(responses);
+      expect(tracker.bodies(run.linearAgentSessionId, "response")).toHaveLength(responses);
       expect((await getMainLane(db, run))!.stashes).toMatchObject([
         { sha: sha(7), reason: "cleanup" },
       ]);
@@ -446,14 +451,14 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       await cleanUp(run.id);
 
       // Never started on an agent: there's no worktree.
-      const fresh = await delegate(linear.add({ identifier: "ENG-9", title: "One" }).id);
+      const fresh = await delegate(tracker.add({ identifier: "ENG-9", title: "One" }).id);
       await reply(fresh, "stop");
       expect(await activeJobs(fresh.id)).toEqual([]);
       expect(await laneCleanup(fresh)).toMatchObject({ status: "done", keepBranch: "stopped" });
 
       await bindCodingPlaybook(db, orgId, repoId, "story", { cleanupMergedWorktrees: false });
       try {
-        const kept = await delegate(linear.add({ identifier: "ENG-20", title: "Two" }).id);
+        const kept = await delegate(tracker.add({ identifier: "ENG-20", title: "Two" }).id);
         const job = await start(kept.id);
         await reply(kept, "stop");
         await finish(job, { jobError: "canceled" });
@@ -525,7 +530,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       acks: { delivered?: string[]; rejected?: string[] } = {},
       agentId = agentA,
     ) =>
-      exchangeJobMessages({ db, linear: async () => linear }, agentId, runningJobIds, {
+      exchangeJobMessages({ db, tracker: async () => tracker }, agentId, runningJobIds, {
         deliveredMessageIds: acks.delivered ?? [],
         rejectedMessageIds: acks.rejected ?? [],
       });
@@ -534,11 +539,11 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       twoStoryEpic();
       const run = await delegate("issue-1");
       const job = await start(run.id);
-      const thoughts = linear.bodies(run.linearAgentSessionId, "thought").length;
+      const thoughts = tracker.bodies(run.linearAgentSessionId, "thought").length;
 
       expect(await reply(run, "Use a smallint column")).toEqual({ kind: "live" });
       // Nothing else happens yet: no note, no guidance, no advance.
-      expect(linear.bodies(run.linearAgentSessionId, "thought")).toHaveLength(thoughts);
+      expect(tracker.bodies(run.linearAgentSessionId, "thought")).toHaveLength(thoughts);
       expect((await getRun(db, run.id))?.guidance).toEqual([]);
 
       const [message, ...more] = await heartbeat([job.id]);
@@ -555,13 +560,13 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       ]);
       // A repeated acknowledgement changes nothing.
       await heartbeat([job.id], { delivered: [message!.messageId] });
-      expect(linear.bodies(run.linearAgentSessionId, "thought").slice(thoughts)).toEqual([
+      expect(tracker.bodies(run.linearAgentSessionId, "thought").slice(thoughts)).toEqual([
         "Passed this to Om while it's working.",
       ]);
 
       // Delivered live, so it isn't applied again; later stories still see it as guidance.
       await finish(job, { ...storyResult({ commitSha: sha(1) }) });
-      expect(linear.bodies(run.linearAgentSessionId, "thought")).not.toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "thought")).not.toContain(
         "Got it. I'll apply this from the next story iteration, or handle it directly once the stories are done.",
       );
       const next = await work(run.id);
@@ -617,7 +622,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
 
       await finish(job, { ...storyResult({ commitSha: sha(1) }) });
       expect(
-        linear
+        tracker
           .bodies(run.linearAgentSessionId, "thought")
           .filter((b) => b.startsWith("Got it. I'll apply this from the next story iteration")),
       ).toHaveLength(2);
@@ -646,7 +651,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       // Not story guidance, and the story session doesn't get it.
       expect((await getRun(db, run.id))?.guidance).toEqual([]);
       expect(
-        await exchangeJobMessages({ db, linear: async () => linear }, agentA, [story.id], {
+        await exchangeJobMessages({ db, tracker: async () => tracker }, agentA, [story.id], {
           deliveredMessageIds: [],
           rejectedMessageIds: [],
         }),
@@ -660,7 +665,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
   });
 
   describe("permission prompts of a live session", () => {
-    const permissionDeps = () => ({ db, linear: async () => linear });
+    const permissionDeps = () => ({ db, tracker: async () => tracker });
     const ask = (job: Job, requestId = randomUUID()) =>
       askPermission(permissionDeps(), job, {
         requestId,
@@ -713,11 +718,11 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       expect(last(run, "thought")).toBe("Nobody answered in time, so I didn't use **Bash**.");
 
       // A session that ended before the deadline closes its question quietly.
-      const thoughts = linear.bodies(run.linearAgentSessionId, "thought").length;
+      const thoughts = tracker.bodies(run.linearAgentSessionId, "thought").length;
       const early = await ask(job);
       await expirePermission(permissionDeps(), job, early.requestId);
       expect(await answerOf(run, job, early.requestId)).toMatchObject({ status: "expired" });
-      expect(linear.bodies(run.linearAgentSessionId, "thought")).toHaveLength(thoughts);
+      expect(tracker.bodies(run.linearAgentSessionId, "thought")).toHaveLength(thoughts);
 
       const third = await ask(job);
       await finish(job, { ...storyResult({ commitSha: sha(1) }) });
@@ -786,10 +791,10 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
 
   describe("start anyway", () => {
     it("ignores the open blockers and advances", async () => {
-      const outside = linear.add({ identifier: "OPS-1", title: "Provision" });
+      const outside = tracker.add({ identifier: "OPS-1", title: "Provision" });
       const { alpha, beta } = twoStoryEpic();
-      await linear.createBlocksRelation(outside.id, alpha.id);
-      await linear.createBlocksRelation(outside.id, beta.id);
+      await tracker.createBlocksRelation(outside.id, alpha.id);
+      await tracker.createBlocksRelation(outside.id, beta.id);
       const run = await delegate("issue-2");
       expect(await getRun(db, run.id)).toMatchObject({ status: "waiting" });
       expect(await activeJobs(run.id)).toEqual([]);
@@ -797,7 +802,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       const result = await reply(run, "Please start anyway");
       expect(result).toMatchObject({ kind: "start_anyway", advanced: { action: "enqueued" } });
       expect(await getRun(db, run.id)).toMatchObject({ ignoreBlockers: true, status: "running" });
-      expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "thought")).toContain(
         "OK, I'll ignore the open blockers and start anyway.",
       );
       expect((await getRun(db, run.id))?.guidance).toEqual([]);
@@ -822,7 +827,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       const result = await reply(run, " /continue ");
       expect(result).toMatchObject({ kind: "continue", advanced: { action: "enqueued" } });
       expect(await getRun(db, run.id)).toMatchObject({ iterations: 1, guidance: [] });
-      expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "thought")).toContain(
         "OK, continuing with a fresh iteration budget.",
       );
       expect(await listPendingRequests(db, run.id)).toEqual([]);
@@ -865,7 +870,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         const waiting = (await getRun(db, run.id))!;
         expect(waiting).toMatchObject({ status: "waiting", preparation: null });
         expect(waiting.waitingOn?.manual.map((m) => m.identifier)).toEqual(["ENG-3"]);
-        const posted = linear.bodies(run.linearAgentSessionId, "elicitation").join("\n");
+        const posted = tracker.bodies(run.linearAgentSessionId, "elicitation").join("\n");
         expect(posted).toContain("waiting on **ENG-3**");
         expect(posted).not.toContain("rerun preparation");
         expect(posted).not.toContain("terraform");
@@ -883,7 +888,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     it("asks once the manual story is unblocked, runs it on approval and doesn't ask again", async () => {
       const { alpha, bucket, run } = await manualEpic();
       await work(run.id, { commitSha: sha(7) });
-      expect(linear.issues.get(alpha.id)?.stateType).toBe("completed");
+      expect(tracker.issues.get(alpha.id)?.stateType).toBe("completed");
 
       const [question, ...more] = selects(run);
       expect(more).toEqual([]);
@@ -923,13 +928,13 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         approvedHeadSha: sha(7),
         story: { identifier: "ENG-3", title: "Create the bucket" },
       });
-      const posted = linear.bodies(run.linearAgentSessionId, "thought");
+      const posted = tracker.bodies(run.linearAgentSessionId, "thought");
       const outcome = posted.find((b) => b.startsWith("Ran the preparation of **ENG-3**"))!;
       expect(outcome).toContain("`terraform init` (exit 0)");
       expect(outcome).toContain("The rest of ENG-3 is up to a person, who marks it done.");
 
       // The story stays manual and the run waits on it; nothing is asked again.
-      expect(linear.issues.get(bucket.id)?.stateType).toBe("unstarted");
+      expect(tracker.issues.get(bucket.id)?.stateType).toBe("unstarted");
       expect(await getRun(db, run.id)).toMatchObject({
         status: "waiting",
         waitingOn: { manual: [{ id: bucket.id }] },
@@ -939,10 +944,10 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       expect(last(run, "elicitation")).toContain("Reply `rerun preparation`");
 
       // A new story moving the branch doesn't bring the question back.
-      const gamma = linear.add({ identifier: "ENG-4", title: "Gamma", parentId: alpha.parentId });
+      const gamma = tracker.add({ identifier: "ENG-4", title: "Gamma", parentId: alpha.parentId });
       await reply(run, "Also do Gamma.");
       await work(run.id, { commitSha: sha(8) });
-      expect(linear.issues.get(gamma.id)?.stateType).toBe("completed");
+      expect(tracker.issues.get(gamma.id)?.stateType).toBe("completed");
       expect(selects(run)).toHaveLength(1);
 
       // `rerun preparation` asks again, bound to the newest commit.
@@ -1007,13 +1012,13 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
        * ENG-4 (Web, `manual`) and ENG-5 (API, `by hand`).
        */
       async function twoRepositoryEpic() {
-        const epic = linear.add({
+        const epic = tracker.add({
           identifier: "ENG-1",
           title: "Epic",
           description: EPIC_DESCRIPTION,
         });
         const story = (identifier: string, title: string, priority: IssuePriority, more = {}) =>
-          linear.add({ identifier, title, parentId: epic.id, priority, ...more });
+          tracker.add({ identifier, title, parentId: epic.id, priority, ...more });
         const alpha = story("ENG-2", "Alpha", 1);
         const bucket = story("ENG-3", "Create the bucket", 2, {
           projectName: "Web",
@@ -1022,7 +1027,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         });
         story("ENG-4", "Web page", 3, { projectName: "Web", labels: ["manual"] });
         story("ENG-5", "API docs", 4, { labels: ["by hand"] });
-        await linear.createBlocksRelation(alpha.id, bucket.id);
+        await tracker.createBlocksRelation(alpha.id, bucket.id);
         const run = await delegate(epic.id);
         return { bucket, run };
       }
@@ -1130,7 +1135,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         [bucket.id]: { how: "prepared", headSha: sha(7) },
       });
       expect(
-        linear
+        tracker
           .bodies(run.linearAgentSessionId, "thought")
           .some((b) => b.startsWith("Ran the preparation of **ENG-3**")),
       ).toBe(true);
@@ -1142,7 +1147,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       await reply(run, "Run it");
       await prepare(run.id, { status: "stale", commands: [], headSha: sha(9) });
 
-      expect(linear.bodies(run.linearAgentSessionId, "thought")).toContain(
+      expect(tracker.bodies(run.linearAgentSessionId, "thought")).toContain(
         `\`${await branchOf(run)}\` (now at \`${sha(9).slice(0, 10)}\`) changed since I asked about the preparation of **ENG-3**, so I ran nothing. Here it is again as it is now.`,
       );
       const asks = selects(run);
@@ -1160,7 +1165,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
         status: "failed",
         commands: [{ command: "terraform init", exitCode: 1, output: "no credentials" }],
       });
-      const failure = linear
+      const failure = tracker
         .bodies(run.linearAgentSessionId, "thought")
         .find((b) => b.startsWith("The preparation of **ENG-3** failed"))!;
       expect(failure).toContain("`terraform init` (exit 1)");
@@ -1234,7 +1239,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
     await handleTrackerEvent(
       { kind: "session_prompted", sessionId: run.linearAgentSessionId, body: "", signal: "stop" },
       { db, organizationId: orgId, workspaceId: "org-1" },
-      { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+      { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
     );
     expect((await getRun(db, run.id))?.status).toBe("stopped");
   });

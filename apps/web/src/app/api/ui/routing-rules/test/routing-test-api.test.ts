@@ -411,7 +411,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/routing-rules/test", () => {
     const deps = (): StartRunDeps => ({
       db: state.db,
       organizationId: state.orgId,
-      linear,
+      tracker: linear,
       dispatcher: new PostgresDispatcher({ db: state.db }),
       adapterFor: () => ({ getDefaultBranch: async () => "main" }) as unknown as ScmAdapter,
     });

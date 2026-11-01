@@ -51,7 +51,7 @@ export interface BotCommandContext {
   /** The code-host adapter of a connection (ralph lanes); default `scmAdapterFor`. */
   adapterFor?: (db: Database, connection: ScmConnection) => ScmAdapter;
   /** The tracker (ralph requests); default: the connected one. */
-  linear?: () => Promise<TrackerGateway>;
+  tracker?: () => Promise<TrackerGateway>;
   /** Where ralph runs from chat post (default: the deployment's chat bot). */
   chat?: ChatSource;
 }
@@ -167,10 +167,10 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
       db,
       organizationId,
       dispatcher,
-      linear: lazyTrackerGateway({
+      tracker: lazyTrackerGateway({
         db,
         organizationId,
-        ...(ctx.linear && { load: ctx.linear }),
+        ...(ctx.tracker && { load: ctx.tracker }),
       }),
       adapterFor: ctx.adapterFor ?? scmAdapterFor,
       chat: ctx.chat,
@@ -192,16 +192,16 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
     });
     const { run } = result;
     // A run from chat has no Linear issue: it's followed in its chat thread.
-    const linear = isLinearRun(run) ? run : null;
-    const issue = !linear
+    const tracker = isLinearRun(run) ? run : null;
+    const issue = !tracker
       ? ""
-      : linear.linearUrl
-        ? ` of [${linear.linearIdentifier}](${linear.linearUrl})`
-        : ` of **${linear.linearIdentifier}**`;
-    const hosts = linear?.linearUrl ? [new URL(linear.linearUrl).hostname] : [];
+      : tracker.linearUrl
+        ? ` of [${tracker.linearIdentifier}](${tracker.linearUrl})`
+        : ` of **${tracker.linearIdentifier}**`;
+    const hosts = tracker?.linearUrl ? [new URL(tracker.linearUrl).hostname] : [];
     if (result.status === "run_over") {
-      const again = linear
-        ? `Delegate ${linear.linearIdentifier} to me in Linear again to pick it back up.`
+      const again = tracker
+        ? `Delegate ${tracker.linearIdentifier} to me in Linear again to pick it back up.`
         : "Ask for it again in the chat thread it came from to pick it back up.";
       await respond(
         `Sorry @${author}, the coding task${issue} is over, so I can't work on this ${term}. ${again}`,
@@ -215,7 +215,7 @@ export async function runBotCommand(ctx: BotCommandContext): Promise<BotCommandO
         : result.status === "live"
           ? " right away"
           : "";
-    const follow = linear ? "Follow along in Linear." : "Follow along in its chat thread.";
+    const follow = tracker ? "Follow along in Linear." : "Follow along in its chat thread.";
     await respond(
       `On it, @${author}: I passed this to the coding task${issue}, which will work on it${when} and push the changes here. ${follow}`,
       hosts,

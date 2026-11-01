@@ -51,7 +51,7 @@ async function remove(req: Request, ctx: PermissionRouteContext): Promise<Respon
   await answerRunPermissionRequest(db, { jobId: job.id, requestId, answer: "expired" });
   if (!job.ralphRunId) return new Response(null, { status: 204 });
   await expirePermission(
-    { db, linear: (organizationId) => getTrackerGateway({ db, organizationId }) },
+    { db, tracker: (organizationId) => getTrackerGateway({ db, organizationId }) },
     job,
     requestId,
   );

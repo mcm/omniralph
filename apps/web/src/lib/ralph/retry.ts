@@ -177,7 +177,7 @@ async function retryStory(
       const tracker = await workItemTrackerFor({
         db: deps.db,
         organizationId: run.organizationId,
-        gateway: deps.linear,
+        gateway: deps.tracker,
       });
       const item = await tracker.get(story.linearIssueId);
       if (item.state.category === "done" || item.state.category === "canceled") {

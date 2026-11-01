@@ -78,8 +78,8 @@ export interface LinearLink {
  */
 export function pullRequestFooter(epic: LinearLink): string {
   if (epic.fromChat) return ["---", "_Requested in chat. Opened by Omniralph._"].join("\n");
-  const linear = epic.url ? `[${epic.identifier}](${epic.url})` : epic.identifier;
-  return ["---", `Linear: ${linear} · _Opened by Omniralph._`].join("\n");
+  const tracker = epic.url ? `[${epic.identifier}](${epic.url})` : epic.identifier;
+  return ["---", `Linear: ${tracker} · _Opened by Omniralph._`].join("\n");
 }
 
 /** The title and body of an early (draft) PR/MR, before the describe job rewrites them. */
@@ -247,14 +247,14 @@ export async function sessionLinkLabel(
  * links it too. A chat run has no issue. A failure is logged, never fails the run.
  */
 export async function linkPullRequestToIssue(
-  deps: Pick<RalphDeps, "linear">,
+  deps: Pick<RalphDeps, "tracker">,
   run: Pick<RalphRun, "origin" | "linearIssueId" | "linearIdentifier" | "linearAgentSessionId">,
   label: string,
   url: string,
 ): Promise<void> {
   if (!isLinearRun(run)) return;
   await quietly(`Linking ${url} to ${run.linearIdentifier}`, () =>
-    deps.linear.linkUrl(run.linearIssueId, url, label),
+    deps.tracker.linkUrl(run.linearIssueId, url, label),
   );
 }
 
@@ -404,7 +404,7 @@ export async function tickPushedStories(
  * never fails the run.
  */
 export async function moveCompletedEpic(
-  deps: Pick<RalphDeps, "db" | "linear">,
+  deps: Pick<RalphDeps, "db" | "tracker">,
   run: Pick<
     RalphRun,
     | "kind"
@@ -424,7 +424,7 @@ export async function moveCompletedEpic(
         (await storyCodingSettings(repository, organizationPlaybooks(deps.db, run.organizationId)))
           .epicCompletedState,
     );
-    if (target) await deps.linear.setIssueState(run.linearIssueId, target);
+    if (target) await deps.tracker.setIssueState(run.linearIssueId, target);
   });
 }
 

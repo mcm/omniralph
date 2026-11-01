@@ -85,7 +85,7 @@ export interface RouteDeps {
   db: Pick<Database, "select">;
   organizationId: string;
   /** The tracker the issues are read from. */
-  linear: RoutingSource;
+  tracker: RoutingSource;
   /** Rules to route by instead of the saved ones, in order (Settings › Advanced › Routing rules' unsaved list). */
   rules?: readonly Pick<RoutingRule, "repositoryId" | "query">[];
   /** Work item matches to route by instead of the saved ones (an unsaved match applied). */
@@ -179,7 +179,7 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
     seen: ReadonlySet<string>,
     hops: number,
   ): Promise<RouteOutcome> => {
-    const routing = await readRoutingIssue(deps.linear, issueId);
+    const routing = await readRoutingIssue(deps.tracker, issueId);
     const { issue } = routing;
     if (seen.has(issue.id) || seen.has(issue.identifier)) return ASK;
     const visited = new Set([...seen, issueId, issue.id, issue.identifier]);
@@ -238,7 +238,7 @@ export async function createRouter(deps: RouteDeps): Promise<Router> {
   /** A follow-up's source's fields; null (empty `source.*`) when it can't be read, e.g. deleted. */
   const sourceFields = async (identifier: string, sourceId: string) => {
     try {
-      return (await readRoutingIssue(deps.linear, sourceId)).issue;
+      return (await readRoutingIssue(deps.tracker, sourceId)).issue;
     } catch (error) {
       console.warn(`${identifier}: could not read its follow-up source ${sourceId}`, error);
       return null;

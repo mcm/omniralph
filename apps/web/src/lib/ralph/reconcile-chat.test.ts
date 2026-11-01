@@ -152,7 +152,7 @@ describe.skipIf(!databaseAvailable)("reconcile cron, organization without Linear
       {
         db,
         organizationId: orgId,
-        linear: new Proxy({} as never, {
+        tracker: new Proxy({} as never, {
           get: () => {
             throw new Error("Linear used");
           },

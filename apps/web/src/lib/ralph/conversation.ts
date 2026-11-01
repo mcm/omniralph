@@ -81,7 +81,7 @@ export function runFailedEvent(run: Pick<RalphRun, "updatedAt">): PostOptions["e
 export type TrackerSource = TrackerGateway | (() => Promise<TrackerGateway>);
 
 export interface ConversationDeps {
-  linear: TrackerSource;
+  tracker: TrackerSource;
   /** Where a chat run's thread is posted through (default: the deployment's chat bot). */
   chat?: ChatSource;
 }
@@ -414,7 +414,7 @@ export function conversationFor(
   deps: ConversationDeps,
 ): RunConversation {
   if (isLinearRun(run)) {
-    return new TrackerConversation(deps.linear, run.linearAgentSessionId, run.linearIssueId);
+    return new TrackerConversation(deps.tracker, run.linearAgentSessionId, run.linearIssueId);
   }
   return new ChatConversation(run, deps.chat);
 }

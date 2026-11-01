@@ -59,7 +59,7 @@ const isCleanupJob = (type: string) => type === "worktree.cleanup" || type === "
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 
 /** The tracker gateway the webhook hands its handlers (the strict one records every call). */
-type WebhookGateway = Awaited<ReturnType<NonNullable<WebhookDeps["linear"]>>>;
+type WebhookGateway = Awaited<ReturnType<NonNullable<WebhookDeps["tracker"]>>>;
 
 const { handleWebhook } = await import("@/lib/webhooks/ingest");
 const { createChatAgentHandler } = await import("@/lib/chat/agent/handler");
@@ -118,7 +118,7 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
   const ralph = (): RalphDeps => ({
     db,
     organizationId: orgId,
-    linear: strictLinear(),
+    tracker: strictLinear(),
     dispatcher,
     adapterFor: () => scm.asAdapter(),
     chat: chat(),
@@ -145,7 +145,7 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
         dispatcher,
         adapterFor: () => scm.asAdapter(),
         handle: "omniralph",
-        linear: async () => {
+        tracker: async () => {
           linearLoads += 1;
           return strictLinear();
         },
@@ -586,7 +586,7 @@ describe.skipIf(!databaseAvailable)("PR follow-ups of a chat run", () => {
 
     const requestId = randomUUID();
     expect(
-      await askPermission({ db, linear: async () => strictLinear(), chat: chat() }, job, {
+      await askPermission({ db, tracker: async () => strictLinear(), chat: chat() }, job, {
         requestId,
         tool: "Bash",
         detail: "git commit -m 'Fix the typo'",

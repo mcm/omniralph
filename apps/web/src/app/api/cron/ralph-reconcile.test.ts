@@ -33,12 +33,12 @@ vi.mock("@/lib/tracker/linear/client", async (importOriginal) => {
     disconnectedLinearGateway: () => ({ workspaceOf: "disconnected" }),
   };
 });
-type Deps = { organizationId: string; linear: { workspaceOf: string } };
+type Deps = { organizationId: string; tracker: { workspaceOf: string } };
 const pass = (name: string) => (deps: Deps, origin?: string) => {
   state.passes.push([
     name,
     deps.organizationId,
-    deps.linear.workspaceOf,
+    deps.tracker.workspaceOf,
     ...(origin ? [origin] : []),
   ]);
 };

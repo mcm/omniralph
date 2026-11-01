@@ -64,7 +64,7 @@ describe.skipIf(!databaseAvailable)("send_ralph_guidance and get_ralph_run", () 
   const ralph = (organizationId: string): RalphDeps => ({
     db,
     organizationId,
-    linear,
+    tracker: linear,
     dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => new FakeScmAdapter().asAdapter(),
     chat: {

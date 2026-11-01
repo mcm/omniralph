@@ -80,7 +80,7 @@ describe.skipIf(!databaseAvailable)("triage on a tracker without optional capabi
   const context = () => ({ db, organizationId: orgId, workspaceId: "ws-1" });
   const handle = (event: Parameters<typeof handleTrackerEvent>[0]) =>
     handleTrackerEvent(event, context(), {
-      linear: tracker,
+      tracker,
       dispatcher: new PostgresDispatcher({ db }),
       adapterFor: () => fakeAdapter,
     });
@@ -141,7 +141,7 @@ describe.skipIf(!databaseAvailable)("triage on a tracker without optional capabi
 
     await onTriageJobCompleted(db, await complete(run!.currentJobId!, RESULT), {
       db,
-      linear: tracker,
+      tracker,
     });
 
     expect((await getTriageRun(db, run!.id))?.status).toBe("completed");
@@ -183,8 +183,8 @@ describe.skipIf(!databaseAvailable)("triage on a tracker without optional capabi
 
   it("has no delegate to release", async () => {
     const issue = tracker.add({ title: "rotate keys" });
-    expect(
-      await releaseTriageDelegation({ db, organizationId: orgId, linear: tracker }, issue.id),
-    ).toBe(false);
+    expect(await releaseTriageDelegation({ db, organizationId: orgId, tracker }, issue.id)).toBe(
+      false,
+    );
   });
 });

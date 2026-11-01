@@ -98,13 +98,13 @@ async function afterReply(
     case "none":
       return { kind: "ignored" };
     case "pending":
-      await postActivity(trackerConversation(deps.linear, sessionId, run.linearIssueId), {
+      await postActivity(trackerConversation(deps.tracker, sessionId, run.linearIssueId), {
         type: "thought",
         body: "Got it. Triage is still running; I'll triage again with this once it finishes.",
       });
       return { kind: "pending" };
     case "conflict":
-      await postActivity(trackerConversation(deps.linear, sessionId, run.linearIssueId), {
+      await postActivity(trackerConversation(deps.tracker, sessionId, run.linearIssueId), {
         type: "response",
         body: "The issue is being triaged in another session right now, so I didn't act on this. Reply again once that triage is over.",
       });
@@ -121,7 +121,7 @@ async function retriage(
   reply: string,
 ): Promise<ContinueTriageOutcome> {
   await postActivity(
-    trackerConversation(deps.linear, run.linearAgentSessionId, run.linearIssueId),
+    trackerConversation(deps.tracker, run.linearAgentSessionId, run.linearIssueId),
     {
       type: "thought",
       body: "Got it. Triaging again with your reply…",
@@ -151,7 +151,7 @@ async function stopTriage(
   const stopped = await stopTriageRun(deps.db, run.id);
   if (!stopped) {
     await postActivity(
-      trackerConversation(deps.linear, run.linearAgentSessionId, run.linearIssueId),
+      trackerConversation(deps.tracker, run.linearAgentSessionId, run.linearIssueId),
       {
         type: "response",
         body: "Triage isn't running, so there is nothing to stop. Reply here to triage again.",
@@ -168,13 +168,13 @@ async function stopTriage(
     });
   }
   // A canceled job reports nothing more, so the label trigger ends here.
-  await removeTriageLabelQuietly(deps.linear, run.linearIssueId);
+  await removeTriageLabelQuietly(deps.tracker, run.linearIssueId);
   const by = authorName ? ` (requested by ${authorName})` : "";
   await postActivity(
-    trackerConversation(deps.linear, run.linearAgentSessionId, run.linearIssueId),
+    trackerConversation(deps.tracker, run.linearAgentSessionId, run.linearIssueId),
     {
       type: "response",
-      body: `Stopped${by}. ${canceled ? "I canceled the triage job, and " : ""}nothing more changes in ${trackerName(deps.linear.provider)}. Reply here to triage again.`,
+      body: `Stopped${by}. ${canceled ? "I canceled the triage job, and " : ""}nothing more changes in ${trackerName(deps.tracker.provider)}. Reply here to triage again.`,
     },
   );
   return { kind: "stop", canceled };

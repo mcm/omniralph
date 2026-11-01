@@ -51,15 +51,15 @@ function commentLabel(identifier: string, comment: IssueComment): string {
  * skipped (logged). A tracker without the uploads capability has none.
  */
 export async function gatherRunAttachments(
-  linear: TrackerGateway,
+  tracker: TrackerGateway,
   tx: RalphTransaction,
   run: RalphRun,
   epic: Epic,
 ): Promise<RunAttachment[]> {
   // Agents download attachments through the tracker's uploads: without them there's nothing to list.
-  if (!hasCapability(linear, "uploads")) return [];
+  if (!hasCapability(tracker, "uploads")) return [];
   const comments = async (issueId: string) =>
-    linear.getComments(issueId).catch((error: unknown) => {
+    tracker.getComments(issueId).catch((error: unknown) => {
       console.warn(`Reading the comments of ${issueId} for attachments failed`, error);
       return [] as IssueComment[];
     });
