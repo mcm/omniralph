@@ -35,14 +35,7 @@ export interface ReferenceDocDraft {
   content: string;
 }
 
-/** A verify command row. */
-export interface VerifyCommandDraft {
-  key: string;
-  command: string;
-}
-
 export interface CodingDraft {
-  verifyCommands: VerifyCommandDraft[];
   worktreeSetupCommand: string;
   runPrdQualityGates: boolean;
   allowPreparation: boolean;
@@ -105,10 +98,6 @@ function commandDrafts(commands: readonly { name: string; command: string }[]): 
 function codingDraft(coding: Playbook["coding"]): CodingDraft {
   const set = coding ?? {};
   return {
-    verifyCommands: (set.verifyCommands ?? CODING_DEFAULTS.verifyCommands).map((command) => ({
-      key: rowKey(),
-      command,
-    })),
     worktreeSetupCommand: set.worktreeSetupCommand ?? "",
     runPrdQualityGates: set.runPrdQualityGates ?? CODING_DEFAULTS.runPrdQualityGates,
     allowPreparation: set.allowPreparation ?? CODING_DEFAULTS.allowPreparation,
@@ -255,7 +244,6 @@ export function draftToInput(draft: PlaybookDraft): Record<string, unknown> {
     const { coding } = draft;
     input.coding = {
       ...baseCoding,
-      verifyCommands: coding.verifyCommands.map((row) => row.command),
       worktreeSetupCommand: coding.worktreeSetupCommand.trim() || null,
       runPrdQualityGates: coding.runPrdQualityGates,
       allowPreparation: coding.allowPreparation,
@@ -314,7 +302,6 @@ export function shownFields(role: PlaybookRole): string[] {
     "teardownCommands",
     ...(isCodingRole(role)
       ? [
-          "coding.verifyCommands",
           "coding.worktreeSetupCommand",
           "coding.runPrdQualityGates",
           "coding.allowPreparation",

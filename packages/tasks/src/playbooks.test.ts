@@ -208,11 +208,13 @@ describe("Playbook", () => {
         ...chat,
         role: "story",
         promptTemplate: "{{epic.title}}",
-        coding: { draftPullRequest: "end" },
+        coding: { draftPullRequest: "end", verifyCommands: ["pnpm test"] },
       }),
     ).toEqual({
       "coding.draftPullRequest":
         'The repo\'s "open PR early" setting decides when the draft PR opens; remove draftPullRequest.',
+      "coding.verifyCommands":
+        "Checks are set per repo, on its Coding card; remove verifyCommands.",
     });
   });
 
@@ -328,7 +330,6 @@ describe("playbookRunSpec", () => {
       coding: {
         maxAttemptsPerStory: 5,
         prDescriptionPlaybookId: UUID,
-        verifyCommands: ["pnpm test"],
         worktreeSetupCommand: "pnpm install",
         epicCompletedState: "In Review",
       },
@@ -340,7 +341,6 @@ describe("playbookRunSpec", () => {
       sink: "ralph-run",
       maxAttemptsPerStory: 5,
       prDescriptionTaskId: UUID,
-      verifyCommands: ["pnpm test"],
       worktreeSetupCommand: "pnpm install",
       epicCompletedState: "In Review",
     });
@@ -356,7 +356,6 @@ describe("playbookRunSpec", () => {
       expect(task).toMatchObject({
         maxReviewRounds: 3,
         maxFixRounds: 3,
-        verifyCommands: [],
         worktreeSetupCommand: null,
         runPrdQualityGates: true,
         allowPreparation: true,

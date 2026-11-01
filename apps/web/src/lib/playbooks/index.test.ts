@@ -113,6 +113,14 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
       });
     });
 
+    it("reads a story playbook stored with verify commands without them", async () => {
+      const row = await customPlaybook(orgId, "builtin:implement-story", {
+        coding: { verifyCommands: ["pnpm test"], maxAttemptsPerStory: 5 },
+      });
+      const resolved = await getPlaybook(db, orgId, row.id);
+      expect(resolved?.playbook.coding).toEqual({ maxAttemptsPerStory: 5 });
+    });
+
     it("never resolves another organization's row", async () => {
       const row = await customPlaybook(otherOrgId);
       expect(await getPlaybook(db, orgId, row.id)).toBeNull();

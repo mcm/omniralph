@@ -571,8 +571,8 @@ export const VARIABLES: readonly VariableDefinition[] = [
         "Extra instructions from the repository's settings (null without any).",
       ],
       [
-        "verifyCommands.items",
-        "A command the orchestrator runs itself after the session (`verifyCommands` is null without any).",
+        "checks.items",
+        "A command the orchestrator runs itself after the session: the repo's checks, then the PRD's gates it runs (`checks` is null without any).",
       ],
       ["remoteUrl", "URL of the worktree's `origin` remote (null without one)."],
       [

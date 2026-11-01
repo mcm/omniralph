@@ -157,7 +157,6 @@ describe("codingSettings", () => {
     model: "claude-sonnet-5-5",
     fallbackModel: "claude-haiku-5-5",
     coding: {
-      verifyCommands: ["pnpm test"],
       worktreeSetupCommand: "pnpm install",
       runPrdQualityGates: false,
       allowPreparation: false,
@@ -176,7 +175,6 @@ describe("codingSettings", () => {
     expect(await codingSettings(custom.id, source)).toEqual({
       model: "claude-sonnet-5-5",
       fallbackModel: "claude-haiku-5-5",
-      verifyCommands: ["pnpm test"],
       worktreeSetupCommand: "pnpm install",
       runPrdQualityGates: false,
       allowPreparation: false,
@@ -193,7 +191,6 @@ describe("codingSettings", () => {
       });
     }
     expect(DEFAULT_CODING_SETTINGS).toMatchObject({
-      verifyCommands: [],
       worktreeSetupCommand: null,
       runPrdQualityGates: true,
       allowPreparation: true,

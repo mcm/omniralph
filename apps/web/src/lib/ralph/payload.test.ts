@@ -53,6 +53,7 @@ const repository = (policy: Partial<Repository> = {}) =>
     fullPath: "acme/api",
     codingInstructions: null,
     historyRewrite: "when-asked",
+    checks: [],
     ...policy,
   }) as Repository;
 
@@ -91,30 +92,29 @@ function payloadFor(
 }
 
 describe("story quality gates", () => {
-  it("are the verify commands, then the PRD's gates, without duplicates", () => {
-    const payload = payloadFor("children", {
-      verifyCommands: ["pnpm typecheck", " pnpm test "],
-    });
+  it("are the repo's checks, then the PRD's gates, without duplicates", () => {
+    const payload = payloadFor("children", {}, { checks: ["pnpm typecheck", " pnpm test "] });
     expect(payload.qualityGates).toEqual(["pnpm typecheck", "pnpm test", "pnpm lint"]);
     // The prompt still shows the PRD's gates (those the job runs aren't repeated as the agent's).
     expect(payload.prdQualityGates).toEqual(["pnpm test", "pnpm lint"]);
   });
 
-  it("are only the verify commands with runPrdQualityGates off", () => {
-    const payload = payloadFor("children", {
-      verifyCommands: ["pnpm typecheck"],
-      runPrdQualityGates: false,
-    });
+  it("are only the repo's checks with runPrdQualityGates off", () => {
+    const payload = payloadFor(
+      "children",
+      { runPrdQualityGates: false },
+      { checks: ["pnpm typecheck"] },
+    );
     expect(payload.qualityGates).toEqual(["pnpm typecheck"]);
     expect(payload.prdQualityGates).toEqual(["pnpm test", "pnpm lint"]);
   });
 
-  it("are the PRD's gates by default", () => {
+  it("are the PRD's gates for a repo without checks", () => {
     expect(payloadFor("children", {}).qualityGates).toEqual(["pnpm test", "pnpm lint"]);
   });
 
-  it("are only the verify commands for a single issue", () => {
-    const payload = payloadFor("single", { verifyCommands: ["make check"] });
+  it("are only the repo's checks for a single issue", () => {
+    const payload = payloadFor("single", {}, { checks: ["make check"] });
     expect(payload.qualityGates).toEqual(["make check"]);
     expect(payload.prdQualityGates).toEqual([]);
     expect(storyQualityGates("single", epic(), repository(), coding())).toEqual([]);
@@ -122,10 +122,10 @@ describe("story quality gates", () => {
 
   it("are what the describe-pr job reports as the verification", () => {
     const payload = buildDescribePrPayload({
-      coding: coding({ verifyCommands: ["pnpm typecheck"] }),
+      coding: coding(),
       run: run(),
       lane,
-      repository: repository(),
+      repository: repository({ checks: ["pnpm typecheck"] }),
       connection,
       epic: epic(),
       rows: [],
@@ -133,13 +133,17 @@ describe("story quality gates", () => {
     expect(payload.qualityGates).toEqual(["pnpm typecheck", "pnpm test", "pnpm lint"]);
   });
 
-  it("are a request's gates too, from the request playbook, with the repository's instructions and history rule", () => {
+  it("are a request's gates too, with the repository's checks, instructions and history rule", () => {
     const request = (kind: RalphRun["kind"]) =>
       buildRequestPayload({
-        coding: coding({ verifyCommands: ["pnpm typecheck"] }),
+        coding: coding(),
         run: run(kind),
         lane: { ...lane, prUrl: null },
-        repository: repository({ codingInstructions: "Be brief.", historyRewrite: "never" }),
+        repository: repository({
+          checks: ["pnpm typecheck"],
+          codingInstructions: "Be brief.",
+          historyRewrite: "never",
+        }),
         connection,
         epic: epic(kind === "single" ? "single" : "children"),
         stories: [story],
@@ -154,7 +158,7 @@ describe("story quality gates", () => {
     expect(request("single").qualityGates).toEqual(["pnpm typecheck"]);
   });
 
-  it("add the PRD's gates for the lane's repository, never another repository's", () => {
+  it("are the lane repository's checks and PRD gates, never another repository's", () => {
     const scoped: Epic = {
       ...epic(),
       repositoryQualityGates: {
@@ -162,12 +166,12 @@ describe("story quality gates", () => {
         "acme/web": ["pnpm build"],
       },
     };
-    const api = { ...repository(), fullPath: "Acme/API" };
-    const web = { ...repository(), fullPath: "acme/web" };
+    const api = { ...repository(), fullPath: "Acme/API", checks: ["pnpm typecheck"] };
+    const web = { ...repository(), fullPath: "acme/web", checks: ["pnpm build:web"] };
     const other = { ...repository(), fullPath: "acme/docs" };
-    const storyPayload = (repo: Repository, settings: Partial<CodingSettings> = {}) =>
+    const storyPayload = (repo: Repository) =>
       buildStoryPayload({
-        coding: coding(settings),
+        coding: coding(),
         run: run(),
         lane,
         repository: repo,
@@ -178,19 +182,21 @@ describe("story quality gates", () => {
         row: row as RalphStory,
       });
 
-    expect(storyPayload(api, { verifyCommands: ["pnpm typecheck"] })).toMatchObject({
+    // The main lane runs its repo's checks.
+    expect(storyPayload(api)).toMatchObject({
       qualityGates: ["pnpm typecheck", "pnpm test", "pnpm lint", "cargo test"],
       prdQualityGates: ["pnpm test", "pnpm lint", "cargo test"],
     });
+    // A story in a second repo's lane runs that repo's checks, not the main repo's.
     expect(storyPayload(web)).toMatchObject({
-      qualityGates: ["pnpm test", "pnpm lint", "pnpm build"],
+      qualityGates: ["pnpm build:web", "pnpm test", "pnpm lint", "pnpm build"],
       prdQualityGates: ["pnpm test", "pnpm lint", "pnpm build"],
     });
     expect(storyPayload(other).qualityGates).toEqual(["pnpm test", "pnpm lint"]);
-    // With runPrdQualityGates off, a lane runs only its verify commands.
+    // With runPrdQualityGates off, a lane runs only its repo's checks.
     expect(
       storyQualityGates("children", scoped, web, coding({ runPrdQualityGates: false })),
-    ).toEqual([]);
+    ).toEqual(["pnpm build:web"]);
     // The describe-pr and request jobs of a lane report the same gates.
     const describe = buildDescribePrPayload({
       coding: coding(),
@@ -201,7 +207,12 @@ describe("story quality gates", () => {
       epic: scoped,
       rows: [],
     });
-    expect(describe.qualityGates).toEqual(["pnpm test", "pnpm lint", "pnpm build"]);
+    expect(describe.qualityGates).toEqual([
+      "pnpm build:web",
+      "pnpm test",
+      "pnpm lint",
+      "pnpm build",
+    ]);
     const request = buildRequestPayload({
       coding: coding(),
       run: run(),
@@ -213,7 +224,12 @@ describe("story quality gates", () => {
       requests: [{ id: randomUUID(), text: "push it" }],
       resumeSessionId: null,
     });
-    expect(request.qualityGates).toEqual(["pnpm test", "pnpm lint", "pnpm build"]);
+    expect(request.qualityGates).toEqual([
+      "pnpm build:web",
+      "pnpm test",
+      "pnpm lint",
+      "pnpm build",
+    ]);
   });
 
   it("say whether a request comes from the tracker or a chat thread", () => {

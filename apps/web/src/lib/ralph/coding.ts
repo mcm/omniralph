@@ -140,8 +140,6 @@ export interface CodingSettings {
   /** The playbook's model; null for the Claude Code default. */
   model: string | null;
   fallbackModel: string | null;
-  /** Quality gates every story and request runs, before the PRD's. */
-  verifyCommands: string[];
   /** Run once in a fresh branch worktree; null for none. */
   worktreeSetupCommand: string | null;
   runPrdQualityGates: boolean;
@@ -162,7 +160,6 @@ export interface CodingSettings {
 export const DEFAULT_CODING_SETTINGS: CodingSettings = {
   model: null,
   fallbackModel: null,
-  verifyCommands: [],
   worktreeSetupCommand: CODING_DEFAULTS.worktreeSetupCommand,
   runPrdQualityGates: CODING_DEFAULTS.runPrdQualityGates,
   allowPreparation: CODING_DEFAULTS.allowPreparation,
@@ -185,7 +182,6 @@ export async function codingSettings(
   return {
     model: playbook.model,
     fallbackModel: playbook.fallbackModel,
-    verifyCommands: [...(task.verifyCommands ?? d.verifyCommands)],
     worktreeSetupCommand: task.worktreeSetupCommand ?? d.worktreeSetupCommand,
     runPrdQualityGates: task.runPrdQualityGates ?? d.runPrdQualityGates,
     allowPreparation: task.allowPreparation ?? d.allowPreparation,

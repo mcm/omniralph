@@ -211,7 +211,7 @@ describe("prompt", () => {
       progressFile: "/tmp/p.md",
       attempt: 1,
       maxAttempts: 3,
-      verifyCommands: ["pnpm test", "pnpm build", "pnpm build"],
+      checks: ["pnpm test", "pnpm build", "pnpm build"],
     });
     const [gates = "", checked = ""] = p.split("### Checked by the Orchestrator");
     expect(gates).toContain("- `pnpm lint`\n- `pnpm typecheck`\n\n");
@@ -226,10 +226,23 @@ describe("prompt", () => {
       progressFile: "/tmp/p.md",
       attempt: 1,
       maxAttempts: 3,
-      verifyCommands: ["pnpm lint", "pnpm test", "pnpm typecheck"],
+      checks: ["pnpm lint", "pnpm test", "pnpm typecheck"],
     });
     expect(all).not.toContain("### Quality Gates");
     expect(all).toContain("### Checked by the Orchestrator");
+
+    // Without checks the section is left out, and the PRD's gates are the agent's to run.
+    const none = buildStoryPrompt({
+      trackerName: "Linear",
+      epic: gated,
+      story: gated.stories[1]!,
+      progressFile: "/tmp/p.md",
+      attempt: 1,
+      maxAttempts: 3,
+      checks: [],
+    });
+    expect(none).not.toContain("### Checked by the Orchestrator");
+    expect(none).toContain("### Quality Gates");
   });
 
   it("drops duplicate commands, ignoring whitespace", () => {

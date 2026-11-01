@@ -80,14 +80,14 @@ Files attached in {{tracker.name}} (screenshots, mockups, documents). Open each 
 {{/items}}
 
 {{/qualityGates}}
-{{#verifyCommands}}
+{{#checks}}
 ### Checked by the Orchestrator
 The orchestrator runs these itself after you report the story complete and sends any failure back to you, so you don't need to run them as a final check (run one earlier only if you need its output while working):
 {{#items}}
 - \`{{.}}\`
 {{/items}}
 
-{{/verifyCommands}}
+{{/checks}}
 {{#guidance}}
 ## Guidance From Your Team (follow this)
 {{#items}}

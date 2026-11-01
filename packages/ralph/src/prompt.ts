@@ -75,10 +75,11 @@ export interface PromptContext {
   /** The orchestrator files `followUps` as sub-issues of the epic (tracker-backed epics only). */
   followUps?: boolean;
   /**
-   * Commands the orchestrator runs itself after the agent reports the story complete. Quality gates among them
-   * aren't repeated as the agent's to run, so each check runs once.
+   * Commands the orchestrator runs itself after the agent reports the story complete (the lane
+   * repository's checks, then the PRD's gates it runs). Quality gates among them aren't repeated
+   * as the agent's to run, so each check runs once.
    */
-  verifyCommands?: string[];
+  checks?: string[];
   /** Stash entries of earlier sessions of this story that haven't been applied yet. */
   stashes?: OfferedStash[];
   /** Markdown list of the tracker attachments the session can open (see `formatAttachments`). */
@@ -138,10 +139,10 @@ Files attached in {{trackerName}} (screenshots, mockups, documents). Open each o
 {{qualityGates}}
 
 {{/if}}
-{{#if verifyCommands}}
+{{#if checks}}
 ### Checked by the Orchestrator
 The orchestrator runs these itself after you report the story complete and sends any failure back to you, so you don't need to run them as a final check (run one earlier only if you need its output while working):
-{{verifyCommands}}
+{{checks}}
 
 {{/if}}
 {{#if guidance}}
@@ -271,22 +272,22 @@ function completedCount(epic: Epic): number {
 }
 
 /** The commands the orchestrator runs, and the PRD's quality gates not among them (each runs once). */
-function storyGates(ctx: Pick<PromptContext, "epic" | "verifyCommands">): {
-  verifyCommands: string[];
+function storyGates(ctx: Pick<PromptContext, "epic" | "checks">): {
+  checks: string[];
   qualityGates: string[];
 } {
-  const verifyCommands = uniqueCommands(ctx.verifyCommands ?? []);
-  const checked = new Set(verifyCommands.map(normalizeCommand));
+  const checks = uniqueCommands(ctx.checks ?? []);
+  const checked = new Set(checks.map(normalizeCommand));
   const qualityGates = uniqueCommands(ctx.epic.qualityGates).filter(
     (g) => !checked.has(normalizeCommand(g)),
   );
-  return { verifyCommands, qualityGates };
+  return { checks, qualityGates };
 }
 
 export function buildStoryPrompt(ctx: PromptContext, template = DEFAULT_STORY_TEMPLATE): string {
   const { epic, story } = ctx;
   const completed = completedCount(epic);
-  const { verifyCommands, qualityGates } = storyGates(ctx);
+  const { checks, qualityGates } = storyGates(ctx);
   const vars: Vars = {
     trackerName: ctx.trackerName,
     epicTitle: epic.title,
@@ -308,7 +309,7 @@ export function buildStoryPrompt(ctx: PromptContext, template = DEFAULT_STORY_TE
     notes: story.notes,
     attachments: ctx.attachments,
     qualityGates: qualityGates.map((g) => `- \`${g}\``).join("\n") || undefined,
-    verifyCommands: verifyCommands.map((g) => `- \`${g}\``).join("\n") || undefined,
+    checks: checks.map((g) => `- \`${g}\``).join("\n") || undefined,
     guidance: ctx.guidance?.length
       ? ctx.guidance.map((g) => `- ${g.replace(/\n/g, "\n  ")}`).join("\n")
       : undefined,
@@ -748,8 +749,8 @@ export interface StoryTemplateContext {
   };
   /** The PRD's quality gates the orchestrator doesn't run itself. */
   qualityGates: CommandList;
-  /** The commands the orchestrator runs after the session. */
-  verifyCommands: CommandList;
+  /** The commands the orchestrator runs after the session (the repo's checks, then the PRD's gates it runs). */
+  checks: CommandList;
   /** The latest guidance from the team, oldest first. */
   guidance: TemplateList<string>;
   /** Why the previous attempt didn't complete; null on the first attempt. */
@@ -771,7 +772,7 @@ export interface StoryTemplateContext {
 /** `ctx` as the context of a `builtin:implement-story` run (see `StoryTemplateContext`). */
 export function storyTemplateContext(ctx: PromptContext): StoryTemplateContext {
   const { epic, story } = ctx;
-  const { verifyCommands, qualityGates } = storyGates(ctx);
+  const { checks, qualityGates } = storyGates(ctx);
   return {
     tracker: { name: ctx.trackerName },
     epic: {
@@ -793,7 +794,7 @@ export function storyTemplateContext(ctx: PromptContext): StoryTemplateContext {
       notes: story.notes || null,
     },
     qualityGates: commandList(qualityGates),
-    verifyCommands: commandList(verifyCommands),
+    checks: commandList(checks),
     guidance: templateList(ctx.guidance),
     feedback: ctx.previousAttemptFeedback || null,
     attempt: ctx.attempt,

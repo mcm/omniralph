@@ -1259,7 +1259,7 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
       const before = await getRepository(db, codingRepo);
       for (const key of [
         "model",
-        "verifyCommands",
+        "worktreeSetupCommand",
         "maxReviewRounds",
         "storyPlaybookId",
         "roundLimits",

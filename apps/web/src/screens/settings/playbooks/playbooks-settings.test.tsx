@@ -94,7 +94,6 @@ const storyInput: PlaybookInput = {
   teardownCommands: [{ name: "clean", command: "git clean -fdx" }],
   tokenBudget: { tokens: 500000 },
   coding: {
-    verifyCommands: ["pnpm lint", "pnpm test"],
     worktreeSetupCommand: "pnpm install --frozen-lockfile",
     runPrdQualityGates: false,
     epicCompletedState: "completed",
@@ -410,15 +409,13 @@ describe("a playbook's page", () => {
     expect(facts("Tools")).toContainEqual(["Shell access", "On"]);
     expect(items("Packages")).toEqual(["@omniralph/code-graph"]);
     expect(items("Host tools")).toEqual(["semgrep"]);
-    // Setup, verify and teardown commands are numbered lists (Design rule 19).
-    for (const name of ["Setup commands", "Verify commands", "Teardown commands"]) {
+    // Setup and teardown commands are numbered lists (Design rule 19).
+    for (const name of ["Setup commands", "Teardown commands"]) {
       expect(screen.getByRole("list", { name }).tagName).toBe("OL");
     }
     expect(items("Setup commands")).toEqual(["pnpm install", "cp .env.example .env"]);
     expect(items("Teardown commands")).toEqual(["git clean -fdx"]);
-    expect(items("Verify commands")).toEqual(["pnpm lint", "pnpm test"]);
     expect(facts("Coding")).toEqual([
-      ["Verify commands", "pnpm lintpnpm test"],
       ["Worktree setup", "pnpm install --frozen-lockfile"],
       ["PRD quality gates", "Skipped"],
       ["Preparation", "Offers to run a manual story's preparation commands"],

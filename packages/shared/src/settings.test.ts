@@ -200,7 +200,7 @@ describe("RepositoryCodingInput", () => {
   it("rejects unknown keys, such as the settings that moved to playbooks", () => {
     for (const key of [
       "model",
-      "verifyCommands",
+      "worktreeSetupCommand",
       "maxReviewRounds",
       "manualLabels",
       "storyPlaybookId",

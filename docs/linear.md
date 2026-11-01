@@ -177,8 +177,7 @@ tracker labels.
 | Where                                          | Setting                                                   | Default                   | What it does                                                                                                                                                                                                                                                                                                                                                                                          |
 | ---------------------------------------------- | --------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Story or request playbook                      | `model` / `fallbackModel`                                 | `opus` / none             | The Claude model alias or ID the sessions use, and the one used when it's overloaded.                                                                                                                                                                                                                                                                                                                 |
-| Story or request playbook                      | `verifyCommands`                                          | none                      | Quality gates the job runs after the session reports a story (or request) done; a failing one sends its output back for the next attempt.                                                                                                                                                                                                                                                             |
-| Story or request playbook                      | `runPrdQualityGates`                                      | on                        | Also run the PRD's `## Quality Gates` commands (the shared ones and those under this repository's `### <path>` heading), after the verify commands (each command runs once). A single issue has no PRD and only runs the verify commands.                                                                                                                                                             |
+| Story or request playbook                      | `runPrdQualityGates`                                      | on                        | Also run the PRD's `## Quality Gates` commands (the shared ones and those under this repository's `### <path>` heading), after the repo's checks (each command runs once). A single issue has no PRD and only runs the checks.                                                                                                                                                                        |
 | Story or request playbook                      | `worktreeSetupCommand`                                    | none                      | Run once in a fresh branch worktree before the first story, e.g. `pnpm install --frozen-lockfile`.                                                                                                                                                                                                                                                                                                    |
 | Request playbook                               | `maxReviewRounds` / `maxFixRounds`                        | 3 / 3                     | How many reviews and failed CI runs of a PR/MR become requests.                                                                                                                                                                                                                                                                                                                                       |
 | Story playbook                                 | `pushTiming`                                              | `per-story`               | When the branch is pushed: after each story, or `end` (each story's commits go to the hidden ref `refs/omniralph/runs/<run>`, and the branch is pushed once, before the PR is opened).                                                                                                                                                                                                                |
@@ -347,8 +346,8 @@ its lane unless a rule of yours routes them elsewhere. The run detail page shows
 PR/MR and stories.
 
 Each story's job runs in its lane: that repository's checkout, branch and base branch, its Om
-settings (model, tools, prompt additions, setup command) and its quality gates (its
-`verifyCommands`, plus the PRD's shared gates and its own scoped gates when its
+settings (model, tools, prompt additions, setup command) and its quality gates (that
+repository's checks, plus the PRD's shared gates and its own scoped gates when its
 `runPrdQualityGates` is on; see **Quality gates** above), on the lane's agent
 (see [Agents and concurrency](#agents-and-concurrency)), so repositories pinned to different
 agents each run on theirs.
@@ -392,13 +391,13 @@ How the run behaves:
 - **Branch.** A `> Branch: <name>` line in the epic's description, else Linear's branch name for the
   issue. The base is the repository's default branch. Every finished story is committed as
   `feat(<STORY-ID>): <title>` (`<ISSUE-ID>: <title>` for a single issue) and pushed.
-- **Quality gates.** The repository's **Verify commands**, then (with **Run the PRD's quality
-  gates** on) the commands under the epic description's `## Quality Gates` heading, run after
-  every story; a failing gate fails the attempt. A single issue runs the verify commands only.
+- **Quality gates.** The repository's **Checks** (on its Coding card), then (with **Run the PRD's
+  quality gates** on) the commands under the epic description's `## Quality Gates` heading, run
+  after every story and request; a failing gate fails the attempt. A single issue runs the checks only.
   Gates can be scoped to a repository with a `### <repository full path>` heading inside
   `## Quality Gates`: bullets before any such heading are shared, bullets under one apply only to
   that repository's lane (matched case-insensitively; backticks and a trailing `:` are fine). Each
-  lane runs its repository's verify commands, the shared gates and its own scoped gates, never
+  lane runs its repository's checks, the shared gates and its own scoped gates, never
   another repository's:
 
   ```markdown
