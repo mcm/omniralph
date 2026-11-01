@@ -1,7 +1,7 @@
 import "server-only";
 import type { TrackerStateMapping } from "@omniralph/db";
 import { DEFAULT_FIX_LABELS, workItemKind, type DependencyViolation } from "@omniralph/planning";
-import { DEFAULT_MANUAL_LABELS, isManualIssue, parsePrd } from "@omniralph/ralph";
+import { DEFAULT_MANUAL_LABELS, isManualIssue, parseLegacyPrd } from "@omniralph/ralph";
 import {
   hasCapability,
   isTriageLabel,
@@ -480,7 +480,7 @@ export class GatewayWorkItemTracker implements WorkItemTracker {
     const issue = await this.issue(ref);
     const children = await this.gateway.getChildren(issue.id);
     if (children.length === 0) {
-      return (parsePrd(issue.description)?.stories ?? []).map((story) => ({
+      return (parseLegacyPrd(issue.description)?.stories ?? []).map((story) => ({
         ref: null,
         identifier: null,
         title: story.title,

@@ -339,6 +339,9 @@ importers:
 
   packages/ralph:
     dependencies:
+      '@omniralph/planning':
+        specifier: workspace:*
+        version: link:../planning
       zod:
         specifier: ^4.6.5
         version: 4.6.5

@@ -175,9 +175,11 @@ describe("agentPackageDirs", () => {
     expect(dirs).toEqual([
       "apps/agent",
       "packages/engine",
+      "packages/planning",
       "packages/ralph",
       "packages/shared",
       "packages/tasks",
+      "packages/tracker",
       "packages/ui",
     ]);
   });
@@ -191,7 +193,7 @@ describe("agentPackageDirs", () => {
     expect(result.ok).toBe(false);
     expect(result.message).toContain("changes packages/ui, which @omniralph/agent bundles");
     expect(result.message).toContain(
-      "@omniralph/agent bundles apps/agent, packages/engine, packages/ralph, packages/shared, packages/tasks, packages/ui.",
+      "@omniralph/agent bundles apps/agent, packages/engine, packages/planning, packages/ralph, packages/shared, packages/tasks, packages/tracker, packages/ui.",
     );
   });
 

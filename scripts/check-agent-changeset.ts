@@ -131,8 +131,15 @@ export function main(args: string[]): number {
   }
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-  // `base...HEAD` diffs against the merge base: only what the pull request itself changes.
-  const changedFiles = git(repoRoot, ["diff", "--name-only", "--no-renames", `${base}...HEAD`]);
+  // Diff the working tree against the merge base: only what the pull request itself changes,
+  // committed or not (in CI the working tree is HEAD; locally an uncommitted changeset counts).
+  const [mergeBase] = git(repoRoot, ["merge-base", base, "HEAD"]);
+  const changedFiles = [
+    ...new Set([
+      ...git(repoRoot, ["diff", "--name-only", "--no-renames", mergeBase ?? base]),
+      ...git(repoRoot, ["ls-files", "--others", "--exclude-standard"]),
+    ]),
+  ];
   const changesets = changedFiles
     .filter(isChangesetPath)
     .filter((file) => existsSync(path.join(repoRoot, file)))
