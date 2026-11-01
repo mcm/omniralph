@@ -72,7 +72,7 @@ const allOrganizations: SessionUser = {
 
 const readyRows = () => [
   workItemRow(),
-  blockedRow(),
+  workItemRow({ id: "linear-issue-413", identifier: "SOC-413", title: "Send invoice reminders" }),
   workItemRow({ id: "linear-issue-414", identifier: "SOC-414", title: "Archive old invoices" }),
 ];
 const refiningRows = () => [
@@ -106,10 +106,14 @@ function serve() {
         total: ready + refining,
       });
     },
+    // As the server answers it: Needs refining keeps blocked items (they can be triaged).
     "GET /api/ui/backlog/up-next": () =>
       jsonResponse({
         readyToStart: backlog.groups.readyToStart.slice(0, 3),
-        needsRefining: backlog.groups.needsRefining.slice(0, 2),
+        needsRefining: [
+          ...backlog.groups.needsRefining,
+          ...backlog.groups.upNext.filter((row) => row.group === "refine"),
+        ].slice(0, 2),
       }),
     "POST /api/ui/work-items/linear-issue-412/start": () => (act409 ?? answer)(),
     "POST /api/ui/work-items/linear-issue-413/start": () => (act409 ?? answer)(),
@@ -279,11 +283,14 @@ describe("Up next in the empty Inbox", () => {
     expect(nestedInteractiveElements(container)).toEqual([]);
   });
 
-  it("shows the Backlog's badges, with Blocked on a blocked row", async () => {
+  it("shows the Backlog's badges, with Blocked on a blocked Needs refining row", async () => {
+    backlog = backlogOf([...readyRows(), { ...blockedRow(), group: "refine" }]);
     renderEmptyInbox();
     await screen.findByRole("region", { name: UP_NEXT });
-    const [ready, blocked] = rowsOf("Ready to start");
+    const [ready] = rowsOf("Ready to start");
+    const [blocked] = rowsOf("Needs refining");
     expect(within(blocked!).getByRole("img", { name: "Blocked" })).toBeTruthy();
+    expect(within(blocked!).getByRole("button", { name: "Triage now SOC-413" })).toBeTruthy();
     expect(within(ready!).queryByRole("img", { name: "Blocked" })).toBeNull();
     expect(within(ready!).getByText("SOC-412")).toBeTruthy();
     expect(within(ready!).getByText("acme/portal")).toBeTruthy();
@@ -321,7 +328,7 @@ describe("Start epic", () => {
     expect(start?.query.get("organization")).toBe(ORG);
 
     // The run started: the Backlog no longer lists it.
-    backlog = backlogOf([blockedRow(), readyRows()[2]!, ...refiningRows()]);
+    backlog = backlogOf([readyRows()[1]!, readyRows()[2]!, ...refiningRows()]);
     await act(async () => response.resolve(jsonResponse({ ok: true })));
     await waitFor(() => expect(ui.toast).toHaveBeenCalledWith("Om is starting SOC-412"));
     await waitFor(() => expect(requests("GET", "/api/ui/backlog/up-next")).toHaveLength(2));
@@ -349,42 +356,6 @@ describe("Start epic", () => {
     await waitFor(() => expect(rowTitles("Ready to start")).toHaveLength(3));
     expect(screen.getByTestId("counts").textContent).toBe("3/2");
     expect(screen.getByTestId("list").textContent).toContain("Export invoices as CSV");
-  });
-
-  it("on a blocked item says what it waits for and confirms before starting", async () => {
-    const user = userEvent.setup();
-    renderEmptyInbox();
-    await screen.findByRole("region", { name: UP_NEXT });
-    const button = screen.getByRole("button", { name: "Start epic SOC-413" });
-
-    await user.hover(button);
-    expect((await screen.findByRole("tooltip")).textContent).toBe(
-      "Starts when SOC-398 and SOC-401 are done",
-    );
-
-    await user.click(button);
-    const dialog = await screen.findByRole("alertdialog", { name: "Start SOC-413?" });
-    expect(dialog.textContent).toContain("Om will wait for its blockers to finish.");
-    expect(requests("POST", "/api/ui/work-items/linear-issue-413/start")).toHaveLength(0);
-
-    // Cancel starts nothing.
-    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
-    expect(requests("POST", "/api/ui/work-items/linear-issue-413/start")).toHaveLength(0);
-
-    await user.click(screen.getByRole("button", { name: "Start epic SOC-413" }));
-    const again = await screen.findByRole("alertdialog", { name: "Start SOC-413?" });
-    backlog = backlogOf([workItemRow(), readyRows()[2]!, ...refiningRows()]);
-    await user.click(within(again).getByRole("button", { name: "Start epic" }));
-    await waitFor(() =>
-      expect(requests("POST", "/api/ui/work-items/linear-issue-413/start")).toHaveLength(1),
-    );
-    await waitFor(() =>
-      expect(rowTitles("Ready to start")).toEqual([
-        "Export invoices as CSV",
-        "Archive old invoices",
-      ]),
-    );
   });
 
   it("starts an unblocked item in one click, without a confirm", async () => {

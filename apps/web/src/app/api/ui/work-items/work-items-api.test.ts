@@ -467,6 +467,33 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
       });
     });
 
+    it("classes it blocked by a blocked label and manual by a manual label, ignoring case", async () => {
+      const holds = async (issue: Pick<IssueSummary, "id">) => {
+        const { blocked, blockers, blockedLabels, manual } = await detail(issue);
+        return { blocked, blockers, blockedLabels, manual };
+      };
+      expect(await holds(ready("Plain"))).toEqual({
+        blocked: false,
+        blockers: [],
+        blockedLabels: [],
+        manual: false,
+      });
+      // The default blocked labels: under-review and blocked.
+      expect(await holds(ready("Label blocked", { labels: ["Blocked"] }))).toEqual({
+        blocked: true,
+        blockers: [],
+        blockedLabels: ["Blocked"],
+        manual: false,
+      });
+      // The default manual label, on an item a blocked label also holds.
+      expect(await holds(refine("By hand", { labels: ["MANUAL", "under-review"] }))).toEqual({
+        blocked: true,
+        blockers: [],
+        blockedLabels: ["under-review"],
+        manual: true,
+      });
+    });
+
     it("is not found for an unknown or malformed ID", async () => {
       expect((await call(detailRoute.GET, "linear-nope")).status).toBe(404);
       expect((await call(detailRoute.GET, "jira-1")).status).toBe(404);

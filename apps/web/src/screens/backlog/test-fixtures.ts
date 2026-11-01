@@ -22,6 +22,8 @@ export function workItemRow(overrides: Partial<WorkItemRow> = {}): WorkItemRow {
     group: "ready",
     blocked: false,
     blockers: [],
+    blockedLabels: [],
+    manual: false,
     triageRunning: false,
     source: { kind: "project", id: "project-portal", name: "Portal" },
     ...overrides,
@@ -42,6 +44,30 @@ export const blockedRow = () =>
     source: { kind: "team", id: "team-soc", name: "SOC" },
   });
 
+/** A Needs refining item blocked by its `on hold` label (a blocked label), with no blockers. */
+export const labelBlockedRow = () =>
+  workItemRow({
+    id: "linear-issue-414",
+    identifier: "SOC-414",
+    title: "Archive old invoices",
+    url: "https://linear.app/acme/issue/SOC-414",
+    group: "refine",
+    blocked: true,
+    blockedLabels: ["on hold"],
+    source: { kind: "team", id: "team-soc", name: "SOC" },
+  });
+
+/** A manual Ready item (its `manual` label): a person's job. */
+export const manualRow = () =>
+  workItemRow({
+    id: "linear-issue-415",
+    identifier: "SOC-415",
+    title: "Call the bank about the CSV format",
+    url: "https://linear.app/acme/issue/SOC-415",
+    manual: true,
+    source: { kind: "team", id: "team-soc", name: "SOC" },
+  });
+
 /** A Needs refining item with no repo yet (routing asks). */
 export const refineRow = () =>
   workItemRow({
@@ -55,7 +81,10 @@ export const refineRow = () =>
     source: { kind: "team", id: "team-soc", name: "SOC" },
   });
 
-/** The Backlog answer for `rows`, grouped, with their filter options. */
+/**
+ * The Backlog answer for `rows` (in list order), grouped as the server groups them, with
+ * their filter options.
+ */
 export function backlogOf(rows: WorkItemRow[], overrides: Partial<Backlog> = {}): Backlog {
   const sources = new Map<string, Backlog["filters"]["sources"][number]>();
   const repos = new Map<string, Backlog["filters"]["repos"][number]>();
@@ -72,8 +101,10 @@ export function backlogOf(rows: WorkItemRow[], overrides: Partial<Backlog> = {})
   }
   return {
     groups: {
-      readyToStart: rows.filter((row) => row.group === "ready"),
-      needsRefining: rows.filter((row) => row.group === "refine"),
+      readyToStart: rows.filter((row) => row.group === "ready" && !row.blocked && !row.manual),
+      needsRefining: rows.filter((row) => row.group === "refine" && !row.blocked && !row.manual),
+      upNext: readyFirst(rows.filter((row) => row.blocked && !row.manual)),
+      manual: readyFirst(rows.filter((row) => row.manual)),
     },
     filters: { sources: [...sources.values()], repos: [...repos.values()] },
     unavailable: [],
@@ -83,3 +114,8 @@ export function backlogOf(rows: WorkItemRow[], overrides: Partial<Backlog> = {})
     ...overrides,
   };
 }
+
+const readyFirst = (rows: WorkItemRow[]) => [
+  ...rows.filter((row) => row.group === "ready"),
+  ...rows.filter((row) => row.group === "refine"),
+];

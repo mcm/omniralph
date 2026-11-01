@@ -1,6 +1,7 @@
 import "server-only";
 import {
   getOrganization,
+  getTrackerLabels,
   getRepository,
   getWorkItemMatch,
   recordWorkItemEvent,
@@ -13,6 +14,7 @@ import { trackerName } from "@/lib/tracker/adapters";
 import { dropBacklogCache } from "./backlog-cache";
 import { getWorkItemTracker } from "./get-tracker";
 import { groupFor } from "./group";
+import { workItemHolds } from "./holds";
 import {
   TrackerNotConnectedError,
   WorkItemProjectNotFoundError,
@@ -216,8 +218,7 @@ export async function createWorkItem(
       size: null,
       // A new item in a state of neither readiness (e.g. Triage) shows in Needs refining.
       group: groupFor(item) ?? "refine",
-      blocked: item.blocked,
-      blockers: item.blockedBy.map((blocker) => blocker.identifier),
+      ...workItemHolds(item, await getTrackerLabels(db, organizationId)),
       triageRunning: triage === "started",
       source: item.project
         ? { kind: "project", id: item.project.id ?? item.project.name, name: item.project.name }

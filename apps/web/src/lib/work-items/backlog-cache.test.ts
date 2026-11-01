@@ -10,8 +10,10 @@ import {
   recordWorkItemChange,
   saveIntegration,
   setTriageRunStatus,
+  setTrackerLabels,
   setWorkItemRepository,
   clearWorkItemRepository,
+  withSettingsChanges,
   upsertScmConnection,
   workItemOverrides,
   type Database,
@@ -44,6 +46,7 @@ process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 const { handleLinearWebhook } = await import("@/lib/tracker/linear/ingest");
 const { saveCodingCard } = await import("@/lib/repositories/cards");
 const { saveRoutingRules } = await import("@/lib/routing/rules");
+const { trackedTrackerLabels } = await import("@/lib/settings-history/sections");
 
 const EMPTY: OrganizationBacklog = { entries: [], truncated: false };
 
@@ -345,6 +348,23 @@ describe.skipIf(!databaseAvailable)(
             },
           ],
           { userId: null, name: "Ada" },
+        ),
+      );
+      expect(changes).toContainEqual(
+        expect.objectContaining({ resource: "settings", section: "routing_rules" }),
+      );
+      expect(hasCachedBacklog(orgId)).toBe(false);
+    });
+
+    it("a tracker labels save (blocked and manual labels)", async () => {
+      const { changes } = await captureChanges(() =>
+        withSettingsChanges(db, { userId: null, name: "Ada" }, trackedTrackerLabels(orgId), (tx) =>
+          setTrackerLabels(
+            tx,
+            orgId,
+            { manualLabels: ["by hand"], blockedLabels: ["on hold"] },
+            null,
+          ),
         ),
       );
       expect(changes).toContainEqual(

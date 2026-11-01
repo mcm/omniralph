@@ -12,7 +12,6 @@ import {
   type Database,
   type Repository,
 } from "@omniralph/db";
-import { isManualIssue } from "@omniralph/ralph";
 import type { WorkItemActions, WorkItemDetail, WorkItemRoute } from "@/lib/api/work-items";
 import { featureStartReason } from "@/lib/ralph/feature";
 import { relationsStartReason } from "@/lib/ralph/relations";
@@ -22,6 +21,7 @@ import { createRouter, type RouteOutcome } from "@/lib/routing/resolve";
 import { ACTIVITY_LIMIT, workItemActivity } from "./activity";
 import { organizationBacklog } from "./backlog";
 import { groupFor } from "./group";
+import { workItemHolds } from "./holds";
 import type { ResolvedWorkItem } from "./item";
 import type { WorkItem, WorkItemRouting, WorkItemTracker } from "./tracker";
 
@@ -212,8 +212,7 @@ export async function loadWorkItemDetail(
     kind: item.kind,
     size: sizes.get(item.id) ?? null,
     group,
-    blocked: item.blocked,
-    blockers: item.blockedBy.map((blocker) => blocker.identifier),
+    ...workItemHolds(item, labels),
     source: workItemSource(item),
     state: item.state,
     description: item.description,
@@ -239,6 +238,5 @@ export async function loadWorkItemDetail(
     run,
     actions: workItemActions({ group, run, triageRunning, startRefusal }),
     ...(startRefusal !== undefined && { startRefusal }),
-    manual: route.outcome === "manual" || isManualIssue(item, labels.manualLabels),
   };
 }

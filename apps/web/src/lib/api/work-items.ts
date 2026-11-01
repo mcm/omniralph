@@ -42,10 +42,21 @@ export const workItemRowSchema = z.object({
   /** From its newest triage; null when no triage sized it. */
   size: z.enum(TRIAGE_SIZES).nullable(),
   group: z.enum(WORK_ITEM_GROUPS),
-  /** Open work items block it. */
+  /**
+   * Om can't build it yet: open work items block it (`blockers`), or it carries one of the
+   * organization's blocked labels (`blockedLabels`). The Backlog lists it in Up next, unless
+   * it's `manual`.
+   */
   blocked: z.boolean(),
   /** The identifiers of its open blockers ("Starts when SOC-398 and SOC-401 are done"). */
   blockers: z.array(z.string()).default([]),
+  /** Its labels that are the organization's blocked labels (matched ignoring case). */
+  blockedLabels: z.array(z.string()).default([]),
+  /**
+   * A person's job: it carries one of the organization's manual labels (matched ignoring
+   * case). The Backlog lists it in Manual, even when it's also blocked.
+   */
+  manual: z.boolean().default(false),
   /** Om is triaging it (a triage queued or running): Triage now is disabled. */
   triageRunning: z.boolean().default(false),
   source: workItemSourceSchema,
@@ -158,12 +169,6 @@ export const workItemDetailSchema = workItemRowSchema.extend({
    * dependency rules. `actions.start` is false then.
    */
   startRefusal: z.string().optional(),
-  /**
-   * Work for a person, not a run: it has one of the tracker's manual labels, or routes to a
-   * repo with Coding off (absent: not manual). Its detail shows its task list
-   * (`ManualTaskChecklist`).
-   */
-  manual: z.boolean().optional(),
 });
 export type WorkItemDetail = z.infer<typeof workItemDetailSchema>;
 
