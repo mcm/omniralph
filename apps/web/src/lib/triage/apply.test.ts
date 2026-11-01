@@ -179,7 +179,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     });
     const payload: RunSpecJobPayload = {
       trigger: {
-        kind: "linear.triage",
+        kind: "tracker.triage",
         context: {
           triageRunId: run.id,
           issue: { identifier: issue.identifier, title: issue.title },

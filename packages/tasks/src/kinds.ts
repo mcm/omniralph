@@ -20,9 +20,9 @@ export const TRIGGER_KINDS = [
   "finding.mention",
   "finding.dismissed",
   "chat.request",
-  "linear.delegated",
-  "linear.triage",
-  "linear.mention",
+  "tracker.delegated",
+  "tracker.triage",
+  "tracker.mention",
   "pr.review-findings",
   "pr.ci-failed",
   "pr.fix-command",
@@ -30,16 +30,16 @@ export const TRIGGER_KINDS = [
 ] as const;
 export type TriggerKind = (typeof TRIGGER_KINDS)[number];
 
-/** The trigger of a story run: an epic (or single issue) delegated in Linear. */
-export const STORY_TRIGGERS = ["linear.delegated"] as const satisfies readonly TriggerKind[];
+/** The trigger of a story run: an epic (or single work item) delegated in the tracker. */
+export const STORY_TRIGGERS = ["tracker.delegated"] as const satisfies readonly TriggerKind[];
 
 /**
- * Triggers of a request run: a mention in Linear, a chat request, review
+ * Triggers of a request run: a mention in the tracker, a chat request, review
  * findings, a failed CI run or a fix command on the PR. Their runs need not
  * have an epic, so their prompts can't count on a PRD or a story.
  */
 export const REQUEST_TRIGGERS = [
-  "linear.mention",
+  "tracker.mention",
   "chat.request",
   "pr.review-findings",
   "pr.ci-failed",
@@ -86,7 +86,7 @@ export const AGENT_TOOLS_BY_TASK_TYPE: Record<TaskType, readonly AgentTool[]> = 
  * answer (finding threads, chat, triage, a run that invokes them).
  */
 export const TRIGGERS_BY_TASK_TYPE: Record<TaskType, readonly TriggerKind[]> = {
-  query: ["finding.mention", "finding.dismissed", "chat.request", "linear.triage", "run.invoked"],
+  query: ["finding.mention", "finding.dismissed", "chat.request", "tracker.triage", "run.invoked"],
   review: ["pr.updated", "pr.mention", "review.rerun"],
   coding: [...STORY_TRIGGERS, ...REQUEST_TRIGGERS],
 };

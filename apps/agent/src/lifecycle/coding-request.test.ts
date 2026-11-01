@@ -135,7 +135,7 @@ function runSpec(
     agent: engineer,
     task: requestTask,
     trigger: {
-      kind: trigger.source === "chat" ? "chat.request" : "linear.mention",
+      kind: trigger.source === "chat" ? "chat.request" : "tracker.mention",
       context: trigger,
     },
     repository: repo,
@@ -398,7 +398,7 @@ describe("coding runs of a request task", { timeout: 60_000 }, () => {
     const storySpec = RunSpec.parse({
       ...spec(),
       task: storyTask,
-      trigger: { kind: "linear.delegated", context: story },
+      trigger: { kind: "tracker.delegated", context: story },
     });
     await runCodingTask(storySpec, context(), options(query));
     expect(agentTools(calls[0]!)).not.toContain("mcp__omniralph__ship");
@@ -930,7 +930,7 @@ describe("a coding run's session pushing by itself", { timeout: 120_000 }, () =>
     const spec = RunSpec.parse({
       ...runSpec(repo, requestPayload(repo, randomUUID(), branch)),
       task: storyTask,
-      trigger: { kind: "linear.delegated", context: storyPayload(repo, randomUUID(), branch) },
+      trigger: { kind: "tracker.delegated", context: storyPayload(repo, randomUUID(), branch) },
     });
     const out = (await runCodingTask(spec, ctx, options(query))) as RalphStoryResult;
 

@@ -86,7 +86,7 @@ export const PLAYBOOK_ROLES = {
     sink: "chat-thread",
     builtinOnly: false,
   },
-  triage: { taskType: "query", triggers: ["linear.triage"], sink: "triage", builtinOnly: true },
+  triage: { taskType: "query", triggers: ["tracker.triage"], sink: "triage", builtinOnly: true },
   "learn-rule": {
     taskType: "query",
     triggers: ["finding.dismissed"],

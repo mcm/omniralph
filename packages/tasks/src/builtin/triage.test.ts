@@ -57,7 +57,7 @@ describe("builtin:triage", () => {
     expect(task).toMatchObject({
       taskType: "query",
       agentId: "builtin:triage",
-      triggers: ["linear.triage"],
+      triggers: ["tracker.triage"],
       sink: "triage",
       model: "opus",
       tokenBudget: null,

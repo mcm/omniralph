@@ -258,7 +258,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
       pool: "long",
       agent: engineer,
       task: storyTask,
-      trigger: { kind: "linear.delegated", context: trigger },
+      trigger: { kind: "tracker.delegated", context: trigger },
       repository: repo,
       ref: null,
       requireCheckout: false,
@@ -734,7 +734,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
         hiddenRef,
         ...overrides,
       };
-      return { ...endSpec(), trigger: { kind: "linear.delegated" as const, context } };
+      return { ...endSpec(), trigger: { kind: "tracker.delegated" as const, context } };
     };
 
     it("pushes the branch once at the end, from the hidden ref, with no session", async () => {
@@ -994,7 +994,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     const { query, calls } = fakeQuery(async function* () {
       yield result({ status: "complete", summary: "x", followUps: [] });
     });
-    const run = { ...spec(), trigger: { kind: "linear.delegated" as const, context: {} } };
+    const run = { ...spec(), trigger: { kind: "tracker.delegated" as const, context: {} } };
     await expect(runCodingTask(run, context(), options(query))).rejects.toThrow(
       "the coding run's trigger context is neither a story, a request nor a push",
     );

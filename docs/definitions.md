@@ -42,18 +42,18 @@ installable's MCP server as <package>:<server>; other MCP servers can't be used.
 
 `PLAYBOOK_ROLES` maps each role to what it fixes:
 
-| Role               | Task type | Triggers                                                                                 | Sink             | Built-in only |
-| ------------------ | --------- | ---------------------------------------------------------------------------------------- | ---------------- | ------------- |
-| `review`           | review    | `pr.updated`, `pr.mention`, `review.rerun`                                               | `review`         |               |
-| `review-summary`   | review    | `pr.updated`, `pr.mention`, `review.rerun`                                               | `sticky-comment` |               |
-| `correlation`      | query     | `run.invoked`                                                                            | `run-result`     |               |
-| `story`            | coding    | `linear.delegated`                                                                       | `ralph-run`      |               |
-| `request`          | coding    | `linear.mention`, `chat.request`, `pr.review-findings`, `pr.ci-failed`, `pr.fix-command` | `ralph-run`      |               |
-| `pr-description`   | query     | `run.invoked`                                                                            | `run-result`     |               |
-| `chat-ask`         | query     | `chat.request`                                                                           | `chat-thread`    |               |
-| `triage`           | query     | `linear.triage`                                                                          | `triage`         | Yes           |
-| `learn-rule`       | query     | `finding.dismissed`                                                                      | `learned-rule`   | Yes           |
-| `reply-to-finding` | query     | `finding.mention`                                                                        | `finding-thread` | Yes           |
+| Role               | Task type | Triggers                                                                                  | Sink             | Built-in only |
+| ------------------ | --------- | ----------------------------------------------------------------------------------------- | ---------------- | ------------- |
+| `review`           | review    | `pr.updated`, `pr.mention`, `review.rerun`                                                | `review`         |               |
+| `review-summary`   | review    | `pr.updated`, `pr.mention`, `review.rerun`                                                | `sticky-comment` |               |
+| `correlation`      | query     | `run.invoked`                                                                             | `run-result`     |               |
+| `story`            | coding    | `tracker.delegated`                                                                       | `ralph-run`      |               |
+| `request`          | coding    | `tracker.mention`, `chat.request`, `pr.review-findings`, `pr.ci-failed`, `pr.fix-command` | `ralph-run`      |               |
+| `pr-description`   | query     | `run.invoked`                                                                             | `run-result`     |               |
+| `chat-ask`         | query     | `chat.request`                                                                            | `chat-thread`    |               |
+| `triage`           | query     | `tracker.triage`                                                                          | `triage`         | Yes           |
+| `learn-rule`       | query     | `finding.dismissed`                                                                       | `learned-rule`   | Yes           |
+| `reply-to-finding` | query     | `finding.mention`                                                                         | `finding-thread` | Yes           |
 
 A custom playbook can't take a built-in-only role (`CUSTOM_PLAYBOOK_ROLES`). The **task type**
 decides how the agent runs it:
@@ -223,7 +223,7 @@ Every variable has a **source**:
   `pr.body` (PR/MR triggers), `finding.title`, `finding.body` (`finding.*`), `dismissal.note`
   (`finding.dismissed`), `chat.context` (`chat.request`), `issue.title`, `issue.description`
   (Linear triggers), `epic.prd`, `stories`, `requests` (coding triggers), `story.*`
-  (`linear.delegated` only), `reviewRun.tasks` (`run.invoked`).
+  (`tracker.delegated` only), `reviewRun.tasks` (`run.invoked`).
 - **task type**: what the agent computes while preparing the run, e.g. `diff`, `plan`, `rubric`,
   `depth`, `repositoryRules`, `previousFindings`, `conventions` (review), `question`, `hunk`,
   `checkout`, `conventions` (query), `progress`, `feedback`, `attempt`, `today` (coding).

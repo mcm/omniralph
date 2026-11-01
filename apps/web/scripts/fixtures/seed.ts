@@ -870,7 +870,7 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
           taskId: "builtin:implement-story",
           payload: {
             trigger: {
-              kind: "linear.delegated",
+              kind: "tracker.delegated",
               context: { story: { identifier, title: story.title }, attempt },
             },
           },
@@ -973,7 +973,7 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
       jobId: runningJobId,
       kind: "guidance",
       text: "Use the GitLab connection form we already have; don't build a new one.",
-      trigger: "linear.mention",
+      trigger: "tracker.mention",
       author: "Ada Admin",
       createdAt: new Date(now.getTime() - 20 * MINUTE),
       deliveredAt: new Date(now.getTime() - 19 * MINUTE),
@@ -983,7 +983,7 @@ async function seedRalph(tx: Tx, now: Date): Promise<void> {
       runId: RR.running,
       kind: "request",
       text: "Also add a skip link to the onboarding header.",
-      trigger: "linear.mention",
+      trigger: "tracker.mention",
       author: "Max Member",
       createdAt: new Date(now.getTime() - 5 * MINUTE),
     },
@@ -1278,7 +1278,7 @@ function triagePayload(
 ) {
   return {
     trigger: {
-      kind: "linear.triage",
+      kind: "tracker.triage",
       context: {
         triageRunId,
         issue: {

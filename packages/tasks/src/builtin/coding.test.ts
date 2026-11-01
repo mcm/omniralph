@@ -201,11 +201,11 @@ describe("the engineer persona", () => {
 });
 
 describe("builtin:implement-story", () => {
-  it("is a coding task with the engineer persona started by linear.delegated", () => {
+  it("is a coding task with the engineer persona started by tracker.delegated", () => {
     expect(storyTask).toMatchObject({
       taskType: "coding",
       agentId: "builtin:implement-story",
-      triggers: ["linear.delegated"],
+      triggers: ["tracker.delegated"],
       maxAttemptsPerStory: 3,
       maxIterationsPerRun: 50,
       pushTiming: "per-story",
@@ -253,7 +253,7 @@ describe("builtin:handle-request", () => {
       taskType: "coding",
       agentId: "builtin:handle-request",
       triggers: [
-        "linear.mention",
+        "tracker.mention",
         "chat.request",
         "pr.review-findings",
         "pr.ci-failed",

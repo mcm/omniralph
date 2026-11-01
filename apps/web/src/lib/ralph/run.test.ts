@@ -482,7 +482,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(first.ralphStoryId).toBe(payload.storyId);
       // Today's payload is the coding run's trigger context.
       expect(first.payload).toMatchObject({
-        trigger: { kind: "linear.delegated", context: payload },
+        trigger: { kind: "tracker.delegated", context: payload },
         repositoryId: repoId,
       });
       expect(payload).toMatchObject({
@@ -936,7 +936,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         requests: [{ text: "fix CI" }],
       });
       // The request run's trigger is its oldest request's origin.
-      expect(first.job.payload).toMatchObject({ trigger: { kind: "linear.mention" } });
+      expect(first.job.payload).toMatchObject({ trigger: { kind: "tracker.mention" } });
       expect(second.job.payload).toMatchObject({ trigger: { kind: "pr.ci-failed" } });
 
       expect(await activeJobs(run.id)).toEqual([]);
@@ -1415,7 +1415,7 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         dedupeKey: runDedupeKey(run.id),
       });
       expect(pushJob.payload).toMatchObject({
-        trigger: { kind: "linear.delegated", context: { hiddenRef: ralphHiddenRef(run.id) } },
+        trigger: { kind: "tracker.delegated", context: { hiddenRef: ralphHiddenRef(run.id) } },
       });
       expect((await getRun(db, run.id))?.prJobId).toBe(pushJob.id);
       expect((await getMainLane(db, (await getRun(db, run.id))!))?.publish).toEqual({

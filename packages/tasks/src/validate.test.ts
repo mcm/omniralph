@@ -80,7 +80,7 @@ const coding: TaskDefinitionInput = {
   name: "Implement",
   taskType: "coding",
   agentId: "builtin:implement-story",
-  triggers: ["linear.delegated", "linear.mention"],
+  triggers: ["tracker.delegated", "tracker.mention"],
   promptTemplate: "{{epic.title}}{{#epic.prd}}\n{{epic.prd}}{{/epic.prd}}",
   sink: "ralph-run",
 };
@@ -193,7 +193,7 @@ describe("validateTaskDefinition", () => {
     });
     // Without a request trigger it's fine.
     expect(
-      errors({ ...coding, triggers: ["linear.delegated"], promptTemplate: "{{epic.prd}}" }),
+      errors({ ...coding, triggers: ["tracker.delegated"], promptTemplate: "{{epic.prd}}" }),
     ).toEqual({});
   });
 
@@ -202,7 +202,7 @@ describe("validateTaskDefinition", () => {
       promptTemplate: expect.stringContaining("may have no epic or story: put {{story.title}}"),
     });
     expect(
-      errors({ ...coding, triggers: ["linear.delegated"], promptTemplate: "{{story.title}}" }),
+      errors({ ...coding, triggers: ["tracker.delegated"], promptTemplate: "{{story.title}}" }),
     ).toEqual({});
   });
 

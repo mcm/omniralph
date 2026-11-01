@@ -45,7 +45,7 @@ export async function triageRun(db: Database, prefix: string, status: TriageRunS
     triageRunId: run.id,
     payload: {
       trigger: {
-        kind: "linear.triage",
+        kind: "tracker.triage",
         context: {
           triageRunId: run.id,
           issue: { identifier: `E2E-${key.slice(-5)}`, title },

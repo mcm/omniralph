@@ -122,7 +122,7 @@ describe("availableVariables", () => {
   });
 
   it("leaves out other task types' variables", () => {
-    const names = availableVariables("coding", ["linear.delegated"]);
+    const names = availableVariables("coding", ["tracker.delegated"]);
     expect(names).toEqual(expect.arrayContaining(["issue.identifier", "epic.prd", "progress"]));
     for (const name of ["question", "hunk", "conventions", "diff", "checkout"]) {
       expect(names).not.toContain(name);
@@ -133,7 +133,7 @@ describe("availableVariables", () => {
     for (const name of ["progress", "stashes", "feedback", "attempt"]) {
       expect(findVariable(name)).toMatchObject({ source: "taskType", taskTypes: ["coding"] });
     }
-    const story = availableVariables("coding", ["linear.delegated"]);
+    const story = availableVariables("coding", ["tracker.delegated"]);
     expect(story).toEqual(
       expect.arrayContaining([
         "epic.title",
@@ -148,7 +148,7 @@ describe("availableVariables", () => {
     );
     expect(story).not.toContain("requests");
     const request = availableVariables("coding", [
-      "linear.mention",
+      "tracker.mention",
       "chat.request",
       "pr.review-findings",
       "pr.ci-failed",
@@ -203,7 +203,7 @@ describe("availableVariables", () => {
   });
 
   it("gives triage the Linear issue's comments, sub-issues, blockers, reply and previous triage", () => {
-    const names = availableVariables("query", ["linear.triage"]);
+    const names = availableVariables("query", ["tracker.triage"]);
     expect(names).toEqual(
       expect.arrayContaining([
         "repository",
@@ -216,7 +216,7 @@ describe("availableVariables", () => {
         "previousResult.openQuestions.items.text",
       ]),
     );
-    expect(availableVariables("query", ["linear.delegated"])).not.toContain("reply");
+    expect(availableVariables("query", ["tracker.delegated"])).not.toContain("reply");
     expect(findVariable("issue.title")).toMatchObject({ trust: "untrusted", quote: "issue-title" });
   });
 

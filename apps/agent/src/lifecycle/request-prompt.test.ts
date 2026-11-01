@@ -62,13 +62,13 @@ interface TriggerCase {
 const CASES: TriggerCase[] = [
   {
     name: "a request on a single delegated issue's run",
-    trigger: "linear.mention",
+    trigger: "tracker.mention",
     payload: SINGLE_ISSUE,
     requests: ["Please also show the time zone next to the date."],
   },
   {
     name: "an @mention",
-    trigger: "linear.mention",
+    trigger: "tracker.mention",
     payload: MENTIONED_ISSUE,
     requests: ["@omniralph move the save button to the top of the page."],
   },
@@ -225,7 +225,7 @@ describe("builtin:handle-request outside an epic", () => {
   it("still renders the PRD and the item status on a PRD epic's run", () => {
     const epicRun: TriggerCase = {
       name: "a request on a PRD epic's run",
-      trigger: "linear.mention",
+      trigger: "tracker.mention",
       payload: {
         source: "tracker",
         epic: {

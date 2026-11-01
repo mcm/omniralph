@@ -166,7 +166,7 @@ export const chatRunEventKind = pgEnum("chat_run_event_kind", [
  * `REQUEST_TRIGGERS` in `@omniralph/tasks`).
  */
 export const ralphMessageTrigger = pgEnum("ralph_message_trigger", [
-  "linear.mention",
+  "tracker.mention",
   "chat.request",
   "pr.review-findings",
   "pr.ci-failed",

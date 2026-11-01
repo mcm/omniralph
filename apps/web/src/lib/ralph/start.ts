@@ -487,7 +487,7 @@ async function addStartInstruction(
   await addInstruction(
     tx,
     run,
-    { ...start.instruction, wantsLoop: false, trigger: "linear.mention" },
+    { ...start.instruction, wantsLoop: false, trigger: "tracker.mention" },
     applyGuidance,
   );
 }
@@ -556,13 +556,13 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
       // The epic is being worked right now: hand the mention to that live agent.
       const delivered =
         text && !wantsLoop && !ship
-          ? await deliverToRunningJob(tx, run, text, author ?? undefined, "linear.mention")
+          ? await deliverToRunningJob(tx, run, text, author ?? undefined, "tracker.mention")
           : null;
       if (delivered) return { live: true, agentId: delivered.agentId };
       await addInstruction(
         tx,
         run,
-        { text, author, wantsLoop, ship, trigger: "linear.mention" },
+        { text, author, wantsLoop, ship, trigger: "tracker.mention" },
         applyGuidance,
       );
       return { live: false, agentId: null };

@@ -381,7 +381,7 @@ both paths, and both share all run state.
   (snapshot and parity tests in `packages/tasks`). `builtin:engineer`'s system prompt is
   mode-neutral; epic, PRD and story wording lives only in the story task's template, and a request
   prompt never mentions them for any non-epic trigger (`request-prompt.test.ts`). Each request is
-  stored with its trigger (`ralph_messages.trigger`: `linear.mention`, `chat.request`,
+  stored with its trigger (`ralph_messages.trigger`: `tracker.mention`, `chat.request`,
   `pr.review-findings`, `pr.ci-failed`, `pr.fix-command`), which picks the request task.
 - **The PR description** is a run of the story task's `prDescriptionTaskId` (default
   `builtin:describe-pr` on `builtin:pr-writer`): a query task invoked by the ralph run

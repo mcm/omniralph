@@ -228,8 +228,10 @@ describe("requestTaskFor and requestTrigger", () => {
     expect(requestTrigger([{ trigger: "pr.review-findings" }, { trigger: "chat.request" }])).toBe(
       "pr.review-findings",
     );
-    expect(requestTrigger([{ trigger: null }, { trigger: "chat.request" }])).toBe("linear.mention");
-    expect(requestTrigger([])).toBe("linear.mention");
+    expect(requestTrigger([{ trigger: null }, { trigger: "chat.request" }])).toBe(
+      "tracker.mention",
+    );
+    expect(requestTrigger([])).toBe("tracker.mention");
   });
 });
 
@@ -238,7 +240,7 @@ describe("codingJobInput", () => {
 
   it("is a coding run with the payload as its trigger context", async () => {
     const input = await codingJobInput(
-      { taskId: story.id, trigger: "linear.delegated" },
+      { taskId: story.id, trigger: "tracker.delegated" },
       payload,
       DEFINITIONS,
     );
@@ -247,7 +249,7 @@ describe("codingJobInput", () => {
       taskId: story.id,
       repositoryId: payload.repositoryId,
       payload: {
-        trigger: { kind: "linear.delegated", context: payload },
+        trigger: { kind: "tracker.delegated", context: payload },
         repositoryId: payload.repositoryId,
       },
     });
@@ -256,9 +258,9 @@ describe("codingJobInput", () => {
 
   it("is null for a task that isn't a coding task taking the trigger", async () => {
     for (const [taskId, trigger] of [
-      ["builtin:gone", "linear.delegated"],
+      ["builtin:gone", "tracker.delegated"],
       ["builtin:describe-pr", "run.invoked"],
-      [request.id, "linear.delegated"],
+      [request.id, "tracker.delegated"],
     ] as const) {
       expect(await codingJobInput({ taskId, trigger }, payload, DEFINITIONS)).toBe(null);
     }
@@ -269,7 +271,7 @@ describe("ralphJobPayload", () => {
   it("is a coding run's trigger context", async () => {
     expect(
       ralphJobPayload({
-        payload: { trigger: { kind: "linear.delegated", context: { runId: "r" } } },
+        payload: { trigger: { kind: "tracker.delegated", context: { runId: "r" } } },
       }),
     ).toEqual({ runId: "r" });
     expect(ralphJobPayload({ payload: { runId: "r" } })).toBeNull();
@@ -437,7 +439,7 @@ describe("push and draft PR timing", () => {
       taskType: "coding",
       taskId: atTheEnd.id,
       payload: {
-        trigger: { kind: "linear.delegated", context: pushPayload },
+        trigger: { kind: "tracker.delegated", context: pushPayload },
         repositoryId: pushPayload.repositoryId,
       },
     });

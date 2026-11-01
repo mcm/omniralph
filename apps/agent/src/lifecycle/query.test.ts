@@ -652,7 +652,7 @@ describe("runQueryTask", () => {
         model: task.model ?? null,
         tokenBudget: null,
         trigger: {
-          kind: "linear.triage",
+          kind: "tracker.triage",
           context: {
             triageRunId: randomUUID(),
             ...triageTemplateContext({

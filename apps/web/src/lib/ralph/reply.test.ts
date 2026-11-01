@@ -591,7 +591,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       expect(next.story.identifier).toBe("ENG-3");
       expect(next.guidance).toEqual([]);
       expect((await listPendingRequests(db, run.id)).map((r) => [r.text, r.trigger])).toEqual([
-        ["Please use glab to create an MR", "linear.mention"],
+        ["Please use glab to create an MR", "tracker.mention"],
       ]);
     });
 

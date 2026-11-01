@@ -66,12 +66,12 @@ export function requestTaskFor(
 
 /**
  * A request run's trigger kind: that of its oldest request (requests from
- * before the column existed count as Linear mentions).
+ * before the column existed count as tracker mentions).
  */
 export function requestTrigger(
   requests: readonly Partial<Pick<RalphMessage, "trigger">>[],
 ): RalphMessageTrigger {
-  return requests[0]?.trigger ?? "linear.mention";
+  return requests[0]?.trigger ?? "tracker.mention";
 }
 
 /** How a run's story attempts are capped. */
@@ -279,7 +279,7 @@ export async function codingJobInput(
 
 /**
  * The routing and payload of a lane's push run (`ralph.push`), a coding run
- * of the repository's story task with no session (trigger `linear.delegated`,
+ * of the repository's story task with no session (trigger `tracker.delegated`,
  * `payload` as its context); null when the story task isn't a coding task
  * taking that trigger.
  */
@@ -289,9 +289,9 @@ export async function pushJobInput(
   definitions: PlaybookSource,
 ): Promise<ReturnType<typeof runSpecJobInput> | null> {
   const task = await codingTask(storyTaskFor(repository), definitions);
-  if (!task || !task.triggers.includes("linear.delegated")) return null;
+  if (!task || !task.triggers.includes("tracker.delegated")) return null;
   return taskJobInput(definitions, task, {
-    trigger: { kind: "linear.delegated", context: payload },
+    trigger: { kind: "tracker.delegated", context: payload },
     repositoryId: payload.repositoryId,
   });
 }

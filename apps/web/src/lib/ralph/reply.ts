@@ -247,7 +247,7 @@ export async function handleReply(
           author: event.authorName ?? null,
           wantsLoop: false,
           ship: true,
-          trigger: "linear.mention",
+          trigger: "tracker.mention",
         },
         applyGuidance,
       );
@@ -272,7 +272,7 @@ export async function handleReply(
         resumed,
         instruction.text,
         event.authorName,
-        "linear.mention",
+        "tracker.mention",
       );
       if (live) {
         const liveAgentId = live.kind === "live" ? live.agentId : null;
@@ -286,7 +286,7 @@ export async function handleReply(
         text: instruction.text,
         author: event.authorName ?? null,
         wantsLoop: instruction.wantsLoop,
-        trigger: "linear.mention",
+        trigger: "tracker.mention",
       },
       applyGuidance,
     );
