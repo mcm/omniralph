@@ -544,9 +544,9 @@ Check these before anything else, and stop to fix any that fail:
 1. **impeccable is installed** in this session (the \`impeccable:impeccable\`
    skill). If not, tell the user to install the plugin and retry.
 2. **impeccable is available to Omniralph's sessions.** Task sessions run on an
-   Omniralph harness and load the harness user's \`~/.claude\` plugins and
+   Omniralph agent and load the agent user's \`~/.claude\` plugins and
    skills and the repo's \`.claude/\`. Ask the user to confirm the plugin is
-   installed for that user on every harness that accepts \`coding\` tasks (or
+   installed for that user on every agent that accepts \`coding\` tasks (or
    the one the repo is pinned to). If it isn't, the review task can't run, so
    this must be fixed first.
 3. **Design context exists.** If the target repo has no \`PRODUCT.md\`, run
@@ -568,7 +568,7 @@ Check these before anything else, and stop to fix any that fail:
    app's dev server, plus a committed script that captures named screens at
    given viewports and themes. Look for one. If there is none, the epic's
    first task builds it.
-   - Ask how the harness host runs a browser: a Playwright MCP, a local
+   - Ask how the agent host runs a browser: a Playwright MCP, a local
      Playwright/Chromium, or a container such as
      \`mcr.microsoft.com/playwright:<version>\`. Ask this with your Step 1
      questions, not at the end.
@@ -759,7 +759,7 @@ When you finish, tell the user two things (and don't offer to delegate; see
 
 ## Checklist before creating the issues
 
-- [ ] impeccable confirmed installed here and on the Omniralph harness hosts
+- [ ] impeccable confirmed installed here and on the Omniralph agent hosts
 - [ ] \`PRODUCT.md\`/\`DESIGN.md\` committed, or a setup task creates them
 - [ ] A screenshot command exists, or a setup task builds it; host browser method recorded
 - [ ] Seeded: baseline critique committed, decisions recorded in \`## Design\`
