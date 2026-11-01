@@ -1,5 +1,19 @@
 # @omniralph/agent
 
+## 2.2.0
+
+### Minor Changes
+
+- [#117](https://github.com/mcm/omniralph/pull/117) [`1d4082a`](https://github.com/mcm/omniralph/commit/1d4082afe23c87db34c7eebbc91739a5fce7ceef) Thanks [@omniralph](https://github.com/apps/omniralph)! - Story and request runs now run the lane repository's checks (set on its Coding card) where a playbook's verify commands ran before. The story prompt's "Checked by the Orchestrator" section lists them through the new `checks` template variable, which replaces the coding playbook's verify commands variable.
+
+- [#117](https://github.com/mcm/omniralph/pull/117) [`3789e54`](https://github.com/mcm/omniralph/commit/3789e54066f96f26410da77d05133c4f901d7757) Thanks [@omniralph](https://github.com/apps/omniralph)! - Story jobs now carry the story's kind (`story.kind`: `fix` when the work item has one of the tracker's fix labels, else `story`), and the story prompt says it on one line under the issue line ("Kind: Fix" or "Kind: Story"), through the new `story.kind` template variable.
+
+### Patch Changes
+
+- [#117](https://github.com/mcm/omniralph/pull/117) [`ffe994a`](https://github.com/mcm/omniralph/commit/ffe994ac0ba9a684b47d1c1b1849bd569c12d889) Thanks [@omniralph](https://github.com/apps/omniralph)! - A repo's check or a playbook's worktree setup command that is blank or too long is now refused with "Enter a command." or "Commands can be at most 4,000 characters." instead of a generic message.
+
+- [#117](https://github.com/mcm/omniralph/pull/117) [`c110ea0`](https://github.com/mcm/omniralph/commit/c110ea050ed12ccaa1e9d5dc63b5e2fe01f3d5ac) Thanks [@omniralph](https://github.com/apps/omniralph)! - The triage prompt and output schema let a reformatted sub-issue's `blockedBy` name work items outside the epic; Omniralph blocks it on a task's epic when that task is in another epic.
+
 ## 2.1.0
 
 ### Minor Changes
