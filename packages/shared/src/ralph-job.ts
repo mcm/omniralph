@@ -152,7 +152,7 @@ export const RalphAttachment = z.object({
   id: RalphAttachmentId,
   /** The name the tracker stores with the upload (e.g. `mockup.png`), when known. */
   title: z.string().min(1).max(500).nullable(),
-  /** Where it was referenced, e.g. `TOOL-83 description`, `comment on TOOL-84 by Ana`, `Linear thread` (the tracker's name). */
+  /** Where it was referenced, e.g. `TOOL-83 description`, `comment on TOOL-84 by Ana`, `<tracker> thread` (the tracker's name). */
   sources: z.array(z.string().min(1).max(500)).min(1).max(50),
 });
 export type RalphAttachment = z.infer<typeof RalphAttachment>;

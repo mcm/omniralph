@@ -170,7 +170,7 @@ export interface RunMenuHandlers {
 /**
  * The run detail's ⋯ menu, the single source of its entries: the `leading` items other
  * screens add, Open chat (the caller's own Ask chat the run came from), Open work item (its
- * Backlog page) and Open in Linear (`workItemLinkMenuItems`) and Copy branch, then, after a divider, "Stop run" (destructive; `onStop`
+ * Backlog page) and Open in <tracker> (`workItemLinkMenuItems`) and Copy branch, then, after a divider, "Stop run" (destructive; `onStop`
  * confirms) when the run can be stopped.
  */
 export function runMenuItems(

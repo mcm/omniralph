@@ -488,9 +488,10 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       id: epic.id,
       kind: "epic",
       status: "completed",
-      origin: "linear",
+      origin: "tracker",
       organization,
       title: epic.trackerTitle!,
+      tracker: "linear",
       workItem: {
         id: `linear-${epic.trackerIssueId}`,
         tracker: "linear",
@@ -511,7 +512,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     expect(byId.get(request.id)).toMatchObject({
       kind: "request",
       status: "waiting",
-      origin: "linear_mention",
+      origin: "tracker_mention",
       title: request.trackerTitle,
       workItem: {
         id: `linear-${request.trackerIssueId}`,
@@ -532,6 +533,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       origin: "pr_mention",
       organization,
       title: "Tidy the web app",
+      tracker: null,
       workItem: null,
       repository: gitlab,
       branch: null,
@@ -551,6 +553,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       status: "running",
       origin: "triage_label",
       title: "Shape the import",
+      tracker: "linear",
       workItem: {
         id: "linear-issue-triage",
         tracker: "linear",
@@ -714,7 +717,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       request.id,
     ]);
     expect(ids(await listPage({ origin: "chat" }))).toEqual([chat.id, ask.id]);
-    expect(ids(await listPage({ origin: ["linear", "pr_mention"] }))).toEqual([
+    expect(ids(await listPage({ origin: ["tracker", "pr_mention"] }))).toEqual([
       reviewRun.id,
       epic.id,
     ]);

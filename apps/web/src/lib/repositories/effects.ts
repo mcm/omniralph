@@ -11,6 +11,11 @@ import {
   type RalphHistoryRewrite,
   type ReviewDepth,
 } from "@omniralph/shared";
+import { trackerLabel } from "@/lib/api/trackers";
+import type { WORK_ITEM_TRACKERS } from "@/lib/api/work-item-matches";
+
+/** A tracker a work item match can name. */
+type WorkItemMatchTracker = (typeof WORK_ITEM_TRACKERS)[number];
 
 export type CodeHost = "github" | "gitlab";
 
@@ -144,23 +149,19 @@ export function reviewerInstructionsEffect(): FieldEffect {
 
 /** A work item match's conditions, as the Coding card shows them. */
 export interface WorkItemMatchConditions {
-  tracker: "linear";
+  tracker: WorkItemMatchTracker;
   team: string;
   project: string | null;
   withoutProject: boolean;
   labels: readonly string[];
 }
 
-const TRACKER_LABELS: Readonly<Record<WorkItemMatchConditions["tracker"], string>> = {
-  linear: "Linear",
-};
-
 /**
- * A match as one sentence, the badge sentence's words: "Linear team SOC in project Portal and
- * label bug or ui" ("with no project" for work items without one).
+ * A match as one sentence, the badge sentence's words, led by the tracker's name: "<tracker> team
+ * SOC in project Portal and label bug or ui" ("with no project" for work items without one).
  */
 export function workItemMatchText(match: WorkItemMatchConditions): string {
-  let text = `${TRACKER_LABELS[match.tracker]} team ${match.team}`;
+  let text = `${trackerLabel(match.tracker)} team ${match.team}`;
   if (match.withoutProject) text += " with no project";
   else if (match.project !== null) text += ` in project ${match.project}`;
   if (match.labels.length > 0) text += ` and label ${match.labels.join(" or ")}`;

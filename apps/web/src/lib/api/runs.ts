@@ -2,6 +2,7 @@ import type { ChatPlatform, InboxQuestionKind, RunKind, RunOrigin, RunStatus } f
 import { FEEDBACK_REASONS } from "@omniralph/shared";
 import { z } from "zod";
 import { isoDate } from "./schemas";
+import { WORK_ITEM_TRACKERS } from "./work-item-matches";
 
 /** Wire formats of the unified run endpoints under `/api/ui/runs`. */
 
@@ -23,8 +24,8 @@ export const RUN_STATUSES = [
   "skipped",
 ] as const satisfies readonly RunStatus[];
 export const RUN_ORIGINS = [
-  "linear",
-  "linear_mention",
+  "tracker",
+  "tracker_mention",
   "chat",
   "pr_webhook",
   "pr_mention",
@@ -49,11 +50,11 @@ export const organizationRefSchema = z.object({
 });
 export const repositoryRefSchema = z.object({ id: z.string(), provider, fullPath: z.string() });
 export const workItemRefSchema = z.object({
-  tracker: z.literal("linear"),
+  tracker: z.enum(WORK_ITEM_TRACKERS),
   identifier: z.string(),
   url: z.string().nullable(),
 });
-/** A run's work item: its reference plus its URL ID (`linear-<issue id>`, the Backlog's). */
+/** A run's work item: its reference plus its URL ID (`<tracker>-<issue id>`, the Backlog's). */
 export const runWorkItemRefSchema = workItemRefSchema.extend({ id: z.string() });
 export const pullRequestRefSchema = z.object({
   provider,
@@ -70,6 +71,11 @@ export const runRowSchema = z.object({
   origin: z.enum(RUN_ORIGINS),
   organization: organizationRefSchema,
   title: z.string(),
+  /**
+   * The tracker an epic, request or triage run works in, known before its work item is;
+   * null for reviews and asks.
+   */
+  tracker: z.enum(WORK_ITEM_TRACKERS).nullable(),
   /** The work item it builds or triages; null for a run without one (chat, review, ask). */
   workItem: runWorkItemRefSchema.nullable(),
   repository: repositoryRefSchema.nullable(),

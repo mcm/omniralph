@@ -1,5 +1,5 @@
 /**
- * Triage runs: a Linear issue triaged in one Linear agent session. The control
+ * Triage runs: a tracker issue triaged in one tracker agent session. The control
  * panel looks runs up by session (replies) and by issue (the label trigger),
  * and records the `triage.run` job whose outcome it applies next.
  */
@@ -62,7 +62,7 @@ export async function createTriageRun(
       (await getActiveTriageRun(db, input.organizationId, input.trackerIssueId));
     if (existing) return { run: existing, created: false };
   }
-  throw new Error(`Failed to create a triage run for Linear issue ${input.trackerIssueId}`);
+  throw new Error(`Failed to create a triage run for tracker issue ${input.trackerIssueId}`);
 }
 
 export async function getTriageRun(db: Executor, id: string): Promise<TriageRun | null> {
@@ -70,7 +70,7 @@ export async function getTriageRun(db: Executor, id: string): Promise<TriageRun 
   return row ?? null;
 }
 
-/** The triage run of a Linear agent session, or null. */
+/** The triage run of a tracker agent session, or null. */
 export async function getTriageRunBySession(
   db: Executor,
   trackerSessionId: string,
@@ -83,7 +83,7 @@ export async function getTriageRunBySession(
   return row ?? null;
 }
 
-/** The organization's unfinished triage run of a Linear issue, or null. */
+/** The organization's unfinished triage run of a tracker issue, or null. */
 export async function getActiveTriageRun(
   db: Executor,
   organizationId: string,
@@ -104,7 +104,7 @@ export async function getActiveTriageRun(
   return row ?? null;
 }
 
-/** Which of the organization's Linear issues (by ID) have an unfinished triage run, in one query. */
+/** Which of the organization's tracker issues (by ID) have an unfinished triage run, in one query. */
 export async function listActiveTriageIssueIds(
   db: Executor,
   organizationId: string,
@@ -124,7 +124,7 @@ export async function listActiveTriageIssueIds(
   return new Set(rows.map((row) => row.trackerIssueId));
 }
 
-/** The organization's triage runs of a Linear issue, newest first (at most `limit`, default 50). */
+/** The organization's triage runs of a tracker issue, newest first (at most `limit`, default 50). */
 export async function listIssueTriageRuns(
   db: Executor,
   organizationId: string,
@@ -244,7 +244,7 @@ export async function finishTriageRunJob(
 }
 
 /**
- * Sets the run's Linear agent session (a run created before its session, as
+ * Sets the run's tracker agent session (a run created before its session, as
  * the label trigger does, holds a placeholder until then). Returns null if
  * the run is gone.
  */
@@ -389,7 +389,7 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /**
- * Stops a queued or running run (Linear's Stop signal): it becomes `stopped`
+ * Stops a queued or running run (the tracker's Stop signal): it becomes `stopped`
  * and its pending replies are dropped. Returns the run as it was before, or
  * null when it wasn't queued or running.
  */
@@ -412,7 +412,7 @@ export async function stopTriageRun(db: Database, runId: string): Promise<Triage
  */
 function recordTriageRunChange(
   db: Executor,
-  run: { id: string; organizationId: string; trackerIssueId: string },
+  run: Pick<TriageRun, "id" | "organizationId" | "trackerProvider" | "trackerIssueId">,
 ): void {
   recordChange(db, {
     resource: "run",
@@ -422,7 +422,7 @@ function recordTriageRunChange(
   });
   recordWorkItemChange(db, {
     organizationId: run.organizationId,
-    tracker: "linear",
+    tracker: run.trackerProvider,
     externalIds: [run.trackerIssueId],
   });
 }

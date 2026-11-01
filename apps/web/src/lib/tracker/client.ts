@@ -7,7 +7,7 @@ import { TrackerNotConnectedError } from "./errors";
 
 export { TrackerNotConnectedError };
 
-/** The provider an organization's tracker is, until rows record theirs: Linear, the only one. */
+/** The provider an organization's tracker is, until rows record theirs: the only provider. */
 export const DEFAULT_TRACKER_PROVIDER: TrackerProvider = "linear";
 
 export interface TrackerGatewayOptions extends TrackerConnectionOptions {

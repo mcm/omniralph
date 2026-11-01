@@ -416,8 +416,8 @@ export const AblyToken = z.object({
 export type AblyToken = z.infer<typeof AblyToken>;
 
 /**
- * A message for a running job's live Claude session (a Linear reply to a ralph
- * run): the agent injects it and acknowledges it in its next heartbeat.
+ * A message for a running job's live Claude session (a reply in the tracker or chat to a
+ * ralph run): the agent injects it and acknowledges it in its next heartbeat.
  */
 export const JobMessageDelivery = z.object({
   jobId: z.uuid(),

@@ -845,7 +845,7 @@ describe("Test where a work item would go", () => {
 
   it.each([
     [429, "rate_limited", "That's a lot of tests in a minute. Try again in 42 seconds."],
-    [409, "tracker_not_connected", "Connect Linear to preview where work items route."],
+    [409, "tracker_not_connected", "Connect a tracker to preview where work items route."],
   ])("shows a %i answer's message in an alert", async (status, code, message) => {
     previewAnswer = () => jsonResponse({ error: message, code }, status);
     testAnswer = () => jsonResponse({ error: message, code }, status);

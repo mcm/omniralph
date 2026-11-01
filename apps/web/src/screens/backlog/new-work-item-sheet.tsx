@@ -16,7 +16,7 @@ import "./new-work-item-sheet.css";
 export const NEW_WORK_ITEM = "New work item";
 
 /**
- * "Creates a Linear work item in the SOC team, Portal project.": where the chosen repo's work
+ * "Creates a <tracker> work item in the SOC team, Portal project.": where the chosen repo's work
  * item match creates the item (without a project for a match of items with none), naming
  * the target's tracker.
  */

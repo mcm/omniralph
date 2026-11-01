@@ -218,7 +218,7 @@ export async function listLatestIssueRuns(
 }
 
 /**
- * Records that the follow-up `issueId` was filed from `sourceIssueId` (Linear issue IDs).
+ * Records that the follow-up `issueId` was filed from `sourceIssueId` (tracker issue IDs).
  * An issue already recorded keeps its first source.
  */
 export async function recordFollowUpSource(
@@ -233,7 +233,7 @@ export async function recordFollowUpSource(
     .onConflictDoNothing();
 }
 
-/** The Linear issue ID a follow-up was filed from; null when `issueId` isn't a follow-up. */
+/** The tracker issue ID a follow-up was filed from; null when `issueId` isn't a follow-up. */
 export async function getFollowUpSource(
   db: Pick<Database, "select">,
   organizationId: string,

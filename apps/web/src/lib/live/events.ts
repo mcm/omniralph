@@ -13,6 +13,7 @@
  */
 import type { ChangeResource } from "@omniralph/db/changes";
 import { z } from "zod";
+import { WORK_ITEM_TRACKERS } from "@/lib/api/work-item-matches";
 
 /** The version of the event shape (`v`). */
 export const CHANGE_EVENT_VERSION = 1;
@@ -72,8 +73,10 @@ export type UserSettingsSection = (typeof USER_SETTINGS_SECTIONS)[number];
 
 const id = z.guid();
 
-/** A work item's URL ID: its tracker and its ID there (`linear-<issue id>`). */
-export const WORK_ITEM_ID_PATTERN = /^linear-[0-9A-Za-z-]{1,100}$/;
+/** A work item's URL ID: its tracker and its ID there (`<tracker>-<issue id>`). */
+export const WORK_ITEM_ID_PATTERN = new RegExp(
+  `^(?:${WORK_ITEM_TRACKERS.join("|")})-[0-9A-Za-z-]{1,100}$`,
+);
 
 /** Fields every event has; `ids` are the changed rows' IDs. */
 const base = {
@@ -109,7 +112,7 @@ const base = {
  *   user's own channel, their membership of it did (their organizations changed).
  * - `work_item`: work items of a tracker changed there or in Omniralph (an action, a run or
  *   triage of them, a repo choice), so the Backlog, its counts, Up next and their details may
- *   have (`ids` = work item URL IDs, `linear-<issue id>`).
+ *   have (`ids` = work item URL IDs, `<tracker>-<issue id>`).
  * - `chat`: a web chat (Ask) was created, got a message (posted, streamed to the end, edited
  *   or removed), or one of its cards changed (`ids` = chat IDs); only on its owner's channel,
  *   since a web chat is private to the member who started it.

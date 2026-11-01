@@ -467,7 +467,7 @@ export {
   type ChatRequestDraft,
   type ChatRequestDraftStatus,
   type CreateChatRequestDraftInput,
-  CHAT_LINEAR_DELEGATION_TTL_MS,
+  CHAT_TRACKER_DELEGATION_TTL_MS,
   createChatTrackerDelegation,
   takeChatTrackerDelegation,
   type ChatTrackerDelegation,

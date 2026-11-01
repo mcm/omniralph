@@ -9,7 +9,7 @@ import { askMessages, type AskMessagesDeps } from "./messages";
 
 /**
  * A click on a card's button in a web chat: dispatched through the bot
- * (`chat.processAction` for the web adapter), so the request draft and Linear issue draft
+ * (`chat.processAction` for the web adapter), so the request draft and work item draft
  * handlers run as they do for a Slack click.
  */
 

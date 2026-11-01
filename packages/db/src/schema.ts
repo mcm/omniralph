@@ -45,7 +45,7 @@ const updatedAt = () =>
 export const uiTheme = pgEnum("ui_theme", ["light", "dark"]);
 export const organizationRole = pgEnum("organization_role", ["admin", "member"]);
 export const scmProvider = pgEnum("scm_provider", ["github", "gitlab"]);
-/** Sources of webhook deliveries: the code hosts plus Linear. */
+/** Sources of webhook deliveries: the code hosts plus the trackers. */
 export const webhookProvider = pgEnum("webhook_provider", ["github", "gitlab", "linear"]);
 export const integrationProvider = pgEnum("integration_provider", ["linear"]);
 /** The tracker a repository's work item match reads work items from. */
@@ -139,7 +139,7 @@ export const ralphStoryStatus = pgEnum("ralph_story_status", [
   "blocked",
   "exhausted",
   "manual",
-  /** Canceled in Linear: done without work. */
+  /** Canceled in the tracker: done without work. */
   "canceled",
 ]);
 /** A live message's kind: story guidance, or a request (handled as one, not as guidance). */
@@ -437,7 +437,7 @@ export const scmConnections = pgTable(
 // ── Integrations (issue trackers) ────────────────────────────────────────────
 
 /**
- * An installed issue-tracker app, e.g. the Omniralph Linear app in one Linear
+ * An installed issue-tracker app, e.g. the Omniralph app in one tracker
  * workspace (`external_id` = the workspace/organization ID).
  */
 /**
@@ -451,7 +451,7 @@ export interface TrackerStateMapping {
   teams: Record<string, { ready: string[]; needsRefining: string[] }>;
 }
 
-/** Linear's Todo (`unstarted`) is Ready to start and its Backlog (`backlog`) Needs refining. */
+/** A tracker's Todo (`unstarted`) state type is Ready to start and its Backlog (`backlog`) Needs refining. */
 export const DEFAULT_TRACKER_STATE_MAPPING: TrackerStateMapping = {
   ready: { types: ["unstarted"] },
   needsRefining: { types: ["backlog"] },
@@ -1100,7 +1100,7 @@ export const workItemMatches = pgTable(
 );
 
 /**
- * The issue a follow-up was filed from (`fileFollowUps`), by Linear issue ID. A follow-up
+ * The issue a follow-up was filed from (`fileFollowUps`), by tracker issue ID. A follow-up
  * routes the same as its source and rules can test its source's fields (`source.*`).
  */
 export const followUpSources = pgTable(
@@ -1109,9 +1109,9 @@ export const followUpSources = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    /** The follow-up's Linear issue ID. */
+    /** The follow-up's tracker issue ID. */
     issueId: text("issue_id").notNull(),
-    /** The Linear issue ID of the story it was filed from. */
+    /** The tracker issue ID of the story it was filed from. */
     sourceIssueId: text("source_issue_id").notNull(),
     createdAt: createdAt(),
   },
@@ -1129,7 +1129,7 @@ export const workItemOverrides = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     tracker: workItemTracker("tracker").notNull(),
-    /** The work item's ID in its tracker (a Linear issue ID). */
+    /** The work item's ID in its tracker (a tracker issue ID). */
     externalId: text("external_id").notNull(),
     /** The chosen repository; null when it was deleted (routing then applies again). */
     repositoryId: uuid("repository_id").references(() => repositories.id, {
@@ -1903,9 +1903,9 @@ export const runPermissionRequests = pgTable(
 
 // ── Ralph runs ───────────────────────────────────────────────────────────────
 
-/** A Linear issue a run refers to (a story, or an external blocker). */
+/** A tracker issue a run refers to (a story, or an external blocker). */
 export interface RalphIssueRef {
-  /** Linear issue ID. */
+  /** tracker issue ID. */
   id: string;
   /** e.g. `TOOL-83`. */
   identifier: string;
@@ -1921,7 +1921,7 @@ export interface RalphWaitingOn {
 }
 
 /**
- * The open Linear elicitation of a run: `repository` asks which repository to
+ * The open tracker elicitation of a run: `repository` asks which repository to
  * work in (routing found none); `repositoryIds` are the offered options, in order.
  */
 export type RalphPendingElicitation = { kind: "repository"; repositoryIds: string[] };
@@ -1935,7 +1935,7 @@ export interface RalphGuidance {
 
 /** The `cyralph-prepare` question about one manual story (one at a time). */
 export interface RalphPreparationRequest {
-  /** Linear issue ID of the manual story. */
+  /** tracker issue ID of the manual story. */
   storyIssueId: string;
   identifier: string;
   title: string;
@@ -1971,7 +1971,7 @@ export interface RalphPreparation {
 }
 
 /**
- * A tool call a run's live session asked a person to approve in Linear (the
+ * A tool call a run's live session asked a person to approve in its conversation (the
  * repository's Claude Code settings `ask` about it). One at a time: the agent
  * waits for the answer before it asks about another call.
  */
@@ -1992,7 +1992,7 @@ export interface RalphPermissionQuestion {
 }
 
 /**
- * A file uploaded to Linear (`uploads.linear.app`) that the run's jobs may
+ * A file uploaded to the tracker (its upload host) that the run's jobs may
  * download through the control panel, by its attachment ID.
  */
 export interface RalphAttachmentLink {
@@ -2058,13 +2058,13 @@ export const ralphRuns = pgTable(
     ignoreBlockers: boolean("ignore_blockers").notNull().default(false),
     /** The progress log (cyralph's `progress.md`), appended to per finished story. */
     progress: text("progress").notNull().default(""),
-    /** The open Linear elicitation the run waits on an answer to. */
+    /** The open tracker elicitation the run waits on an answer to. */
     pendingElicitation: jsonb("pending_elicitation").$type<RalphPendingElicitation>(),
     /** The `cyralph-prepare` question, approvals and answers of the run's manual stories. */
     preparation: jsonb("preparation").$type<RalphPreparation>(),
     /** The latest tool call a live session asked a person to approve, and the answer. */
     permission: jsonb("permission").$type<RalphPermissionQuestion>(),
-    /** Attachment ID -> Linear upload, for every attachment listed in the run's job payloads. */
+    /** Attachment ID -> tracker upload, for every attachment listed in the run's job payloads. */
     attachments: jsonb("attachments")
       .$type<Record<string, RalphAttachmentLink>>()
       .notNull()
@@ -2111,7 +2111,7 @@ export const ralphRuns = pgTable(
 
 /**
  * A run started from a chat thread: a query run (its job) or a coding run
- * (its ralph run). Finds a thread's runs, and a run's thread. Linear runs
+ * (its ralph run). Finds a thread's runs, and a run's thread. Tracker runs
  * delegated from chat keep only `ralph_runs.chat_thread_id`.
  */
 export const chatThreadRuns = pgTable(
@@ -2368,7 +2368,7 @@ export const hiddenRefs = pgTable(
   ],
 );
 
-/** One story (Linear sub-issue, or the single issue) of a run. */
+/** One story (tracker sub-issue, or the single issue) of a run. */
 export const ralphStories = pgTable(
   "ralph_stories",
   {
@@ -2380,7 +2380,7 @@ export const ralphStories = pgTable(
     trackerIssueId: text("tracker_issue_id").notNull(),
     identifier: text("identifier").notNull(),
     title: text("title").notNull(),
-    /** Sub-issue order in the epic (for display; selection re-reads Linear). */
+    /** Sub-issue order in the epic (for display; selection re-reads the tracker). */
     position: integer("position").notNull().default(0),
     status: ralphStoryStatus("status").notNull().default("pending"),
     /** Finished attempts (redeliveries don't count). */
@@ -2435,7 +2435,7 @@ export const ralphMessages = pgTable(
     ship: boolean("ship").notNull().default(false),
     /** Where the message came from (a request run's trigger kind); null for older messages. */
     trigger: ralphMessageTrigger("trigger"),
-    /** Who wrote it in Linear, when known. */
+    /** Who wrote it in the tracker, when known. */
     author: text("author"),
     createdAt: createdAt(),
     /** The agent injected it into the job's live session. */
@@ -2458,7 +2458,7 @@ export const ralphMessages = pgTable(
 export type TriageLastResult = Record<string, unknown>;
 
 /**
- * A triage of a Linear issue in one Linear agent session, so the session's
+ * A triage of a tracker issue in one tracker agent session, so the session's
  * replies and its jobs' outcomes route to triage rather than ralph. A reply
  * triages again in the same run.
  */
@@ -2497,7 +2497,7 @@ export const triageRuns = pgTable(
 
 /**
  * Webhook deliveries that were acted on, keyed by the provider's delivery ID
- * (`X-GitHub-Delivery` / `X-Gitlab-Event-UUID` / `Linear-Delivery`), so a
+ * (e.g. `X-GitHub-Delivery`, `X-Gitlab-Event-UUID`, or the tracker's header), so a
  * redelivery doesn't enqueue a second job.
  */
 export const webhookDeliveries = pgTable(
@@ -2527,7 +2527,7 @@ export const webhookEventOutcome = pgEnum("webhook_event_outcome", [
 ]);
 
 /**
- * The delivery log: every verified code-host and Linear delivery that resolved to an
+ * The delivery log: every verified code-host and tracker delivery that resolved to an
  * organization, with what it did (kept 14 days, `pruneWebhookEvents`). Separate from
  * `webhook_deliveries`, which only de-duplicates. A replay is a new row with
  * `replay_of_id`. Header values and signatures are never stored.
@@ -2544,14 +2544,14 @@ export const webhookEvents = pgTable(
     scmConnectionId: uuid("scm_connection_id").references(() => scmConnections.id, {
       onDelete: "cascade",
     }),
-    /** The tracker integration it came through (Linear). */
+    /** The tracker integration it came through. */
     integrationId: uuid("integration_id").references(() => integrations.id, {
       onDelete: "cascade",
     }),
     repositoryId: uuid("repository_id").references(() => repositories.id, {
       onDelete: "set null",
     }),
-    /** The provider's delivery ID (or, for Linear without one, the body's hash). */
+    /** The provider's delivery ID (or, for a tracker without one, the body's hash). */
     deliveryId: text("delivery_id"),
     /** The event and its action, e.g. `pull_request.synchronize`, `AgentSessionEvent.created`. */
     event: text("event").notNull(),

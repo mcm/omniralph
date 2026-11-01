@@ -23,7 +23,7 @@ import { liveRoute } from "@/lib/live/request";
  *
  * At its first invocation in the daily window (03:15 UTC, `lib/daily-window`; the next one
  * if that one didn't run), recorded in `ralph:reconciled`, and on every invocation without
- * Redis, it does the full pass instead: for every organization with a Linear workspace connected
+ * Redis, it does the full pass instead: for every organization with a tracker connected
  * (with that workspace's gateway), and for the chat runs of organizations without
  * one, advances waiting and stale runs, cleans up merged ralph PRs/MRs (the
  * fallback for merge webhooks; it also deletes kept branches nobody answered

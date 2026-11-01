@@ -1,7 +1,7 @@
 "use client";
 
 import { IssueBadge, StatusText } from "@omniralph/ui";
-import type { WorkItemBlocker } from "@/lib/api/work-items";
+import type { WorkItemBlocker, WorkItemDetail } from "@/lib/api/work-items";
 import "./blocked.css";
 
 /**
@@ -25,10 +25,16 @@ export function blockerHref(blocker: WorkItemBlocker): string | undefined {
 
 /**
  * "Blocked by" and one `IssueBadge` per open blocker, each linking to `/backlog/{id}` when
- * the Backlog lists it, else to the tracker (a plain badge when neither is known). Nothing
- * renders without blockers.
+ * the Backlog lists it, else to the tracker (a plain badge when neither is known). Blockers are
+ * in the blocked item's tracker (`tracker`). Nothing renders without blockers.
  */
-export function BlockedByLine({ blockers }: { blockers: readonly WorkItemBlocker[] }) {
+export function BlockedByLine({
+  tracker,
+  blockers,
+}: {
+  tracker: WorkItemDetail["tracker"];
+  blockers: readonly WorkItemBlocker[];
+}) {
   if (blockers.length === 0) return null;
   return (
     <p className="or-wi-blocked-by">
@@ -36,7 +42,7 @@ export function BlockedByLine({ blockers }: { blockers: readonly WorkItemBlocker
       {blockers.map((blocker) => (
         <IssueBadge
           key={blocker.identifier}
-          tracker="linear"
+          tracker={tracker}
           id={blocker.identifier}
           href={blockerHref(blocker)}
         />

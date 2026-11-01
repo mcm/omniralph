@@ -25,7 +25,7 @@ export const navIndicatorsSchema = z.object({
   }),
   /**
    * The active organization's failed deliveries not yet replayed (within the retention, no
-   * replay pointing at them), in all and per connection (a code-host connection or Linear
+   * replay pointing at them), in all and per connection (a code-host connection or tracker
    * integration ID; connections without any are left out).
    */
   settings: z.object({

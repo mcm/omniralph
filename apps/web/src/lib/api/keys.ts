@@ -202,7 +202,7 @@ export function settingsHistoryKeys(keys: QueryKeys) {
  * Query keys of the Backlog (`/api/ui/backlog/**`), keyed by organization scope: a list per
  * filters, the counts (the nav count), Up next and New work item's repos, all under `keys.backlog.all`, which a
  * `work_item` change event invalidates. A work item's detail and its parts (share links) sit
- * under `keys.workItems.detail(id)` (`id` = the work item URL ID, `linear-<issue id>`).
+ * under `keys.workItems.detail(id)` (`id` = the work item URL ID, `<tracker>-<issue id>`).
  */
 export function backlogKeys(keys: QueryKeys) {
   return {
@@ -235,7 +235,7 @@ export function connectionKeys(keys: QueryKeys) {
   return {
     list: keys.settings.detail("connections"),
     /**
-     * Every tracker connection's work item state mapping (Linear's connection page), apart
+     * Every tracker connection's work item state mapping (its connection page), apart
      * from the list so a delivery or repository event (which refetch the list) doesn't call
      * the tracker for its workflow states.
      */

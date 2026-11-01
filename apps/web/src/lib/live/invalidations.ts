@@ -61,7 +61,7 @@ const SETTINGS_INVALIDATIONS: Record<
 > = {
   "repository.reviews": (keys, id) => repositoryKeys(keys, id),
   // Coding on or off, or a changed work item match, changes which items the Backlog lists; a
-  // work item match makes a repo use the Linear tracker (Settings' connections count them).
+  // work item match makes a repo use a tracker (Settings' connections count them).
   "repository.coding": (keys, id) => [
     ...repositoryKeys(keys, id),
     keys.backlog.all,

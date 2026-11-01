@@ -49,7 +49,7 @@ export const ACKNOWLEDGE_REFRESH_TIMEOUT_MS = 2_000;
 
 /**
  * Posts what the tracker needs before the webhook responds: a new agent session
- * must get an activity within 10 seconds (Linear's limit; a tracker without
+ * must get an activity within the tracker's deadline (10 seconds for some; a tracker without
  * sessions needs none), so it is acknowledged
  * with a thought right away (without waiting long for a token refresh). Failures
  * are logged; the event is still handled.

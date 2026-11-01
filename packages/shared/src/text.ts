@@ -1,6 +1,6 @@
 /**
- * Shortening command output and feedback for Linear, which renders markdown
- * and shows terminal escape sequences as text.
+ * Shortening command output and feedback for trackers and chats, which render
+ * markdown and show terminal escape sequences as text.
  */
 
 // eslint-disable-next-line no-control-regex -- ANSI CSI and OSC escape sequences
@@ -14,7 +14,7 @@ export function stripAnsi(text: string): string {
 const FENCE = /^\s*```/;
 
 /**
- * Feedback cut to about `max` chars for a Linear post: without terminal escape
+ * Feedback cut to about `max` chars for a tracker post: without terminal escape
  * sequences, keeping its opening paragraphs (what failed: "the quality gate
  * `x` failed:") and the end of the rest (the output's last lines). A code
  * block the cut opens in is reopened, so the end still renders as code.

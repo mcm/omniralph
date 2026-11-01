@@ -1,9 +1,10 @@
 /**
  * Why a webhook delivery did nothing, in plain language: every reason code a code-host or
- * Linear delivery can be ignored with has one sentence here, which the delivery log
+ * tracker delivery can be ignored with has one sentence here, which the delivery log
  * records next to the code.
  */
 import type { WebhookProvider } from "@omniralph/db";
+import { CONNECTION_PROVIDER_LABELS } from "@/lib/api/connections";
 
 type Describe = (provider: WebhookProvider) => string;
 
@@ -33,7 +34,8 @@ export const WEBHOOK_IGNORE_REASONS = {
   run_finished: () => "Om's run for this is already over",
   help: () => "Om replied with the list of commands",
   // Trackers (each tracker web adapter's ingest and the adapters' webhook parsers).
-  unknown_workspace: () => "This Linear workspace isn't connected to Omniralph",
+  unknown_workspace: (p) =>
+    `This ${CONNECTION_PROVIDER_LABELS[p]} workspace isn't connected to Omniralph`,
   issue_without_id: () => "The issue event has no issue ID",
   issue_unchanged: () => "The issue changed, but not its state or triage label",
   no_agent_session: () => "The agent session event has no session",

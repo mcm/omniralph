@@ -31,7 +31,9 @@ export function InboxRowBadges({
   return (
     <>
       {showOrganization ? <OrgBadge name={item.organization.name} /> : null}
-      {item.workItem ? <IssueBadge tracker="linear" id={item.workItem.identifier} /> : null}
+      {item.workItem ? (
+        <IssueBadge tracker={item.workItem.tracker} id={item.workItem.identifier} />
+      ) : null}
       {item.pullRequest ? (
         <ChangeBadge host={item.pullRequest.provider} number={item.pullRequest.number} />
       ) : null}
@@ -67,7 +69,7 @@ export function InboxHeaderBadges({
       ) : null}
       {item.workItem ? (
         <IssueBadge
-          tracker="linear"
+          tracker={item.workItem.tracker}
           id={item.workItem.identifier}
           href={item.workItem.url ?? undefined}
         />

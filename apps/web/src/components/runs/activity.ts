@@ -1,4 +1,5 @@
 import type { RunDetail } from "@/lib/api/runs";
+import { trackerLabel } from "@/lib/api/trackers";
 
 export interface RunActivityEntry {
   id: string;
@@ -21,15 +22,21 @@ function changeRequest(detail: RunDetail): string {
   return provider === "gitlab" ? "merge request" : "pull request";
 }
 
-/** How the run started, by origin: "Epic started from Linear". */
+/** The name of the tracker the run started from, else "its tracker". */
+function trackerName(detail: RunDetail): string {
+  const tracker = detail.tracker ?? detail.workItem?.tracker;
+  return tracker ? trackerLabel(tracker) : "its tracker";
+}
+
+/** How the run started, by origin: "Epic started from <tracker>" (the run's, by name). */
 function startSentence(detail: RunDetail): string {
   const kind = KIND_NAMES[detail.kind];
   switch (detail.origin) {
-    case "linear":
-      return `${kind} started from Linear`;
-    case "linear_mention":
+    case "tracker":
+      return `${kind} started from ${trackerName(detail)}`;
+    case "tracker_mention":
     case "triage_mention":
-      return `${kind} started from a mention in Linear`;
+      return `${kind} started from a mention in ${trackerName(detail)}`;
     case "chat":
       return `${kind} started from a chat`;
     case "pr_webhook":

@@ -1,8 +1,8 @@
 /**
- * Ralph runs (a delegated Linear epic or issue built story by story) and their
- * stories, plus the repositories' ralph settings and Linear routing. The
+ * Ralph runs (a delegated tracker epic or issue built story by story) and their
+ * stories, plus the repositories' ralph settings and tracker routing. The
  * control panel's orchestrator owns this state: every state change goes through
- * `lockRun`, because Linear webhooks and job outcomes race.
+ * `lockRun`, because tracker webhooks and job outcomes race.
  */
 import {
   and,
@@ -213,7 +213,7 @@ interface NewRalphRunBase {
 /** A run delegated or mentioned in a tracker (`origin` defaults to `tracker`). */
 export interface NewTrackerRalphRunInput extends NewRalphRunBase {
   origin?: "tracker";
-  /** The tracker of the issue (default `linear`). */
+  /** The tracker of the issue (default: the only provider). */
   trackerProvider?: RalphRun["trackerProvider"];
   trackerIssueId: string;
   trackerIdentifier: string;
@@ -320,7 +320,7 @@ export async function getRun(db: Executor, id: string): Promise<RalphRun | null>
   return row ?? null;
 }
 
-/** The run of a Linear agent session, or null. */
+/** The run of a tracker agent session, or null. */
 export async function getRunBySession(
   db: Executor,
   trackerSessionId: string,
@@ -334,7 +334,7 @@ export async function getRunBySession(
 }
 
 /**
- * The organization's latest run of a delegated Linear issue (only an
+ * The organization's latest run of a delegated tracker issue (only an
  * unfinished one with `activeOnly`), or null.
  */
 export async function getRunByIssue(
@@ -392,7 +392,7 @@ export async function getActiveRunByChatThread(
 }
 
 /**
- * The unfinished run of what the run belongs to (its Linear issue, or its chat
+ * The unfinished run of what the run belongs to (its tracker issue, or its chat
  * thread), or null: at most one can be unfinished, so a finished run can only
  * start again when this is null or itself.
  */
@@ -431,7 +431,7 @@ export async function lockRun<T>(
   });
 }
 
-/** Run columns the orchestrator changes (identity and Linear IDs are fixed). */
+/** Run columns the orchestrator changes (identity and tracker IDs are fixed). */
 export type RalphRunUpdate = Partial<
   Omit<
     typeof ralphRuns.$inferInsert,
@@ -522,7 +522,7 @@ export const RALPH_RUN_PAGE_SIZE = 25;
 export interface RalphRunListFilter {
   status?: RalphRunStatus | readonly RalphRunStatus[];
   repositoryId?: string;
-  /** Only runs of this Linear issue (e.g. `ENG-42`). */
+  /** Only runs of this tracker issue (e.g. `ENG-42`). */
   trackerIdentifier?: string;
   /** 1-based. */
   page?: number;
@@ -557,7 +557,7 @@ export interface RalphRunListEntry {
   /** Null while a person is asked to pick it. */
   repository: { id: string; provider: ScmProvider; fullPath: string } | null;
   agent: { id: string; name: string } | null;
-  /** A chat run's thread (null for Linear runs, or once the thread is gone). */
+  /** A chat run's thread (null for tracker runs, or once the thread is gone). */
   chatThread: RalphRunChatThread | null;
   stories: { total: number; completed: number };
 }
@@ -576,7 +576,7 @@ const chatThreadColumns = {
   channelId: chatThreads.channelId,
 };
 
-/** The organization's runs, newest first, optionally filtered by status, repository and Linear issue. */
+/** The organization's runs, newest first, optionally filtered by status, repository and tracker issue. */
 export async function listRuns(
   db: Executor,
   organizationId: string,
@@ -669,7 +669,7 @@ export interface RalphRunDetail {
   /** Null while a person is asked to pick it. */
   repository: { id: string; provider: ScmProvider; fullPath: string } | null;
   agent: { id: string; name: string } | null;
-  /** A chat run's thread (null for Linear runs, or once the thread is gone). */
+  /** A chat run's thread (null for tracker runs, or once the thread is gone). */
   chatThread: RalphRunChatThread | null;
   /** The main lane first, then the others in the order they were added. */
   lanes: RalphLaneDetail[];
@@ -1576,7 +1576,7 @@ export interface NewRalphMessageInput {
   author?: string | null;
   /** `/ship` (requests only). */
   ship?: boolean;
-  /** Where it came from (a Linear reply or mention, chat, a review, CI, a fix command). */
+  /** Where it came from (a tracker reply or mention, chat, a review, CI, a fix command). */
   trigger?: RalphMessageTrigger | null;
 }
 

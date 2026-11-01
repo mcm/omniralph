@@ -1,5 +1,6 @@
 import "server-only";
 import { findActiveWorkItemShareLink, type Database } from "@omniralph/db";
+import type { TrackerProvider } from "@omniralph/tracker";
 import { getWorkItemTracker } from "./get-tracker";
 import { hashShareToken, isShareToken, verifyShareAccess } from "./share-links";
 import { TrackerNotConnectedError, WorkItemNotFoundError, type WorkItemTracker } from "./tracker";
@@ -13,10 +14,12 @@ export type SharedWorkItemPage =
   | { kind: "gone" }
   /** Protected and this browser hasn't given the password. */
   | { kind: "locked" }
-  /** The tracker didn't answer. */
-  | { kind: "unavailable" }
+  /** The tracker (`tracker`, the item's) didn't answer. */
+  | { kind: "unavailable"; tracker: TrackerProvider }
   | {
       kind: "open";
+      /** The tracker the item is in. */
+      tracker: TrackerProvider;
       identifier: string;
       title: string;
       /** Markdown. */
@@ -67,6 +70,7 @@ export async function loadSharedWorkItem(
     ]);
     return {
       kind: "open",
+      tracker: link.tracker,
       identifier: item.identifier,
       title: item.title,
       description: item.description,
@@ -84,6 +88,6 @@ export async function loadSharedWorkItem(
       return { kind: "gone" };
     }
     console.error(`Reading shared work item ${link.externalId} failed`, error);
-    return { kind: "unavailable" };
+    return { kind: "unavailable", tracker: link.tracker };
   }
 }

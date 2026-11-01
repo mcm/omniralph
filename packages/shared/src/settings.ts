@@ -142,7 +142,7 @@ export const MAX_CODING_INSTRUCTIONS_LENGTH = 10_000;
  */
 export const RALPH_HISTORY_REWRITE_POLICIES = ["when-asked", "always", "never"] as const;
 export type RalphHistoryRewrite = (typeof RALPH_HISTORY_REWRITE_POLICIES)[number];
-/** Linear state types a playbook's `epicCompletedState` may name instead of a state name. */
+/** Tracker state types a playbook's `epicCompletedState` may name instead of a state name. */
 export const RALPH_EPIC_STATE_TYPES = ["started", "completed"] as const;
 
 /**
@@ -173,7 +173,7 @@ export const RepositoryCodingInput = z.strictObject({
 export type RepositoryCodingInput = z.infer<typeof RepositoryCodingInput>;
 
 /**
- * The Linear target of `epicCompletedState`: a state with that name, else
+ * The tracker target of `epicCompletedState`: a state with that name, else
  * (for `started` or `completed`) the first state of that type.
  */
 export function epicCompletedTarget(

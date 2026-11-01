@@ -1,6 +1,6 @@
 /** The Backlog's filters, from the URL (`?source=&repo=`, each a single choice). */
 export interface BacklogFilters {
-  /** A source's value (`workItemSourceValue`, e.g. `linear:project:<id>`); null for All. */
+  /** A source's value (`workItemSourceValue`, e.g. `<tracker>:project:<id>`); null for All. */
   source: string | null;
   /** A repository ID; null for All. */
   repo: string | null;

@@ -1176,7 +1176,7 @@ export async function runRequester(
   return thread.startedBy ? { externalUserId: thread.startedBy, authorName: null } : null;
 }
 
-// ── Linear issue drafts ──────────────────────────────────────────────────────
+// ── Work item drafts ──────────────────────────────────────────────────────
 
 export type ChatTrackerIssueDraft = typeof chatTrackerIssueDrafts.$inferSelect;
 export type ChatTrackerIssueDraftStatus = ChatTrackerIssueDraft["status"];
@@ -1271,7 +1271,7 @@ export async function releaseChatTrackerIssueDraft(db: Database, id: string): Pr
     .where(and(eq(chatTrackerIssueDrafts.id, id), eq(chatTrackerIssueDrafts.status, "creating")));
 }
 
-/** Marks a `creating` draft `created` with its Linear issue. */
+/** Marks a `creating` draft `created` with its tracker issue. */
 export async function completeChatTrackerIssueDraft(
   db: Database,
   id: string,
@@ -1496,17 +1496,17 @@ export async function expireChatRequestDraft(
   return row ?? null;
 }
 
-// ── Linear delegations ───────────────────────────────────────────────────────
+// ── Tracker delegations ───────────────────────────────────────────────────────
 
 export type ChatTrackerDelegation = typeof chatTrackerDelegations.$inferSelect;
 
-/** How long a delegation waits for Linear's agent session before it's ignored. */
-export const CHAT_LINEAR_DELEGATION_TTL_MS = 60 * 60 * 1000;
+/** How long a delegation waits for the tracker's agent session before it's ignored. */
+export const CHAT_TRACKER_DELEGATION_TTL_MS = 60 * 60 * 1000;
 
 /** A database or a transaction. */
 type ChatExecutor = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
-/** Records that a chat thread is delegating a Linear issue (before the delegation itself). */
+/** Records that a chat thread is delegating a tracker issue (before the delegation itself). */
 export async function createChatTrackerDelegation(
   db: ChatExecutor,
   input: { organizationId: string; threadId: string; trackerIssueId: string },
@@ -1517,7 +1517,7 @@ export async function createChatTrackerDelegation(
 
 /**
  * Takes (deletes and returns) the latest delegation of the issue made within
- * {@link CHAT_LINEAR_DELEGATION_TTL_MS} of `now`, so one session ties one run
+ * {@link CHAT_TRACKER_DELEGATION_TTL_MS} of `now`, so one session ties one run
  * to the thread. Delegations older than that (no session ever took them) are
  * pruned on the way. Null when there is none.
  */
@@ -1525,7 +1525,7 @@ export async function takeChatTrackerDelegation(
   db: ChatExecutor,
   input: { organizationId: string; trackerIssueId: string; now?: Date },
 ): Promise<ChatTrackerDelegation | null> {
-  const since = new Date((input.now ?? new Date()).getTime() - CHAT_LINEAR_DELEGATION_TTL_MS);
+  const since = new Date((input.now ?? new Date()).getTime() - CHAT_TRACKER_DELEGATION_TTL_MS);
   await db.delete(chatTrackerDelegations).where(lt(chatTrackerDelegations.createdAt, since));
   const [latest] = await db
     .select({ id: chatTrackerDelegations.id })

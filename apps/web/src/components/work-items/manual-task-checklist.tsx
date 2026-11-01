@@ -27,10 +27,10 @@ export function plainTaskText(text: string): string {
 }
 
 export interface ManualTaskChecklistProps {
-  /** The work item's URL ID (`linear-<issue id>`). */
+  /** The work item's URL ID (`<tracker>-<issue id>`). */
   workItemId: string;
   /**
-   * Offers Mark done (the item moves to Done in Linear). Off where another control finishes
+   * Offers Mark done (the item moves to Done in its tracker). Off where another control finishes
    * the work, like the Inbox's "Done, resume epic".
    */
   markDone?: boolean;
@@ -41,7 +41,7 @@ export interface ManualTaskChecklistProps {
 
 /**
  * What a person is expected to do for a manual work item: the task list (`- [ ]`) of its
- * description as real checkboxes, each written back to Linear when toggled (optimistic; a
+ * description as real checkboxes, each written back to the tracker when toggled (optimistic; a
  * failure puts the box back with a toast). Without a task list it shows the description.
  * Mark done is primary once every task is checked (or when there are none).
  */

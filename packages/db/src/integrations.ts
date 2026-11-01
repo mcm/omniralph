@@ -1,6 +1,6 @@
 /**
  * Installed issue-tracker apps (one per provider and organization, e.g. the
- * Omniralph Linear app in one Linear workspace). Credentials are JSON
+ * Omniralph app in one tracker workspace). Credentials are JSON
  * encrypted at rest with `encrypt()` (AES-256-GCM under `ENCRYPTION_KEY`).
  */
 import { createHash } from "node:crypto";
@@ -98,7 +98,7 @@ export async function setIntegrationStateMapping(
 }
 
 /**
- * The integration of a provider-side workspace (e.g. a Linear workspace ID),
+ * The integration of a provider-side workspace (e.g. a tracker workspace ID),
  * or null: webhooks resolve their organization from it.
  */
 export async function getIntegrationByExternalId(

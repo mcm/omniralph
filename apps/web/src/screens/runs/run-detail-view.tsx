@@ -88,7 +88,7 @@ async function copyBranch(branch: string) {
 
 /**
  * The header badges (Design rules 1 and 13): organization (All organizations), kind, work
- * item (linking to its Backlog page; Open in Linear is in the ⋯ menu), repo, then the run's
+ * item (linking to its Backlog page; Open in <tracker> is in the ⋯ menu), repo, then the run's
  * facts (`RunFactBadges`: branch, agent, tokens in and out, cost, attempts).
  */
 function RunHeaderBadges({ run, showOrganization }: { run: RunDetail; showOrganization: boolean }) {
@@ -98,7 +98,7 @@ function RunHeaderBadges({ run, showOrganization }: { run: RunDetail; showOrgani
       <MetaBadge icon={RUN_KIND_ICONS[run.kind]} text={RUN_KIND_LABELS[run.kind]} />
       {run.workItem ? (
         <IssueBadge
-          tracker="linear"
+          tracker={run.workItem.tracker}
           id={run.workItem.identifier}
           href={run.workItem.id ? workItemHref(run.workItem.id) : (run.workItem.url ?? undefined)}
         />

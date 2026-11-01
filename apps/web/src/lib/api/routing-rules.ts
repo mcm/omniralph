@@ -167,7 +167,7 @@ export const routingPreviewRequestSchema = z.object({
 });
 export type RoutingPreviewRequest = z.infer<typeof routingPreviewRequestSchema>;
 
-/** Where one work item routes under the saved rules, or that Linear doesn't know it. */
+/** Where one work item routes under the saved rules, or that the tracker doesn't know it. */
 export const routingPreviewItemSchema = z.union([
   routingTestResultSchema.extend({
     /** The identifier as it was sent. */

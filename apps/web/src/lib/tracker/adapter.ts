@@ -26,7 +26,7 @@ export interface TrackerConnectionOptions {
   organizationId: string;
   /**
    * Read the provider's fixture workspace instead when its fixture mode is on
-   * (e2e and local runs, e.g. `OMNIRALPH_FIXTURE_LINEAR=1`).
+   * (e2e and local runs, the adapter's `OMNIRALPH_FIXTURE_<PROVIDER>=1`).
    */
   fixtures?: boolean;
   /**
@@ -38,7 +38,7 @@ export interface TrackerConnectionOptions {
 
 /**
  * A tracker's reads that only some trackers have, behind neutral shapes:
- * routing fields in one query, placement extras (Linear's milestone and
+ * routing fields in one query, placement extras (e.g. a milestone and
  * cycle) and the extra settings lists.
  */
 export interface TrackerExtras {
@@ -79,9 +79,9 @@ export interface TrackerReplayInput {
 
 export interface TrackerWebAdapter {
   readonly provider: TrackerProvider;
-  /** The provider's name as people read it ("Linear"). */
+  /** The provider's name as people read it. */
   readonly name: string;
-  /** The repository file a project's conventions for its issues go in, which triage reads (`LINEAR.md`). */
+  /** The repository file a project's conventions for its issues go in, which triage reads (`<PROVIDER>.md`). */
   readonly conventionsFile: string;
   /** The optional capabilities its gateways have, known without connecting (e.g. to offer tools). */
   readonly capabilities: readonly TrackerCapability[];

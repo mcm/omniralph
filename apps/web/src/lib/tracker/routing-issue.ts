@@ -1,6 +1,6 @@
 /**
- * The fields routing rules test, read from any tracker: Linear returns them in
- * one query; other trackers build them from the issue and its parent, without
+ * The fields routing rules test, read from any tracker: an adapter with routing
+ * extras returns them in one query; other trackers build them from the issue and its parent, without
  * the fields they don't have (milestones, cycles, estimates, due dates).
  */
 import type {
@@ -48,7 +48,7 @@ export async function readRoutingIssue(
   };
 }
 
-/** The routing fields of an issue on a tracker without Linear's extras. */
+/** The routing fields of an issue on a tracker without routing extras. */
 export function routingFieldsOf(
   issue: IssueSummary,
   parent: { identifier: string | null; id: string } | null,

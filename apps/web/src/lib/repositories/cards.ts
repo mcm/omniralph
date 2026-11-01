@@ -40,6 +40,7 @@ import type {
 import { bumpAgentHeartbeat } from "@/lib/agents/heartbeat-cache";
 import { enqueueRepoSync } from "@/lib/agents/pins";
 import type { JobDispatcher } from "@/lib/dispatch";
+import { trackerName } from "@/lib/tracker/adapters";
 import {
   getPlaybookChoice,
   REPOSITORY_BINDING_ROLES,
@@ -58,7 +59,7 @@ import {
   ADD_WORK_ITEM_MATCH_FIRST,
   matchConflicts,
   refusingCodingWithoutMatch,
-  TRACKER_NOT_CONNECTED,
+  trackerNotConnectedForMatch,
   TURN_OFF_CODING_FIRST,
 } from "./work-item-match";
 
@@ -201,7 +202,11 @@ export async function saveCodingCard(
         matchChanged &&
         !(await getIntegration(tx, current.organizationId, wantedMatch.tracker))
       ) {
-        throw new ApiRouteError(409, TRACKER_NOT_CONNECTED, "tracker_not_connected");
+        throw new ApiRouteError(
+          409,
+          trackerNotConnectedForMatch(trackerName(wantedMatch.tracker)),
+          "tracker_not_connected",
+        );
       }
 
       // Coding off first, so the match can go; the match next, so Coding can come on.

@@ -21,7 +21,6 @@ export const GET = apiHandler(
     const targets: WorkItemTarget[] = [];
     for (const organization of sorted) {
       for (const { repository, match } of await listWorkItemTargets(getDb(), organization.id)) {
-        if (match.tracker !== "linear") continue;
         targets.push({
           repository: {
             ...repository,

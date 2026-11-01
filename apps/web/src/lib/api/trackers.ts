@@ -4,6 +4,7 @@ import { READINESS_STATE_TYPES, stateMappingSchema } from "@/lib/work-items/read
 import type { TrackerWorkflowState, WorkItemStateCategory } from "@/lib/work-items/tracker";
 import { CONNECTION_PROVIDER_LABELS } from "./connections";
 import { organizationRefSchema } from "./runs";
+import { WORK_ITEM_TRACKERS } from "./work-item-matches";
 
 /** Wire formats of a work item tracker's readiness state mapping: `/api/ui/trackers/{id}/state-mapping`. */
 
@@ -30,7 +31,7 @@ export const stateMappingRequestSchema = stateMappingSchema;
 /** `GET` and `PUT`: the mapping, and every team's workflow states to choose overrides from. */
 export const trackerStateMappingSchema = z.object({
   integrationId: z.string(),
-  tracker: z.literal("linear"),
+  tracker: z.enum(WORK_ITEM_TRACKERS),
   organization: organizationRefSchema,
   mapping: stateMappingSchema,
   /** The state types a readiness may use. */
@@ -74,7 +75,7 @@ export const trackerLabelsSchema = z.strictObject({
 export type TrackerLabelsView = z.infer<typeof trackerLabelsSchema>;
 
 /**
- * A tracker provider's name as people read it ("Linear"), for general surfaces that name the
+ * A tracker provider's name as people read it, for general surfaces that name the
  * tracker a work item comes from.
  */
 export function trackerLabel(provider: TrackerProvider): string {

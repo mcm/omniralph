@@ -12,7 +12,7 @@ type Params = { id: string };
 export const maxDuration = 300;
 
 /**
- * A click on a card's button in the caller's chat (Start request, Not now, a Linear issue
+ * A click on a card's button in the caller's chat (Start request, Not now, a work item
  * draft's Create or Cancel): handled as the same click on Slack is, then the card's message as
  * it stands.
  */

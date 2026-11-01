@@ -94,7 +94,7 @@ function updateDetail(
 
 /**
  * Start epic (`POST /api/ui/work-items/{id}/start`): delegates the item to Om, which starts
- * its run as a delegation in Linear does. Before the server answers, the item leaves the
+ * its run as a delegation in the tracker does. Before the server answers, the item leaves the
  * Backlog list, Up next and the counts, and the detail stops offering Start; a failure (409
  * when a run exists, 400 unless Ready to start) puts everything back with the server's
  * message. Shared by Up next and the work item detail.

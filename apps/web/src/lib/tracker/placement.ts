@@ -20,7 +20,7 @@ export interface IssuePlacement {
   labels: string[];
   /**
    * Provider-specific fields an issue filed next to it copies as they are
-   * (Linear's project milestone and cycle); empty for trackers without any.
+   * (e.g. a project milestone and cycle); empty for trackers without any.
    */
   extras: Record<string, string>;
 }
@@ -45,7 +45,7 @@ export async function readIssuePlacement(
 
 /**
  * Creates an issue with a placement's `extras`. Returns the extras later
- * issues should be filed with: fewer when the tracker refused one (Linear's
+ * issues should be filed with: fewer when the tracker refused one (e.g. a
  * completed cycle).
  */
 export async function createIssueWithExtras(

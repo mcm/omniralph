@@ -22,7 +22,9 @@ export function RunRowBadges({
     <>
       {showOrganization ? <OrgBadge name={run.organization.name} /> : null}
       {story ? <MetaBadge text={story} /> : null}
-      {run.workItem ? <IssueBadge tracker="linear" id={run.workItem.identifier} /> : null}
+      {run.workItem ? (
+        <IssueBadge tracker={run.workItem.tracker} id={run.workItem.identifier} />
+      ) : null}
       {run.repository ? (
         <RepoBadge host={run.repository.provider} name={run.repository.fullPath} />
       ) : null}

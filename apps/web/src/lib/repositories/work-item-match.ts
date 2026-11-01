@@ -31,8 +31,10 @@ export async function refusingCodingWithoutMatch<T>(save: () => Promise<T>): Pro
   }
 }
 
-/** Answered when the match's tracker isn't connected. */
-export const TRACKER_NOT_CONNECTED = "Connect Linear in Integrations to match work items.";
+/** Answered when the match's tracker (named `trackerName`) isn't connected. */
+export function trackerNotConnectedForMatch(trackerName: string): string {
+  return `Connect ${trackerName} in Integrations to match work items.`;
+}
 
 /** A saved match on the wire. */
 export function workItemMatchRow(match: WorkItemMatch): WorkItemMatchRow {

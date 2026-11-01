@@ -103,8 +103,20 @@ describe("runActivity", () => {
       "Triage started by the triage label",
     );
     expect(start({ kind: "ask", origin: "manual" })).toBe("Ask started by hand");
-    expect(start({ kind: "epic", origin: "linear_mention" })).toBe(
+    expect(start({ kind: "epic", origin: "tracker_mention" })).toBe(
       "Epic started from a mention in Linear",
+    );
+    expect(start({ kind: "epic", origin: "tracker" })).toBe("Epic started from Linear");
+  });
+
+  it("names the tracker from the run, even before its work item is known", () => {
+    const start = (overrides: Parameters<typeof runDetail>[1]) =>
+      runActivity(runDetail(null, { status: "running", ...overrides }), null).at(-1)!.text;
+    expect(start({ kind: "triage", origin: "triage_mention", workItem: null })).toBe(
+      "Triage started from a mention in Linear",
+    );
+    expect(start({ kind: "epic", origin: "tracker", tracker: null, workItem: null })).toBe(
+      "Epic started from its tracker",
     );
   });
 
