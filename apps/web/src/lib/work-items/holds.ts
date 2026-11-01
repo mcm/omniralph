@@ -5,7 +5,10 @@ import { blockingLabels } from "@/lib/ralph/blocked-labels";
 import type { WorkItem } from "./tracker";
 
 /** What keeps Om from a work item, as the Backlog row and the detail expose it. */
-export type WorkItemHolds = Pick<WorkItemRow, "blocked" | "blockers" | "blockedLabels" | "manual">;
+export type WorkItemHolds = Pick<
+  WorkItemRow,
+  "blocked" | "blockers" | "blockedLabels" | "manual" | "manualLabels"
+>;
 
 /**
  * Classifies a top-level work item with the organization's tracker labels (matched ignoring
@@ -19,10 +22,12 @@ export function workItemHolds(
 ): WorkItemHolds {
   const blockedLabels = blockingLabels([item], labels.blockedLabels);
   const manualLabels = labels.manualLabels.length > 0 ? labels.manualLabels : DEFAULT_MANUAL_LABELS;
+  const manual = blockingLabels([item], manualLabels);
   return {
     blocked: item.blockedBy.length > 0 || blockedLabels.length > 0,
     blockers: item.blockedBy.map((blocker) => blocker.identifier),
     blockedLabels,
-    manual: blockingLabels([item], manualLabels).length > 0,
+    manual: manual.length > 0,
+    manualLabels: manual,
   };
 }

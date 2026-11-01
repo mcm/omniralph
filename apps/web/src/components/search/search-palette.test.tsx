@@ -63,6 +63,7 @@ const workItem: SearchResult = {
     blockers: [],
     blockedLabels: [],
     manual: false,
+    manualLabels: [],
     triageRunning: false,
     source: { kind: "team", id: "team-1", name: "SOC" },
   },

@@ -272,6 +272,7 @@ describe.skipIf(!databaseAvailable)("creating work items", () => {
           blockers: [],
           blockedLabels: [],
           manual: false,
+          manualLabels: [],
           triageRunning: false,
           source: { kind: "project", id: "project-portal", name: "Portal" },
         },

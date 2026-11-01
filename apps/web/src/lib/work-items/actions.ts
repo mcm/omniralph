@@ -1,6 +1,7 @@
 import "server-only";
 import {
   clearWorkItemRepository,
+  getTrackerLabels,
   getActiveTriageRun,
   getRepository,
   getRunByIssue,
@@ -15,6 +16,8 @@ import { relationsStartReason } from "@/lib/ralph/relations";
 import { trackerName } from "@/lib/tracker/adapters";
 import { latestWorkItemRun, isActiveRunStatus } from "./detail";
 import { groupFor } from "./group";
+import { MANUAL_START_MESSAGE, BLOCKED_START_MESSAGE, MANUAL_TRIAGE_MESSAGE } from "./hold-reasons";
+import { workItemHolds } from "./holds";
 import { trackerCall, type ResolvedWorkItem } from "./item";
 import { WorkItemConflictError, type TrackerKind } from "./tracker";
 
@@ -59,10 +62,11 @@ function record(
 
 /**
  * Start epic: delegates the item to Om, whose agent session webhook starts the run as a
- * delegation made in the tracker does (a blocked item's run waits for its blockers). Only a Ready
- * to start item without a run (409 with one, 400 otherwise), and never a feature: a work item
- * holding epics, or a task directly under one (400, `feature`), nor work whose blocks relations
- * break the dependency rules (400, `relations`).
+ * delegation made in the tracker does. Only a Ready to start item without a run (409 with one,
+ * 400 otherwise); never a manual task (400, `manual`: a person's job) nor a blocked item (400,
+ * `blocked`: open blockers or a blocked label), never a feature: a work item holding epics, or a
+ * task directly under one (400, `feature`), nor work whose blocks relations break the
+ * dependency rules (400, `relations`).
  */
 export async function startWorkItem(
   db: Database,
@@ -74,6 +78,9 @@ export async function startWorkItem(
     throw new ApiRouteError(409, hasRunMessage(item.identifier), "run_exists");
   }
   if (groupFor(item) !== "ready") throw new ApiRouteError(400, NOT_READY_MESSAGE, "not_ready");
+  const holds = workItemHolds(item, await getTrackerLabels(db, organization.id));
+  if (holds.manual) throw new ApiRouteError(400, MANUAL_START_MESSAGE, "manual");
+  if (holds.blocked) throw new ApiRouteError(400, BLOCKED_START_MESSAGE, "blocked");
   const feature = await trackerCall(tracker, `Reading ${item.identifier}'s sub-issues`, () =>
     tracker.feature(item.id),
   );
@@ -90,7 +97,10 @@ export async function startWorkItem(
   await record(db, resolved, actor, "started");
 }
 
-/** Triage now: starts Om's triage of the item; 409 while a triage is queued or running. */
+/**
+ * Triage now: starts Om's triage of the item; 409 while a triage is queued or running, 400
+ * (`manual`) for a manual task, a person's job. A blocked item can be triaged.
+ */
 export async function triageWorkItem(
   db: Database,
   resolved: ResolvedWorkItem,
@@ -99,6 +109,9 @@ export async function triageWorkItem(
   const { item, tracker, organization } = resolved;
   if (await getActiveTriageRun(db, organization.id, item.id)) {
     throw new ApiRouteError(409, alreadyTriagingMessage(item.identifier), "triage_running");
+  }
+  if (workItemHolds(item, await getTrackerLabels(db, organization.id)).manual) {
+    throw new ApiRouteError(400, MANUAL_TRIAGE_MESSAGE, "manual");
   }
   await trackerCall(tracker, `Starting triage of ${item.identifier}`, () =>
     tracker.startTriage(item.id),

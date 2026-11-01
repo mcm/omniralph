@@ -401,6 +401,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       blockers: [],
       blockedLabels: [],
       manual: false,
+      manualLabels: [],
       triageRunning: false,
       source: { kind: "team", id: "team-1", name: "ENG" },
     });
@@ -417,6 +418,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       blockers: ["ENG-9"],
       blockedLabels: [],
       manual: false,
+      manualLabels: [],
     });
     expect(byIdentifier.get("ENG-7")).toMatchObject({ group: "refine", blocked: false });
     expect(backlog.unavailable).toEqual([]);
@@ -736,38 +738,44 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
     expect(identifiers(backlog.groups.manual)).toEqual(["HLD-4", "HLD-5"]);
     const byIdentifier = new Map(allRows(backlog.groups).map((row) => [row.identifier, row]));
     const holds = (identifier: string) => {
-      const { blocked, blockers, blockedLabels, manual } = byIdentifier.get(identifier)!;
-      return { blocked, blockers, blockedLabels, manual };
+      const { blocked, blockers, blockedLabels, manual, manualLabels } =
+        byIdentifier.get(identifier)!;
+      return { blocked, blockers, blockedLabels, manual, manualLabels };
     };
     expect(holds("HLD-1")).toEqual({
       blocked: false,
       blockers: [],
       blockedLabels: [],
       manual: false,
+      manualLabels: [],
     });
     expect(holds("HLD-2")).toEqual({
       blocked: true,
       blockers: [],
       blockedLabels: ["on hold"],
       manual: false,
+      manualLabels: [],
     });
     expect(holds("HLD-3")).toEqual({
       blocked: true,
       blockers: ["HLD-9"],
       blockedLabels: [],
       manual: false,
+      manualLabels: [],
     });
     expect(holds("HLD-4")).toEqual({
       blocked: false,
       blockers: [],
       blockedLabels: [],
       manual: true,
+      manualLabels: ["by hand"],
     });
     expect(holds("HLD-5")).toEqual({
       blocked: true,
       blockers: [],
       blockedLabels: ["On hold"],
       manual: true,
+      manualLabels: ["BY HAND"],
     });
 
     // The Repo filter applies to Up next and Manual too.

@@ -34,6 +34,8 @@ import {
   backlogOf,
   BETA_ID,
   blockedRow,
+  labelBlockedRow,
+  manualRow,
   REPO_PORTAL,
   REPO_WEB,
   refineRow,
@@ -113,8 +115,8 @@ function detailOf(row: WorkItemRow, overrides: Partial<WorkItemDetail> = {}): Wo
     triageRunning: false,
     run: null,
     actions: {
-      start: ready,
-      triage: true,
+      start: ready && !row.blocked && !row.manual,
+      triage: !row.manual,
       editPrd: true,
       changeRepo: true,
       move: ready,
@@ -559,7 +561,7 @@ describe("the toolbar", () => {
 });
 
 describe("a blocked item", () => {
-  it("shows Blocked by under the title, and Start epic waits behind a confirm", async () => {
+  it("shows Blocked by under the title, and Start epic is disabled until its blockers are done", async () => {
     const user = userEvent.setup();
     renderBacklog({ workItemId: "linear-issue-413" });
     const title = await loaded("Send invoice reminders");
@@ -572,17 +574,44 @@ describe("a blocked item", () => {
     ).toEqual(["https://linear.app/acme/issue/SOC-398", "/backlog/linear-issue-401"]);
 
     const start = within(toolbar()).getByRole("button", { name: "Start epic" });
+    expect(start.getAttribute("aria-disabled")).toBe("true");
     await user.hover(start);
     expect((await screen.findByRole("tooltip")).textContent).toBe(
       "Starts when SOC-398 and SOC-401 are done",
     );
     await user.click(start);
-    const dialog = await screen.findByRole("alertdialog", { name: "Start SOC-413?" });
-    expect(dialog.textContent).toContain("Om will wait for its blockers to finish.");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(requests("POST", "/api/ui/work-items/linear-issue-413/start")).toHaveLength(0);
-    await user.click(within(dialog).getByRole("button", { name: "Start epic" }));
+  });
+
+  it("names its blocked label, which wins over its blockers", async () => {
+    const user = userEvent.setup();
+    details["linear-issue-413"] = detailOf(
+      { ...blockedRow(), blockedLabels: ["on hold"] },
+      { blockedBy: blockedDetail().blockedBy },
+    );
+    renderBacklog({ workItemId: "linear-issue-413" });
+    await loaded("Send invoice reminders");
+    const start = within(toolbar()).getByRole("button", { name: "Start epic" });
+    expect(start.getAttribute("aria-disabled")).toBe("true");
+    await user.hover(start);
+    expect((await screen.findByRole("tooltip")).textContent).toBe(
+      "Labeled on hold, which keeps Om off it",
+    );
+    await user.click(start);
+    expect(requests("POST", "/api/ui/work-items/linear-issue-413/start")).toHaveLength(0);
+  });
+
+  it("can still be triaged when it needs refining", async () => {
+    const user = userEvent.setup();
+    details["linear-issue-414"] = detailOf(labelBlockedRow());
+    renderBacklog({ workItemId: "linear-issue-414" });
+    await loaded("Archive old invoices");
+    const triage = within(toolbar()).getByRole("button", { name: "Triage now" });
+    expect(triage.getAttribute("aria-disabled")).toBeNull();
+    await user.click(triage);
     await waitFor(() =>
-      expect(requests("POST", "/api/ui/work-items/linear-issue-413/start")).toHaveLength(1),
+      expect(requests("POST", "/api/ui/work-items/linear-issue-414/triage")).toHaveLength(1),
     );
   });
 
@@ -599,6 +628,45 @@ describe("a blocked item", () => {
       expect(requests("POST", "/api/ui/work-items/linear-issue-412/start")).toHaveLength(1),
     );
     expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+});
+
+describe("a manual item", () => {
+  it("disables Start epic, naming its manual label", async () => {
+    const user = userEvent.setup();
+    details["linear-issue-413"] = detailOf({ ...manualRow(), id: "linear-issue-413" });
+    renderBacklog({ workItemId: "linear-issue-413" });
+    await loaded("Call the bank about the CSV format");
+    const start = within(toolbar()).getByRole("button", { name: "Start epic" });
+    expect(start.getAttribute("aria-disabled")).toBe("true");
+    await user.hover(start);
+    expect((await screen.findByRole("tooltip")).textContent).toBe(
+      "Labeled manual: this is a person's job",
+    );
+    await user.click(start);
+    expect(requests("POST", "/api/ui/work-items/linear-issue-413/start")).toHaveLength(0);
+  });
+
+  it("disables Triage now, naming its manual label, even when it's also blocked", async () => {
+    const user = userEvent.setup();
+    details["linear-issue-413"] = detailOf({
+      ...manualRow(),
+      id: "linear-issue-413",
+      group: "refine",
+      blocked: true,
+      blockedLabels: ["on hold"],
+      manualLabels: ["By hand"],
+    });
+    renderBacklog({ workItemId: "linear-issue-413" });
+    await loaded("Call the bank about the CSV format");
+    const triage = within(toolbar()).getByRole("button", { name: "Triage now" });
+    expect(triage.getAttribute("aria-disabled")).toBe("true");
+    await user.hover(triage);
+    expect((await screen.findByRole("tooltip")).textContent).toBe(
+      "Labeled By hand: this is a person's job",
+    );
+    await user.click(triage);
+    expect(requests("POST", "/api/ui/work-items/linear-issue-413/triage")).toHaveLength(0);
   });
 });
 

@@ -57,6 +57,8 @@ export const workItemRowSchema = z.object({
    * case). The Backlog lists it in Manual, even when it's also blocked.
    */
   manual: z.boolean().default(false),
+  /** Its labels that are the organization's manual labels (matched ignoring case). */
+  manualLabels: z.array(z.string()).default([]),
   /** Om is triaging it (a triage queued or running): Triage now is disabled. */
   triageRunning: z.boolean().default(false),
   source: workItemSourceSchema,
@@ -130,9 +132,12 @@ export const workItemActivitySchema = z.object({
 
 /** What the user can do with the item now (any member may; these follow its state). */
 export const workItemActionsSchema = z.object({
-  /** Start epic: Ready to start, with no run, and nothing refusing it (`startRefusal`). */
+  /**
+   * Start epic: Ready to start, neither blocked nor manual, with no run, and nothing refusing
+   * it (`startRefusal`).
+   */
   start: z.boolean(),
-  /** Triage now: no triage queued or running, and no run. */
+  /** Triage now: not manual, no triage queued or running, and no run. Blocked items may. */
   triage: z.boolean(),
   /** Edit PRD: no run queued, running or waiting. */
   editPrd: z.boolean(),

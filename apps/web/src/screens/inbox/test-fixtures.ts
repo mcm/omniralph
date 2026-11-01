@@ -143,6 +143,7 @@ export function storyDetail(overrides: Partial<WorkItemDetail> = {}): WorkItemDe
       cancel: true,
     },
     manual: true,
+    manualLabels: ["manual"],
     ...overrides,
   };
 }

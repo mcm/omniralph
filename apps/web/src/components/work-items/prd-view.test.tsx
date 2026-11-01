@@ -56,6 +56,7 @@ function workItem(overrides: Partial<WorkItemDetail> = {}): WorkItemDetail {
     blockers: [],
     blockedLabels: [],
     manual: false,
+    manualLabels: [],
     source: { kind: "team", id: "team-1", name: "SOC" },
     state: { category: "todo", name: "Todo" },
     description: PRD,
