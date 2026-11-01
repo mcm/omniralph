@@ -159,7 +159,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
   });
 
   async function draft(input: Record<string, unknown> = {}, actor?: ChatActor): Promise<Result> {
-    const tool = chatTools.draft_linear_issue!;
+    const tool = chatTools.draft_tracker_issue!;
     return (await tool.execute(
       tool.inputSchema.parse({
         team: "eng",
@@ -300,6 +300,19 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect(await db.select().from(chatTrackerIssueDrafts)).toHaveLength(0);
   });
 
+  it("names the connected tracker in its results, and says the tracker without a name", async () => {
+    const tool = chatTools.draft_tracker_issue!;
+    const input = tool.inputSchema.parse({ team: "Marketing", title: "T", description: "D" });
+    const named = (await tool.execute(input, {
+      ...context(),
+      trackerName: "Acme Tracker",
+    })) as Result;
+    expect(named.message).toContain('Acme Tracker has no team "Marketing"');
+
+    const unnamed = (await tool.execute(input, context())) as Result;
+    expect(unnamed.message).toContain('The tracker has no team "Marketing"');
+  });
+
   it("matches a team by name too", async () => {
     expect(await draft({ team: "design" })).toMatchObject({ draft: { team: "DES" } });
   });
@@ -317,7 +330,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
   });
 
   it("is an action tool: a domain user can't draft", async () => {
-    expect(chatTools.draft_linear_issue!.tier).toBe("action");
+    expect(chatTools.draft_tracker_issue!.tier).toBe("action");
     expect(await draft({}, { kind: "domain", email: "eve@acme.test" })).toMatchObject({
       error: "link_required",
     });
@@ -670,9 +683,9 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
     expect(edit!.text).not.toContain("Delegated to Omniralph");
   });
 
-  describe("delegate_linear_issue", () => {
+  describe("delegate_tracker_issue", () => {
     async function delegate(issue: string, actor?: ChatActor): Promise<Result> {
-      const tool = chatTools.delegate_linear_issue!;
+      const tool = chatTools.delegate_tracker_issue!;
       return (await tool.execute(tool.inputSchema.parse({ issue }), context(actor))) as Result;
     }
 
@@ -720,7 +733,7 @@ describe.skipIf(!databaseAvailable)("Linear issues drafted in chat", () => {
 
     it("is an action tool: a domain user can't delegate", async () => {
       linear.add({ identifier: "ENG-9", title: "Export" });
-      expect(chatTools.delegate_linear_issue!.tier).toBe("action");
+      expect(chatTools.delegate_tracker_issue!.tier).toBe("action");
       expect(await delegate("ENG-9", { kind: "domain", email: "eve@acme.test" })).toMatchObject({
         error: "link_required",
       });

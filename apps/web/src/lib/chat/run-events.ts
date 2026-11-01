@@ -2,7 +2,7 @@
  * Run events: what a run started from chat has for its thread (an answer, a
  * question, an approval request, its end) is stored in `chat_run_events`
  * instead of posted, so the chat responder is the only one that speaks in the
- * thread and relays the run in context. Linear-delegated runs keep their
+ * thread and relays the run in context. Runs delegated in the tracker keep their
  * notices (`lib/ralph/chat-notify.ts`).
  */
 import { after } from "next/server";

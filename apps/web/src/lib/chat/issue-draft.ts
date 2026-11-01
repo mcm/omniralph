@@ -45,7 +45,7 @@ import {
 import type { ChatActor } from "./identity";
 
 /**
- * Work items drafted by the control-panel agent (`draft_linear_issue`): a
+ * Work items drafted by the control-panel agent (`draft_tracker_issue`): a
  * card with the preview and **Create** / **Create and delegate** / **Cancel**
  * buttons. Only the linked member who asked can click them; **Create** creates
  * the issue through the organization's work item tracker (`WorkItemTracker`)

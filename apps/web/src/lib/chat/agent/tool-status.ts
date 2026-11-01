@@ -40,8 +40,8 @@ const STATUSES: Record<string, (input: unknown) => string> = {
   answer_run_permission: () => "Answering the run's approval request",
   answer_run_cleanup: () => "Answering the run's cleanup question",
   send_ralph_guidance: () => "Sending guidance to a run",
-  draft_linear_issue: () => "Drafting a work item",
-  delegate_linear_issue: () => "Handing the work item to Om",
+  draft_tracker_issue: () => "Drafting a work item",
+  delegate_tracker_issue: () => "Handing the work item to Om",
   draft_request: () => "Drafting a request",
 };
 

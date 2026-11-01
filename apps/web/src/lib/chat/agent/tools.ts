@@ -40,6 +40,11 @@ export interface ChatToolContext {
   ralph(): Promise<RalphDeps>;
   /** The organization's work item tracker (default: `getWorkItemTracker`). */
   tracker?(): Promise<WorkItemTracker>;
+  /**
+   * The name of the organization's connected tracker (`connectedTrackerName`), or null /
+   * absent when none is connected: tool descriptions and results name it.
+   */
+  trackerName?: string | null;
   /** The files attached in the thread, by the ref the prompt shows (`threadAttachments`). */
   attachments?: ReadonlyMap<string, ThreadAttachment>;
   /** Looks up the playbooks chat runs (default: the organization's, `organizationPlaybooks`). */
@@ -58,7 +63,8 @@ export interface ChatToolContext {
 
 export interface ChatTool<S extends z.ZodType = z.ZodType> {
   tier: ChatToolTier;
-  description: string;
+  /** What the model reads; a function gets the tracker's name as sentences use it (`trackerLabel`). */
+  description: string | ((tracker: string) => string);
   inputSchema: S;
   execute(input: z.infer<S>, context: ChatToolContext): Promise<unknown>;
 }
@@ -67,6 +73,14 @@ export type ChatToolRegistry = Readonly<Record<string, ChatTool>>;
 
 export function defineChatTool<S extends z.ZodType>(definition: ChatTool<S>): ChatTool<S> {
   return definition;
+}
+
+/**
+ * The organization's tracker as a sentence names it: its name, or "the tracker" when none is
+ * connected.
+ */
+export function trackerLabel(context: Pick<ChatToolContext, "trackerName">): string {
+  return context.trackerName ?? "the tracker";
 }
 
 /** Whether `actor` may use a tool of `tier`. */
@@ -96,7 +110,10 @@ export function toAiTools(
   const tools: ToolSet = {};
   for (const [name, definition] of Object.entries(registry)) {
     tools[name] = tool({
-      description: definition.description,
+      description:
+        typeof definition.description === "function"
+          ? definition.description(trackerLabel(context))
+          : definition.description,
       inputSchema: definition.inputSchema,
       execute: async (input: unknown) => {
         if (!tierAllowed(definition.tier, context.actor)) {

@@ -96,7 +96,7 @@ function cardButtons(children: readonly CardChild[]): Array<{ id: string; value?
 
 /**
  * The draft a card acts on, from its buttons' actions: a request draft's card
- * (`REQUEST_DRAFT_ACTIONS`) or a Linear issue draft's (`ISSUE_DRAFT_ACTIONS`), the draft's ID
+ * (`REQUEST_DRAFT_ACTIONS`) or a work item draft's (`ISSUE_DRAFT_ACTIONS`), the draft's ID
  * as their value; null for any other card.
  */
 export function webCardRef(card: CardElement): ChatWebCardRef | null {

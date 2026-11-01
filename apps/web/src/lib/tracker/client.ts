@@ -1,5 +1,5 @@
 import "server-only";
-import { listIntegratedOrganizationIds, type Database } from "@omniralph/db";
+import { getIntegration, listIntegratedOrganizationIds, type Database } from "@omniralph/db";
 import { TRACKER_PROVIDERS, type TrackerGateway, type TrackerProvider } from "@omniralph/tracker";
 import type { TrackerConnectionOptions } from "./adapter";
 import { trackerAdapter } from "./adapters";
@@ -72,4 +72,15 @@ export async function listTrackerOrganizationIds(db: Database): Promise<string[]
     for (const id of await listIntegratedOrganizationIds(db, provider)) ids.add(id);
   }
   return [...ids];
+}
+
+/** The provider of the organization's connected tracker, or null when it has none connected. */
+export async function getConnectedTrackerProvider(
+  db: Database,
+  organizationId: string,
+): Promise<TrackerProvider | null> {
+  for (const provider of TRACKER_PROVIDERS) {
+    if (await getIntegration(db, organizationId, provider)) return provider;
+  }
+  return null;
 }

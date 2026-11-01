@@ -48,6 +48,7 @@ import { CHAT_AGENT_HISTORY_LIMIT, CHAT_AGENT_MAX_STEPS } from "./config";
 import { recordTurn, webChatScope, type ChatAgentDeps } from "./handler";
 import { historyMessages, systemPrompt } from "./prompt";
 import { chatTools } from "./registry";
+import { connectedTrackerName } from "./tracker-name";
 import { toAiTools } from "./tools";
 
 /**
@@ -449,6 +450,11 @@ async function relayGroup(
   };
   // What tools post after the turn's text (e.g. a drafted request's card).
   const afterTurn: Array<() => Promise<void>> = [];
+  const tracker = await connectedTrackerName(
+    db,
+    organizationId,
+    trackerFor && (() => trackerFor(organizationId)),
+  );
   const tools = toAiTools(
     deps.tools ?? chatTools,
     {
@@ -463,6 +469,7 @@ async function relayGroup(
       turnMessages: [],
       ralph,
       ...(trackerFor && { tracker: () => trackerFor(organizationId) }),
+      trackerName: tracker,
       getPlaybook: deps.getPlaybook,
       // A tool's own message (a card) doesn't change what the answer posts.
       handedOff: () => undefined,
@@ -497,6 +504,7 @@ async function relayGroup(
           working: !!(await chatRunSession(db, chatThread.id)),
         },
         wakeUp: true,
+        tracker,
         webChat: await webChatScope(db, connection, chatThread),
       }),
       messages,
