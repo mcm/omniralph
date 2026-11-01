@@ -9,19 +9,22 @@ import {
   useWorkItemTargets,
 } from "@/components/work-items/use-create-work-item";
 import { ApiError } from "@/lib/api/client";
+import { trackerLabel } from "@/lib/api/trackers";
 import type { WorkItemRow, WorkItemTarget } from "@/lib/api/work-items";
 import "./new-work-item-sheet.css";
 
 export const NEW_WORK_ITEM = "New work item";
 
 /**
- * "Creates a Linear issue in the SOC team, Portal project.": where the chosen repo's work
- * item match creates the item (without a project for a match of items with none).
+ * "Creates a Linear work item in the SOC team, Portal project.": where the chosen repo's work
+ * item match creates the item (without a project for a match of items with none), naming
+ * the target's tracker.
  */
-export function createsIn(target: Pick<WorkItemTarget, "team" | "project">): string {
+export function createsIn(target: Pick<WorkItemTarget, "tracker" | "team" | "project">): string {
+  const tracker = trackerLabel(target.tracker);
   return target.project === null
-    ? `Creates a Linear issue in the ${target.team} team.`
-    : `Creates a Linear issue in the ${target.team} team, ${target.project} project.`;
+    ? `Creates a ${tracker} work item in the ${target.team} team.`
+    : `Creates a ${tracker} work item in the ${target.team} team, ${target.project} project.`;
 }
 
 export interface NewWorkItemSheetProps {

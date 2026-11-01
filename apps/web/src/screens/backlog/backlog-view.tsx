@@ -23,6 +23,7 @@ import { ShareLinkSheet } from "@/components/work-items/share-link-sheet";
 import type { Backlog } from "@/lib/api/backlog";
 import { useKeyShortcuts, useShortcut } from "@/lib/shortcuts";
 import type { WorkItemDetail, WorkItemRow } from "@/lib/api/work-items";
+import { trackerLabel } from "@/lib/api/trackers";
 import { joinNames } from "@/lib/work-items/join-names";
 import { BacklogRowBadges } from "./backlog-row-badges";
 import { BacklogListSkeleton } from "./backlog-skeletons";
@@ -43,9 +44,9 @@ export const NEW_WORK_ITEM = "New work item";
 export const NOTHING_IN_BACKLOG = "Nothing in the backlog";
 export const NO_MATCHING_WORK_ITEMS = "No work items match these filters";
 export const NO_REPO_PICKS_UP = "No repo picks up work items yet";
-export const CONNECT_LINEAR = "Connect Linear to see its work items";
+export const CONNECT_TRACKER = "Connect a tracker to see its work items";
 
-/** Where an admin connects Linear (Settings → Integrations). */
+/** Where an admin connects a tracker (Settings → Integrations). */
 const INTEGRATIONS_PATH = "/settings/integrations";
 
 /** The groups, in list order, with their headers. */
@@ -167,7 +168,7 @@ export function BacklogView({
     value: source.value,
     label: sourceLabel(source),
     icon: <BrandMark brand={source.tracker} />,
-    group: "Linear",
+    group: trackerLabel(source.tracker),
   }));
   const repoOptions: FilterOption[] = (data?.filters.repos ?? []).map((repo) => ({
     value: repo.value,
@@ -205,7 +206,7 @@ export function BacklogView({
       return (
         <EmptyState
           headingLevel={2}
-          title={CONNECT_LINEAR}
+          title={CONNECT_TRACKER}
           action={
             admin ? (
               <Button variant="outline" href={INTEGRATIONS_PATH}>
@@ -275,8 +276,11 @@ export function BacklogView({
         {data && data.unavailable.length > 0 ? (
           <div className="or-backlog__notice" role="alert">
             <p>
-              Couldn&apos;t load work items from Linear for{" "}
-              {joinNames(data.unavailable.map((entry) => entry.organization.name))}.
+              Couldn&apos;t load work items from{" "}
+              {joinNames([
+                ...new Set(data.unavailable.map((entry) => trackerLabel(entry.tracker))),
+              ])}{" "}
+              for {joinNames(data.unavailable.map((entry) => entry.organization.name))}.
             </p>
             <Button
               variant="outline"

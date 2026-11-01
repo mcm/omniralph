@@ -27,6 +27,7 @@ import { ChangeHistoryPopover } from "@/components/change-history-popover";
 import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
 import { api } from "@/lib/api/client";
+import { trackerLabel } from "@/lib/api/trackers";
 import {
   codingCardSaveResultSchema,
   codingMatchCheckSchema,
@@ -235,7 +236,7 @@ function useMatchConflicts(
 }
 
 /**
- * The repo's organization's Linear teams, projects and labels for the match editor (`GET
+ * The repo's organization's tracker teams, projects and labels for the match editor (`GET
  * …/coding/tracker-options`), while the editor is open. Keyed under the connections area, so
  * connecting or disconnecting a tracker loads them again.
  */
@@ -389,7 +390,7 @@ function MatchEditor({
             <Select value={trackerId} onChange={(event) => setTrackerId(event.target.value)}>
               {trackers.map((entry) => (
                 <option key={entry.id} value={entry.id}>
-                  {`Linear · ${entry.workspaceName}`}
+                  {`${trackerLabel(entry.tracker)} · ${entry.workspaceName}`}
                 </option>
               ))}
             </Select>

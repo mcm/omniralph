@@ -8,7 +8,7 @@ import {
   type Database,
 } from "@omniralph/db";
 import { cardChildToFallbackText, isCardElement, type CardChild, type CardElement } from "chat";
-import type { AskCard, AskCardAction, AskLinearIssueDraft } from "@/lib/api/ask";
+import type { AskCard, AskCardAction, AskWorkItemDraft } from "@/lib/api/ask";
 import { getAppUrl } from "@/lib/app-url";
 import { attachmentName } from "@/lib/chat/attachments";
 import { requestDraftContext, requestDraftView } from "@/lib/chat/request-draft";
@@ -22,7 +22,7 @@ import {
 
 /**
  * The cards of a web chat as the web shows them: a card that acts on a draft (its
- * `card_ref`: a request or a Linear issue) is shown from the draft's current state, any other
+ * `card_ref`: a request or a work item) is shown from the draft's current state, any other
  * card as its title, text and buttons (the stored Chat SDK card).
  */
 
@@ -53,17 +53,18 @@ export function genericCard(card: CardElement): AskCard {
   };
 }
 
-/** A Linear issue draft as its card shows it (expired once past `expiresAt`). */
-export function linearIssueDraftView(
+/** A work item draft as its card shows it (expired once past `expiresAt`). */
+export function workItemDraftView(
   draft: ChatTrackerIssueDraft,
   now: Date = new Date(),
-): AskLinearIssueDraft {
+): AskWorkItemDraft {
   const pending = draft.status === "pending" || draft.status === "creating";
   const expired = draft.status === "expired" || (pending && draft.expiresAt <= now);
   const status = expired ? "expired" : draft.status;
   const { title, description } = draftPreview(draft);
   return {
     id: draft.id,
+    tracker: draft.trackerProvider,
     status,
     title,
     team: draft.teamKey,
@@ -119,7 +120,7 @@ export async function askCards(
         if (draft && draft.threadId === thread.id) {
           cards.set(row.id, {
             kind: "tracker_issue_draft",
-            draft: linearIssueDraftView(draft, now),
+            draft: workItemDraftView(draft, now),
           });
           return;
         }

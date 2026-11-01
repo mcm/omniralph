@@ -10,7 +10,7 @@ export const LOADING_WORK_ITEM = "Loading the work item…";
 const ROW_WIDTHS = ["72%", "58%", "80%", "64%", "48%", "70%"];
 
 /**
- * The Backlog list while it loads (from Linear it can take a second): a group heading and
+ * The Backlog list while it loads (from the tracker it can take a second): a group heading and
  * rows shaped like `ListRow`s (a mark, a title line and a badge line), not an empty pane.
  */
 export function BacklogListSkeleton() {

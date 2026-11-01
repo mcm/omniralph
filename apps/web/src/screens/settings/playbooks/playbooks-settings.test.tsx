@@ -83,10 +83,10 @@ const storyInput: PlaybookInput = {
   tools: {
     builtin: ["Read"],
     agent: ["post_activity", "ship"],
-    tracker: [],
+    tracker: ["tracker_get_issue", "tracker_search_issues"],
     mcpServers: ["@omniralph/code-graph:graph"],
   },
-  toolSettings: { shell: true, trackerRead: false, network: true },
+  toolSettings: { shell: true, trackerRead: true, network: true },
   setupCommands: [
     { name: "deps", command: "pnpm install" },
     { name: "env", command: "cp .env.example .env" },
@@ -355,6 +355,7 @@ describe("a playbook's page", () => {
     ).toBeTruthy();
     expect(facts("Overview")).toEqual([
       ["Role", "Review"],
+      ["Starts on", "Pull request opened or updatedMention on a pull requestReview rerun"],
       ["Model", "Set by the review depth"],
       ["Fallback model", "Set by the review depth"],
       ["Token budget", "Set by the review depth"],
@@ -393,6 +394,7 @@ describe("a playbook's page", () => {
     expect(screen.getByText("Implements a story with extra checks.")).toBeTruthy();
     expect(facts("Overview")).toEqual([
       ["Role", "Story"],
+      ["Starts on", "Work item delegated to Om"],
       ["Model", "claude-opus-5-5"],
       ["Fallback model", "claude-sonnet-5-5"],
       ["Token budget", "500,000 tokens"],
@@ -404,7 +406,7 @@ describe("a playbook's page", () => {
         .map((item) => item.textContent);
     expect(items("Agent tools")).toEqual(["post_activity", "ship"]);
     expect(items("MCP servers")).toEqual(["@omniralph/code-graph:graph"]);
-    expect(facts("Tools")).toContainEqual(["Tracker", "None"]);
+    expect(items("Tracker tools")).toEqual(["Read a work item", "Search work items"]);
     expect(facts("Tools")).toContainEqual(["Shell access", "On"]);
     expect(items("Packages")).toEqual(["@omniralph/code-graph"]);
     expect(items("Host tools")).toEqual(["semgrep"]);
@@ -434,6 +436,7 @@ describe("a playbook's page", () => {
     expect(await screen.findByRole("heading", { level: 2, name: "Ask about code" })).toBeTruthy();
     expect(facts("Overview")).toEqual([
       ["Role", "Chat answer"],
+      ["Starts on", "Chat request"],
       ["Model", "claude-sonnet-5-5"],
       ["Fallback model", "None"],
       ["Token budget", "No limit"],

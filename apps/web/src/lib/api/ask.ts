@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { organizationRefSchema, repositoryRefSchema, RUN_STATUSES } from "./runs";
 import { isoDate } from "./schemas";
+import { WORK_ITEM_TRACKERS } from "./work-item-matches";
 
 /**
  * Wire formats of Ask (`/api/ui/ask/**`): the caller's own web chats, starting one about a
@@ -138,7 +139,7 @@ export const askCardActionSchema = z.object({
 });
 export type AskCardAction = z.infer<typeof askCardActionSchema>;
 
-export const LINEAR_ISSUE_DRAFT_STATES = [
+export const WORK_ITEM_DRAFT_STATES = [
   "pending",
   "creating",
   "created",
@@ -146,11 +147,13 @@ export const LINEAR_ISSUE_DRAFT_STATES = [
   "expired",
 ] as const;
 
-/** A Linear issue Om drafted (`draft_linear_issue`), in its current state. */
-export const askLinearIssueDraftSchema = z.object({
+/** A work item Om drafted in the organization's tracker, in its current state. */
+export const askWorkItemDraftSchema = z.object({
   id: z.string(),
+  /** The tracker it's (to be) created in. */
+  tracker: z.enum(WORK_ITEM_TRACKERS),
   /** `expired` once its 24 hours are over, even before anyone clicked. */
-  status: z.enum(LINEAR_ISSUE_DRAFT_STATES),
+  status: z.enum(WORK_ITEM_DRAFT_STATES),
   title: z.string(),
   team: z.string(),
   project: z.string().nullable(),
@@ -166,7 +169,7 @@ export const askLinearIssueDraftSchema = z.object({
   /** Create, Create and delegate, Cancel while pending; none after. */
   actions: z.array(askCardActionSchema),
 });
-export type AskLinearIssueDraft = z.infer<typeof askLinearIssueDraftSchema>;
+export type AskWorkItemDraft = z.infer<typeof askWorkItemDraftSchema>;
 
 export const REQUEST_DRAFT_STATES = [
   "pending",
@@ -239,10 +242,10 @@ export function parseRequestDraftValue(
   };
 }
 
-/** A card in a chat: a request or Linear issue draft, or any other card as its title, text and buttons. */
+/** A card in a chat: a request or work item draft, or any other card as its title, text and buttons. */
 export const askCardSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("request_draft"), draft: askRequestDraftSchema }),
-  z.object({ kind: z.literal("tracker_issue_draft"), draft: askLinearIssueDraftSchema }),
+  z.object({ kind: z.literal("tracker_issue_draft"), draft: askWorkItemDraftSchema }),
   z.object({
     kind: z.literal("generic"),
     title: z.string(),

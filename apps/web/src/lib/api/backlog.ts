@@ -63,8 +63,8 @@ export const backlogSchema = z.object({
   /** The organizations whose list was cut ("Showing the first 500 work items from …"). */
   truncatedOrganizations: z.array(organizationRefSchema),
   /**
-   * What an empty list means: `no_tracker` (no organization in scope has Linear connected:
-   * "Connect Linear to see its work items"), `no_work_item_match` (no repo with Coding on
+   * What an empty list means: `no_tracker` (no organization in scope has a tracker connected:
+   * "Connect a tracker to see its work items"), `no_work_item_match` (no repo with Coding on
    * picks up work items: "No repo picks up work items yet"), else `ready`.
    */
   setup: z.enum(["ready", "no_tracker", "no_work_item_match"]),

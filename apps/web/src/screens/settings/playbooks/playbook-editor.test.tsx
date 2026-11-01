@@ -317,6 +317,17 @@ describe("creating a playbook", () => {
     for (const group of ["Built-in tools", "Agent tools", "Tracker tools", "Access"]) {
       expect(screen.getByRole("group", { name: group })).toBeTruthy();
     }
+    // Tracker tools read in plain words, with the tool's name as the hover title.
+    const trackerTools = within(screen.getByRole("group", { name: "Tracker tools" }));
+    expect(
+      trackerTools.getAllByRole("checkbox").map((box) => box.closest("label")?.textContent),
+    ).toEqual([
+      "Read a work item",
+      "Read a work item's comments",
+      "Search work items",
+      "Read a document",
+    ]);
+    expect(trackerTools.getByText("Search work items").title).toBe("tracker_search_issues");
     expect(screen.getByRole("region", { name: "Coding" })).toBeTruthy();
 
     await userEvent.type(field("Name"), "Strict story");

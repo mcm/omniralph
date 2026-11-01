@@ -24,6 +24,7 @@ const WEB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
 const connected: RoutingTracker = {
   status: "connected",
+  provider: "linear",
   options: {
     teams: [{ key: "ENG", name: "Engineering" }],
     labels: ["Backend"],
@@ -195,8 +196,12 @@ describe("valueOptions", () => {
   it("has none for typed values, or without a connected workspace", () => {
     expect(valueOptions(byId.get("title"), connected)).toBeNull();
     expect(valueOptions(byId.get("parent"), connected)).toBeNull();
-    expect(valueOptions(byId.get("labels"), { status: "disconnected" })).toBeNull();
-    expect(valueOptions(byId.get("stateType"), { status: "unavailable" })).not.toBeNull();
+    expect(
+      valueOptions(byId.get("labels"), { status: "disconnected", provider: "linear" }),
+    ).toBeNull();
+    expect(
+      valueOptions(byId.get("stateType"), { status: "unavailable", provider: "linear" }),
+    ).not.toBeNull();
   });
 
   it("finds names ignoring case", () => {

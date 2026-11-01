@@ -1,4 +1,10 @@
-import { roleTaskType, type PlaybookRole } from "@omniralph/tasks";
+import {
+  PLAYBOOK_ROLES,
+  roleTaskType,
+  type PlaybookRole,
+  type TrackerTool,
+  type TriggerKind,
+} from "@omniralph/tasks";
 import type { PlaybookUsedBy } from "@/lib/api/playbooks";
 import { pinBadges } from "@/lib/fleet/status";
 
@@ -31,6 +37,41 @@ export const PLAYBOOK_ROLE_LABELS: Record<PlaybookRole, string> = {
   "learn-rule": "Learn rule",
   "reply-to-finding": "Reply to finding",
 };
+
+/** Each trigger kind in plain words: what starts a run. */
+export const TRIGGER_KIND_LABELS: Record<TriggerKind, string> = {
+  "pr.updated": "Pull request opened or updated",
+  "pr.mention": "Mention on a pull request",
+  "review.rerun": "Review rerun",
+  "finding.mention": "Reply to a finding",
+  "finding.dismissed": "Finding dismissed",
+  "chat.request": "Chat request",
+  "tracker.delegated": "Work item delegated to Om",
+  "tracker.triage": "Work item sent to triage",
+  "tracker.mention": "Mention on a work item",
+  "pr.review-findings": "Review findings on a pull request",
+  "pr.ci-failed": "CI failed on a pull request",
+  "pr.fix-command": "Fix command on a pull request",
+  "run.invoked": "Started by another run",
+};
+
+/** The events that start a role's runs, in plain words. */
+export function roleTriggerLabels(role: PlaybookRole): string[] {
+  return PLAYBOOK_ROLES[role].triggers.map((kind) => TRIGGER_KIND_LABELS[kind]);
+}
+
+/** Each tracker tool in plain words. */
+export const TRACKER_TOOL_LABELS: Record<TrackerTool, string> = {
+  tracker_get_issue: "Read a work item",
+  tracker_list_comments: "Read a work item's comments",
+  tracker_search_issues: "Search work items",
+  tracker_get_document: "Read a document",
+};
+
+/** A tracker tool's label; a name the labels don't know (saved before a rename) as is. */
+export function trackerToolLabel(name: string): string {
+  return Object.hasOwn(TRACKER_TOOL_LABELS, name) ? TRACKER_TOOL_LABELS[name as TrackerTool] : name;
+}
 
 /** What the repo binding roles and chat playbooks are called where a playbook is used. */
 export const REPOSITORY_BINDING_LABELS: Record<

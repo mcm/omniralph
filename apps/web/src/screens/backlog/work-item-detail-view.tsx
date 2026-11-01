@@ -52,7 +52,9 @@ import {
   useTriageWorkItem,
 } from "@/components/work-items/use-work-item-actions";
 import { useWorkItemDetail } from "@/components/work-items/use-work-item-detail";
+import type { TrackerProvider } from "@omniralph/tracker";
 import { ApiError } from "@/lib/api/client";
+import { trackerLabel } from "@/lib/api/trackers";
 import type { WorkItemDetail, WorkItemRoute } from "@/lib/api/work-items";
 import { backlogItemHref, parseBacklogFilters, parseWorkItemTab, type WorkItemTab } from "./url";
 import { WorkItemDetailSkeleton } from "./backlog-skeletons";
@@ -69,16 +71,19 @@ export const CHOOSE_A_REPO = "Choose a repo";
 export const NO_STORIES = "No stories yet";
 export const NO_ACTIVITY = "No activity yet";
 
-/** "Open SOC-412 in Linear": the ⋯ menu's link to the tracker. */
-export function openInTracker(identifier: string): string {
-  return `Open ${identifier} in Linear`;
+/** "Open SOC-412 in Linear": the ⋯ menu's link to the item's tracker. */
+export function openInTracker(identifier: string, tracker: TrackerProvider): string {
+  return `Open ${identifier} in ${trackerLabel(tracker)}`;
 }
 
 /** "Remove SOC-412 from the backlog?": Remove from backlog…'s confirm. */
 export function removeTitle(identifier: string): string {
   return `Remove ${identifier} from the backlog?`;
 }
-export const REMOVE_DESCRIPTION = "It's canceled in Linear.";
+/** "It's canceled in Linear.": Remove from backlog…'s confirm, naming the item's tracker. */
+export function removeDescription(tracker: TrackerProvider): string {
+  return `It's canceled in ${trackerLabel(tracker)}.`;
+}
 
 export interface WorkItemDetailViewProps {
   workItemId: string;
@@ -96,9 +101,12 @@ export interface WorkItemDetailViewProps {
  * routing asks, "Routes to no repo yet" with "Choose a repo" (opens Change repo…).
  */
 export function WorkItemRoutesLine({
+  tracker,
   route,
   onChooseRepo,
 }: {
+  /** The tracker the item comes from (the source's mark). */
+  tracker: TrackerProvider;
   route: WorkItemRoute;
   onChooseRepo?: () => void;
 }) {
@@ -118,7 +126,7 @@ export function WorkItemRoutesLine({
             <>
               <span>via</span>
               <MetaBadge
-                mark={<BrandMark brand="linear" className="or-ref__icon" />}
+                mark={<BrandMark brand={tracker} className="or-ref__icon" />}
                 text={route.via.label}
               />
             </>
@@ -238,7 +246,7 @@ function WorkItemDetailContent({
   ] as const satisfies readonly ToolbarAction[];
 
   const menu: MenuItem[] = [
-    { label: openInTracker(item.identifier), icon: IconExternalLink, href: item.url },
+    { label: openInTracker(item.identifier, item.tracker), icon: IconExternalLink, href: item.url },
     {
       label: CHANGE_REPO,
       icon: IconArrowsExchange,
@@ -283,6 +291,7 @@ function WorkItemDetailContent({
       </h2>
       <BlockedByLine blockers={item.blockedBy} />
       <WorkItemRoutesLine
+        tracker={item.tracker}
         route={item.route}
         onChooseRepo={item.actions.changeRepo ? () => setChangingRepo(true) : undefined}
       />
@@ -334,7 +343,7 @@ function WorkItemDetailContent({
         open={confirmRemove}
         onOpenChange={setConfirmRemove}
         title={removeTitle(item.identifier)}
-        description={REMOVE_DESCRIPTION}
+        description={removeDescription(item.tracker)}
         confirmLabel="Remove"
         destructive
         onConfirm={runRemove}

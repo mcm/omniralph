@@ -699,6 +699,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/ask", () => {
           kind: "tracker_issue_draft",
           draft: {
             id: draft.id,
+            tracker: "linear",
             status: "pending",
             title: "Fix the login bug",
             team: "ENG",

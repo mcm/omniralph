@@ -29,7 +29,13 @@ import {
 } from "@/lib/api/playbooks";
 import { hasRole } from "@/lib/auth/roles";
 import { SettingsPage } from "../settings-page";
-import { DEFAULT_MODEL_LABEL, PLAYBOOK_ROLE_LABELS, PLAYBOOKS_PATH, playbookHref } from "./labels";
+import {
+  DEFAULT_MODEL_LABEL,
+  PLAYBOOK_ROLE_LABELS,
+  PLAYBOOKS_PATH,
+  playbookHref,
+  trackerToolLabel,
+} from "./labels";
 import { epicCompletedStateLabel, PLAYBOOK_NOT_FOUND } from "./playbook-detail";
 import {
   agentToolsFor,
@@ -90,12 +96,15 @@ function ToolChoices({
   selected,
   onChange,
   error,
+  labelOf,
 }: {
   legend: string;
   names: readonly string[];
   selected: readonly string[];
   onChange: (next: string[]) => void;
   error: string | undefined;
+  /** Each name in plain words (the name itself shows as the hover title); mono names without. */
+  labelOf?: (name: string) => string;
 }) {
   // Names saved before that the options no longer offer stay, so a save doesn't drop them.
   const all = [...names, ...selected.filter((name) => !names.includes(name))];
@@ -106,7 +115,13 @@ function ToolChoices({
         {all.map((name) => (
           <Checkbox
             key={name}
-            label={<span className="or-mono">{name}</span>}
+            label={
+              labelOf ? (
+                <span title={name}>{labelOf(name)}</span>
+              ) : (
+                <span className="or-mono">{name}</span>
+              )
+            }
             checked={selected.includes(name)}
             onCheckedChange={(checked) =>
               onChange(
@@ -655,6 +670,7 @@ function PlaybookForm({
             selected={draft.tools.tracker}
             onChange={(tracker) => setTools({ tracker })}
             error={errorAt(errors, "tools.tracker")}
+            labelOf={trackerToolLabel}
           />
           <Field label="MCP servers">
             <TokenInput

@@ -45,6 +45,8 @@ import {
   playbookEditHref,
   playbookHref,
   REPOSITORY_BINDING_LABELS,
+  roleTriggerLabels,
+  trackerToolLabel,
 } from "./labels";
 import { usePlaybook, writeDeletedPlaybook, writeSavedPlaybook } from "./queries";
 import "./playbooks.css";
@@ -154,13 +156,22 @@ function CommandList({ label, commands }: { label: string; commands: readonly st
 }
 
 /** Mono badges for a list of names, or "None". */
-function NameBadges({ label, names }: { label: string; names: readonly string[] }) {
+/** Names as mono badges, or as plain-words badges when `labelOf` reads them. */
+function NameBadges({
+  label,
+  names,
+  labelOf,
+}: {
+  label: string;
+  names: readonly string[];
+  labelOf?: (name: string) => string;
+}) {
   if (names.length === 0) return <None />;
   return (
     <ul className="or-playbook__badges" aria-label={label}>
       {names.map((name) => (
         <li key={name}>
-          <MetaBadge text={name} mono />
+          {labelOf ? <MetaBadge text={labelOf(name)} /> : <MetaBadge text={name} mono />}
         </li>
       ))}
     </ul>
@@ -187,6 +198,9 @@ function OverviewCard({ detail }: { detail: PlaybookDetailData }) {
       {playbook.description ? <p className="or-playbook__lead">{playbook.description}</p> : null}
       <dl className="or-playbook__facts">
         <Fact term="Role">{PLAYBOOK_ROLE_LABELS[playbook.role]}</Fact>
+        <Fact term="Starts on">
+          <NameBadges label="Triggers" names={roleTriggerLabels(playbook.role)} labelOf={String} />
+        </Fact>
         <Fact term="Model">
           <ModelValue playbook={playbook} model={playbook.model} />
         </Fact>
@@ -233,7 +247,7 @@ function ToolsCard({ playbook }: { playbook: Playbook }) {
           <NameBadges label="Agent tools" names={tools.agent} />
         </Fact>
         <Fact term="Tracker">
-          <NameBadges label="Tracker tools" names={tools.tracker} />
+          <NameBadges label="Tracker tools" names={tools.tracker} labelOf={trackerToolLabel} />
         </Fact>
         <Fact term="MCP servers">
           <NameBadges label="MCP servers" names={tools.mcpServers} />
