@@ -436,7 +436,7 @@ async function materializeStories(deps: RalphDeps, run: RalphRun): Promise<void>
   if (run.kind === "single" || !isLinearRun(run)) return;
   await quietly(`Creating the stories of ${run.linearIdentifier}`, async () => {
     const options = await runEpicOptions(deps.db, run);
-    await loadEpic(deps.linear, run.linearIssueId, { ...options, completePrd: true });
+    await loadEpic(deps.tracker, run.linearIssueId, { ...options, completePrd: true });
   });
 }
 

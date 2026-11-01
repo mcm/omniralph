@@ -62,7 +62,7 @@ export type StoryLanes = Map<string, { laneId: string | null; elsewhere: string 
  * main lane. Returns every story's lane.
  */
 export async function routeStories(
-  deps: Pick<RalphDeps, "db" | "adapterFor" | "linear">,
+  deps: Pick<RalphDeps, "db" | "adapterFor" | "tracker">,
   tx: RalphTransaction,
   run: Pick<RalphRun, "id" | "organizationId" | "repositoryId" | "linearIdentifier">,
   epic: Epic,
@@ -77,7 +77,7 @@ export async function routeStories(
   const router = await createRouter({
     db: tx,
     organizationId: run.organizationId,
-    linear: deps.linear,
+    tracker: deps.tracker,
   });
   // Without routing rules or work item matches every story routes as the epic (the main lane) but follow-ups, which
   // route as their source.

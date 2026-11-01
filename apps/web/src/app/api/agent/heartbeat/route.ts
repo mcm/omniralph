@@ -155,7 +155,7 @@ async function post(req: Request): Promise<Response> {
     jobMessages = await exchangeJobMessages(
       {
         db,
-        linear: (organizationId) => getTrackerGatewayOrDisconnected({ db, organizationId }),
+        tracker: (organizationId) => getTrackerGatewayOrDisconnected({ db, organizationId }),
       },
       agentId,
       keepIds,

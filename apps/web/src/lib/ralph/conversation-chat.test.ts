@@ -162,7 +162,7 @@ describe.skipIf(!databaseAvailable)("a chat run's conversation", () => {
   it("is what conversationFor gives a chat run", async () => {
     const { run } = await chatRun();
     const conversation = conversationFor(run, {
-      linear: new FakeLinearGateway(),
+      tracker: new FakeLinearGateway(),
       chat: channel(slackAdapter().adapter),
     });
     expect(conversation).toBeInstanceOf(ChatConversation);
@@ -282,8 +282,8 @@ describe.skipIf(!databaseAvailable)("a chat run's conversation", () => {
     const { run } = await chatRun();
     await updateRun(db, run.id, { status: "running" });
     const { adapter } = slackAdapter();
-    const linear = vi.fn(async () => new FakeLinearGateway());
-    const deps = { db, linear, chat: channel(adapter) };
+    const tracker = vi.fn(async () => new FakeLinearGateway());
+    const deps = { db, tracker, chat: channel(adapter) };
     const { job } = await insertJob(db, {
       organizationId: orgId,
       type: "ralph.request",
@@ -306,7 +306,7 @@ describe.skipIf(!databaseAvailable)("a chat run's conversation", () => {
     await expirePermission(deps, job, "req-1", new Date("2026-10-12T10:10:00Z"));
 
     await expectNothingPosted(adapter, run);
-    expect(linear).not.toHaveBeenCalled();
+    expect(tracker).not.toHaveBeenCalled();
     const [asked, expired, ...more] = await events(run);
     expect(more).toEqual([]);
     expect(asked).toMatchObject({
@@ -368,8 +368,8 @@ describe.skipIf(!databaseAvailable)("a chat run's conversation", () => {
   it("gets an agent's relayed activities without touching Linear", async () => {
     const { run } = await chatRun();
     const { adapter } = slackAdapter();
-    const linear = vi.fn(async () => new FakeLinearGateway());
-    const deps = { db, linear, chat: channel(adapter) };
+    const tracker = vi.fn(async () => new FakeLinearGateway());
+    const deps = { db, tracker, chat: channel(adapter) };
 
     const outcome = await relayActivity(
       deps,
@@ -383,7 +383,7 @@ describe.skipIf(!databaseAvailable)("a chat run's conversation", () => {
     );
 
     expect(outcome).toEqual({ forwarded: true });
-    expect(linear).not.toHaveBeenCalled();
+    expect(tracker).not.toHaveBeenCalled();
     // An agent's thoughts and actions are progress: nothing is relayed.
     expect(await events(run)).toEqual([]);
 

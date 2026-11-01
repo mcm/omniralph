@@ -44,7 +44,7 @@ export const POST = apiHandler(
       "Connect Linear to test where an issue would go.",
     );
     return testRoutingRules(
-      { db, organizationId: user.organization.id, linear: tracker },
+      { db, organizationId: user.organization.id, tracker },
       body.identifier,
       body.rules,
       body.workItemMatch,

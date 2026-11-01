@@ -58,7 +58,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
   const deps = (): TriageDeps => ({
     db,
     organizationId: orgId,
-    linear,
+    tracker: linear,
     dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => fakeAdapter,
   });
@@ -175,7 +175,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       event,
       { db, organizationId: orgId, workspaceId: "ws-1" },
       {
-        linear,
+        tracker: linear,
         dispatcher: new PostgresDispatcher({ db }),
         adapterFor: () => fakeAdapter,
       },
@@ -408,7 +408,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       event,
       { db, organizationId: orgId, workspaceId: "ws-1" },
       {
-        linear,
+        tracker: linear,
         dispatcher: new PostgresDispatcher({ db }),
         adapterFor: () => fakeAdapter,
       },
@@ -434,7 +434,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
       event,
       { db, organizationId: orgId, workspaceId: "ws-1" },
       {
-        linear,
+        tracker: linear,
         dispatcher: new PostgresDispatcher({ db }),
         adapterFor: () => fakeAdapter,
       },
@@ -453,7 +453,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
         event,
         { db, organizationId: orgId, workspaceId: "ws-1" },
         {
-          linear,
+          tracker: linear,
           dispatcher: new PostgresDispatcher({ db }),
           adapterFor: () => fakeAdapter,
         },
@@ -587,7 +587,7 @@ describe.skipIf(!databaseAvailable)("starting triage from an @omniralph /triage 
           { kind: "session_prompted", sessionId, body },
           { db, organizationId: orgId, workspaceId: "ws-1" },
           {
-            linear,
+            tracker: linear,
             dispatcher: new PostgresDispatcher({ db }),
             adapterFor: () => fakeAdapter,
           },

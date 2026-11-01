@@ -114,7 +114,7 @@ async function startSession(event: SessionCreatedEvent, ralph: RalphDeps): Promi
   }
   let item: WorkItem;
   try {
-    const tracker = await workItemTrackerFor({ db, organizationId, gateway: ralph.linear });
+    const tracker = await workItemTrackerFor({ db, organizationId, gateway: ralph.tracker });
     item = await tracker.get(event.issueId);
   } catch (error) {
     console.error(
@@ -127,7 +127,7 @@ async function startSession(event: SessionCreatedEvent, ralph: RalphDeps): Promi
   if (item.readiness !== "needs_refining") {
     await startRun(event, ralph);
   } else if (triage) {
-    await postActivity(trackerConversation(ralph.linear, event.sessionId, event.issueId), {
+    await postActivity(trackerConversation(ralph.tracker, event.sessionId, event.issueId), {
       type: "response",
       body: stillNeedsRefiningMessage(item.identifier),
     });
@@ -154,8 +154,8 @@ async function delegationIntoTriageSession(
   let viewer: Viewer;
   try {
     [issue, viewer] = await Promise.all([
-      ralph.linear.getIssue(triage.linearIssueId),
-      ralph.linear.getViewer(),
+      ralph.tracker.getIssue(triage.linearIssueId),
+      ralph.tracker.getViewer(),
     ]);
   } catch (error) {
     console.error(`Checking whether ${triage.linearIssueId} was delegated to Om failed`, error);
@@ -184,16 +184,16 @@ async function delegationIntoTriageSession(
 export async function handleTrackerEvent(
   event: HandledTrackerEvent,
   context: TrackerEventContext,
-  deps: Partial<Omit<RalphDeps, "db" | "organizationId" | "linear">> & {
-    linear?: TrackerGateway;
+  deps: Partial<Omit<RalphDeps, "db" | "organizationId" | "tracker">> & {
+    tracker?: TrackerGateway;
   } = {},
 ): Promise<void> {
   const { db, organizationId } = context;
-  const linear = deps.linear ?? (await getTrackerGateway({ db, organizationId }));
+  const tracker = deps.tracker ?? (await getTrackerGateway({ db, organizationId }));
   const ralph: RalphDeps = {
     db,
     organizationId,
-    linear,
+    tracker,
     dispatcher: deps.dispatcher ?? getDispatcher(),
     adapterFor: deps.adapterFor ?? scmAdapterFor,
     ...(deps.chat && { chat: deps.chat }),

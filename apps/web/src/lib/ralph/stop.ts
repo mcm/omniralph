@@ -27,7 +27,7 @@ export async function stopRalphRun(
     {
       db,
       organizationId,
-      linear: await getTrackerGatewayOrDisconnected({ db, organizationId }),
+      tracker: await getTrackerGatewayOrDisconnected({ db, organizationId }),
       dispatcher: getDispatcher(),
       adapterFor: scmAdapterFor,
     },

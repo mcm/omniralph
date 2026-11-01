@@ -154,7 +154,7 @@ export async function answerRepositorySelection(
   let baseBranch: string;
   let branch: string;
   try {
-    const issue = await deps.linear.getIssue(run.linearIssueId);
+    const issue = await deps.tracker.getIssue(run.linearIssueId);
     branch = epicBranchName(epicIssue(issue), run.kind === "single" ? null : undefined);
     const found = await getRepositoryWithConnection(deps.db, repository.id);
     if (!found) throw new Error(`repository ${repository.fullPath} is gone`);
@@ -190,9 +190,9 @@ export async function answerRepositorySelection(
   // Request mode (a mention) never changes the issue's state.
   await quietly(`Moving ${run.linearIdentifier} to started`, async () => {
     if (run.mode === "request") return;
-    const issue = await deps.linear.getIssue(run.linearIssueId);
+    const issue = await deps.tracker.getIssue(run.linearIssueId);
     if (!["started", "completed", "canceled"].includes(issue.stateType)) {
-      await deps.linear.setIssueState(issue.id, { type: "started" });
+      await deps.tracker.setIssueState(issue.id, { type: "started" });
     }
   });
   return { status: "selected", repository, advanced: await advanceRun(run.id, deps) };

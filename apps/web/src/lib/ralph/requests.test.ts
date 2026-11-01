@@ -80,7 +80,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
   let gitlabRepoId: string;
   let agentA: string;
   let agentB: string;
-  let linear: FakeLinearGateway;
+  let tracker: FakeLinearGateway;
   let dispatcher: PostgresDispatcher;
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
@@ -88,7 +88,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
   const deps = (): StartRunDeps => ({
     db,
     organizationId: orgId,
-    linear,
+    tracker,
     dispatcher,
     adapterFor: () => scm.asAdapter(),
   });
@@ -157,7 +157,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       .returning({ id: agents.id })) as [{ id: string }, { id: string }];
     await setCodingEnabled(db, repoId);
     await updateRepositoryCoding(db, repoId, { historyRewrite: "when-asked" });
-    linear = new FakeLinearGateway();
+    tracker = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
   });
@@ -296,13 +296,13 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
   }
 
   const last = (sessionId: string, type: "thought" | "response" | "elicitation" | "error") =>
-    linear.bodies(sessionId, type).at(-1) ?? "";
+    tracker.bodies(sessionId, type).at(-1) ?? "";
 
   function threeStoryEpic() {
-    const epic = linear.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
-    const s1 = linear.add({ identifier: "ENG-2", title: "Alpha", parentId: epic.id, priority: 1 });
-    const s2 = linear.add({ identifier: "ENG-3", title: "Beta", parentId: epic.id, priority: 2 });
-    const s3 = linear.add({ identifier: "ENG-4", title: "Gamma", parentId: epic.id, priority: 3 });
+    const epic = tracker.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
+    const s1 = tracker.add({ identifier: "ENG-2", title: "Alpha", parentId: epic.id, priority: 1 });
+    const s2 = tracker.add({ identifier: "ENG-3", title: "Beta", parentId: epic.id, priority: 2 });
+    const s3 = tracker.add({ identifier: "ENG-4", title: "Gamma", parentId: epic.id, priority: 3 });
     return { epic, s1, s2, s3 };
   }
 
@@ -381,7 +381,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       expect(
         (await db.select().from(jobs).where(eq(jobs.ralphRunId, run!.id))).map((j) => j.type),
       ).toEqual(["ralph.request"]);
-      expect(linear.stateChanges).toEqual([]);
+      expect(tracker.stateChanges).toEqual([]);
       expect(scm.changeRequests).toEqual([]);
       expect(await listPendingRequests(db, run!.id)).toEqual([]);
     });
@@ -399,7 +399,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       expect((await work(run!.id, { commitSha: sha(3) })).story.identifier).toBe("ENG-4");
       await describePr(run!.id);
       expect((await getRun(db, run!.id))?.status).toBe("completed");
-      expect(linear.stateChanges.some((c) => c.issueId === epic.id)).toBe(true);
+      expect(tracker.stateChanges.some((c) => c.issueId === epic.id)).toBe(true);
     });
 
     it("push + PR on a finished epic (the MOD-50 case): the control panel opens the draft the agent asks for", async () => {
@@ -440,7 +440,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       expect(pr!.body).not.toContain("<img");
       expect(pr!.body).toContain("Linear: [ENG-1]");
       expect(await getMainLane(db, run!)).toMatchObject({ prNumber: 1, prUrl: pr!.url });
-      expect(linear.urls.at(-1)).toMatchObject({ sessionId, url: pr!.url });
+      expect(tracker.urls.at(-1)).toMatchObject({ sessionId, url: pr!.url });
       expect(last(sessionId, "response")).toBe(
         `Pushed the branch and opened the pull request.\n\nPull request #1: ${pr!.url}`,
       );
@@ -522,9 +522,9 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     });
 
     it("mentions ignore blockers (they aren't story work)", async () => {
-      const outside = linear.add({ identifier: "OPS-2", title: "Design review", teamKey: "OPS" });
+      const outside = tracker.add({ identifier: "OPS-2", title: "Design review", teamKey: "OPS" });
       const { epic } = threeStoryEpic();
-      await linear.createBlocksRelation(outside.id, epic.id);
+      await tracker.createBlocksRelation(outside.id, epic.id);
       const { run } = await session(epic.id, "@omniralph what does ENG-3 need?");
       await request(run!.id);
       expect((await getRun(db, run!.id))?.status).toBe("completed");
@@ -546,9 +546,9 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       const { outcome, sessionId, run } = await session(epic.id, "@omniralph how is it going?");
       expect(outcome).toMatchObject({ status: "delivered", live: true });
       expect(run).toBeNull();
-      expect(linear.bodies(sessionId, "response")).toEqual([PASSED_TO_RUNNING_JOB]);
+      expect(tracker.bodies(sessionId, "response")).toEqual([PASSED_TO_RUNNING_JOB]);
       expect(
-        await exchangeJobMessages({ db, linear: async () => linear }, agentA, [job.id], {
+        await exchangeJobMessages({ db, tracker: async () => tracker }, agentA, [job.id], {
           deliveredMessageIds: [],
           rejectedMessageIds: [],
         }),
@@ -560,7 +560,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       const { sessionId, run } = await session(epic.id, "@omniralph summarise the PRD");
       const job = await start(run!.id);
       const exchange = (acks: JobMessageAcks) =>
-        exchangeJobMessages({ db, linear: async () => linear }, agentA, [job.id], acks);
+        exchangeJobMessages({ db, tracker: async () => tracker }, agentA, [job.id], acks);
 
       expect(await reply(run!, "in French")).toEqual({ kind: "live" });
       const [french] = await exchange({ deliveredMessageIds: [], rejectedMessageIds: [] });
@@ -592,8 +592,8 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     });
 
     it("asks which repository when a mention matches none, then answers in the picked one (by URL)", async () => {
-      linear.add({ identifier: "OPS-1", title: "Infra", teamKey: "OPS" });
-      const issue = [...linear.issues.values()].find((i) => i.identifier === "OPS-1")!;
+      tracker.add({ identifier: "OPS-1", title: "Infra", teamKey: "OPS" });
+      const issue = [...tracker.issues.values()].find((i) => i.identifier === "OPS-1")!;
       const { outcome, sessionId, run } = await session(issue.id, "@omniralph what's this about?");
       expect(outcome).toMatchObject({ status: "selecting" });
       expect(run).toMatchObject({ mode: "request", status: "waiting", repositoryId: null });
@@ -611,13 +611,13 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       expect(payload.requests.map((r) => r.text)).toEqual(["what's this about?"]);
       expect(last(sessionId, "response")).toBe("It's about infra.");
       // Request mode: no Linear state changes.
-      expect(linear.stateChanges).toEqual([]);
+      expect(tracker.stateChanges).toEqual([]);
     });
 
     it("adds a mention to the issue's run when it is waiting, and that session answers", async () => {
-      const outside = linear.add({ identifier: "OPS-2", title: "Design review", teamKey: "OPS" });
+      const outside = tracker.add({ identifier: "OPS-2", title: "Design review", teamKey: "OPS" });
       const { epic } = threeStoryEpic();
-      await linear.createBlocksRelation(outside.id, epic.id);
+      await tracker.createBlocksRelation(outside.id, epic.id);
       const delegated = (await session(epic.id)).run!;
       expect((await getRun(db, delegated.id))?.status).toBe("waiting");
 
@@ -645,7 +645,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
 
     it("`/coding` (or `/ralph`) doesn't switch a mention's run to the epic loop while the PRD has open questions", async () => {
       const { epic } = threeStoryEpic();
-      const root = linear.issues.get(epic.id)!;
+      const root = tracker.issues.get(epic.id)!;
       root.description = `${EPIC_DESCRIPTION}\n## Open Questions\n\n1. Which column type?\n`;
       const { run } = await session(epic.id, "@omniralph use smallint everywhere");
       expect(run).toMatchObject({ mode: "request" });
@@ -663,9 +663,9 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       expect(await activeJobs(run!.id)).toEqual([]);
 
       // Linear can't be read: refused too.
-      linear.failures.set("getIssue", new Error("timed out"));
+      tracker.failures.set("getIssue", new Error("timed out"));
       expect(await reply(run!, "/ralph")).toEqual({ kind: "open_questions" });
-      linear.failures.delete("getIssue");
+      tracker.failures.delete("getIssue");
       expect(last(run!.linearAgentSessionId, "error")).toContain(
         "I couldn't check the issue for open questions in Linear, so I didn't start: timed out.",
       );
@@ -697,9 +697,9 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
     });
 
     it("a reply on a parked (blocked) epic runs as a request and the run stays parked", async () => {
-      const outside = linear.add({ identifier: "OPS-9", title: "Design review", teamKey: "OPS" });
+      const outside = tracker.add({ identifier: "OPS-9", title: "Design review", teamKey: "OPS" });
       const { epic } = threeStoryEpic();
-      await linear.createBlocksRelation(outside.id, epic.id);
+      await tracker.createBlocksRelation(outside.id, epic.id);
       const run = (await session(epic.id)).run!;
       expect((await getRun(db, run.id))?.status).toBe("waiting");
 
@@ -834,7 +834,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       payload.attachments.map((a) => `${a.title} (from ${a.sources.join(", ")})`);
 
     it("lists an image-only issue's upload (signature stripped) and remembers it for the download", async () => {
-      const issue = linear.add({
+      const issue = tracker.add({
         identifier: "ENG-32",
         title: "Static renders from multiple angles",
         description: `\n<linear-image>{"type":"image","attrs":{"src":"${UP}/365d683b?signature=eyJhbGciOi.abc.def","title":"pavilion_contact_sheet.png","width":1440,"height":1894}}</linear-image>`,
@@ -860,12 +860,12 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
 
     it("scopes story images to their story, shares epic/thread images, and reads comments", async () => {
       const { epic, s2, s3 } = threeStoryEpic();
-      linear.issues.get(epic.id)!.description += `\n\n![architecture.png](${UP}/arch)`;
-      linear.issues.get(s2.id)!.description = `Beta.\n\n![badge mockup](${UP}/badge?signature=x)`;
-      linear.commentsByIssue.set(epic.id, [
+      tracker.issues.get(epic.id)!.description += `\n\n![architecture.png](${UP}/arch)`;
+      tracker.issues.get(s2.id)!.description = `Beta.\n\n![badge mockup](${UP}/badge?signature=x)`;
+      tracker.commentsByIssue.set(epic.id, [
         { body: `Colour reference: ${UP}/palette`, author: "Ana" },
       ]);
-      linear.commentsByIssue.set(s3.id, [{ body: `Like [this](${UP}/gamma)`, author: "Bo" }]);
+      tracker.commentsByIssue.set(s3.id, [{ body: `Like [this](${UP}/gamma)`, author: "Bo" }]);
       const { run } = await session(epic.id);
       await reply(run!, `Also see ![flow.png](${UP}/flow)`);
 
@@ -904,7 +904,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
 
     it("leaves a comment that can't be read out instead of failing the run", async () => {
       const { epic } = threeStoryEpic();
-      linear.failures.set("getComments", new Error("Linear is down"));
+      tracker.failures.set("getComments", new Error("Linear is down"));
       const { run } = await session(epic.id);
       expect((await work(run!.id)).attachments).toEqual([]);
     });

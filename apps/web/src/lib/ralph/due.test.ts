@@ -389,14 +389,14 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("ralph reconcile schedule
     await idle();
     const [other] = await db.insert(organizations).values({ name: "No Linear" }).returning();
     const chat = await newRun("completed", { origin: "chat", organizationId: other!.id });
-    const linear = await newRun("waiting", { organizationId: other!.id });
+    const tracker = await newRun("waiting", { organizationId: other!.id });
     await scheduleRun(chat.id, NOW);
-    await scheduleRun(linear.id, NOW);
+    await scheduleRun(tracker.id, NOW);
 
     await cron();
     expect(state.advanced).toEqual([chat.id]);
     expect(await score(chat.id)).toBeNull();
-    expect(await score(linear.id)).toBeNull();
+    expect(await score(tracker.id)).toBeNull();
   });
 
   it("keeps the safety check when an advance throws", async () => {

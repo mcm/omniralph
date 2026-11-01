@@ -78,7 +78,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
   let repoId: string;
   let otherRepoId: string;
   let agentA: string;
-  let linear: FakeLinearGateway;
+  let tracker: FakeLinearGateway;
   let dispatcher: PostgresDispatcher;
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
@@ -86,7 +86,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
   const deps = (): StartRunDeps => ({
     db,
     organizationId: orgId,
-    linear,
+    tracker,
     dispatcher,
     adapterFor: () => scm.asAdapter(),
   });
@@ -161,7 +161,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
       .returning({ id: agents.id })) as [{ id: string }];
     await ralphOn(repoId);
     await ralphOn(otherRepoId);
-    linear = new FakeLinearGateway();
+    tracker = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
   });
@@ -217,8 +217,8 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
 
   /** A finished epic with PR #1 open (head `head1`), whose CI is checked. */
   async function ciEpic(): Promise<{ run: RalphRun; sessionId: string }> {
-    const epic = linear.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
-    linear.add({ identifier: "ENG-2", title: "Alpha", parentId: epic.id });
+    const epic = tracker.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
+    tracker.add({ identifier: "ENG-2", title: "Alpha", parentId: epic.id });
     sessionSeq += 1;
     const sessionId = `session-${sessionSeq}`;
     await startRun(
@@ -298,7 +298,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
     expect(texts[0]).toContain(`### CI / test (${JOB_URL})`);
     expect(texts[0]).toContain("Expected 2, got 3");
     expect(texts[0]).toContain(`push \`${branch}\``);
-    expect(linear.bodies(sessionId, "thought")).toContain(
+    expect(tracker.bodies(sessionId, "thought")).toContain(
       "CI failed on the pull request (`head1`: `CI / test`). Working on a fix.",
     );
     expect(await getMainLane(db, run)).toMatchObject({
@@ -342,7 +342,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
     expect(texts[2]).toContain("### job5");
     expect(texts[2]).not.toContain("### job6");
     expect(texts[2]).toContain("(2 more failed jobs not shown.)");
-    expect(linear.bodies(sessionId, "thought")).toContain(
+    expect(tracker.bodies(sessionId, "thought")).toContain(
       "CI failed on the pull request (`head3`: `job1`, `job2`, `job3` and 4 more). Working on a fix.",
     );
   });
@@ -363,10 +363,10 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
     });
     expect(await requestJobs(run.id)).toHaveLength(1);
     const limit = `CI failed again on ${prUrl} (\`head2\`). I've already tried to fix CI 1 time on this pull request, so I'm leaving this one for a person.`;
-    expect(linear.bodies(sessionId, "response").at(-1)).toBe(limit);
+    expect(tracker.bodies(sessionId, "response").at(-1)).toBe(limit);
     // Said once, not on every check.
     await reconcileCi(deps());
-    expect(linear.bodies(sessionId, "response").filter((b) => b === limit)).toHaveLength(1);
+    expect(tracker.bodies(sessionId, "response").filter((b) => b === limit)).toHaveLength(1);
     expect(await getMainLane(db, run)).toMatchObject({
       ciFixRounds: 1,
       handledCiShas: ["head1", "head2"],
@@ -452,7 +452,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
     const texts = await requestTexts(run.id);
     expect(texts).toHaveLength(2);
     expect(texts[1]).toContain("failed on `head2`");
-    expect(linear.bodies(sessionId, "thought")).toContain(
+    expect(tracker.bodies(sessionId, "thought")).toContain(
       "CI failed on the pull request (`head2`: `CI / build`). Working on a fix.",
     );
     expect(await getMainLane(db, run)).toMatchObject({
@@ -570,7 +570,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
     expect(await getMainLane(db, run)).toMatchObject({ ciFixRounds: 1, handledCiShas: ["head1"] });
     expect(await listPendingRequests(db, run.id)).toEqual([]);
     expect(
-      linear
+      tracker
         .bodies(sessionId, "thought")
         .filter((b) => b.startsWith("CI failed on the pull request")),
     ).toHaveLength(2);
@@ -608,7 +608,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
         db,
         dispatcher,
         adapterFor: () => scm.asAdapter(),
-        linear: async () => linear,
+        tracker: async () => tracker,
       });
 
     it("acts on a failed workflow run of a ralph PR once per delivery and head commit", async () => {
@@ -636,7 +636,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
       const res = await webhook(workflowRun("failure", [1], { delivery }));
       expect(await res.json()).toEqual({ status: "accepted", event: "ci_failure" });
       expect(await requestJobs(run.id)).toHaveLength(1);
-      expect(linear.bodies(sessionId, "thought")).toContain(
+      expect(tracker.bodies(sessionId, "thought")).toContain(
         "CI failed on the pull request (`head1`: `CI / test`). Working on a fix.",
       );
 

@@ -155,7 +155,7 @@ const now = () => new Date().toISOString();
  * sees a finished session complete again (in chat, always a new message).
  */
 async function notify(
-  deps: Pick<RalphDeps, "linear" | "chat">,
+  deps: Pick<RalphDeps, "tracker" | "chat">,
   run: RalphRun,
   body: string,
 ): Promise<void> {
@@ -393,9 +393,9 @@ async function resolveMergedIssue(deps: RalphDeps, lane: RalphLane): Promise<voi
     if (!run || !isLinearRun(run)) return;
     const lanes = await listLanes(deps.db, run.id);
     if (lanes.some((l) => l.id !== lane.id && !l.prClosed && !l.prMerged)) return;
-    const issue = await deps.linear.getIssue(run.linearIssueId);
+    const issue = await deps.tracker.getIssue(run.linearIssueId);
     if (issue.stateType === "completed" || issue.stateType === "canceled") return;
-    await deps.linear.setIssueState(run.linearIssueId, { type: "completed" });
+    await deps.tracker.setIssueState(run.linearIssueId, { type: "completed" });
   } catch (error) {
     console.error(
       `Resolving the Linear issue of ralph lane ${lane.id} after its merge failed`,
@@ -678,7 +678,7 @@ export async function applyCleanupJob(deps: RalphDeps, jobId: string): Promise<b
 
 /** Posts a cleanup question as a select elicitation with its two options. */
 async function ask(
-  deps: Pick<RalphDeps, "linear" | "chat">,
+  deps: Pick<RalphDeps, "tracker" | "chat">,
   run: RalphRun,
   where: { lane: RalphLane; jobId: string },
   question: RalphCleanupQuestion,

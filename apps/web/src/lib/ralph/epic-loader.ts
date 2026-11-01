@@ -143,7 +143,7 @@ export function epicIssue(issue: IssueSummary): EpicIssue {
 
 /** The children epic of `parent`: its sub-issues with their blockers. */
 async function loadChildrenEpic(
-  linear: TrackerGateway,
+  tracker: TrackerGateway,
   parent: IssueSummary,
   children: readonly IssueSummary[],
   options: EpicOptions,
@@ -151,7 +151,7 @@ async function loadChildrenEpic(
   const stories = await Promise.all(
     children.map(async (issue) => ({
       issue: epicIssue(issue),
-      blockers: await linear.getBlockers(issue.id),
+      blockers: await tracker.getBlockers(issue.id),
     })),
   );
   return childrenEpic(epicIssue(parent), stories, options);
@@ -166,13 +166,13 @@ async function loadChildrenEpic(
  * created issues.
  */
 export function materializePrd(
-  linear: TrackerGateway,
+  tracker: TrackerGateway,
   parent: IssueSummary,
   prd: ParsedPrd,
   manualLabel: string,
   existing: readonly IssueSummary[] = [],
 ): Promise<IssueSummary[]> {
-  return createPlannedSubIssues(linear, parent, materializationPlan(prd), manualLabel, existing);
+  return createPlannedSubIssues(tracker, parent, materializationPlan(prd), manualLabel, existing);
 }
 
 /**
@@ -183,7 +183,7 @@ export function materializePrd(
  * only added for new issues. Returns the created issues, in plan order.
  */
 export async function createPlannedSubIssues(
-  linear: TrackerGateway,
+  tracker: TrackerGateway,
   parent: IssueSummary,
   plan: MaterializationPlan,
   manualLabel: string,
@@ -198,7 +198,7 @@ export async function createPlannedSubIssues(
       issues.set(planned.storyId, found);
       continue;
     }
-    const issue = await linear.createIssue({
+    const issue = await tracker.createIssue({
       teamId: parent.teamId,
       parentId: parent.id,
       title: planned.title,
@@ -210,47 +210,47 @@ export async function createPlannedSubIssues(
     });
     issues.set(planned.storyId, issue);
     created.set(planned.storyId, issue);
-    if (planned.completed) await linear.setIssueState(issue.id, { type: "completed" });
+    if (planned.completed) await tracker.setIssueState(issue.id, { type: "completed" });
   }
   for (const { blocker, blocked } of plan.relations) {
     const from = issues.get(blocker);
     const to = issues.get(blocked);
     if (!from || !to || !(created.has(blocker) || created.has(blocked))) continue;
-    await linear.createBlocksRelation(from.id, to.id);
+    await tracker.createBlocksRelation(from.id, to.id);
   }
   return [...created.values()];
 }
 
 /** Loads the delegated issue `issueId` as an epic, materializing a PRD's stories first. */
 export async function loadEpic(
-  linear: TrackerGateway,
+  tracker: TrackerGateway,
   issueId: string,
   options: LoadEpicOptions = {},
 ): Promise<LoadedEpic> {
-  const issue = await linear.getIssue(issueId);
+  const issue = await tracker.getIssue(issueId);
 
-  const children = await linear.getChildren(issue.id);
+  const children = await tracker.getChildren(issue.id);
   if (children.some((child) => child.stateType !== "canceled")) {
     const epicOptions = await epicOptionsFor(options, issue);
     const prd = options.completePrd ? parsePrd(issue.description) : null;
     const created = prd
-      ? await materializePrd(linear, issue, prd, epicOptions.manualLabels[0] ?? "manual", children)
+      ? await materializePrd(tracker, issue, prd, epicOptions.manualLabels[0] ?? "manual", children)
       : [];
     if (created.length > 0) {
-      const all = await linear.getChildren(issue.id);
-      const epic = await loadChildrenEpic(linear, issue, all, epicOptions);
+      const all = await tracker.getChildren(issue.id);
+      const epic = await loadChildrenEpic(tracker, issue, all, epicOptions);
       return { epic, root: issue, kind: "prd", materialized: created.length };
     }
-    const epic = await loadChildrenEpic(linear, issue, children, epicOptions);
+    const epic = await loadChildrenEpic(tracker, issue, children, epicOptions);
     return { epic, root: issue, kind: "children", materialized: 0 };
   }
 
   // A sub-issue delegated on its own is one story of its parent's epic.
   if (issue.parentId) {
-    const parent = await linear.getIssue(issue.parentId);
-    const siblings = await linear.getChildren(parent.id);
+    const parent = await tracker.getIssue(issue.parentId);
+    const siblings = await tracker.getChildren(parent.id);
     const epic = await loadChildrenEpic(
-      linear,
+      tracker,
       parent,
       siblings,
       await epicOptionsFor(options, parent),
@@ -265,15 +265,15 @@ export async function loadEpic(
   if (prd) {
     const epicOptions = await epicOptionsFor(options, issue);
     const created = await materializePrd(
-      linear,
+      tracker,
       issue,
       prd,
       epicOptions.manualLabels[0] ?? "manual",
     );
     const epic = await loadChildrenEpic(
-      linear,
+      tracker,
       issue,
-      await linear.getChildren(issue.id),
+      await tracker.getChildren(issue.id),
       epicOptions,
     );
     return { epic, root: issue, kind: "prd", materialized: created.length };
@@ -288,15 +288,15 @@ export async function loadEpic(
  * a `single` run. Never creates issues.
  */
 export async function reloadEpic(
-  linear: TrackerGateway,
+  tracker: TrackerGateway,
   run: { linearIssueId: string; kind: "children" | "prd" | "single"; mode?: "epic" | "request" },
   options: LoadEpicOptions = {},
 ): Promise<Epic> {
-  const issue = await linear.getIssue(run.linearIssueId);
+  const issue = await tracker.getIssue(run.linearIssueId);
   if (run.kind === "single") return singleIssueEpic(epicIssue(issue));
-  const children = await linear.getChildren(issue.id);
+  const children = await tracker.getChildren(issue.id);
   // A mention's PRD whose stories were never created: its PRD stories, for context.
   const prd = run.mode === "request" && children.length === 0 ? parsePrd(issue.description) : null;
   if (prd) return prdEpic(epicIssue(issue), prd);
-  return loadChildrenEpic(linear, issue, children, await epicOptionsFor(options, issue));
+  return loadChildrenEpic(tracker, issue, children, await epicOptionsFor(options, issue));
 }

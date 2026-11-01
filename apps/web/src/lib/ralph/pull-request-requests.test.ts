@@ -76,7 +76,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
   let repoId: string;
   let otherRepoId: string;
   let agentA: string;
-  let linear: FakeLinearGateway;
+  let tracker: FakeLinearGateway;
   let dispatcher: PostgresDispatcher;
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
@@ -84,7 +84,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
   const deps = (): StartRunDeps => ({
     db,
     organizationId: orgId,
-    linear,
+    tracker,
     dispatcher,
     adapterFor: () => scm.asAdapter(),
   });
@@ -163,7 +163,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
       .returning({ id: agents.id })) as [{ id: string }];
     await ralphOn(repoId);
     await ralphOn(otherRepoId);
-    linear = new FakeLinearGateway();
+    tracker = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
   });
@@ -219,8 +219,8 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
 
   /** A finished epic with PR #1 open (head `head1`), ready to receive reviews. */
   async function reviewedEpic(): Promise<{ run: RalphRun; sessionId: string }> {
-    const epic = linear.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
-    linear.add({ identifier: "ENG-2", title: "Alpha", parentId: epic.id });
+    const epic = tracker.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
+    tracker.add({ identifier: "ENG-2", title: "Alpha", parentId: epic.id });
     sessionSeq += 1;
     const sessionId = `session-${sessionSeq}`;
     await startRun(
@@ -341,7 +341,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     expect(text).toContain(`push \`${branch}\``);
     expect(text).not.toContain("Dismissed one");
     expect(text).not.toContain("Merged one");
-    expect(linear.bodies(sessionId, "thought")).toContain(
+    expect(tracker.bodies(sessionId, "thought")).toContain(
       "Omniralph reviewed the pull request with 1 finding. Working through it.",
     );
     expect(await getMainLane(db, run)).toMatchObject({
@@ -360,7 +360,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     // The request session pushes the fixes; the run completes again with what it said.
     await finish(await start(run.id), requestResult());
     expect((await getRun(db, run.id))?.status).toBe("completed");
-    expect(linear.bodies(sessionId, "response").at(-1)).toContain("Fixed the findings.");
+    expect(tracker.bodies(sessionId, "response").at(-1)).toContain("Fixed the findings.");
   });
 
   it("replies in the threads of the findings the session reported on, and resolves the fixed ones", async () => {
@@ -421,7 +421,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
       },
     ]);
     expect(scm.resolvedThreads).toEqual(["c-fixed"]);
-    expect(linear.bodies(sessionId, "response").at(-1)).toContain(
+    expect(tracker.bodies(sessionId, "response").at(-1)).toContain(
       "Resolved 2 fixed review findings.",
     );
   });
@@ -543,7 +543,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
       rounds: 1,
     });
     expect(await requestJobs(run.id)).toHaveLength(1);
-    expect(linear.bodies(sessionId, "response").at(-1)).toBe(
+    expect(tracker.bodies(sessionId, "response").at(-1)).toBe(
       `Omniralph reviewed ${scm.changeRequests[0]!.url} again. I've already worked through 1 of its reviews on this pull request, so I'm leaving this one for a person.`,
     );
   });
@@ -568,19 +568,19 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     expect(await respondToReview(deps(), (await review({ headSha: "head2" })).id)).toMatchObject({
       status: "live",
     });
-    expect(linear.bodies(sessionId, "thought").at(-1)).toBe(
+    expect(tracker.bodies(sessionId, "thought").at(-1)).toBe(
       "Omniralph reviewed the pull request with 1 finding. Passing it to Om while it's working.",
     );
     // The heartbeat delivers it to the running job.
     const delivered = await exchangeJobMessages(
-      { db, linear: async () => linear },
+      { db, tracker: async () => tracker },
       agentA,
       [job.id],
       { deliveredMessageIds: [], rejectedMessageIds: [] },
     );
     expect(delivered).toHaveLength(1);
     expect(delivered[0]!.text).toContain("Omniralph reviewed pull request #1");
-    await exchangeJobMessages({ db, linear: async () => linear }, agentA, [job.id], {
+    await exchangeJobMessages({ db, tracker: async () => tracker }, agentA, [job.id], {
       deliveredMessageIds: [delivered[0]!.messageId],
       rejectedMessageIds: [],
     });
@@ -592,9 +592,9 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
   });
 
   it("queues a review while a story runs, and runs it as a request after the loop", async () => {
-    const epic = linear.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
-    linear.add({ identifier: "ENG-2", title: "Alpha", parentId: epic.id, priority: 1 });
-    linear.add({ identifier: "ENG-3", title: "Beta", parentId: epic.id, priority: 2 });
+    const epic = tracker.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
+    tracker.add({ identifier: "ENG-2", title: "Alpha", parentId: epic.id, priority: 1 });
+    tracker.add({ identifier: "ENG-3", title: "Beta", parentId: epic.id, priority: 2 });
     await ralphOn(repoId, { openPullRequestEarly: true });
     sessionSeq += 1;
     const sessionId = `session-${sessionSeq}`;
@@ -616,7 +616,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
     expect(await respondToReview(deps(), (await review({ headSha: "head" })).id)).toMatchObject({
       status: "queued",
     });
-    expect(linear.bodies(sessionId, "thought").at(-1)).toBe(
+    expect(tracker.bodies(sessionId, "thought").at(-1)).toBe(
       "Omniralph reviewed the pull request with 1 finding. I'll work through it as soon as the current step finishes.",
     );
     // A story agent never gets it: it waits for the loop to end.

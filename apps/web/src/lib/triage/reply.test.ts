@@ -102,7 +102,7 @@ describe.skipIf(!databaseAvailable)("continuing triage from session replies", ()
   const deps = (): TriageDeps => ({
     db,
     organizationId: orgId,
-    linear,
+    tracker: linear,
     dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => ({ getDefaultBranch: async () => "main" }) as unknown as ScmAdapter,
   });
@@ -346,7 +346,7 @@ describe.skipIf(!databaseAvailable)("continuing triage from session replies", ()
     const { dispatcher, adapterFor } = deps();
 
     await handleTrackerEvent(prompt("ralph-session", "", "stop"), context, {
-      linear,
+      tracker: linear,
       dispatcher,
       adapterFor,
     });
@@ -354,7 +354,7 @@ describe.skipIf(!databaseAvailable)("continuing triage from session replies", ()
     expect(await getTriageRun(db, runId)).toMatchObject({ status: "queued" });
 
     await handleTrackerEvent(prompt(sessionId, "", "stop"), context, {
-      linear,
+      tracker: linear,
       dispatcher,
       adapterFor,
     });

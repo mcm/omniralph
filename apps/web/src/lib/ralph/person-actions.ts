@@ -103,7 +103,7 @@ export async function finishManualStory(
     const tracker = await workItemTrackerFor({
       db: deps.db,
       organizationId: run.organizationId,
-      gateway: deps.linear,
+      gateway: deps.tracker,
     });
     await tracker.setState(story.linearIssueId, outcome === "done" ? "done" : "canceled");
   } catch (error) {

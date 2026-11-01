@@ -104,7 +104,7 @@ export interface WebhookDeps {
   /** The handle where the connection has no bot username (GitHub): default `BOT_HANDLE`. */
   handle?: string;
   /** The tracker, for `@bot` requests to ralph runs; default: the connected one. */
-  linear?: () => Promise<TrackerGateway>;
+  tracker?: () => Promise<TrackerGateway>;
   /** Where ralph runs from chat post (default: the deployment's chat bot). */
   chat?: ChatSource;
 }
@@ -599,16 +599,16 @@ async function handleCi(
   const task = async () => {
     try {
       const organizationId = repository.organizationId;
-      const linear = lazyTrackerGateway({
+      const tracker = lazyTrackerGateway({
         db,
         organizationId,
-        ...(input.linear && { load: input.linear }),
+        ...(input.tracker && { load: input.tracker }),
       });
       await respondToCiEvent(
         {
           db,
           organizationId,
-          linear,
+          tracker,
           dispatcher: input.dispatcher,
           adapterFor: input.adapterFor ?? scmAdapterFor,
           chat: input.chat,
@@ -656,16 +656,16 @@ async function handleClosed(
   const task = async () => {
     try {
       const organizationId = repository.organizationId;
-      const linear = lazyTrackerGateway({
+      const tracker = lazyTrackerGateway({
         db,
         organizationId,
-        ...(input.linear && { load: input.linear }),
+        ...(input.tracker && { load: input.tracker }),
       });
       await cleanupClosedPullRequest(
         {
           db,
           organizationId,
-          linear,
+          tracker,
           dispatcher: input.dispatcher,
           adapterFor: input.adapterFor ?? scmAdapterFor,
           chat: input.chat,

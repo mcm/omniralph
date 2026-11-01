@@ -79,7 +79,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
   let repoId: string;
   let otherRepoId: string;
   let agentA: string;
-  let linear: FakeLinearGateway;
+  let tracker: FakeLinearGateway;
   let dispatcher: PostgresDispatcher;
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
@@ -87,7 +87,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
   const deps = (): StartRunDeps => ({
     db,
     organizationId: orgId,
-    linear,
+    tracker,
     dispatcher,
     adapterFor: () => scm.asAdapter(),
   });
@@ -159,7 +159,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
       ])
       .returning({ id: agents.id })) as [{ id: string }];
     await ralphOn();
-    linear = new FakeLinearGateway();
+    tracker = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
   });
@@ -239,12 +239,12 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
   }> {
     sessionSeq += 1;
     const n = sessionSeq;
-    const epic = linear.add({
+    const epic = tracker.add({
       identifier: `ENG-${n * 10}`,
       title: "Epic",
       description: EPIC_DESCRIPTION,
     });
-    linear.add({ identifier: `ENG-${n * 10 + 1}`, title: "Alpha", parentId: epic.id });
+    tracker.add({ identifier: `ENG-${n * 10 + 1}`, title: "Alpha", parentId: epic.id });
     const sessionId = `session-${n}`;
     await startRun(
       {
@@ -290,15 +290,15 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     handleTrackerEvent(
       { kind: "issue_state_changed", issueId, stateType: "completed", removed: false },
       { db, organizationId: orgId, workspaceId: "org-1" },
-      { linear, dispatcher, adapterFor: () => scm.asAdapter() },
+      { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
     );
 
   const reply = (run: LinearRun, body: string) =>
     handleReply({ kind: "session_prompted", sessionId: run.linearAgentSessionId, body }, deps());
 
-  const responses = (run: LinearRun) => linear.bodies(run.linearAgentSessionId, "response");
+  const responses = (run: LinearRun) => tracker.bodies(run.linearAgentSessionId, "response");
   const selects = (run: LinearRun) =>
-    linear.activities.filter(
+    tracker.activities.filter(
       (a) => a.sessionId === run.linearAgentSessionId && a.options?.signal === "select",
     );
   const optionsOf = (a: ReturnType<typeof selects>[number] | undefined) =>
@@ -358,7 +358,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     );
     // The note is the session's last activity and a response, so Linear sees the session complete
     // again instead of waiting on it.
-    expect(linear.activities.at(-1)?.content.type).toBe("response");
+    expect(tracker.activities.at(-1)?.content.type).toBe("response");
     expect((await lane(run)).cleanup).toMatchObject({ status: "done", questions: [] });
     expect((await lane(run)).cleanup?.jobId).toBeUndefined();
     expect(cleanupLabel((await lane(run)).cleanup)).toBe("Merged: cleaned up");
@@ -445,19 +445,19 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
   it("links the PR to the epic and resolves the epic once the PR merged", async () => {
     const { run, epicId } = await epicWithPullRequest();
     const pr = scm.changeRequests.at(-1)!;
-    expect(linear.links).toContainEqual({
+    expect(tracker.links).toContainEqual({
       issueId: epicId,
       url: pr.url,
       title: `Pull request #${pr.number}`,
     });
     // Still open: the epic is left alone.
     await reconcileCleanup(deps());
-    expect(linear.issues.get(epicId)?.stateType).not.toBe("completed");
+    expect(tracker.issues.get(epicId)?.stateType).not.toBe("completed");
 
     merge(pr.number);
     await reconcileCleanup(deps());
-    expect(linear.issues.get(epicId)?.stateType).toBe("completed");
-    expect(linear.stateChanges.at(-1)).toEqual({ issueId: epicId, target: { type: "completed" } });
+    expect(tracker.issues.get(epicId)?.stateType).toBe("completed");
+    expect(tracker.stateChanges.at(-1)).toEqual({ issueId: epicId, target: { type: "completed" } });
     expect((await lane(run)).prMerged).toBe(true);
   });
 
@@ -469,22 +469,22 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
       branch: (await lane(run)).branch,
       baseBranch: "main",
     });
-    const changes = linear.stateChanges.length;
+    const changes = tracker.stateChanges.length;
     merge();
     await reconcileCleanup(deps());
     expect((await lane(run)).prMerged).toBe(true);
-    expect(linear.issues.get(epicId)?.stateType).not.toBe("completed");
-    expect(linear.stateChanges).toHaveLength(changes);
+    expect(tracker.issues.get(epicId)?.stateType).not.toBe("completed");
+    expect(tracker.stateChanges).toHaveLength(changes);
   });
 
   it("leaves a canceled epic alone when its PR merged", async () => {
     const { epicId } = await epicWithPullRequest();
-    linear.issues.get(epicId)!.stateType = "canceled";
-    const changes = linear.stateChanges.length;
+    tracker.issues.get(epicId)!.stateType = "canceled";
+    const changes = tracker.stateChanges.length;
     merge();
     await reconcileCleanup(deps());
-    expect(linear.issues.get(epicId)?.stateType).toBe("canceled");
-    expect(linear.stateChanges).toHaveLength(changes);
+    expect(tracker.issues.get(epicId)?.stateType).toBe("canceled");
+    expect(tracker.stateChanges).toHaveLength(changes);
   });
 
   it("cleans up when the cron or the merge webhook sees the PR merged", async () => {
@@ -520,7 +520,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
         db,
         dispatcher,
         adapterFor: () => scm.asAdapter(),
-        linear: async () => linear,
+        tracker: async () => tracker,
       });
     // A close event for a PR the code host still has open (e.g. reopened since) does nothing.
     expect(await (await webhook(closed(false))).json()).toEqual({
@@ -589,7 +589,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
       db,
       dispatcher,
       adapterFor: () => scm.asAdapter(),
-      linear: async () => linear,
+      tracker: async () => tracker,
     });
     return response.json();
   }
@@ -864,14 +864,14 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     expect((await lane(run)).cleanup?.questions.map((q) => q.kind)).toEqual(["stashes", "branch"]);
 
     // A new process (and Linear client) reads the questions back from the database.
-    linear = new FakeLinearGateway();
+    tracker = new FakeLinearGateway();
     dispatcher = new PostgresDispatcher({ db });
     // "Push" alone is ambiguous with both questions open; the option values aren't.
     expect(await reply(run, "Drop")).toEqual({ kind: "cleanup_answer" });
     expect(actionOf((await cleanupJobs(run.id)).at(-1)!)).toMatchObject({ kind: "stashes" });
     // While an answer is carried out, another one for the same branch waits.
     expect(await reply(run, "Push to origin")).toEqual({ kind: "cleanup_answer" });
-    expect(linear.bodies(run.linearAgentSessionId, "response").at(-1)).toContain(
+    expect(tracker.bodies(run.linearAgentSessionId, "response").at(-1)).toContain(
       "still carrying out the previous answer",
     );
     await finish(await start(run.id, "worktree.cleanup"), cleanupResult({ handled: 1 }));

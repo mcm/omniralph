@@ -216,7 +216,7 @@ describe.skipIf(!databaseAvailable)("ask_about_code", () => {
   const ralph = (organizationId: string): RalphDeps => ({
     db,
     organizationId,
-    linear: fakeRalphTracker(),
+    tracker: fakeRalphTracker(),
     dispatcher: new PostgresDispatcher({ db }),
     adapterFor: () => scm.asAdapter(),
   });

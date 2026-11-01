@@ -64,7 +64,7 @@ export async function routeIssues(
   rules: Rules,
   unsaved?: UnsavedWorkItemMatch,
 ): Promise<RoutingPreviewItem[]> {
-  const tracker = dedupedRoutingFields(deps.linear);
+  const tracker = dedupedRoutingFields(deps.tracker);
   const loaded = new Map(
     await Promise.all(
       [...new Set(identifiers)].map(
@@ -75,7 +75,7 @@ export async function routeIssues(
   const matches = unsaved ? await matchesWith(deps, unsaved) : undefined;
   const router = await createRouter({
     ...deps,
-    linear: tracker,
+    tracker,
     rules,
     ...(matches && { matches }),
   });
@@ -188,7 +188,7 @@ export async function testRoutingRules(
 
 /** An issue's routing fields, or null when the tracker doesn't know it. */
 async function loadIssue(
-  tracker: RouteDeps["linear"],
+  tracker: RouteDeps["tracker"],
   identifier: string,
 ): Promise<RoutingIssue | null> {
   try {
@@ -200,7 +200,7 @@ async function loadIssue(
 }
 
 /** Routing reads asking the tracker once per issue, by ID or identifier (failures are retried). */
-function dedupedRoutingFields(tracker: RouteDeps["linear"]): RoutingRead {
+function dedupedRoutingFields(tracker: RouteDeps["tracker"]): RoutingRead {
   const cache = new Map<string, Promise<RoutingIssue>>();
   return {
     routingIssue(idOrIdentifier) {

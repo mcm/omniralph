@@ -236,7 +236,7 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
         deferred.push(task());
       },
       handle: "omniralph",
-      linear: async () => state.linear,
+      tracker: async () => state.linear,
     });
     await Promise.all(deferred);
     return (await res.json()) as Record<string, unknown>;
@@ -1169,7 +1169,7 @@ describe.skipIf(!databaseAvailable)("@bot mention commands", () => {
           deferred.push(task());
         },
         handle: "omniralph",
-        linear: async () => state.linear,
+        tracker: async () => state.linear,
       });
       await Promise.all(deferred);
       return (await res.json()) as Record<string, unknown>;

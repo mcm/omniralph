@@ -71,7 +71,7 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
   let orgId: string;
   let repoId: string;
   let agentA: string;
-  let linear: FakeLinearGateway;
+  let tracker: FakeLinearGateway;
   let dispatcher: PostgresDispatcher;
   let scm: FakeScmAdapter;
   let sessionSeq = 0;
@@ -79,7 +79,7 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
   const deps = (): StartRunDeps => ({
     db,
     organizationId: orgId,
-    linear,
+    tracker,
     dispatcher,
     adapterFor: () => scm.asAdapter(),
   });
@@ -126,7 +126,7 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
       .insert(agents)
       .values([{ organizationId: orgId, name: "agent-a", reportedAcceptedTaskTypes: ["coding"] }])
       .returning({ id: agents.id })) as [{ id: string }];
-    linear = new FakeLinearGateway();
+    tracker = new FakeLinearGateway();
     scm = new FakeScmAdapter();
     dispatcher = new PostgresDispatcher({ db });
   });
@@ -233,20 +233,25 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
   const retry = (run: LinearRun, target: RalphRetryTarget = { kind: "run" }) =>
     retryRalphRun(deps(), run.id, target, "Ada Admin");
 
-  const thoughts = (run: LinearRun) => linear.bodies(run.linearAgentSessionId, "thought");
+  const thoughts = (run: LinearRun) => tracker.bodies(run.linearAgentSessionId, "thought");
 
   const storyStates = async (runId: string) =>
     (await listStories(db, runId)).map((s) => [s.identifier, s.status, s.attempts]);
 
   function twoStoryEpic(): { epic: IssueSummary; alpha: IssueSummary; beta: IssueSummary } {
-    const epic = linear.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
-    const alpha = linear.add({
+    const epic = tracker.add({ identifier: "ENG-1", title: "Epic", description: EPIC_DESCRIPTION });
+    const alpha = tracker.add({
       identifier: "ENG-2",
       title: "Alpha",
       parentId: epic.id,
       priority: 1,
     });
-    const beta = linear.add({ identifier: "ENG-3", title: "Beta", parentId: epic.id, priority: 2 });
+    const beta = tracker.add({
+      identifier: "ENG-3",
+      title: "Beta",
+      parentId: epic.id,
+      priority: 2,
+    });
     return { epic, alpha, beta };
   }
 
@@ -379,7 +384,7 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
       await work(run.id, { commitSha: sha(2) });
       await describePr(run.id);
       expect(await getRun(db, run.id)).toMatchObject({ status: "completed" });
-      expect(linear.issues.get(alpha.id)!.stateType).toBe("completed");
+      expect(tracker.issues.get(alpha.id)!.stateType).toBe("completed");
       const [alphaRow] = await listStories(db, run.id);
 
       expect(await retry(run, { kind: "story", storyId: alphaRow!.id })).toMatchObject({
@@ -387,7 +392,7 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
         advanced: { action: "enqueued", story: { identifier: "ENG-2" } },
       });
       // The work item is open again, so Linear doesn't complete it on the next sync.
-      expect(linear.issues.get(alpha.id)!.stateType).toBe("started");
+      expect(tracker.issues.get(alpha.id)!.stateType).toBe("started");
       expect(await getRun(db, run.id)).toMatchObject({
         status: "running",
         focusStoryId: alpha.id,
@@ -435,7 +440,7 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
       await work(run.id, { commitSha: sha(2) });
       await describePr(run.id);
       const [alphaRow] = await listStories(db, run.id);
-      linear.setIssueState = async () => {
+      tracker.setIssueState = async () => {
         throw new Error("Linear is down");
       };
 

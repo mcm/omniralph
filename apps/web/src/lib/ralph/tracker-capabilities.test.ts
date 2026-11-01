@@ -66,7 +66,7 @@ describe.skipIf(!testDatabaseAvailable())(
     const deps = (): StartRunDeps => ({
       db,
       organizationId: orgId,
-      linear: tracker,
+      tracker,
       dispatcher,
       adapterFor: () => scm.asAdapter(),
     });

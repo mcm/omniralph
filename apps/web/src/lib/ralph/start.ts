@@ -105,7 +105,10 @@ interface SessionRef {
 
 /** Posts to a tracker session (comments on its work item without sessions), logging a failure. */
 async function post(deps: RalphDeps, session: SessionRef, content: ActivityContent): Promise<void> {
-  await postActivity(trackerConversation(deps.linear, session.sessionId, session.issueId), content);
+  await postActivity(
+    trackerConversation(deps.tracker, session.sessionId, session.issueId),
+    content,
+  );
 }
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -146,13 +149,13 @@ export function openQuestionsMessage(
  * rather than start a PRD whose questions went unchecked.
  */
 export async function withOpenQuestions(
-  deps: Pick<RalphDeps, "linear">,
+  deps: Pick<RalphDeps, "tracker">,
   issueId: string,
 ): Promise<{ issue: IssueSummary; epic: boolean } | null> {
-  const issue = await deps.linear.getIssue(issueId);
+  const issue = await deps.tracker.getIssue(issueId);
   if (hasOpenQuestions(issue.description)) return { issue, epic: false };
   if (!issue.parentId) return null;
-  const parent = await deps.linear.getIssue(issue.parentId);
+  const parent = await deps.tracker.getIssue(issue.parentId);
   return hasOpenQuestions(parent.description) ? { issue: parent, epic: true } : null;
 }
 
@@ -197,8 +200,8 @@ async function refuseUnbuildable(
   repositories: readonly Repository[],
   router: Router,
 ): Promise<{ refused: StartOutcome } | { candidates: Repository[] }> {
-  const issue = await deps.linear.getIssue(event.issueId);
-  const parent = issue.parentId ? await deps.linear.getIssue(issue.parentId) : null;
+  const issue = await deps.tracker.getIssue(event.issueId);
+  const parent = issue.parentId ? await deps.tracker.getIssue(issue.parentId) : null;
   const root = parent ?? issue;
   const issues = parent ? [issue, parent] : [issue];
   const previous = await getRunByIssue(deps.db, deps.organizationId, root.id);
@@ -440,7 +443,7 @@ async function askForRepositoryFirst(
     return { status: "started", run, created: false };
   }
   await askForRepository(
-    trackerConversation(deps.linear, event.sessionId, event.issueId),
+    trackerConversation(deps.tracker, event.sessionId, event.issueId),
     repositories,
   );
   await notifyRunThread(deps, run, { kind: "started" });
@@ -531,7 +534,7 @@ async function startMention(event: SessionCreatedEvent, deps: StartRunDeps): Pro
   let root: IssueSummary;
   try {
     // Only to find the issue's run: a mention never creates story issues here.
-    root = (await loadEpic(deps.linear, event.issueId, { materialize: false })).root;
+    root = (await loadEpic(deps.tracker, event.issueId, { materialize: false })).root;
   } catch (error) {
     await post(deps, event, {
       type: "error",
@@ -595,7 +598,7 @@ async function startNewRun(
   deps: StartRunDeps,
   start: StartOptions,
 ): Promise<StartOutcome> {
-  const { db, linear } = deps;
+  const { db, tracker } = deps;
   const sessionId = event.sessionId;
   const epicMode = start.mode === "epic";
 
@@ -628,7 +631,7 @@ async function startNewRun(
         ? repositoryAllowsPreparation(repository, organizationPlaybooks(db, deps.organizationId))
         : true;
     };
-    loaded = await loadEpic(linear, event.issueId, {
+    loaded = await loadEpic(tracker, event.issueId, {
       completePrd,
       manualLabels,
       allowPreparation,
@@ -742,7 +745,7 @@ async function startNewRun(
   // Request mode changes nothing in Linear; it just does what the mention asks.
   if (epicMode && !["started", "completed", "canceled"].includes(root.stateType)) {
     try {
-      await linear.setIssueState(root.id, { type: "started" });
+      await tracker.setIssueState(root.id, { type: "started" });
     } catch (error) {
       console.warn(`Moving ${root.identifier} to started failed`, error);
     }

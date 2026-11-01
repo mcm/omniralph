@@ -22,8 +22,8 @@ describe("formatting", () => {
   });
 
   it("names a run by its Linear issue, or its chat platform and channel", () => {
-    const linear = { origin: "linear" as const, linearIdentifier: "ENG-1", chatThread: null };
-    expect(runSourceLabel(linear)).toBe("ENG-1");
+    const tracker = { origin: "linear" as const, linearIdentifier: "ENG-1", chatThread: null };
+    expect(runSourceLabel(tracker)).toBe("ENG-1");
     const chat = { origin: "chat" as const, linearIdentifier: null };
     expect(
       runSourceLabel({ ...chat, chatThread: { platform: "slack", channelId: "slack:C0123" } }),

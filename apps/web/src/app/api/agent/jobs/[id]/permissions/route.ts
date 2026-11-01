@@ -50,7 +50,7 @@ async function post(req: Request, ctx: JobRouteContext): Promise<Response> {
 
   try {
     const outcome = await askPermission(
-      { db, linear: (organizationId) => getTrackerGateway({ db, organizationId }) },
+      { db, tracker: (organizationId) => getTrackerGateway({ db, organizationId }) },
       job,
       request.data,
       now,

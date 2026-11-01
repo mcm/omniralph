@@ -65,11 +65,11 @@ export async function isOwnTriageSession(
 }
 
 /** Removes the triage labels from the issue, if it has any. */
-export async function removeTriageLabel(linear: TrackerGateway, issueId: string): Promise<void> {
-  const issue = await linear.getIssue(issueId);
+export async function removeTriageLabel(tracker: TrackerGateway, issueId: string): Promise<void> {
+  const issue = await tracker.getIssue(issueId);
   for (const name of issue.labels.filter(isTriageLabel)) {
-    const label = await linear.findLabel(issue.teamId, name);
-    if (label) await linear.removeIssueLabel(issue.id, label.id);
+    const label = await tracker.findLabel(issue.teamId, name);
+    if (label) await tracker.removeIssueLabel(issue.id, label.id);
   }
 }
 
@@ -82,21 +82,21 @@ export async function removeTriageLabel(linear: TrackerGateway, issueId: string)
  * delegation). Returns whether the delegate was removed; a failure is logged, not thrown.
  */
 export async function releaseTriageDelegation(
-  deps: Pick<TriageDeps, "db" | "organizationId" | "linear">,
+  deps: Pick<TriageDeps, "db" | "organizationId" | "tracker">,
   issueId: string,
 ): Promise<boolean> {
   // Without delegation the tracker has no delegate to remove.
-  if (!hasCapability(deps.linear, "delegation")) return false;
+  if (!hasCapability(deps.tracker, "delegation")) return false;
   try {
     const [issue, viewer] = await Promise.all([
-      deps.linear.getIssue(issueId),
-      deps.linear.getViewer(),
+      deps.tracker.getIssue(issueId),
+      deps.tracker.getViewer(),
     ]);
     if (!issue.delegateId || issue.delegateId !== viewer.id) return false;
     if (await getRunByIssue(deps.db, deps.organizationId, issue.id, { activeOnly: true })) {
       return false;
     }
-    await deps.linear.delegation.delegateIssue(issue.id, null);
+    await deps.tracker.delegation.delegateIssue(issue.id, null);
     return true;
   } catch (error) {
     console.error(`Removing Om as the delegate of ${issueId} after triage failed`, error);
@@ -105,15 +105,15 @@ export async function releaseTriageDelegation(
 }
 
 /** Removes the label, logging (not throwing) a failure. */
-export const removeTriageLabelQuietly = (linear: TrackerGateway, issueId: string) =>
-  quietly(`Removing the triage label from ${issueId}`, () => removeTriageLabel(linear, issueId));
+export const removeTriageLabelQuietly = (tracker: TrackerGateway, issueId: string) =>
+  quietly(`Removing the triage label from ${issueId}`, () => removeTriageLabel(tracker, issueId));
 
 /** Handles an issue update that added a triage label. */
 export async function startLabelTriage(
   event: TriageLabelEvent,
   deps: TriageDeps,
 ): Promise<StartLabelTriageOutcome> {
-  const { db, linear, organizationId } = deps;
+  const { db, tracker, organizationId } = deps;
 
   // Claim the issue before opening the session: a concurrent label event (or
   // mention) finds this run, and the session's `created` webhook is ours.
@@ -128,12 +128,12 @@ export async function startLabelTriage(
 
   let sessionId: string;
   try {
-    sessionId = await openIssueConversation(linear, event.issueId);
+    sessionId = await openIssueConversation(tracker, event.issueId);
   } catch (error) {
     await setTriageRunStatus(db, run.id, "failed");
     console.error(`Opening an agent session on ${event.identifier ?? event.issueId} failed`, error);
     // Removing the label lets adding it again retry.
-    await removeTriageLabelQuietly(linear, event.issueId);
+    await removeTriageLabelQuietly(tracker, event.issueId);
     return { status: "session_failed", error: errorMessage(error) };
   }
   const withSession = (await setTriageRunSession(db, run.id, sessionId)) ?? {
@@ -152,6 +152,6 @@ export async function startLabelTriage(
     { run: withSession },
   );
   // No job (in progress or done, or a failure): triage is over already.
-  if (outcome.status !== "queued") await removeTriageLabelQuietly(linear, event.issueId);
+  if (outcome.status !== "queued") await removeTriageLabelQuietly(tracker, event.issueId);
   return { status: "started", sessionId, outcome };
 }

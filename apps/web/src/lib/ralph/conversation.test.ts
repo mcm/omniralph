@@ -38,8 +38,8 @@ const chatRun = {
 
 describe("conversationFor", () => {
   it("writes a Linear run's activities, plan and links to its agent session", async () => {
-    const linear = new FakeLinearGateway();
-    const conversation = conversationFor(linearRun, { linear });
+    const tracker = new FakeLinearGateway();
+    const conversation = conversationFor(linearRun, { tracker });
     expect(conversation).toBeInstanceOf(TrackerConversation);
     expect(conversation.name).toBe("tracker session session-1");
 
@@ -47,34 +47,34 @@ describe("conversationFor", () => {
     await conversation.updatePlan([{ content: "ENG-2", status: "pending" }]);
     await conversation.addLink("Pull request", "https://github.com/acme/app/pull/1");
 
-    expect(linear.activities).toEqual([
+    expect(tracker.activities).toEqual([
       {
         sessionId: "session-1",
         content: { type: "thought", body: "hi" },
         options: { ephemeral: true },
       },
     ]);
-    expect(linear.plans.get("session-1")).toEqual([[{ content: "ENG-2", status: "pending" }]]);
-    expect(linear.urls).toEqual([
+    expect(tracker.plans.get("session-1")).toEqual([[{ content: "ENG-2", status: "pending" }]]);
+    expect(tracker.urls).toEqual([
       { sessionId: "session-1", label: "Pull request", url: "https://github.com/acme/app/pull/1" },
     ]);
   });
 
   it("gets a lazy gateway only when a Linear run writes", async () => {
-    const linear = new FakeLinearGateway();
-    const source = vi.fn(async () => linear);
-    const conversation = conversationFor(linearRun, { linear: source });
+    const tracker = new FakeLinearGateway();
+    const source = vi.fn(async () => tracker);
+    const conversation = conversationFor(linearRun, { tracker: source });
     expect(source).not.toHaveBeenCalled();
     await conversation.post({ type: "response", body: "done" });
     expect(source).toHaveBeenCalledOnce();
-    expect(linear.activities).toHaveLength(1);
+    expect(tracker.activities).toHaveLength(1);
   });
 
   it("gives a chat run its thread, never touching Linear", async () => {
     const source = vi.fn(async () => new FakeLinearGateway());
     const chat = vi.fn();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const conversation = conversationFor(chatRun, { linear: source, chat });
+    const conversation = conversationFor(chatRun, { tracker: source, chat });
     expect(conversation).toBeInstanceOf(ChatConversation);
     await conversation.post({ type: "response", body: "done" });
     await conversation.updatePlan([]);
@@ -96,7 +96,7 @@ describe("conversationFor on a tracker without sessions", () => {
 
   it("comments a run's activities on its work item, leaving ephemeral ones out", async () => {
     const tracker = sessionless();
-    const conversation = conversationFor(linearRun, { linear: tracker });
+    const conversation = conversationFor(linearRun, { tracker });
 
     await conversation.post({ type: "thought", body: "Working on it" }, { ephemeral: true });
     await conversation.post({ type: "thought", body: "Starting ENG-2" });
@@ -115,7 +115,7 @@ describe("conversationFor on a tracker without sessions", () => {
 
   it("comments the plan as a checklist, only when it changed", async () => {
     const tracker = sessionless();
-    const conversation = conversationFor(linearRun, { linear: tracker });
+    const conversation = conversationFor(linearRun, { tracker });
     const plan = [
       { content: "ENG-2 Add the API", status: "completed" as const },
       { content: "ENG-3 Add the UI", status: "inProgress" as const },
@@ -144,7 +144,7 @@ describe("conversationFor on a tracker without sessions", () => {
 
   it("links a run's PR/MR to its work item", async () => {
     const tracker = sessionless();
-    await conversationFor(linearRun, { linear: tracker }).addLink(
+    await conversationFor(linearRun, { tracker }).addLink(
       "Pull request",
       "https://github.com/acme/app/pull/1",
     );
@@ -163,10 +163,10 @@ describe("conversationFor on a tracker without sessions", () => {
 
 describe("postActivity", () => {
   it("logs a failed post instead of throwing", async () => {
-    const linear = new FakeLinearGateway();
-    vi.spyOn(linear.sessions, "createActivity").mockRejectedValue(new Error("Linear is down"));
+    const tracker = new FakeLinearGateway();
+    vi.spyOn(tracker.sessions, "createActivity").mockRejectedValue(new Error("Linear is down"));
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const posted = await postActivity(conversationFor(linearRun, { linear }), {
+    const posted = await postActivity(conversationFor(linearRun, { tracker }), {
       type: "error",
       body: "oops",
     });

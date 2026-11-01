@@ -33,15 +33,15 @@ import { FINISHED_RUN_STATUSES } from "./run";
 
 export interface PermissionDeps {
   db: Database;
-  /** The gateway of an organization's Linear workspace. */
-  linear: (organizationId: string) => Promise<TrackerGateway>;
+  /** The gateway of an organization's tracker workspace. */
+  tracker: (organizationId: string) => Promise<TrackerGateway>;
   /** Posts chat runs (default: the deployment's chat bot). */
   chat?: ChatSource;
 }
 
-/** The run's conversation, getting the Linear gateway only when it's needed. */
+/** The run's conversation, getting the tracker gateway only when it's needed. */
 function conversation(deps: PermissionDeps, run: RalphRun) {
-  return conversationFor(run, { linear: () => deps.linear(run.organizationId), chat: deps.chat });
+  return conversationFor(run, { tracker: () => deps.tracker(run.organizationId), chat: deps.chat });
 }
 
 type RalphJob = Pick<Job, "id" | "ralphRunId">;

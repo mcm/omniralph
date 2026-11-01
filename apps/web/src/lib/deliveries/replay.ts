@@ -38,7 +38,7 @@ export interface ReplayDeps {
   dispatcher: JobDispatcher;
   adapterFor?: (db: Database, connection: ScmConnection) => ScmAdapter;
   /** The organization's tracker (default: the connected one). */
-  linear?: (organizationId: string) => Promise<TrackerGateway>;
+  tracker?: (organizationId: string) => Promise<TrackerGateway>;
 }
 
 /** 429 past `DELIVERY_REPLAY_LIMIT` replays in a minute. */
@@ -102,13 +102,13 @@ async function replayCodeHost(
   if (!found || found.connection.id !== event.scmConnectionId || found.repository.disconnectedAt) {
     throw connectionRemoved();
   }
-  const { db, dispatcher, adapterFor, linear } = deps;
+  const { db, dispatcher, adapterFor, tracker } = deps;
   return replayWebhookDelivery(
     {
       db,
       dispatcher,
       ...(adapterFor && { adapterFor }),
-      ...(linear && { linear: () => linear(event.organizationId) }),
+      ...(tracker && { tracker: () => tracker(event.organizationId) }),
     },
     {
       provider,
@@ -140,7 +140,9 @@ async function replayTracker(
   const organizationId = integration.organizationId;
   const adapter = trackerAdapter(provider);
   const loadGateway = () =>
-    deps.linear ? deps.linear(organizationId) : getTrackerGateway({ db, organizationId, provider });
+    deps.tracker
+      ? deps.tracker(organizationId)
+      : getTrackerGateway({ db, organizationId, provider });
   let gateway: TrackerGateway | undefined;
   const withGateway = async () => (gateway ??= await loadGateway());
   let event: TrackerEvent = adapter.parseDelivery(payload);
@@ -159,7 +161,7 @@ async function replayTracker(
         acknowledgeTrackerEvent(e, context, await withGateway()),
       handle: async (e: HandledTrackerEvent, context) =>
         handleTrackerEvent(e, context, {
-          linear: await withGateway(),
+          tracker: await withGateway(),
           dispatcher: deps.dispatcher,
         }),
     },
