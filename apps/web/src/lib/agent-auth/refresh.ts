@@ -33,10 +33,17 @@ import { getTokenSigner } from "./signer";
  * buffers its `token_refresh` audit row (`agent-refresh:audit`); the daily
  * `flush-agent-auth` cron writes the changed agents' tokens and the rows to Postgres.
  * With hot state off or Redis unavailable, refresh rotates in Postgres instead.
+ *
+ * Re-enrolling an agent in place (TOOL-925) starts a new token family past every
+ * generation issued before; `agent-refresh:families` (field = agent ID, value its first
+ * generation, from `agents.refresh_family_start`) makes the script reject an older token
+ * as stale, without revoking the agent and never as a newer generation to catch up to.
  */
 
 export const REFRESH_TOKENS_KEY = "agent-refresh:tokens";
 export const REFRESH_AUDIT_KEY = "agent-refresh:audit";
+/** Each re-enrolled agent's first generation of its current token family. */
+export const REFRESH_FAMILIES_KEY = "agent-refresh:families";
 /** The agents whose token in Redis is newer than Postgres's (until the flush). */
 export const REFRESH_CHANGED_KEY = "agent-refresh:changed";
 /** Held by a running flush, so a cron event delivered twice doesn't write its rows twice. */
@@ -72,22 +79,62 @@ export async function issueRefreshToken(
  * Records an agent's new refresh token in Redis; call after its Postgres commit. Raise-only
  * (as the rebuild's merge): a newer generation already in Redis stays.
  */
-export async function cacheRefreshToken(agentId: string, state: RefreshTokenState): Promise<void> {
+export async function cacheRefreshToken(
+  agentId: string,
+  state: RefreshTokenState,
+  familyStart: number | null = null,
+): Promise<void> {
   await writeHotState((redis) =>
     redis.eval(
       MERGE_SCRIPT,
-      1,
+      2,
       REFRESH_TOKENS_KEY,
+      REFRESH_FAMILIES_KEY,
       agentId,
       String(state.generation),
       state.tokenIdHash,
+      familyStart === null ? "" : String(familyStart),
     ),
   );
 }
 
-// Compares the presented token with the agent's current one (as `compareRefreshToken`);
-// unless it's reuse, records the next token and buffers the audit row. Returns the outcome.
-const ROTATE_SCRIPT = `local cur = redis.call('HGET', KEYS[1], ARGV[1])
+/**
+ * How far past the last generation it knows of a re-enrolled agent's new token family
+ * starts: Redis runs ahead of Postgres by the refreshes since the last daily flush (about
+ * 120 a day), and loses them if it loses its state. Tokens issued in that gap stay older
+ * than the family, so they're rejected rather than caught up to.
+ */
+export const REENROLL_GENERATION_GAP = 1_000;
+
+/**
+ * The generation of the first refresh token of a re-enrolled agent (TOOL-925): past every
+ * generation issued to it before, Postgres's (`previousGeneration`, up to a day behind) and
+ * Redis's (the live one while hot state is on; best effort), plus `REENROLL_GENERATION_GAP`.
+ */
+export async function reenrolledGeneration(
+  agentId: string,
+  previousGeneration: number | null,
+): Promise<number> {
+  let live = 0;
+  if (hotStateEnabled()) {
+    try {
+      const value = await getRedis().hget(REFRESH_TOKENS_KEY, agentId);
+      live = (value ? decodeState(value)?.generation : undefined) ?? 0;
+    } catch (error) {
+      console.warn("agent refresh: reading the live generation failed", error);
+    }
+  }
+  return Math.max(previousGeneration ?? 0, live) + REENROLL_GENERATION_GAP;
+}
+
+// Rejects a token of a family the agent left (as `isStaleRefreshFamily`), then compares it
+// with the agent's current one (as `compareRefreshToken`); unless it's reuse, records the
+// next token and buffers the audit row. Returns the outcome.
+const ROTATE_SCRIPT = `local start = redis.call('HGET', KEYS[4], ARGV[1])
+if start and tonumber(ARGV[2]) < tonumber(start) then
+  return 'stale_family'
+end
+local cur = redis.call('HGET', KEYS[1], ARGV[1])
 local status = 'caught_up'
 if cur then
   local sep = string.find(cur, ':', 1, true)
@@ -114,13 +161,21 @@ end
 return 1`;
 
 // Sets each agent's state from Postgres unless Redis already holds a newer generation
-// (Redis runs ahead of Postgres until the daily flush). ARGV: agent ID, generation, hash, ...
-const MERGE_SCRIPT = `for i = 1, #ARGV, 3 do
+// (Redis runs ahead of Postgres until the daily flush) of the agent's current family: one
+// older than the family's first generation (ARGV "" when none) is from before a
+// re-enrollment and is replaced, and the family is recorded (KEYS[2]).
+// ARGV: agent ID, generation, hash, family start, ...
+const MERGE_SCRIPT = `for i = 1, #ARGV, 4 do
+  local start = tonumber(ARGV[i + 3])
   local cur = redis.call('HGET', KEYS[1], ARGV[i])
   local gen = nil
   if cur then gen = tonumber(string.sub(cur, 1, string.find(cur, ':', 1, true) - 1)) end
-  if not gen or tonumber(ARGV[i + 1]) >= gen then
+  if not gen or tonumber(ARGV[i + 1]) >= gen or (start and gen < start) then
     redis.call('HSET', KEYS[1], ARGV[i], ARGV[i + 1] .. ':' .. ARGV[i + 2])
+  end
+  if start then
+    local known = tonumber(redis.call('HGET', KEYS[2], ARGV[i]))
+    if not known or start > known then redis.call('HSET', KEYS[2], ARGV[i], ARGV[i + 3]) end
   end
 end
 return 1`;
@@ -143,7 +198,11 @@ interface BufferedAudit {
 
 export type RefreshRotation =
   | { status: "rotated" | "caught_up" | "reused"; agentId: string }
-  | { status: "invalid"; agentId: string | null; reason: "unknown" | "agent_revoked" };
+  | {
+      status: "invalid";
+      agentId: string | null;
+      reason: "unknown" | "agent_revoked" | "stale_family";
+    };
 
 /**
  * Rotates a signed refresh token: `presented` is the token's generation and the hash of
@@ -185,17 +244,21 @@ export async function rotateRefreshTokenState(
         scriptSent = true;
         const status = (await redis.eval(
           ROTATE_SCRIPT,
-          3,
+          4,
           REFRESH_TOKENS_KEY,
           REFRESH_AUDIT_KEY,
           REFRESH_CHANGED_KEY,
+          REFRESH_FAMILIES_KEY,
           agentId,
           String(presented.generation),
           presented.tokenIdHash,
           encodeState(next),
           JSON.stringify(audit),
-        )) as "rotated" | "caught_up" | "reused";
-        rotation = { status, agentId };
+        )) as "rotated" | "caught_up" | "reused" | "stale_family";
+        rotation =
+          status === "stale_family"
+            ? { status: "invalid", agentId, reason: status }
+            : { status, agentId };
       }
     } catch (error) {
       // The script may have run: let readers rebuild from Postgres, which records the
@@ -321,7 +384,12 @@ registerHotStateRebuilder("agent-refresh", async (redis, db) => {
   for (let i = 0; i < states.length; i += REBUILD_BATCH) {
     const args = states
       .slice(i, i + REBUILD_BATCH)
-      .flatMap((s) => [s.agentId, String(s.generation), s.tokenIdHash]);
-    await redis.eval(MERGE_SCRIPT, 1, REFRESH_TOKENS_KEY, ...args);
+      .flatMap((s) => [
+        s.agentId,
+        String(s.generation),
+        s.tokenIdHash,
+        s.familyStart === null ? "" : String(s.familyStart),
+      ]);
+    await redis.eval(MERGE_SCRIPT, 2, REFRESH_TOKENS_KEY, REFRESH_FAMILIES_KEY, ...args);
   }
 });

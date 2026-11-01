@@ -126,7 +126,7 @@ export interface RepositoryStatusFacts {
   running: Map<string, number>;
   /** The latest `repo.sync` job, by repository (absent: never synced). */
   latestSync: Map<string, RepositorySyncJob>;
-  /** Each repository's pinned agent IDs (absent: none pinned). */
+  /** Each repository's pinned agent IDs, revoked agents left out (absent: none pinned). */
   pins: Map<string, string[]>;
   /** Every agent of the organizations, revoked ones included, by name. */
   agents: StatusAgent[];
@@ -173,10 +173,18 @@ export async function loadRepositoryStatusFacts(
         ),
       )
       .orderBy(jobs.repositoryId, desc(jobs.createdAt), desc(jobs.id)),
+    // A revoked agent's pins (kept for its re-enrollment) count as none, as in dispatch.
     db
       .select({ repositoryId: agentRepoPins.repositoryId, agentId: agentRepoPins.agentId })
       .from(agentRepoPins)
-      .where(inArray(agentRepoPins.repositoryId, ids)),
+      .innerJoin(agents, eq(agents.id, agentRepoPins.agentId))
+      .where(
+        and(
+          inArray(agentRepoPins.repositoryId, ids),
+          isNull(agents.revokedAt),
+          isNull(agents.deletedAt),
+        ),
+      ),
     db
       .select({
         id: agents.id,

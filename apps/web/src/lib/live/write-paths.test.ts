@@ -16,6 +16,7 @@ import {
   connectRepository,
   createDb,
   createAgentEnrollment,
+  createAgentReenrollment,
   createInvitation,
   createCustomRule,
   createReview,
@@ -539,10 +540,24 @@ describe.skipIf(!testDatabaseAvailable())("write paths record live changes", () 
           organizationId: orgId,
         },
       ]);
-      const revoked = await published(() => revokeAgent(db, id, { organizationId: orgId }));
-      expect(revoked).toContainEqual(agentEvent(id));
-      expect(revoked).toContainEqual(expect.objectContaining({ section: "repository.agents" }));
-      expect(await published(() => markAgentDeleted(db, orgId, id))).toEqual([agentEvent(id)]);
+      // Revoking keeps the pins (repos follow the agent event); deleting removes them.
+      expect(await published(() => revokeAgent(db, id, { organizationId: orgId }))).toEqual([
+        agentEvent(id),
+      ]);
+      const { token: again } = (await createAgentReenrollment(db, {
+        organizationId: orgId,
+        agentId: id,
+      }))!;
+      expect(
+        await published(() =>
+          enrollAgent(db, { enrollmentToken: again, name: "new", version: "1.0.1" }),
+        ),
+      ).toEqual([agentEvent(id)]);
+      await revokeAgent(db, id, { organizationId: orgId });
+      expect(await published(() => markAgentDeleted(db, orgId, id))).toEqual([
+        agentEvent(id),
+        expect.objectContaining({ section: "repository.agents", ids: [repoId] }),
+      ]);
     });
 
     it("a heartbeat publishes a changed update state or install, not a steady report", async () => {

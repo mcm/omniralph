@@ -697,7 +697,14 @@ async function withPinsAndLastReview(
       })
       .from(agentRepoPins)
       .innerJoin(agents, eq(agents.id, agentRepoPins.agentId))
-      .where(inArray(agentRepoPins.repositoryId, ids))
+      // A revoked agent's pins (kept for its re-enrollment) count as none.
+      .where(
+        and(
+          inArray(agentRepoPins.repositoryId, ids),
+          isNull(agents.revokedAt),
+          isNull(agents.deletedAt),
+        ),
+      )
       .orderBy(asc(agents.name)),
     db
       .select({ repositoryId: reviews.repositoryId, at: max(reviews.createdAt) })

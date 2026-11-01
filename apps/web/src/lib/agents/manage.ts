@@ -30,8 +30,8 @@ export interface AgentActor {
 }
 
 /**
- * Revokes an agent: its tokens stop working at once, its running jobs are
- * redelivered to other agents and its pins are removed.
+ * Revokes an agent: its tokens stop working at once and its running jobs are
+ * redelivered to other agents. Its pins stay (ignored) until it's re-enrolled or deleted.
  */
 export async function revokeAgent(agentId: string, actor: AgentActor): Promise<ActionResult> {
   if (

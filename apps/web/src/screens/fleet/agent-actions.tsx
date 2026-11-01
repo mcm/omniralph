@@ -13,6 +13,7 @@ import {
   IconCopy,
   IconHistory,
   IconPackage,
+  IconPlugConnected,
   IconPlugConnectedX,
   IconTrash,
 } from "@tabler/icons-react";
@@ -31,7 +32,7 @@ import { mutationResultSchema } from "@/lib/api/schemas";
 import { formatDateTime } from "@/lib/format-date";
 import { auditEventLabel } from "@/lib/fleet/status";
 import { FLEET_PATH } from "@/lib/runs/hrefs";
-import { copyToClipboard } from "./enroll-sheet";
+import { copyToClipboard, ReenrollSheet } from "./enroll-sheet";
 import { fleetKeys } from "./queries";
 
 /** npm's limit on a package name. */
@@ -62,18 +63,19 @@ export function allowListSentence(allow: readonly string[] | null): string | nul
 
 /** The revoke confirmation's description. */
 export const REVOKE_DESCRIPTION =
-  "The agent stops at once and can't reconnect without enrolling again. Its running attempts fail.";
+  "The agent stops at once and can't reconnect until it's re-enrolled. Its running attempts fail; its pins stay for when it's back.";
 
 /** The remove confirmation's description. */
 export const REMOVE_DESCRIPTION = "Its history stays on its runs.";
 
 /** Opens one of the ⋯ menu's flows. */
-export type AgentAction = "install" | "audit" | "revoke" | "remove";
+export type AgentAction = "install" | "audit" | "reenroll" | "revoke" | "remove";
 
 /**
  * The ⋯ menu's items (Design rule 5): for an admin of the agent's organization, "Install
- * package…" (live agents), "Audit log", "Copy agent ID", then after a separator "Revoke
- * agent…" (live) or "Remove agent…" (revoked). Members get "Audit log" and "Copy agent ID".
+ * package…" (live agents), "Audit log", "Copy agent ID", "Re-enroll…", then after a separator
+ * "Revoke agent…" (live) or "Remove agent…" (revoked). Members get "Audit log" and "Copy
+ * agent ID".
  */
 export function agentMenuItems(
   agent: Pick<FleetAgentRow, "id" | "revoked" | "organization">,
@@ -94,6 +96,7 @@ export function agentMenuItems(
   );
   if (admin) {
     items.push(
+      { label: "Re-enroll…", icon: IconPlugConnected, onSelect: () => open("reenroll") },
       agent.revoked
         ? {
             label: "Remove agent…",
@@ -121,7 +124,7 @@ function updateLists(cache: MutationCache, update: (list: AgentList) => AgentLis
   );
 }
 
-/** `row` once revoked: offline, nothing running, "Revoked". */
+/** `row` once revoked: offline, nothing running, "Revoked" (its pins stay, for a re-enrollment). */
 export function revokedRow(row: FleetAgentRow, revokedAt: string): FleetAgentRow {
   return {
     ...row,
@@ -130,7 +133,6 @@ export function revokedRow(row: FleetAgentRow, revokedAt: string): FleetAgentRow
     online: false,
     runningCount: 0,
     runningJobs: [],
-    pinnedRepositories: [],
     status: { kind: "revoked", label: "Revoked", tone: "neutral" },
   };
 }
@@ -284,7 +286,7 @@ export function AgentActions({ detail }: { detail: AgentDetail }) {
   const revoke = useApiMutation({
     mutationFn: (_: void, { organizationId }) =>
       api.post(`${agentPath}/revoke`, mutationResultSchema, { organizationId }),
-    // Its row, summary and pins change; repos lose its pins.
+    // Its row and summary change; repos stop counting its pins.
     invalidate: (keys) => [keys.agents.all, keys.repositories.all],
     optimistic: async (_, cache) => {
       const revokedAt = new Date().toISOString();
@@ -336,6 +338,12 @@ export function AgentActions({ detail }: { detail: AgentDetail }) {
           />
         ) : null}
       </Sheet>
+      <ReenrollSheet
+        agent={agent}
+        reuse={detail.security.reuseAlerts30d > 0}
+        open={open === "reenroll"}
+        onOpenChange={close}
+      />
       <Sheet title="Audit log" open={open === "audit"} onOpenChange={close}>
         <AuditLog audit={detail.audit} />
       </Sheet>

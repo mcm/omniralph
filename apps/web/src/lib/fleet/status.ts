@@ -476,7 +476,7 @@ export function tokenHealth(input: TokenHealthInput, now: Date): TokenHealth | n
 /** An audit event as the audit log shows it: what happened, in a sentence. */
 export interface AuditEventInput {
   event: AuditEventName;
-  /** Who revoked or removed the agent (their name, else email); null when unknown. */
+  /** Who revoked, removed or re-enrolled the agent (their name, else email); null when unknown. */
   actor: string | null;
 }
 
@@ -488,6 +488,8 @@ export function auditEventLabel({ event, actor }: AuditEventInput): string {
   switch (event) {
     case "enroll":
       return "Enrolled";
+    case "reenroll":
+      return actor ? `Re-enrolled by ${actor}` : "Re-enrolled";
     case "token_refresh":
       return "Refreshed its token";
     case "refresh_reuse":

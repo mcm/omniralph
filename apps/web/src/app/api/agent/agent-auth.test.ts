@@ -1,8 +1,13 @@
 import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto";
 import {
   agentRefreshTokens,
+  agentRepoPins,
   agents,
   createAgentEnrollment,
+  createAgentReenrollment,
+  getAgentEnrollmentStatus,
+  repositories,
+  scmConnections,
   closeDb,
   createDb,
   hashToken,
@@ -379,6 +384,177 @@ describe.skipIf(!databaseAvailable)("agent auth", () => {
       expect(await reuse.json()).toEqual({ error: "refresh_token_reused" });
       const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
       expect(agent!.revokedAt).not.toBeNull();
+    });
+  });
+
+  describe("re-enrolling an agent in place", () => {
+    async function reenroll(agentId: string, ip = newIp()) {
+      const enrollment = await createAgentReenrollment(db, { organizationId: orgId, agentId });
+      const res = await enroll(
+        post(
+          "enroll",
+          { enrollmentToken: enrollment!.token, name: "host-name", version: "0.2.0" },
+          ip,
+        ),
+      );
+      return { res, enrollment: enrollment! };
+    }
+
+    async function pinRepository(agentId: string) {
+      const [connection] = await db
+        .insert(scmConnections)
+        .values({
+          organizationId: orgId,
+          provider: "github",
+          name: `gh-${randomUUID()}`,
+          baseUrl: "https://api.github.com",
+          externalId: randomUUID(),
+          encryptedCredentials: "unused",
+        })
+        .returning();
+      const [repo] = await db
+        .insert(repositories)
+        .values({
+          organizationId: orgId,
+          connectionId: connection!.id,
+          provider: "github",
+          externalId: randomUUID(),
+          fullPath: `acme/${randomUUID()}`,
+        })
+        .returning();
+      await db.insert(agentRepoPins).values({ agentId, repositoryId: repo!.id });
+      return repo!.id;
+    }
+
+    const pinsOf = async (agentId: string) =>
+      (await db.select().from(agentRepoPins).where(eq(agentRepoPins.agentId, agentId))).map(
+        (p) => p.repositoryId,
+      );
+
+    it("brings a revoked agent back with its ID, name and pins, and a new token family", async () => {
+      const { agentId, refreshToken } = await accessTokenFor();
+      const repoId = await pinRepository(agentId);
+      await revokeAgent(agentId, { db });
+      // Revoking keeps the pins.
+      expect(await pinsOf(agentId)).toEqual([repoId]);
+
+      const { res, enrollment } = await reenroll(agentId);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { agentId: string; refreshToken: string };
+      expect(body.agentId).toBe(agentId);
+      // Past every earlier generation (1 and 2), with a gap.
+      const { gen } = decodeJwt(body.refreshToken) as { gen: number };
+      expect(gen).toBeGreaterThan(2);
+
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent).toMatchObject({
+        revokedAt: null,
+        name: "coder-1",
+        reportedVersion: "0.2.0",
+        refreshGeneration: gen,
+        refreshFamilyStart: gen,
+      });
+      expect(await pinsOf(agentId)).toEqual([repoId]);
+      expect(await db.select().from(agents).where(eq(agents.name, "host-name"))).toEqual([]);
+      expect(await getAgentEnrollmentStatus(db, orgId, enrollment.id)).toMatchObject({
+        agent: { id: agentId, name: "coder-1" },
+      });
+
+      const audit = await listAgentAudit(db, { agentId, event: "reenroll" });
+      expect(audit.map((a) => a.detail)).toEqual([
+        {
+          name: "host-name",
+          version: "0.2.0",
+          reenrolledBy: null,
+          wasRevoked: true,
+          compromisedFamily: false,
+        },
+      ]);
+
+      // The new token works; the old ones don't, and presenting one doesn't revoke it.
+      const next = await refresh(body.refreshToken);
+      expect(next.status).toBe(200);
+      const { accessToken: fresh } = (await next.json()) as { accessToken: string };
+      expect(await requireAgent(authed(fresh, newIp()))).toEqual({ agentId });
+      expect((await refresh(refreshToken)).status).toBe(401);
+      const [after] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(after!.revokedAt).toBeNull();
+      const failures = await listAgentAudit(db, { agentId, event: "auth_failed" });
+      expect(failures.map((f) => f.detail.reason)).toContain("refresh_stale_family");
+    });
+
+    it("rejects a stolen token of a generation the new family hasn't reached", async () => {
+      const { agentId, refreshToken } = await enrollNew();
+      // The thief's copy, ahead of what Postgres recorded (Redis ran ahead until the flush).
+      const stolen = await getTokenSigner().signRefreshToken({
+        agentId,
+        generation: 50,
+        tokenId: "stolen",
+      });
+      expect((await refresh(refreshToken)).status).toBe(200);
+      expect((await refresh(refreshToken)).status).toBe(401); // reuse: revoked
+
+      const { res } = await reenroll(agentId);
+      const body = (await res.json()) as { refreshToken: string };
+      expect((await refresh(stolen)).status).toBe(401);
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent!.revokedAt).toBeNull();
+      expect((await refresh(body.refreshToken)).status).toBe(200);
+
+      const [audit] = await listAgentAudit(db, { agentId, event: "reenroll" });
+      expect(audit!.detail).toMatchObject({ wasRevoked: true, compromisedFamily: true });
+    });
+
+    it("re-enrolls an agent whose refresh token expired without revoking it", async () => {
+      const { agentId } = await enrollNew();
+      const repoId = await pinRepository(agentId);
+      const past = new LocalTokenSigner({
+        privateKey: SIGNING_KEY,
+        env: {},
+        now: () => Date.now() - (AGENT_REFRESH_TOKEN_TTL_SECONDS + 1) * 1000,
+      });
+      const expired = await past.signRefreshToken({ agentId, generation: 1, tokenId: "a" });
+      expect((await refresh(expired)).status).toBe(401);
+
+      const { res } = await reenroll(agentId);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { agentId: string; refreshToken: string };
+      expect(body.agentId).toBe(agentId);
+      expect((await refresh(body.refreshToken)).status).toBe(200);
+      expect(await pinsOf(agentId)).toEqual([repoId]);
+      const [audit] = await listAgentAudit(db, { agentId, event: "reenroll" });
+      expect(audit!.detail).toMatchObject({ wasRevoked: false, compromisedFamily: false });
+    });
+
+    it("turns a re-enrolled agent's legacy refresh tokens unknown, not reused", async () => {
+      const { agentId, refreshToken } = await legacyToken();
+      await revokeAgent(agentId, { db });
+      expect((await reenroll(agentId)).res.status).toBe(200);
+      const res = await refresh(refreshToken);
+      expect(res.status).toBe(401);
+      expect(await res.json()).not.toEqual({ error: "refresh_token_reused" });
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent!.revokedAt).toBeNull();
+    });
+
+    it("uses a re-enrollment token once, and not for another organization's or a deleted agent", async () => {
+      const { agentId } = await enrollNew();
+      const { enrollment } = await reenroll(agentId);
+      const again = await enroll(
+        post("enroll", { enrollmentToken: enrollment.token, name: "x", version: "0.2.0" }, newIp()),
+      );
+      expect(again.status).toBe(401);
+
+      const [other] = await db.insert(organizations).values({ name: "Other" }).returning();
+      expect(await createAgentReenrollment(db, { organizationId: other!.id, agentId })).toBeNull();
+
+      const pending = await createAgentReenrollment(db, { organizationId: orgId, agentId });
+      await db.update(agents).set({ deletedAt: new Date() }).where(eq(agents.id, agentId));
+      expect(await createAgentReenrollment(db, { organizationId: orgId, agentId })).toBeNull();
+      const late = await enroll(
+        post("enroll", { enrollmentToken: pending!.token, name: "x", version: "0.2.0" }, newIp()),
+      );
+      expect(late.status).toBe(401);
     });
   });
 

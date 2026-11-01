@@ -58,7 +58,8 @@ type FailureInput = { agentId: string | null; reason: string; lockout?: boolean 
 /**
  * Reuse detected: the agent is revoked in Postgres; cache and audit it, then finish the
  * revocation as the Agents page does (`revokeAgent`: its running jobs requeued, failed or
- * canceled, its pins removed, the jobs targeted at it redispatched).
+ * canceled, the jobs targeted at it redispatched; its pins stay, ignored until it's
+ * re-enrolled).
  */
 async function reused(
   db: Database,

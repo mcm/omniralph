@@ -107,6 +107,7 @@ export const feedbackReason = pgEnum("feedback_reason", [
 export const ruleKind = pgEnum("rule_kind", ["custom", "learned"]);
 export const agentAuditEvent = pgEnum("agent_audit_event", [
   "enroll",
+  "reenroll",
   "token_refresh",
   "refresh_reuse",
   "revoke",
@@ -1334,6 +1335,13 @@ export const agents = pgTable(
      */
     refreshGeneration: integer("refresh_generation"),
     refreshTokenIdHash: text("refresh_token_id_hash"),
+    /**
+     * The first generation of the agent's current refresh-token family: re-enrolling it in
+     * place (TOOL-925) starts a family past every generation issued before, and a token of
+     * an older generation is rejected (never a "newer generation" to catch up to). Null until
+     * the agent is re-enrolled.
+     */
+    refreshFamilyStart: integer("refresh_family_start"),
     /** Soft delete (always after revoking): deleted agents are hidden everywhere. */
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     enrolledBy: text("enrolled_by").references(() => users.id, { onDelete: "set null" }),
@@ -1355,8 +1363,13 @@ export const agentEnrollments = pgTable("agent_enrollments", {
   name: text("name"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   usedAt: timestamp("used_at", { withTimezone: true }),
-  /** The agent created when the token was redeemed. */
+  /** The agent created (or re-enrolled) when the token was redeemed. */
   agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+  /**
+   * A re-enrollment (TOOL-925): the existing agent redeeming the token re-activates, keeping
+   * its ID, pins and history. Null for a token that enrolls a new agent.
+   */
+  reenrollAgentId: uuid("reenroll_agent_id").references(() => agents.id, { onDelete: "cascade" }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: createdAt(),
 });

@@ -53,6 +53,7 @@ export function jobTarget(job: {
 /** The `agent_audit_event` values. */
 export const AUDIT_EVENTS = [
   "enroll",
+  "reenroll",
   "token_refresh",
   "refresh_reuse",
   "revoke",

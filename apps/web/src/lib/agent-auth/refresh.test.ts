@@ -3,6 +3,7 @@ import {
   agents,
   closeDb,
   createAgentEnrollment,
+  createAgentReenrollment,
   createDb,
   listAgentAudit,
   organizations,
@@ -34,7 +35,8 @@ const { POST: token } = await import("@/app/api/agent/token/route");
 const { GET: flushRoute } = await import("@/app/api/cron/flush-agent-auth/route");
 const { requireAgent } = await import("./verify");
 const { getTokenSigner } = await import("./signer");
-const { REFRESH_AUDIT_KEY, REFRESH_CHANGED_KEY } = await import("./refresh");
+const { REENROLL_GENERATION_GAP, REFRESH_AUDIT_KEY, REFRESH_CHANGED_KEY } =
+  await import("./refresh");
 const { EPOCH_KEY, REBUILD_LOCK_KEY, closeRedis, getRedis } = await import("@/lib/hot-state");
 
 /** A database that fails any use: proves a refresh didn't touch Postgres. */
@@ -262,12 +264,12 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("write-free token refresh
     const { agentId, refreshToken } = await enrollNew();
     const redis = getRedis();
     const evalScript = redis.eval.bind(redis);
-    // The rotate script (three keys) runs, but its reply never arrives.
+    // The rotate script (four keys) runs, but its reply never arrives.
     const lostReply = vi.spyOn(redis, "eval").mockImplementation((async (
       ...args: Parameters<typeof redis.eval>
     ) => {
       const reply = await evalScript(...args);
-      if (args[1] === 3) throw new Error("connection reset");
+      if (args[1] === 4) throw new Error("connection reset");
       return reply;
     }) as typeof redis.eval);
     state.db = new Proxy(db, {
@@ -287,6 +289,46 @@ describe.skipIf(!databaseAvailable || !redisAvailable)("write-free token refresh
     const tokens = await refreshed(refreshToken);
     expect(decodeJwt(tokens.refreshToken)).toMatchObject({ gen: 2 });
     expect((await agentRow(agentId)).revokedAt).toBeNull();
+  });
+
+  describe("re-enrolling a revoked agent in place", () => {
+    async function reenroll(agentId: string): Promise<{ refreshToken: string }> {
+      const enrollment = await createAgentReenrollment(db, { organizationId: orgId, agentId });
+      const res = await enroll(
+        post("enroll", { enrollmentToken: enrollment!.token, name: "coder-1", version: "0.2.0" }),
+      );
+      expect(res.status).toBe(200);
+      return (await res.json()) as { refreshToken: string };
+    }
+
+    it("starts the new family past Redis's generation; older tokens are stale, not reuse", async () => {
+      const { agentId, refreshToken } = await enrollNew();
+      // Generation 4 in Redis; Postgres still has 1 (no flush yet).
+      let tokens = await refreshed(refreshToken);
+      for (let i = 0; i < 2; i++) tokens = await refreshed(tokens.refreshToken);
+      expect(await (await refresh(refreshToken)).json()).toEqual({
+        error: "refresh_token_reused",
+      });
+      expect((await agentRow(agentId)).revokedAt).not.toBeNull();
+
+      const { refreshToken: fresh } = await reenroll(agentId);
+      expect(decodeJwt(fresh)).toMatchObject({ gen: 4 + REENROLL_GENERATION_GAP });
+      // The cached `revoked` is gone: the new tokens work at once, in Redis.
+      const next = await refreshed(fresh);
+      expect(await requireAgent(authed(next.accessToken))).toEqual({ agentId });
+
+      // Every earlier token is rejected without revoking the agent again.
+      for (const old of [refreshToken, tokens.refreshToken]) {
+        expect((await refresh(old)).status).toBe(401);
+      }
+      expect((await agentRow(agentId)).revokedAt).toBeNull();
+
+      // Still after Redis loses its state: the family comes back from Postgres.
+      await getRedis().flushall();
+      expect((await refresh(tokens.refreshToken)).status).toBe(401);
+      expect((await agentRow(agentId)).revokedAt).toBeNull();
+      await refreshed(next.refreshToken);
+    });
   });
 
   describe("after Redis loses its state", () => {

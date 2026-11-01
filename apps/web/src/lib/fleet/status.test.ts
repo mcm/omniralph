@@ -597,6 +597,7 @@ describe("auditEventLabel", () => {
     );
     expect(labels).toEqual({
       enroll: "Enrolled",
+      reenroll: "Re-enrolled by Steve McMaster",
       token_refresh: "Refreshed its token",
       refresh_reuse: "Token reuse detected; agent revoked",
       revoke: "Revoked by Steve McMaster",
@@ -614,5 +615,6 @@ describe("auditEventLabel", () => {
   it("leaves out who revoked or removed the agent when nobody is known", () => {
     expect(auditEventLabel({ event: "revoke", actor: null })).toBe("Revoked");
     expect(auditEventLabel({ event: "delete", actor: null })).toBe("Removed");
+    expect(auditEventLabel({ event: "reenroll", actor: null })).toBe("Re-enrolled");
   });
 });

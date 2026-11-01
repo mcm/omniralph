@@ -104,7 +104,11 @@ export function useAgentLastSeen(agentId: string) {
  * (`GET /api/ui/agent-enrollments/{id}`). A live query: enrolling publishes the new agent's
  * `agent` event, which refetches it; it never polls on its own.
  */
-export function useEnrollmentStatus(enrollment: CreatedEnrollment | null) {
+export function useEnrollmentStatus(
+  enrollment: CreatedEnrollment | null,
+  /** The enrollment's organization (a re-enrollment's is its agent's); the active one by default. */
+  organizationId?: string,
+) {
   const keys = useQueryKeys();
   const { organization } = useCurrentUser();
   return useQuery<EnrollmentStatus>({
@@ -114,7 +118,7 @@ export function useEnrollmentStatus(enrollment: CreatedEnrollment | null) {
       api.get(
         `/api/ui/agent-enrollments/${encodeURIComponent(enrollment!.id)}`,
         enrollmentStatusSchema,
-        { organizationId: organization.id, signal },
+        { organizationId: organizationId ?? organization.id, signal },
       ),
   });
 }

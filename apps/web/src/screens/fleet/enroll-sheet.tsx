@@ -65,6 +65,67 @@ function Waiting({ enrollment, name }: { enrollment: CreatedEnrollment; name: st
   );
 }
 
+/** Once the agent redeemed the token: "Connected", and a link to the agent. */
+function Connected({
+  agent,
+  text,
+  onDone,
+}: {
+  agent: { id: string; name: string };
+  text: string;
+  onDone: () => void;
+}) {
+  return (
+    <div className="or-enroll">
+      <p className="or-enroll__connected" role="status">
+        <StatusText tone="good">Connected</StatusText>
+      </p>
+      <p className="or-enroll__text">{text}</p>
+      <div className="or-enroll__actions">
+        <Button href={agentHref(agent.id)} variant="solid" onClick={onDone}>
+          Open {agent.name}
+        </Button>
+        <Button variant="ghost" onClick={onDone}>
+          Done
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** The one-time token with the install and enroll commands, waiting for the agent. */
+function TokenStep({
+  enrollment,
+  name,
+  onDone,
+}: {
+  enrollment: CreatedEnrollment;
+  name: string;
+  onDone: () => void;
+}) {
+  return (
+    <div className="or-enroll">
+      <p className="or-enroll__text">
+        Run these on the agent host as the agent&apos;s Unix user. The token works once and expires{" "}
+        {formatDateTime(enrollment.expiresAt)}.
+      </p>
+      <p className="or-enroll__warning">
+        Copy it now: only its hash is stored, so it can&apos;t be shown again. Treat it like a
+        password.
+      </p>
+      <CopyRow label="Install command" value={AGENT_INSTALL_COMMAND} />
+      <CopyRow label="Enroll command" value={enrollment.command} />
+      <CopyRow label="Token" value={enrollment.token} />
+      <Waiting enrollment={enrollment} name={name} />
+      <div className="or-enroll__actions">
+        <Button variant="outline" onClick={onDone}>
+          Done
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The flow inside the sheet: a name, then the one-time token with the install and enroll
  * commands, then "Connected" once the agent redeems the token (its `agent` change event
@@ -91,48 +152,15 @@ function EnrollFlow({ onDone }: { onDone: () => void }) {
 
   if (connected) {
     return (
-      <div className="or-enroll">
-        <p className="or-enroll__connected" role="status">
-          <StatusText tone="good">Connected</StatusText>
-        </p>
-        <p className="or-enroll__text">
-          {connected.name} redeemed the token, which can&apos;t be used again.
-        </p>
-        <div className="or-enroll__actions">
-          <Button href={agentHref(connected.id)} variant="solid" onClick={onDone}>
-            Open {connected.name}
-          </Button>
-          <Button variant="ghost" onClick={onDone}>
-            Done
-          </Button>
-        </div>
-      </div>
+      <Connected
+        agent={connected}
+        text={`${connected.name} redeemed the token, which can't be used again.`}
+        onDone={onDone}
+      />
     );
   }
 
-  if (enrollment) {
-    return (
-      <div className="or-enroll">
-        <p className="or-enroll__text">
-          Run these on the agent host as the agent&apos;s Unix user. The token works once and
-          expires {formatDateTime(enrollment.expiresAt)}.
-        </p>
-        <p className="or-enroll__warning">
-          Copy it now: only its hash is stored, so it can&apos;t be shown again. Treat it like a
-          password.
-        </p>
-        <CopyRow label="Install command" value={AGENT_INSTALL_COMMAND} />
-        <CopyRow label="Enroll command" value={enrollment.command} />
-        <CopyRow label="Token" value={enrollment.token} />
-        <Waiting enrollment={enrollment} name={name.trim()} />
-        <div className="or-enroll__actions">
-          <Button variant="outline" onClick={onDone}>
-            Done
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  if (enrollment) return <TokenStep enrollment={enrollment} name={name.trim()} onDone={onDone} />;
 
   const generate = (event: FormEvent) => {
     event.preventDefault();
@@ -162,6 +190,113 @@ function EnrollFlow({ onDone }: { onDone: () => void }) {
         </Button>
       </div>
     </form>
+  );
+}
+
+/** What re-enrolling an agent does, above "Generate token". */
+export function reenrollDescription(name: string): string {
+  return (
+    `Creates a one-time enrollment token for ${name}, valid for 1 hour. Enrolling with it ` +
+    "brings the agent back with the same ID, pins and history, and starts a new refresh " +
+    "token: every earlier one stops working."
+  );
+}
+
+/** Shown before re-enrolling an agent revoked for refresh-token reuse (`docs/deploy-agent.md`). */
+export const REENROLL_REUSE_WARNING =
+  "This agent's refresh token was used twice, so its token family is treated as stolen. Find " +
+  "out why before re-enrolling: check the audit log for the IP the reused token came from, and " +
+  "delete any other copy of agent.json. If you can't explain it, treat the host as compromised.";
+
+/** An agent to re-enroll: its ID, name and organization (the token's). */
+export interface ReenrollAgent {
+  id: string;
+  name: string;
+  organization: { id: string };
+}
+
+/**
+ * The re-enroll flow: what it does (and, after token reuse, to find out why first), then the
+ * one-time token bound to the agent with the same commands as Enroll, then "Connected" once
+ * the agent redeems it. Mounted only while the sheet is open.
+ */
+function ReenrollFlow({
+  agent,
+  reuse,
+  onDone,
+}: {
+  agent: ReenrollAgent;
+  reuse: boolean;
+  onDone: () => void;
+}) {
+  const [enrollment, setEnrollment] = useState<CreatedEnrollment | null>(null);
+  const status = useEnrollmentStatus(enrollment, agent.organization.id);
+  const connected = enrollment ? status.data?.agent : null;
+
+  const create = useApiMutation({
+    mutationFn: () =>
+      api.post(`/api/ui/agents/${encodeURIComponent(agent.id)}/reenroll`, createdEnrollmentSchema, {
+        organizationId: agent.organization.id,
+      }),
+    // A token changes nothing yet: the agent comes back once it enrolls.
+    invalidate: () => [],
+    success: null,
+    onSuccess: (created) => setEnrollment(created),
+  });
+
+  if (connected) {
+    return (
+      <Connected
+        agent={connected}
+        text={`${connected.name} is enrolled again with its pins and history. The token can't be used again.`}
+        onDone={onDone}
+      />
+    );
+  }
+
+  if (enrollment) return <TokenStep enrollment={enrollment} name={agent.name} onDone={onDone} />;
+
+  const generate = (event: FormEvent) => {
+    event.preventDefault();
+    create.mutate();
+  };
+
+  return (
+    <form className="or-enroll" onSubmit={generate}>
+      <p className="or-enroll__text">{reenrollDescription(agent.name)}</p>
+      {reuse ? (
+        <p className="or-enroll__warning" role="alert">
+          {REENROLL_REUSE_WARNING}
+        </p>
+      ) : null}
+      <div className="or-enroll__actions">
+        <Button type="submit" variant="solid" icon={IconKey} disabled={create.isPending}>
+          {create.isPending ? "Generating…" : "Generate token"}
+        </Button>
+        <Button type="button" variant="ghost" onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+export interface ReenrollSheetProps {
+  agent: ReenrollAgent;
+  /** The agent's refresh token was reused (revoked for `refresh_reuse`): say to find out why. */
+  reuse: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+/** "Re-enroll…": re-enrolls an existing agent in place, keeping its ID and pins (admins). */
+export function ReenrollSheet({ agent, reuse, open, onOpenChange }: ReenrollSheetProps) {
+  return (
+    <Sheet title={`Re-enroll ${agent.name}`} open={open} onOpenChange={onOpenChange}>
+      {open ? (
+        <ReenrollFlow agent={agent} reuse={reuse} onDone={() => onOpenChange(false)} />
+      ) : null}
+    </Sheet>
   );
 }
 

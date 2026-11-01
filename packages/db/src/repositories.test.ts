@@ -25,6 +25,8 @@ import {
 } from "./repositories.js";
 import { deleteWorkItemMatch, saveWorkItemMatch } from "./work-item-matches.js";
 import { pinnedAgentFor } from "./jobs.js";
+import { revokeAgent } from "./agent-auth.js";
+import { loadRepositoryStatusFacts } from "./repository-status.js";
 import {
   agentRepoPins,
   agents,
@@ -345,6 +347,47 @@ describe.skipIf(!databaseAvailable)("repository queries", () => {
       liveOnline: true,
     });
     expect(await pinnedAgentFor(db, orgId, repo.id)).toBe(idle);
+  });
+
+  it("treats a revoked agent's kept pins as none until it's back", async () => {
+    const connection = (await upsertScmConnection(
+      db,
+      {
+        organizationId: orgId,
+        provider: "github",
+        name: "revoked-pins",
+        baseUrl: "https://api.github.com",
+        externalId: "4004",
+        credentials: {},
+      },
+      key,
+    ))!;
+    const repo = await connectRepository(db, {
+      connectionId: connection.id,
+      provider: "github",
+      externalId: "888",
+      fullPath: "acme/revoked-pins",
+    });
+    const [agent] = await db
+      .insert(agents)
+      .values({ organizationId: orgId, name: "revoked-1", liveOnline: true })
+      .returning();
+    await db.insert(agentRepoPins).values({ agentId: agent!.id, repositoryId: repo.id });
+    const facts = () =>
+      loadRepositoryStatusFacts(db, { organizationIds: [orgId], repositoryIds: [repo.id] });
+    const listed = async () =>
+      (await listRepositoryOverview(db, orgId)).find((r) => r.id === repo.id)!.pinnedAgents;
+
+    await revokeAgent(db, agent!.id);
+    expect(await pinnedAgentFor(db, orgId, repo.id)).toBeNull();
+    expect((await facts()).pins.get(repo.id)).toBeUndefined();
+    expect(await listed()).toEqual([]);
+
+    // Re-enrolled (no longer revoked): the same pin counts again.
+    await db.update(agents).set({ revokedAt: null }).where(eq(agents.id, agent!.id));
+    expect(await pinnedAgentFor(db, orgId, repo.id)).toBe(agent!.id);
+    expect((await facts()).pins.get(repo.id)).toEqual([agent!.id]);
+    expect(await listed()).toEqual([{ id: agent!.id, name: "revoked-1" }]);
   });
 
   it("turns everything off and deletes the match on disconnect; reconnecting starts with Coding off", async () => {

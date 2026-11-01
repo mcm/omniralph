@@ -368,7 +368,8 @@ function recordAgentChange(db: unknown, agent: { id: string; organizationId: str
 }
 
 /**
- * Soft-deletes a revoked agent: it's hidden from the Agents pages from then on.
+ * Soft-deletes a revoked agent: it's hidden from the Agents pages from then on, and its
+ * repository pins are removed.
  * Returns false for unknown, active or already deleted agents and agents of
  * another organization.
  */
@@ -393,6 +394,20 @@ export async function markAgentDeleted(
       .returning({ id: agents.id, organizationId: agents.organizationId });
     for (const row of rows) {
       recordAgentChange(tx, row);
+      // Revoking kept its pins (for a re-enrollment); a deleted agent's go.
+      const unpinned = await tx
+        .delete(agentRepoPins)
+        .where(eq(agentRepoPins.agentId, row.id))
+        .returning({ repositoryId: agentRepoPins.repositoryId });
+      for (const { repositoryId } of unpinned) {
+        recordChange(tx, {
+          resource: "settings",
+          section: "repository.agents",
+          ids: [repositoryId],
+          subjectId: repositoryId,
+          organizationId: row.organizationId,
+        });
+      }
       // Its host tools count again for the organization's queued jobs.
       await refreshHostToolWaits({ db: tx, organizationId: row.organizationId });
     }
@@ -411,8 +426,9 @@ export async function listRecentAgentAudit(
   agentId: string,
   limit = 50,
 ): Promise<AgentAuditListEntry[]> {
-  // A revoke or delete names the user who did it; their name, while they still exist.
-  const actorId = sql<string>`coalesce(${agentAudit.detail}->>'revokedBy', ${agentAudit.detail}->>'deletedBy')`;
+  // A revoke, delete or re-enrollment names the user who did it; their name, while they
+  // still exist.
+  const actorId = sql<string>`coalesce(${agentAudit.detail}->>'revokedBy', ${agentAudit.detail}->>'deletedBy', ${agentAudit.detail}->>'reenrolledBy')`;
   const rows = await db
     .select({
       entry: agentAudit,

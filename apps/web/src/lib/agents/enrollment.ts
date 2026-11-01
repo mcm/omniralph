@@ -1,5 +1,10 @@
 import "server-only";
-import { createAgentEnrollment, getAgentEnrollmentStatus, type Database } from "@omniralph/db";
+import {
+  createAgentEnrollment,
+  createAgentReenrollment,
+  getAgentEnrollmentStatus,
+  type Database,
+} from "@omniralph/db";
 import { getAppUrl } from "@/lib/app-url";
 import type { CreatedEnrollment, EnrollmentStatus } from "@/lib/api/agents";
 import { enrollCommand } from "./display";
@@ -30,6 +35,30 @@ export async function createEnrollment(
     name: input.name || null,
     createdBy: input.createdBy,
   });
+  return {
+    ok: true,
+    id: enrollment.id,
+    token: enrollment.token,
+    expiresAt: enrollment.expiresAt.toISOString(),
+    command: enrollCommand(input.serverUrl, enrollment.token),
+  };
+}
+
+/**
+ * Creates a one-time enrollment token (valid for 1 hour) that re-enrolls `agentId` of
+ * `organizationId` in place (Fleet › Re-enroll…): the agent keeps its ID, name, pins and
+ * history. Null for an unknown or deleted agent.
+ */
+export async function createReenrollment(
+  db: Database,
+  input: { organizationId: string; agentId: string; createdBy: string; serverUrl: string },
+): Promise<CreatedEnrollment | null> {
+  const enrollment = await createAgentReenrollment(db, {
+    organizationId: input.organizationId,
+    agentId: input.agentId,
+    createdBy: input.createdBy,
+  });
+  if (!enrollment) return null;
   return {
     ok: true,
     id: enrollment.id,
