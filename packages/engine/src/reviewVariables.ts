@@ -1,5 +1,6 @@
-import type { SkippedFile } from "./plan.js";
+import { CHECK_TYPE_CATEGORIES, type CheckType, type SkippedFile } from "./plan.js";
 import {
+  checkGuidance,
   depthGuidance,
   diffText,
   hotspotList,
@@ -22,7 +23,12 @@ import type { ReviewContext } from "./runReview.js";
 export interface ReviewVariables {
   /** How thoroughly to review, from the profile (`depthGuidance`). */
   depth: string;
-  /** The agent's rubric docs for the diff's languages (`rubricFromDocs`); null without any. */
+  /** A check-type pass's focus (`checkGuidance`); null for a single-pass review. */
+  check: string | null;
+  /**
+   * The agent's rubric docs for the diff's languages (`rubricFromDocs`), narrowed to the
+   * check type's categories plus the shared sections for a check-type pass; null without any.
+   */
   rubric: string | null;
   /** The repository's custom instructions and enabled rules; null when it has neither. */
   repositoryRules: {
@@ -68,7 +74,7 @@ export interface ReviewVariables {
 
 /**
  * The review task type's template variables for a prepared review: the
- * profile's depth, the rubric for the diff's languages from the agent's
+ * profile's depth, a check-type pass's focus, the rubric for the diff's languages from the agent's
  * reference docs, the repository's rules, and the prepared diff, plan, risk,
  * conventions and open findings. A template made of these renders
  * `buildPrompt`'s prompt.
@@ -81,6 +87,8 @@ export function reviewVariables(
     /** The agent's reference docs, holding the rubric (see `rubricDocName`). */
     referenceDocs?: readonly { name: string; content: string }[];
     previousFindings?: readonly PreviousFinding[];
+    /** The check type of a looped review's pass; `context.plan` holds the pass's files. */
+    checkType?: CheckType;
   },
 ): ReviewVariables {
   const { plan, scope } = context;
@@ -92,7 +100,13 @@ export function reviewVariables(
   const languages = languagesForPaths(files.map((file) => file.path));
   return {
     depth: depthGuidance(input.config.profile),
-    rubric: rubricFromDocs(input.referenceDocs ?? [], languages) ?? null,
+    check: input.checkType ? checkGuidance(input.checkType) : null,
+    rubric:
+      rubricFromDocs(
+        input.referenceDocs ?? [],
+        languages,
+        input.checkType ? CHECK_TYPE_CATEGORIES[input.checkType] : undefined,
+      ) ?? null,
     repositoryRules:
       instructions || rules.length > 0
         ? { instructions, rules: rules.length > 0 ? { items: rules } : null }

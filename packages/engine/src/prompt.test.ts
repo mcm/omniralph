@@ -1,9 +1,18 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseDiff, type DiffFile } from "./diff.js";
-import { planReview } from "./plan.js";
+import { CHECK_TYPE_CATEGORIES, CHECK_TYPES, planReview } from "./plan.js";
 import { buildPrompt, fence, type ReviewConfig, type ReviewProfileConfig } from "./prompt.js";
-import { languagesForPaths, RUBRIC_LANGUAGES, languageRubric } from "./rubric/index.js";
+import {
+  filterRubric,
+  languagesForPaths,
+  parseRubric,
+  renderCheckRubric,
+  renderRubric,
+  RUBRIC_LANGUAGES,
+  languageRubric,
+  universalRubric,
+} from "./rubric/index.js";
 
 const fixture = (name: string) =>
   parseDiff(readFileSync(new URL(`../test/fixtures/${name}.diff`, import.meta.url), "utf8"));
@@ -218,6 +227,141 @@ describe("rubric", () => {
       expect(text).toContain("## Security (`security`)");
       expect(text).toMatch(/^- Flag /m);
     }
+  });
+});
+
+/** The `## ` headings of a rendered rubric, in order. */
+const headings = (text: string) => text.split("\n").filter((line) => line.startsWith("## "));
+
+describe("check-type rubric", () => {
+  const SHARED = ["## Probing questions", "## Do not report", "## Evidence rule"];
+
+  it("splits a rubric file into its preamble and category-tagged or shared sections", () => {
+    const parsed = parseRubric(languageRubric("ci"));
+    expect(parsed.preamble).toMatch(/^# CI workflows .*\n\nRead the whole workflow file/);
+    expect(parsed.sections.map((s) => s.category)).toEqual(["security", "correctness"]);
+    expect(parsed.sections[0]!.text).toMatch(/^## Security \(`security`\)\n\n- Flag /);
+
+    const universal = parseRubric(universalRubric());
+    expect(universal.sections.map((s) => s.category)).toEqual([
+      "security",
+      "correctness",
+      "concurrency",
+      "resources",
+      "error-handling",
+      "performance",
+      "breaking-change",
+      "tests",
+      null,
+      null,
+      null,
+    ]);
+    expect(parseRubric("## Only (`tests`)\n- Flag x").preamble).toBe("");
+  });
+
+  it("keeps only the check type's categories plus the shared sections, in file order", () => {
+    for (const type of CHECK_TYPES) {
+      const categories = CHECK_TYPE_CATEGORIES[type];
+      const text = renderCheckRubric(["typescript"], categories);
+      const universal = headings(filterRubric(universalRubric(), categories)!);
+      expect(universal.slice(-3)).toEqual(SHARED);
+      for (const heading of headings(text)) {
+        const category = /\(`([a-z-]+)`\)/.exec(heading)?.[1];
+        if (category) expect(categories).toContain(category);
+        else expect(SHARED).toContain(heading);
+      }
+      for (const category of categories) {
+        expect(text).toContain(`(\`${category}\`)`);
+      }
+      expect(text.startsWith("# Review rubric — all languages")).toBe(true);
+    }
+    expect(headings(renderCheckRubric(["typescript"], ["security"]))).toEqual([
+      "## Security (`security`)",
+      ...SHARED,
+      "## Security (`security`)",
+    ]);
+    expect(headings(renderCheckRubric(["typescript"], ["correctness", "concurrency"]))).toEqual([
+      "## Correctness (`correctness`)",
+      "## Async / concurrency (`concurrency`)",
+      ...SHARED,
+      "## Async / concurrency (`concurrency`)",
+    ]);
+  });
+
+  it("drops a language without any of the check type's sections, but never the universal rubric", () => {
+    // No language file has breaking-change or tests rules.
+    const compatibility = renderCheckRubric(["typescript", "ci"], ["breaking-change", "tests"]);
+    expect(compatibility).not.toContain("# TypeScript");
+    expect(compatibility).not.toContain("# CI workflows");
+    expect(headings(compatibility)).toEqual([
+      "## Breaking changes (`breaking-change`)",
+      "## Tests (`tests`)",
+      ...SHARED,
+    ]);
+    // CI keeps its intro with its correctness rules.
+    expect(renderCheckRubric(["ci"], ["correctness"])).toContain(
+      "# CI workflows (GitHub Actions / GitLab CI)\n\nRead the whole workflow file",
+    );
+    // Maintainability has no category: only the universal preamble and shared sections.
+    expect(headings(renderCheckRubric(["typescript", "python"], []))).toEqual(SHARED);
+  });
+
+  it("covers the whole rubric across the check types", () => {
+    const all = CHECK_TYPES.flatMap((type) => CHECK_TYPE_CATEGORIES[type]);
+    for (const language of RUBRIC_LANGUAGES) {
+      for (const { category } of parseRubric(languageRubric(language)).sections) {
+        expect(all).toContain(category);
+      }
+    }
+  });
+});
+
+describe("buildPrompt for a check type", () => {
+  const files = fixture("basic");
+
+  it("adds the check type's focus after the depth and narrows the rubric", () => {
+    const single = buildPrompt({ config: { profile: standard }, files, changeRequest });
+    const security = buildPrompt({
+      config: { profile: standard },
+      files,
+      changeRequest,
+      checkType: "security",
+    });
+    expect(single.checkType).toBeUndefined();
+    expect(single.text).not.toContain("# Check type");
+    expect(security.checkType).toBe("security");
+    expect(security.text).toContain(
+      "# Review depth\n\nStandard review: review every changed line against the rubric. Read surrounding code when a finding depends on it (callers, types, configuration), but stay focused on the change.\n\n# Check type\n\nThis pass checks security only:",
+    );
+    expect(security.text).toContain("explain in body how it could be exploited");
+    expect(security.text).toContain("Report only findings in the category `security`.");
+    expect(security.stablePrefix).toContain(renderCheckRubric(security.languages, ["security"]));
+    expect(security.stablePrefix).not.toContain("## Performance (`performance`)");
+    expect(single.stablePrefix).toContain(renderRubric(single.languages));
+    // Everything after the stable prefix is the same as a single pass's.
+    expect(security.text.slice(security.stablePrefix.length)).toBe(
+      single.text.slice(single.stablePrefix.length),
+    );
+  });
+
+  it("names every category of a multi-category check type", () => {
+    const stability = buildPrompt({
+      config: { profile: standard },
+      files,
+      changeRequest,
+      checkType: "stability",
+    });
+    expect(stability.text).toContain(
+      "Report only findings in the categories `correctness`, `concurrency`, `resources`, `error-handling`.",
+    );
+    const maintainability = buildPrompt({
+      config: { profile: standard },
+      files,
+      changeRequest,
+      checkType: "maintainability",
+    });
+    expect(maintainability.text).toContain("Use the category `correctness`");
+    expect(maintainability.text).not.toContain("Report only findings in the");
   });
 });
 

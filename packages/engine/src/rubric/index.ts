@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
+import type { FindingCategory } from "@omniralph/shared";
 
 /**
  * Review rubric, adapted from claude-skills' `code-reviewer` skill (MIT, see
@@ -118,6 +119,87 @@ export function renderRubric(languages: readonly RubricLanguage[]): string {
   return [universalRubric(), ...languages.map(languageRubric)].join("\n\n");
 }
 
+/** A `## …` section of a rubric file: its heading's `(\`category\`)`, or null for a shared section. */
+export interface RubricSection {
+  category: string | null;
+  /** The section's text, heading included, trimmed. */
+  text: string;
+}
+
+export interface ParsedRubric {
+  /** Everything before the first `## ` heading (the `# ` title and any intro), trimmed. */
+  preamble: string;
+  sections: RubricSection[];
+}
+
+const CATEGORY_IN_HEADING = /^## .*\(`([a-z-]+)`\)\s*$/;
+
+/** Splits a rubric file into its preamble and `## ` sections. */
+export function parseRubric(text: string): ParsedRubric {
+  const parts = text.split(/^(?=## )/m);
+  const preamble = parts[0]!.startsWith("## ") ? "" : parts.shift()!.trim();
+  return {
+    preamble,
+    sections: parts.map((part) => ({
+      category: CATEGORY_IN_HEADING.exec(part.split("\n", 1)[0]!)?.[1] ?? null,
+      text: part.trim(),
+    })),
+  };
+}
+
+/**
+ * A rubric file narrowed to `categories`: its preamble, then its sections
+ * whose category is in `categories` and its shared sections (no category),
+ * in file order. With `dropWithoutCategories`, a file that has no section in
+ * `categories` is dropped entirely (undefined), so a language's title isn't
+ * left without rules.
+ */
+export function filterRubric(
+  text: string,
+  categories: readonly FindingCategory[],
+  options: { dropWithoutCategories?: boolean } = {},
+): string | undefined {
+  const { preamble, sections } = parseRubric(text);
+  const wanted = new Set<string>(categories);
+  const kept = sections.filter((s) => s.category === null || wanted.has(s.category));
+  if (options.dropWithoutCategories && !kept.some((s) => s.category !== null)) return undefined;
+  return [preamble, ...kept.map((s) => s.text)].filter(Boolean).join("\n\n");
+}
+
+/**
+ * The rubric for one check-type pass: `universal.md` with only the sections
+ * of `categories` plus its shared sections (probing questions, do not report,
+ * evidence rule), then each language's sections of `categories`, skipping
+ * languages without any. `renderRubric` is the single-pass rubric.
+ */
+export function renderCheckRubric(
+  languages: readonly RubricLanguage[],
+  categories: readonly FindingCategory[],
+): string {
+  return checkRubricParts(
+    universalRubric(),
+    languages.map((language) => languageRubric(language)),
+    categories,
+  );
+}
+
+function checkRubricParts(
+  universal: string | undefined,
+  languageTexts: readonly (string | undefined)[],
+  categories: readonly FindingCategory[],
+): string {
+  return [
+    universal === undefined ? undefined : filterRubric(universal, categories),
+    ...languageTexts.map((text) =>
+      text === undefined
+        ? undefined
+        : filterRubric(text, categories, { dropWithoutCategories: true }),
+    ),
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join("\n\n");
+}
+
 /** Name of a rubric file as an agent's reference doc: `rubric/universal.md`, `rubric/languages/<language>.md`. */
 export function rubricDocName(language: RubricLanguage | "universal"): string {
   return language === "universal" ? "rubric/universal.md" : `rubric/languages/${language}.md`;
@@ -127,14 +209,20 @@ export function rubricDocName(language: RubricLanguage | "universal"): string {
  * `renderRubric` from an agent's reference docs instead of the shipped files:
  * the universal doc followed by each language's (by `rubricDocName`), each
  * trimmed, skipping the ones the agent doesn't have; undefined without any.
+ * With `categories` (a check-type pass), `renderCheckRubric` from the docs.
  */
 export function rubricFromDocs(
   docs: readonly { name: string; content: string }[],
   languages: readonly RubricLanguage[],
+  categories?: readonly FindingCategory[],
 ): string | undefined {
-  const byName = new Map(docs.map((doc) => [doc.name, doc.content.trim()]));
-  const parts = (["universal", ...languages] as const)
-    .map((language) => byName.get(rubricDocName(language)))
-    .filter((content): content is string => Boolean(content));
-  return parts.length > 0 ? parts.join("\n\n") : undefined;
+  const byName = new Map(docs.map((doc) => [doc.name, doc.content.trim() || undefined]));
+  const universal = byName.get(rubricDocName("universal"));
+  const languageTexts = languages.map((language) => byName.get(rubricDocName(language)));
+  const text = categories
+    ? checkRubricParts(universal, languageTexts, categories)
+    : [universal, ...languageTexts]
+        .filter((content): content is string => Boolean(content))
+        .join("\n\n");
+  return text || undefined;
 }
