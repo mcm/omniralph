@@ -45,7 +45,7 @@ describe("VARIABLES", () => {
     expect(query).toEqual(["question", "hunk", "conventions", "checkout"]);
   });
 
-  it("gives review tasks the depth, check, rubric, rules, diff, plan, risk, conventions and previous findings", () => {
+  it("gives review tasks the depth, check, rubric, rules, diff, plan, risk, conventions, previous findings and earlier passes", () => {
     const review = VARIABLES.filter(
       (variable) => variable.source === "taskType" && variable.taskTypes.includes("review"),
     );
@@ -76,6 +76,10 @@ describe("VARIABLES", () => {
       "previousFindings.items.lines",
       "previousFindings.items.category",
       "previousFindings.items.text",
+      "earlierPasses",
+      "earlierPasses.number",
+      "earlierPasses.confirmed",
+      "earlierPasses.unreached",
     ]);
     const untrusted = review.filter((v) => v.trust === "untrusted").map((v) => v.name);
     expect(untrusted).toEqual([
@@ -83,8 +87,11 @@ describe("VARIABLES", () => {
       "diff",
       "previousFindings",
       "previousFindings.items.text",
+      "earlierPasses.confirmed",
+      "earlierPasses.unreached",
     ]);
     expect(findVariable("diff")).toMatchObject({ fence: "diff" });
+    expect(findVariable("earlierPasses.confirmed")).toMatchObject({ fence: "json" });
     expect(findVariable("previousFindings.items.text")).toMatchObject({ fence: "markdown" });
     expect(
       validateTemplate(

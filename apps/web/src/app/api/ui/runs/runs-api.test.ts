@@ -80,6 +80,10 @@ import type { QueryRunResult } from "@omniralph/shared";
 import type { ChangeRequest, ChangeRequestState, ScmAdapter } from "@omniralph/scm";
 
 vi.mock("server-only", () => ({}));
+// Single-pass reviews: builtin:review-pr without its loop verifier (looped-review.test.ts covers looped ones).
+vi.mock("@omniralph/tasks", async (importOriginal) =>
+  (await import("@/lib/review/test-single-pass")).singlePassTasks(await importOriginal()),
+);
 
 type TestUser = { id: string; role: Role; name: string | null; email: string | null; image: null };
 const state = vi.hoisted(() => ({

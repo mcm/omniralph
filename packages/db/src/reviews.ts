@@ -8,8 +8,8 @@
  * failure note) was posted to the code host, which makes posting idempotent
  * per review.
  */
-import { and, asc, desc, eq, inArray, lt, ne, notInArray } from "drizzle-orm";
-import type { ReviewDepth } from "@omniralph/shared";
+import { and, asc, desc, eq, inArray, isNull, lt, ne, notInArray } from "drizzle-orm";
+import type { ReviewDepth, ReviewPassRecord } from "@omniralph/shared";
 import { currentChangeCollector, recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import {
@@ -449,6 +449,8 @@ export interface NewReviewInput {
   taskId?: string | null;
   /** The task is summary-only (sink `sticky-comment`). */
   summaryOnly?: boolean;
+  /** The check type a looped review's task run reviews; null (default) for a single pass. */
+  checkType?: string | null;
 }
 
 export async function createReview(db: Database, input: NewReviewInput): Promise<Review> {
@@ -523,6 +525,8 @@ export async function findCompletedReview(
     prNumber: number;
     headSha: string;
     taskId?: string;
+    /** Only reviews of this check type (null: single-pass reviews); undefined: any. */
+    checkType?: string | null;
     exceptReviewId?: string;
   },
 ): Promise<Review | null> {
@@ -536,6 +540,13 @@ export async function findCompletedReview(
         eq(reviews.headSha, input.headSha),
         eq(reviews.status, "completed"),
         ...(input.taskId ? [eq(reviews.taskId, input.taskId)] : []),
+        ...(input.checkType === undefined
+          ? []
+          : [
+              input.checkType === null
+                ? isNull(reviews.checkType)
+                : eq(reviews.checkType, input.checkType),
+            ]),
         ...(input.exceptReviewId ? [ne(reviews.id, input.exceptReviewId)] : []),
       ),
     )
@@ -690,6 +701,8 @@ export interface ReviewOutcomeInput {
   scope?: ReviewScope | null;
   /** The earlier open findings the task run re-checked and found fixed. */
   fixedFindingIds?: readonly string[];
+  /** A looped review's passes and the findings their verifier dropped (left alone when absent). */
+  passes?: { records: readonly ReviewPassRecord[]; droppedFindings: number };
   findings: Omit<
     typeof findings.$inferInsert,
     | "id"
@@ -732,6 +745,10 @@ export async function saveReviewOutcome(
         summary: input.summary ?? null,
         scope: input.scope ?? null,
         fixedFindingIds: [...(input.fixedFindingIds ?? [])],
+        ...(input.passes && {
+          passes: [...input.passes.records],
+          droppedFindings: input.passes.droppedFindings,
+        }),
         error: null,
       })
       .where(eq(reviews.id, reviewId));
@@ -750,6 +767,28 @@ export async function saveReviewOutcome(
     await recordReviewChanges(tx as unknown as Database, [reviewId]);
     return { saved: true };
   });
+}
+
+/**
+ * Records a looped review's passes so far and the findings their verifier
+ * dropped, while the review is still queued or running (a finished review
+ * keeps what it finished with). Returns whether it recorded them.
+ */
+export async function recordReviewPasses(
+  db: Database,
+  reviewId: string,
+  input: { records: readonly ReviewPassRecord[]; droppedFindings: number },
+): Promise<boolean> {
+  const rows = await db
+    .update(reviews)
+    .set({ passes: [...input.records], droppedFindings: input.droppedFindings })
+    .where(and(eq(reviews.id, reviewId), inArray(reviews.status, ACTIVE_REVIEW_STATUSES)))
+    .returning({ id: reviews.id });
+  await recordReviewChanges(
+    db,
+    rows.map((r) => r.id),
+  );
+  return rows.length > 0;
 }
 
 /**

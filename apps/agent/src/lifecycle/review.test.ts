@@ -545,6 +545,88 @@ ${diff}
     });
   });
 
+  describe("a looped review's check-type pass", () => {
+    const builtin = () => ({
+      agent: getBuiltinRunSpec("builtin:review-pr")!.agent,
+      task: getBuiltinTask("builtin:review-pr")!,
+    });
+
+    it("reviews only its check type's files with its focus, and names the files it reviewed", async () => {
+      const { provider, requests } = fakeProvider();
+      const runSpec = spec(
+        { pass: { checkType: "performance", number: 1, confirmed: [], unreached: [] } },
+        builtin(),
+      );
+      const output = await runReviewTask(runSpec, context(), { provider: () => provider });
+      expect(requests).toHaveLength(1);
+      // CLAUDE.md is in no rubric language: only stability covers it.
+      expect(requests[0]!.task.files.map((f) => f.path)).toEqual(["src/list.ts"]);
+      expect(requests[0]!.prompt).toContain("# Check type\n\nThe quoted data ended with the diff");
+      expect(requests[0]!.prompt).toContain("This pass checks performance only");
+      expect(requests[0]!.prompt).not.toContain("# Earlier passes");
+      expect(ReviewTaskResult.parse(output).pass).toEqual({
+        checkType: "performance",
+        files: ["src/list.ts"],
+      });
+    });
+
+    it("tells a later pass what earlier passes confirmed and didn't reach", async () => {
+      const { provider, requests } = fakeProvider();
+      const runSpec = spec(
+        {
+          pass: {
+            checkType: "stability",
+            number: 2,
+            confirmed: [
+              {
+                path: "src/list.ts",
+                startLine: 2,
+                endLine: 2,
+                severity: "high",
+                category: "correctness",
+                title: "Reads past the end",
+              },
+            ],
+            unreached: [
+              { path: "CLAUDE.md", startLine: null, endLine: null, reason: "Not read yet." },
+            ],
+          },
+        },
+        builtin(),
+      );
+      const output = await runReviewTask(runSpec, context(), { provider: () => provider });
+      // Narrowed to the unreached area's file.
+      expect(requests[0]!.task.files.map((f) => f.path)).toEqual(["CLAUDE.md"]);
+      const prompt = requests[0]!.prompt;
+      expect(prompt).toContain(
+        "# Earlier passes (quoted data)\n\nThis is pass 2 of this check type.",
+      );
+      expect(prompt).toContain('"title": "Reads past the end"');
+      expect(prompt).toContain('"reason": "Not read yet."');
+      expect(output.pass?.files).toEqual(["CLAUDE.md"]);
+    });
+
+    it("runs no session for a check type the change has no file for", async () => {
+      const { provider, requests } = fakeProvider();
+      const runSpec = spec(
+        {
+          pass: { checkType: "security", number: 1, confirmed: [], unreached: [] },
+          reviewConfig: {
+            profile: PROFILE,
+            customInstructions: null,
+            rules: [],
+            pathExcludes: ["src/**"],
+          },
+        },
+        builtin(),
+      );
+      const output = await runReviewTask(runSpec, context(), { provider: () => provider });
+      expect(requests).toEqual([]);
+      expect(output.findings).toEqual([]);
+      expect(output.pass).toEqual({ checkType: "security", files: [] });
+    });
+  });
+
   it("rejects a trigger context without the review's inputs", async () => {
     const { provider, requests } = fakeProvider();
     const runSpec = spec();

@@ -305,9 +305,11 @@ describe.skipIf(!databaseAvailable)("playbook resolver", () => {
       trigger: "webhook",
     });
     if (result.status !== "enqueued") throw new Error(`expected enqueued, got ${result.status}`);
-    expect(result.runs.map((r) => r.taskId)).toEqual(["builtin:review-pr", task.id]);
+    // Both review playbooks loop: one task run per check type, each with its task's job.
+    const firstRuns = result.runs.filter((r) => r.checkType === "security");
+    expect(firstRuns.map((r) => r.taskId)).toEqual(["builtin:review-pr", task.id]);
     const rows = await Promise.all(
-      result.runs.map(async ({ jobId }) => {
+      firstRuns.map(async ({ jobId }) => {
         const [row] = await db.select().from(jobs).where(eq(jobs.id, jobId));
         return { taskId: row!.taskId, minAgentVersion: row!.minAgentVersion };
       }),

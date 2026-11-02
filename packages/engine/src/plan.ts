@@ -1,4 +1,4 @@
-import type { FindingCategory } from "@omniralph/shared";
+import { REVIEW_CHECK_TYPES, type FindingCategory } from "@omniralph/shared";
 import picomatch from "picomatch";
 import type { DiffFile } from "./diff.js";
 import { languageForPath } from "./rubric/index.js";
@@ -230,13 +230,7 @@ export function planReview(
 }
 
 /** The check types a looped review can run, in the order passes are planned. */
-export const CHECK_TYPES = [
-  "security",
-  "stability",
-  "performance",
-  "compatibility",
-  "maintainability",
-] as const;
+export const CHECK_TYPES = REVIEW_CHECK_TYPES;
 
 export type CheckType = (typeof CHECK_TYPES)[number];
 
@@ -477,4 +471,67 @@ function selectHotspots(risks: FileRisk[]): FileRisk[] {
       b.signals.length - a.signals.length ||
       a.path.localeCompare(b.path),
   );
+}
+
+/** What `planCheckPass` needs of a pass: its check type and number, and what earlier passes didn't reach. */
+export interface CheckPassInput {
+  checkType: CheckType;
+  number: number;
+  /** Areas earlier passes didn't reach (only their paths narrow the pass). */
+  unreached: readonly { path: string }[];
+}
+
+/** One pass of a looped review's check type: the sessions it runs, from `planChecks`. */
+export interface CheckPassPlan {
+  /** The whole change's check plan. */
+  checks: CheckPlan;
+  /** The check type's plan entry; undefined when the check type doesn't apply to the change. */
+  entry: CheckPlanEntry | undefined;
+  /** The files this pass reviews (none when the check type doesn't apply). */
+  files: DiffFile[];
+  /**
+   * One session per group of the check type's files, narrowed to `files`;
+   * each group gets its share (by estimated tokens) of the profile's
+   * `maxTokensPerReview`: every check-type pass may spend the depth's token cap.
+   */
+  tasks: ReviewTask[];
+}
+
+/**
+ * Plans one pass of a looped review's check type: plans the change's check
+ * types (`planChecks`) and takes this check type's files and groups. A pass
+ * after the first reviews only the files of the areas earlier passes didn't
+ * reach, or all of the check type's files again when none of those areas is
+ * one of them.
+ */
+export function planCheckPass(
+  files: readonly DiffFile[],
+  profile: PlanProfile,
+  pass: CheckPassInput,
+  options: ChecksOptions = {},
+): CheckPassPlan {
+  const checks = planChecks(files, profile, {
+    ...options,
+    maintainability: options.maintainability ?? pass.checkType === "maintainability",
+  });
+  const entry = checks.checks.find((check) => check.type === pass.checkType);
+  if (!entry) return { checks, entry, files: [], tasks: [] };
+  const unreached = new Set(pass.number > 1 ? pass.unreached.map((area) => area.path) : []);
+  const narrowed = entry.files.filter((file) => unreached.has(file.path));
+  const passFiles = narrowed.length > 0 ? narrowed : entry.files;
+  const included = new Set(passFiles);
+  const groups = entry.groups
+    .map((group) => ({ ...group, files: group.files.filter((file) => included.has(file)) }))
+    .filter((group) => group.files.length > 0);
+  const estimate = options.estimateFileTokens ?? ((file: DiffFile) => estimateTokens(file.patch));
+  const budgets = splitBudget(
+    profile.maxTokensPerReview,
+    groups.map((group) => group.files.reduce((sum, file) => sum + estimate(file), 0)),
+  );
+  return {
+    checks,
+    entry,
+    files: passFiles,
+    tasks: groups.map((group, index) => ({ ...group, budget: budgets[index] as number })),
+  };
 }

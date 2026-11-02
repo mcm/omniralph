@@ -47,6 +47,10 @@ import { reviewDetailView } from "@/lib/reviews/history";
 import type * as Adapters from "@/lib/scm/adapters";
 
 vi.mock("server-only", () => ({}));
+// Single-pass reviews: builtin:review-pr without its loop verifier (looped-review.test.ts covers looped ones).
+vi.mock("@omniralph/tasks", async (importOriginal) =>
+  (await import("@/lib/review/test-single-pass")).singlePassTasks(await importOriginal()),
+);
 
 /** Records every code-host call; `writers` have write access. */
 function fakeAdapter() {

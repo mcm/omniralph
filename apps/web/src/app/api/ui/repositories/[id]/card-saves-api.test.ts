@@ -668,7 +668,8 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
       // The next review run fans out to the bound playbooks; the coding card reads the
       // story playbook's rounds.
       const run = await enqueue();
-      expect(run.runs.map((r) => r.taskId)).toEqual(["builtin:review-pr", review]);
+      // One task run per check type of each (looped) review playbook.
+      expect([...new Set(run.runs.map((r) => r.taskId))]).toEqual(["builtin:review-pr", review]);
       const detail = await detailRoute.GET(new Request("http://localhost/api/ui"), {
         params: Promise.resolve({ id: repoId }),
       });
@@ -699,7 +700,7 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
           })
         ).status,
       ).toBe(200);
-      expect((await enqueue()).runs.map((r) => r.taskId)).toEqual([
+      expect([...new Set((await enqueue()).runs.map((r) => r.taskId))]).toEqual([
         SECURITY_TASK_ID,
         "builtin:review-pr",
       ]);

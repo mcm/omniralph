@@ -9,6 +9,7 @@ import type {
   AgentHostReport,
   ClaudeLoginReport,
   HostToolReport,
+  ReviewPassRecord,
   RoutingQuery,
   TokenRefreshReport,
 } from "@omniralph/shared";
@@ -1564,6 +1565,15 @@ export const reviews = pgTable(
     scope: jsonb("scope").$type<ReviewScope>(),
     /** The earlier open findings the task run re-checked and found fixed. */
     fixedFindingIds: text("fixed_finding_ids").array().notNull().default([]),
+    /**
+     * The check type a looped review's task run reviews (`security`, `stability`, …), one
+     * review per check type of each review task; null for a single-pass review.
+     */
+    checkType: text("check_type"),
+    /** Findings of a looped review's passes its verifier rejected or didn't answer: never posted. */
+    droppedFindings: integer("dropped_findings").notNull().default(0),
+    /** A looped review's passes, first first, as each one's verifier settled it. */
+    passes: jsonb("passes").$type<ReviewPassRecord[]>().notNull().default([]),
     error: text("error"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -2624,7 +2634,11 @@ export const triageRuns = pgTable(
 
 // ── Run loop ─────────────────────────────────────────────────────────────────
 
-/** The kinds of run the loop driver iterates (`run_iterations.run_kind`): the run's own table. */
+/**
+ * The kinds of run the loop driver iterates (`run_iterations.run_kind`): `review` is one
+ * review task run of a review run (a `reviews` row: one check type of a looped review),
+ * `triage` a `triage_runs` row.
+ */
 export const LOOP_RUN_KINDS = ["review", "triage"] as const;
 export type LoopRunKind = (typeof LOOP_RUN_KINDS)[number];
 
@@ -2660,7 +2674,7 @@ export interface RunIterationMetric {
 /**
  * The iterations of a looped query or review run (`lib/runs/loop.ts`): each a
  * worker session then a verifier session, the verifier's findings feeding the
- * next iteration's worker. `run_kind` names the run's table (`review_runs`,
+ * next iteration's worker. `run_kind` names the run's table (`reviews`,
  * `triage_runs`) and `run_id` its row; the run's loop limits are copied onto
  * each iteration when it starts, so a playbook edit doesn't change a running loop.
  */

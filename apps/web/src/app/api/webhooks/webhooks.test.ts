@@ -34,6 +34,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import type * as Dispatch from "@/lib/dispatch";
 
 vi.mock("server-only", () => ({}));
+// Single-pass reviews: builtin:review-pr without its loop verifier (looped-review.test.ts covers looped ones).
+vi.mock("@omniralph/tasks", async (importOriginal) =>
+  (await import("@/lib/review/test-single-pass")).singlePassTasks(await importOriginal()),
+);
 const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
   failDispatch: false,

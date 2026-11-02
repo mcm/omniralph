@@ -383,9 +383,9 @@ describe("a playbook's page", () => {
       ["Setup", "None"],
       ["Teardown", "None"],
     ]);
-    // A review loops once it names a verifier: none yet, its limits at their defaults.
+    // builtin:review-pr loops: its finding verifier checks each pass (the depth caps the passes).
     expect(facts("Loop")).toEqual([
-      ["Verifier", "None: each run is one session"],
+      ["Verifier", "builtin:verify-findings"],
       ["Most iterations", "5 iterations"],
       ["Stall rounds", "Stops after 2 iterations without a better score"],
     ]);

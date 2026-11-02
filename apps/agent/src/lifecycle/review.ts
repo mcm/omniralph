@@ -7,12 +7,15 @@ import {
   EXPLORATION_TOOLS,
   filterToDiff,
   finishReview,
+  planCheckPass,
   prepareReview,
   reviewVariables,
   type ReviewLogger,
   type QueryFn,
   type ReviewProvider,
   type RunReviewInput,
+  type ReviewContext,
+  type ReviewTask,
 } from "@omniralph/engine";
 import {
   MAX_LEASE_SECONDS,
@@ -141,7 +144,13 @@ function capSummary(summaries: readonly string[]): string | undefined {
  *    `buildPrompt` assembles.
  * 2. Render the task's prompt template over the trigger context, those
  *    variables and the `setup` variables.
- * 3. One session (`planReview` plans one task): `ClaudeAgentProvider.review`
+ *    A looped review's pass (the trigger context's `pass`) plans the change's
+ *    check types (`planCheckPass`, over `planChecks`) and reviews only its
+ *    check type's files, narrowed to the areas earlier passes didn't reach;
+ *    its prompt gets the check type's focus and rubric sections and what
+ *    earlier passes confirmed. Its result names the files it reviewed.
+ * 3. One session (`planReview` plans one task), or one per group of a
+ *    check type's files: `ClaudeAgentProvider.review`
  *    with the agent's system prompt and the task's `systemAppend` (which
  *    holds the output contract: findings, the re-check answers and an
  *    optional `summary`) and one repair turn, the run's model (else the
@@ -164,7 +173,7 @@ export async function runReviewTask(
   if (!parsed.success) throw new Error("the review run's trigger context is invalid");
   if (!spec.repository) throw new Error("a review run needs a repository");
   const repository = spec.repository;
-  const { baseSha, headSha, previousReview, reviewConfig, changeRequest } = parsed.data;
+  const { baseSha, headSha, previousReview, reviewConfig, changeRequest, pass } = parsed.data;
   const git = { env: ctx.env(), signal: ctx.signal };
   const log = ctx.logger.child({
     taskId: spec.task.id,
@@ -231,28 +240,50 @@ export async function runReviewTask(
     };
     const openFindings = previousReview?.openFindings ?? [];
     const context = await prepareReview(input, log);
-    const variables = reviewVariables(context, {
-      baseSha,
-      config: reviewConfig,
-      referenceDocs: spec.agent.referenceDocs,
-      previousFindings: openFindings,
-    });
-    const prompt = renderTemplate(
-      spec.task.promptTemplate,
-      { ...spec.trigger.context, ...variables, setup },
-      taskCatalog(spec.task),
-      spec.task.variableLimits,
-    );
+    const { profile } = input.reviewConfig;
+    // A looped review's pass reviews only its check type's files, one session per group.
+    const checkPass =
+      pass &&
+      planCheckPass(context.files, profile, pass, {
+        pathExcludes: input.reviewConfig.pathExcludes,
+      });
+    const sessionPlans: ReviewContext["plan"][] = checkPass
+      ? checkPass.tasks.map((task) => ({
+          ...checkPass.checks,
+          tasks: [task],
+          hotspots: checkPass.checks.hotspots.filter((risk) =>
+            task.files.some((file) => file.path === risk.path),
+          ),
+        }))
+      : context.plan.tasks.slice(0, 1).map(() => context.plan);
+    const skipped = checkPass ? checkPass.checks.skipped : context.plan.skipped;
 
-    const { profile } = reviewConfig;
     const sessions = emptyReviewSessions();
-    const [task] = context.plan.tasks;
-    if (task && task.files.length > 0) {
-      const provider = options.provider
+    let provider: ReviewProvider | undefined;
+    const systemPrompt = reviewSystemPrompt(spec);
+    for (const plan of sessionPlans) {
+      const task: ReviewTask = plan.tasks[0]!;
+      if (task.files.length === 0) continue;
+      provider ??= options.provider
         ? options.provider(spec, sessionCtx, log, executables)
         : reviewTaskProvider(spec, sessionCtx, log, executables, options.query);
+      const variables = reviewVariables(
+        { ...context, plan },
+        {
+          baseSha,
+          config: reviewConfig,
+          referenceDocs: spec.agent.referenceDocs,
+          previousFindings: openFindings,
+          ...(pass && { checkType: pass.checkType, pass }),
+        },
+      );
+      const prompt = renderTemplate(
+        spec.task.promptTemplate,
+        { ...spec.trigger.context, ...variables, setup },
+        taskCatalog(spec.task),
+        spec.task.variableLimits,
+      );
       const budget = Math.min(task.budget, spec.tokenBudget ?? Infinity);
-      const systemPrompt = reviewSystemPrompt(spec);
       const result = await provider.review({
         task: { ...task, budget },
         prompt,
@@ -265,6 +296,7 @@ export async function runReviewTask(
         signal: ctx.signal,
       });
       addTaskResult(sessions, result, openFindings.length);
+      if (result.stopReason !== "completed") break;
     }
 
     switch (sessions.stopReason) {
@@ -306,7 +338,8 @@ export async function runReviewTask(
         findings: finished.findings.length,
         stopReason: sessions.stopReason,
         usage: sessions.usage,
-        skipped: context.plan.skipped.length,
+        skipped: skipped.length,
+        ...(pass && { checkType: pass.checkType, pass: pass.number }),
       },
       "review finished",
     );
@@ -320,13 +353,20 @@ export async function runReviewTask(
     return {
       findings: capFindings(finished.findings),
       usage: sessions.usage,
-      skipped: context.plan.skipped.slice(0, MAX_REVIEW_SKIPPED),
+      skipped: skipped.slice(0, MAX_REVIEW_SKIPPED),
       stopReason: sessions.stopReason,
       scope: context.scope,
       discarded: { ...sessions.discarded, duplicate: finished.duplicate },
       fixedOpenFindings: finished.fixedOpenFindings,
       ...(summary !== undefined && { summary }),
       durationMs: Date.now() - started,
+      ...(checkPass &&
+        pass && {
+          pass: {
+            checkType: pass.checkType,
+            files: checkPass.files.map((file) => file.path).slice(0, MAX_REVIEW_SKIPPED),
+          },
+        }),
     };
   };
 

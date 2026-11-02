@@ -369,6 +369,7 @@ export {
   markReviewRunning,
   postReviewRunOnce,
   previousReviewState,
+  recordReviewPasses,
   resolveEarlierOpenFindings,
   resolveOpenFindings,
   saveReviewOutcome,

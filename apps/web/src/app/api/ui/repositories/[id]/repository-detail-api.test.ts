@@ -280,7 +280,10 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/repositories/{id}", () => {
       summary: expect.any(String),
       details: {
         model: "Opus 5.5",
-        tokenCap: "500k per review",
+        tokenCap: "500k per pass",
+        passes: "Up to 3 per check type",
+        verification: "Every finding, in a fresh session",
+        security: "At least 2 passes, up to 3",
         reads: expect.any(String),
         comments: expect.any(String),
         typicalTime: "About 2× Standard",
