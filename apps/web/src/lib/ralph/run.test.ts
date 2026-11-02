@@ -110,6 +110,9 @@ import { parseWorkItem } from "@omniralph/planning";
 import {
   CODING_DEFAULTS,
   getBuiltinPlaybook,
+  getBuiltinTask,
+  renderTemplate,
+  taskCatalog,
   type Playbook,
   type PlaybookCoding,
 } from "@omniralph/tasks";
@@ -1414,7 +1417,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
         storyId: (await theStory(run.id)).id,
         attempt: 1,
         commitSha: sha(600),
-        story: { acceptanceCriteria: CRITERIA },
+        // A legacy story, verified as before.
+        story: { acceptanceCriteria: CRITERIA, task: false },
         qualityGates: ["pnpm test", "pnpm lint"],
       });
       expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
@@ -1469,6 +1473,115 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(verifyPayload(await activeJob(run.id)).story).toMatchObject({
         description: "Show the widgets.",
         acceptanceCriteria: CRITERIA,
+      });
+    });
+
+    describe("a three-paragraph task", () => {
+      const WHAT = "I want you to list the widgets, so that operators see what is deployed.";
+      const HOW = "Build it by adding a `listWidgets` query to `src/widgets.ts`.";
+      const TASK_CRITERIA = ["The dashboard lists every widget", "Widgets sort by name"];
+      const BUILDER_SUMMARY = "Added listWidgets and wired it to the table.";
+      const DIFF = "diff --git a/src/widgets.ts b/src/widgets.ts\n+export const listWidgets = 1;";
+      const widgetsTask = () => {
+        const epic = tracker.add({
+          identifier: "ENG-650",
+          title: "Widgets",
+          description: EPIC_DESCRIPTION,
+        });
+        const story = tracker.add({
+          identifier: "ENG-651",
+          title: "List widgets",
+          parentId: epic.id,
+          description: `${WHAT}\n\n${HOW}\n\nDon't stop until:\n${TASK_CRITERIA.map((c) => `- ${c}`).join("\n")}`,
+        });
+        return { epic, story };
+      };
+      /** The verifier's prompt, as the agent renders its playbook with the commit's diff. */
+      const verifierPrompt = (job: Job) => {
+        const task = getBuiltinTask("builtin:verify-task")!;
+        const { context } = RunSpecJobPayload.parse(job.payload).trigger;
+        return renderTemplate(
+          task.promptTemplate,
+          { ...context, setup: { diff: DIFF } },
+          taskCatalog(task),
+          task.variableLimits,
+        );
+      };
+
+      it("is checked against paragraphs 1 and 3 and the diff, never paragraph 2 or the builder's summary", async () => {
+        const { epic, story } = widgetsTask();
+        const run = await delegate(epic.id);
+        // The story session got all three paragraphs.
+        expect(storyPayload(await activeJob(run.id)).story).toMatchObject({
+          description: WHAT,
+          approach: HOW,
+          acceptanceCriteria: TASK_CRITERIA,
+          task: true,
+        });
+        // The verifier reads the payload's fields, not the tracker issue (edited meanwhile).
+        tracker.issues.get(story.id)!.description = `${WHAT}\n\n${HOW} Also rewrite the table.`;
+        await work(run.id, { commitSha: sha(650), summary: BUILDER_SUMMARY }, agentA, "pending");
+
+        const job = await activeJob(run.id);
+        expect(job.taskId).toBe("builtin:verify-task");
+        const given = verifyPayload(job);
+        expect(given.story).toEqual({
+          identifier: "ENG-651",
+          title: "List widgets",
+          description: WHAT,
+          acceptanceCriteria: TASK_CRITERIA,
+          task: true,
+          kind: "story",
+        });
+        expect(JSON.stringify(RunSpecJobPayload.parse(job.payload))).not.toContain("Build it by");
+        expect(JSON.stringify(RunSpecJobPayload.parse(job.payload))).not.toContain(BUILDER_SUMMARY);
+        const prompt = verifierPrompt(job);
+        expect(prompt).toContain(`### What to Build\n\`\`\`markdown\n${WHAT}\n\`\`\``);
+        for (const criterion of TASK_CRITERIA) expect(prompt).toContain(criterion);
+        expect(prompt).toContain(`\`\`\`diff\n${DIFF}\n\`\`\``);
+        expect(prompt).not.toContain("Build it by");
+        expect(prompt).not.toContain("listWidgets` query");
+        expect(prompt).not.toContain(BUILDER_SUMMARY);
+
+        await verify(run.id);
+        expect(await storyStates(run.id)).toEqual([["ENG-651", "completed", 1]]);
+        expect((await theStory(run.id)).verifications).toEqual([
+          expect.objectContaining({
+            status: "accepted",
+            criteria: TASK_CRITERIA.map((criterion) =>
+              expect.objectContaining({ criterion, accepted: true }),
+            ),
+          }),
+        ]);
+      });
+
+      it("fails the attempt when the verifier sends one of paragraph 3's criteria back", async () => {
+        const { epic } = widgetsTask();
+        const run = await delegate(epic.id);
+        await work(run.id, { commitSha: sha(655) }, agentA, {
+          reject: { "Widgets sort by name": "`listWidgets` returns insertion order." },
+        });
+        const story = await theStory(run.id);
+        expect(story).toMatchObject({ status: "running", attempts: 1 });
+        expect(story.verifications).toEqual([
+          expect.objectContaining({
+            status: "rejected",
+            criteria: [
+              expect.objectContaining({ criterion: TASK_CRITERIA[0], accepted: true }),
+              expect.objectContaining({
+                criterion: "Widgets sort by name",
+                accepted: false,
+                reason: "`listWidgets` returns insertion order.",
+              }),
+            ],
+          }),
+        ]);
+        const retry = await work(run.id, { commitSha: sha(656) });
+        expect(retry.attempt).toBe(2);
+        expect(retry.lastFeedback).toContain(
+          "- Widgets sort by name\n  Why: `listWidgets` returns insertion order.",
+        );
+        expect(await storyStates(run.id)).toEqual([["ENG-651", "completed", 2]]);
       });
     });
 

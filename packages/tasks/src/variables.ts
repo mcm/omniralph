@@ -518,10 +518,10 @@ export const VARIABLES: readonly VariableDefinition[] = [
         STORY_TRIGGERS,
         "True when the epic's description is background for the story, not a PRD: the epic is in the planning format (`## Problem`, `## Scope`, `## Requirements`) or the story is a three-paragraph task.",
       ],
-      ["story.fix", STORY_TRIGGERS, "True when the story is a Fix (its kind is `Fix`)."],
+      ["story.fix", STORY_RUN_TRIGGERS, "True when the story is a Fix (its kind is `Fix`)."],
       [
         "story.task",
-        STORY_TRIGGERS,
+        STORY_RUN_TRIGGERS,
         "True when the story is a three-paragraph task (`story.description`, `story.approach` and its criteria are its paragraphs); false for a legacy story.",
       ],
       [
@@ -578,7 +578,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     fence: "markdown",
     triggers: STORY_TRIGGERS,
     description:
-      'How to build it: a three-paragraph task\'s paragraph 2 ("Build it by …"), guidance the agent may depart from (null when blank, or for a legacy story).',
+      'How to build it: a three-paragraph task\'s paragraph 2 ("Build it by …"), guidance the agent may depart from (null when blank, or for a legacy story). A task verifier never gets it.',
   },
   {
     name: "story.acceptanceCriteria.items",
