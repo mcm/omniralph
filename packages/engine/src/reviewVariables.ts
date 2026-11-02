@@ -3,6 +3,7 @@ import {
   checkGuidance,
   depthGuidance,
   diffText,
+  earlierPassesData,
   hotspotList,
   MAX_PREVIOUS_FINDINGS,
   previousFindingLines,
@@ -14,6 +15,7 @@ import {
 } from "./prompt.js";
 import { languagesForPaths, rubricFromDocs } from "./rubric/index.js";
 import type { ReviewContext } from "./runReview.js";
+import type { ReviewPassContext } from "@omniralph/shared";
 
 /**
  * The variables the `review` task type gives a review task's prompt
@@ -70,6 +72,16 @@ export interface ReviewVariables {
       text: string | null;
     }[];
   } | null;
+  /**
+   * From a looped review's second pass on: its number, and as JSON text (untrusted) the
+   * findings earlier passes confirmed and the areas they didn't reach (null when a list is
+   * empty); null for a first pass or a single-pass review.
+   */
+  earlierPasses: {
+    number: number;
+    confirmed: string | null;
+    unreached: string | null;
+  } | null;
 }
 
 /**
@@ -89,6 +101,8 @@ export function reviewVariables(
     previousFindings?: readonly PreviousFinding[];
     /** The check type of a looped review's pass; `context.plan` holds the pass's files. */
     checkType?: CheckType;
+    /** The looped review's pass (see `PromptInput.pass`). */
+    pass?: Pick<ReviewPassContext, "number" | "confirmed" | "unreached">;
   },
 ): ReviewVariables {
   const { plan, scope } = context;
@@ -137,6 +151,10 @@ export function reviewVariables(
               text: previousFindingText(finding) || null,
             })),
           }
+        : null,
+    earlierPasses:
+      input.pass && input.pass.number >= 2
+        ? { number: input.pass.number, ...earlierPassesData(input.pass) }
         : null,
   };
 }

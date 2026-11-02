@@ -62,32 +62,20 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/auth/session", () => ({
   requireUser: async (role: Role = "member") => assertRole(state.user, role),
 }));
-// A second review playbook, as a repository could enable next to builtin:review-pr.
+// Single-pass reviews (builtin:review-pr without its loop verifier; looped-review.test.ts covers
+// looped ones), a second review playbook, as a repository could enable next to builtin:review-pr,
+// and another correlation playbook a repository could choose.
 vi.mock("@omniralph/tasks", async (importOriginal) => {
   const actual = await importOriginal<typeof Tasks>();
-  const security = {
-    ...actual.getBuiltinPlaybook("builtin:review-pr")!,
-    id: "builtin:security-review",
-    name: "Security review",
-  };
-  // Another correlation playbook a repository could choose.
-  const correlator = {
-    ...actual.getBuiltinPlaybook("builtin:correlate-findings")!,
-    id: "builtin:other-correlator",
-    name: "Other correlator",
-  };
-  const injected = new Map([security, correlator].map((playbook) => [playbook.id, playbook]));
-  const getBuiltinPlaybook = (id: string) => injected.get(id) ?? actual.getBuiltinPlaybook(id);
-  const getBuiltinRunSpec = (id: string) => {
-    const playbook = getBuiltinPlaybook(id);
-    return playbook && actual.playbookRunSpec(playbook);
-  };
-  return {
-    ...actual,
-    getBuiltinPlaybook,
-    getBuiltinRunSpec,
-    getBuiltinTask: (id: string) => getBuiltinRunSpec(id)?.task ?? null,
-  };
+  const { singlePassTasks } = await import("@/lib/review/test-single-pass");
+  return singlePassTasks(actual, (reviewPr) => [
+    { ...reviewPr, id: "builtin:security-review", name: "Security review" },
+    {
+      ...actual.getBuiltinPlaybook("builtin:correlate-findings")!,
+      id: "builtin:other-correlator",
+      name: "Other correlator",
+    },
+  ]);
 });
 const SECURITY_TASK_ID = "builtin:security-review";
 const OTHER_CORRELATOR_ID = "builtin:other-correlator";

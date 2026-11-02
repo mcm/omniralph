@@ -220,7 +220,7 @@ describe("the Reviews card", () => {
     ).toBe("Add a path or glob…");
   });
 
-  it("opens the depth's review profile: model, token cap, reads, comments and typical time", async () => {
+  it("opens the depth's review profile: model, token cap, passes, verification, security, reads, comments and typical time", async () => {
     renderRepos();
     const card = await reviewsCard();
     const user = userEvent.setup();
@@ -233,7 +233,10 @@ describe("the Reviews card", () => {
     ]);
     expect(rowsText).toEqual([
       ["Model", "Opus 5.5"],
-      ["Token cap", "500k per review"],
+      ["Token cap", "500k per pass"],
+      ["Passes", "Up to 3 per check type"],
+      ["Verification", "Every finding, in a fresh session"],
+      ["Security", "At least 2 passes, up to 3"],
       ["Reads", "The diff and the whole repo"],
       ["Comments", "Inline findings plus a summary"],
       ["Typical time", "About 2× Standard"],

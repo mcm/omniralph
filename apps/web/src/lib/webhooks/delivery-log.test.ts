@@ -481,7 +481,8 @@ describe.skipIf(!databaseAvailable)("webhook delivery log", () => {
       const failing: JobDispatcher = {
         createAndPublish: () => Promise.reject(new Error("database unavailable")),
         cancel: async () => undefined,
-        republish: async () => undefined,
+        // A looped review's first pass is inserted by its loop, then published.
+        republish: () => Promise.reject(new Error("database unavailable")),
       } as unknown as JobDispatcher;
       const res = await sendGitHub(pullRequest("opened", 20), { dispatcher: failing });
       expect(res.status).toBe(500);

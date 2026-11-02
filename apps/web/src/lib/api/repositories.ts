@@ -351,6 +351,12 @@ export const reviewDepthOptionSchema = z.object({
   details: z.object({
     model: z.string(),
     tokenCap: z.string(),
+    /** Most passes each check type runs. */
+    passes: z.string(),
+    /** Whether (and how) findings are verified before they are posted. */
+    verification: z.string(),
+    /** The security check type's minimum passes. */
+    security: z.string(),
     reads: z.string(),
     comments: z.string(),
     typicalTime: z.string(),

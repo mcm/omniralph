@@ -1,6 +1,6 @@
 # ADR 0013: Runs loop: work, verify, feed the findings back
 
-- **Status:** Accepted (TOOL-952, TOOL-954, TOOL-955).
+- **Status:** Accepted (TOOL-952, TOOL-954, TOOL-955, TOOL-964).
 - **Date:** 2026-11-02
 
 ## Context
@@ -60,6 +60,41 @@ What a worker and a verifier are depends on the kind of run (`run_iterations.run
 iteration and its feedback), `startVerifier` (the iteration and the worker's job) and `finish`
 (the loop's outcome and every iteration). Reviews, documentation checks and triage register
 theirs as they move onto the loop (TOOL-952's epics 4 to 6).
+
+An adapter may also answer an iteration's verdict from `startVerifier` when there is nothing to
+verify (the iteration settles without a verifier job), read its verifier's own answer format
+(`judge`, instead of a `LoopVerdict`), and carry on after each transaction commits
+(`afterCommit`: make its new jobs claimable, settle a run its `finish` ended). `startLoop` takes
+limits that replace the playbook's and may start the first worker itself, in its transaction.
+
+### Reviews: looped check-type passes
+
+A review task whose playbook names a finding verifier (`builtin:review-pr`:
+`builtin:verify-findings`) is looped (`lib/review/loop.ts`, TOOL-964). Its review run gets one
+`reviews` row per check type (`reviews.check_type`: security, stability, performance,
+compatibility), and each is a loop (`run_kind` `review`, `run_id` the review):
+
+- **Pass.** The worker is a `review.task` job whose trigger context carries the `pass` (check type,
+  number, the findings earlier passes confirmed, the areas they didn't reach). The agent plans the
+  change's check types (`planChecks`) and reviews only its check type's files with its rubric
+  sections, narrowed after the first pass to the unreached areas' files; its result names the
+  files it reviewed. The `review` sink doesn't save it.
+- **Verify.** The verifier is a `review.verify-findings` run of the playbook's verifier with the
+  pass's findings; `judge` applies its answer (`applyFindingVerification`). Only confirmed findings
+  count; rejected and unanswered ones are dropped and counted (`reviews.dropped_findings`), never
+  posted. A verifier that fails keeps the pass's findings unverified. A pass with no findings needs
+  no verifier.
+- **Iterate.** A pass's confirmed findings that no earlier pass confirmed (`sameIssue`) are new. The
+  check type stops once a pass adds none and it ran its minimum (security at Deep: two), or at its
+  depth's pass cap (Quick 1, Standard 2, Deep 3; the loop's `maxIterations`). Each pass is recorded
+  on the review (`reviews.passes`).
+- **Finish.** `finish` saves the review with every pass's confirmed findings; a check type with no
+  file in the change is skipped, a failed first pass fails it. Then the review run settles as
+  before: its correlation merges the confirmed findings of every check type and one review is
+  posted. A newer push supersedes pass and verifier jobs with the head's other review jobs (they
+  share its dedupe key prefix), and a superseded review's loop leaves it skipped.
+
+A review playbook without a verifier, and a summary-only one, still runs one pass per task.
 
 ### The job lifecycle hands loop jobs to the driver
 
@@ -126,8 +161,8 @@ summary, metric and findings, then how the loop ended.
 
 ## Consequences
 
-- Reviews and triage don't change until they register an adapter: this ADR adds the driver they
-  use, not their move onto it.
+- Triage doesn't change until it registers an adapter. Reviews registered theirs (TOOL-964): a
+  looped review costs a job per check type and pass, plus a verifier job per pass with findings.
 - Coding keeps its own loop (attempts, rounds); the task verifier and the epic audit (TOOL-955,
   TOOL-956) are invoked from the ralph run, not through this driver.
 - A loop job's sink isn't told it is part of a loop: a worker's output is applied as it comes back,

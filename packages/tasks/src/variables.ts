@@ -896,6 +896,39 @@ export const VARIABLES: readonly VariableDefinition[] = [
     description: "Its title and (capped) body (null without either).",
   },
   {
+    name: "earlierPasses",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description:
+      "From a looped review pass's second pass on: what earlier passes of its check type confirmed and didn't reach (null for a first pass or a single-pass review).",
+  },
+  {
+    name: "earlierPasses.number",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description: "The pass's number (2 or more).",
+  },
+  {
+    name: "earlierPasses.confirmed",
+    source: "taskType",
+    trust: "untrusted",
+    fence: "json",
+    taskTypes: ["review"],
+    description:
+      "Findings earlier passes confirmed, as a JSON array (`path`, `lines`, `severity`, `category`, `title`); null without any.",
+  },
+  {
+    name: "earlierPasses.unreached",
+    source: "taskType",
+    trust: "untrusted",
+    fence: "json",
+    taskTypes: ["review"],
+    description:
+      "Areas earlier passes didn't reach, as a JSON array (`path`, `lines` or null for the whole file, `reason`); null without any.",
+  },
+  {
     name: "checkout",
     source: "taskType",
     trust: "trusted",

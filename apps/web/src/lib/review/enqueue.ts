@@ -18,22 +18,31 @@ import {
 } from "@omniralph/db";
 import {
   FindingCategory,
+  LOOPED_REVIEW_CHECK_TYPES,
   MAX_OPEN_FINDING_BODY_CHARS,
   REVIEW_TASK_JOB_TYPE,
   ReviewTriggerContext,
   reviewProfileConfigForDepth,
+  type ReviewCheckType,
   type ReviewDepth,
   type ReviewMode,
 } from "@omniralph/shared";
-import type { TaskDefinition, TriggerKind } from "@omniralph/tasks";
+import {
+  playbookLoopSettings,
+  type Playbook,
+  type TaskDefinition,
+  type TriggerKind,
+} from "@omniralph/tasks";
 import type { JobDispatcher } from "@/lib/dispatch";
+import { advanceLoop } from "@/lib/runs/loop";
 import {
   getPlaybookTask,
   organizationPlaybooks,
   taskJobInput,
   type PlaybookSource,
 } from "@/lib/playbooks";
-import { reviewIdOfJob } from "./job-review";
+import { reviewIdOfJob, reviewJobKey, reviewJobKeyPrefix, reviewPassJobKey } from "./job-review";
+import { firstPass, startReviewLoop } from "./loop";
 
 export interface EnqueueReviewInput {
   repositoryId: string;
@@ -75,9 +84,14 @@ export function truncateDescription(description: string | null): string | null {
   return description.slice(0, MAX_DESCRIPTION_CHARS - TRUNCATED_MARKER.length) + TRUNCATED_MARKER;
 }
 
-/** One task run of a review run: the review task, its review and its job. */
+/**
+ * One task run of a review run: the review task, its review and its job (a
+ * looped review's: one check type's review and its first pass's job).
+ */
 export interface ReviewTaskRun {
   taskId: string;
+  /** The check type of a looped review's task run; null for a single pass. */
+  checkType: ReviewCheckType | null;
   reviewId: string;
   jobId: string;
 }
@@ -107,25 +121,7 @@ const TRIGGER_KINDS: Record<Review["trigger"], TriggerKind> = {
 
 export { reviewIdOfJob };
 
-/**
- * Dedupe key prefix of a PR's review jobs; the full key adds the head SHA and
- * the review task ID (`review.run:<repositoryId>:<pr>:<headSha>:<taskId>`).
- * It keeps the name of the removed `review.run` job type, so the keys of jobs
- * enqueued before review task jobs became `review.task` still match.
- */
-export function reviewJobKeyPrefix(repositoryId: string, prNumber: number): string {
-  return `review.run:${repositoryId}:${prNumber}:`;
-}
-
-/** Dedupe key of the job of review task `taskId` of a PR head. */
-export function reviewJobKey(
-  repositoryId: string,
-  prNumber: number,
-  headSha: string,
-  taskId: string,
-): string {
-  return `${reviewJobKeyPrefix(repositoryId, prNumber)}${headSha}:${taskId}`;
-}
+export { reviewJobKey, reviewJobKeyPrefix };
 
 /**
  * A review task that only writes a summary: its sink is `sticky-comment`, so
@@ -133,6 +129,20 @@ export function reviewJobKey(
  */
 export function isSummaryOnlyTask(task: Pick<TaskDefinition, "sink">): boolean {
   return task.sink === "sticky-comment";
+}
+
+/**
+ * Whether runs of review task `task` (playbook `playbook`) loop: a review
+ * task that posts findings, whose playbook names a finding verifier
+ * (`loop.verifierPlaybookId`). Its run fans out one looped review per check
+ * type (`LOOPED_REVIEW_CHECK_TYPES`); any other review task runs one pass.
+ */
+export function isLoopedReviewTask(
+  task: Pick<TaskDefinition, "sink">,
+  playbook: Pick<Playbook, "role" | "loop"> | null,
+): boolean {
+  if (!playbook || isSummaryOnlyTask(task)) return false;
+  return (playbookLoopSettings(playbook)?.verifierPlaybookId ?? null) !== null;
 }
 
 /**
@@ -170,7 +180,10 @@ export async function reviewTasksFor(
  * canceled), then creates the `queued` review run and, for each of
  * the repository's review tasks taking this trigger (`reviewTasksFor`), a
  * `queued` review and a `review.task` job running that task (routed by the
- * task: task type `review`). Each job's trigger (`pr.updated`,
+ * task: task type `review`). A looped review task (`isLoopedReviewTask`)
+ * gets one review per check type instead, each the loop of its passes
+ * (`startReviewLoop`) whose first pass's job is created now, capped at the
+ * depth's passes. Each job's trigger (`pr.updated`,
  * `pr.mention` or `review.rerun`) carries the review config resolved now
  * (the depth's preset, rules, instructions, excludes), the PR text, the mode and the
  * previous review's head SHA (none for a `full` review) and open findings
@@ -239,10 +252,13 @@ export async function enqueueReview(
     canceledJobIds.push(run.correlationJobId);
   }
   for (const job of older) {
-    await dispatcher.cancel(job.id);
+    const canceled = await dispatcher.cancel(job.id);
     canceledJobIds.push(job.id);
     const reviewId = reviewIdOfJob(job.payload);
     if (reviewId) await finishReview(db, reviewId, { status: "skipped", error: superseded });
+    // A looped review's queued pass or verifier ends its loop now (a running one when its
+    // agent stops it): the loop leaves the superseded review skipped.
+    if (canceled === "canceled") await advanceLoop(db, job, { status: "canceled" });
   }
 
   const mode = input.mode ?? "incremental";
@@ -302,39 +318,66 @@ export async function enqueueReview(
   const runs: ReviewTaskRun[] = [];
   try {
     for (const task of tasks) {
-      const review = await createReview(db, {
-        reviewRunId: reviewRun.id,
-        taskId: task.id,
-        summaryOnly: isSummaryOnlyTask(task),
-        repositoryId: input.repositoryId,
-        prNumber: input.prNumber,
-        prTitle: input.title,
-        headSha: input.headSha,
-        baseSha: input.baseSha,
-        trigger: input.trigger,
-        depth,
-        model: profile.model,
-        budget: profile.maxTokensPerReview,
-      });
-      const { job, created } = await dispatcher.createAndPublish({
-        organizationId: repository.organizationId,
-        type: REVIEW_TASK_JOB_TYPE,
-        ...(await taskJobInput(definitions, task, {
-          trigger: {
-            kind: TRIGGER_KINDS[input.trigger],
-            context: ReviewTriggerContext.parse({ ...context, reviewId: review.id }),
-          },
+      const playbook = await definitions.getPlaybook(task.id);
+      const checkTypes: readonly (ReviewCheckType | null)[] = isLoopedReviewTask(task, playbook)
+        ? LOOPED_REVIEW_CHECK_TYPES
+        : [null];
+      for (const checkType of checkTypes) {
+        const review = await createReview(db, {
+          reviewRunId: reviewRun.id,
+          taskId: task.id,
+          summaryOnly: isSummaryOnlyTask(task),
+          checkType,
           repositoryId: input.repositoryId,
-          ref: input.headSha,
-        })),
-        reviewRunId: reviewRun.id,
-        dedupeKey: reviewJobKey(input.repositoryId, input.prNumber, input.headSha, task.id),
-      });
-      if (!created) {
-        // A concurrent enqueue of the same head got there first.
-        throw new DuplicateReviewRun(job);
+          prNumber: input.prNumber,
+          prTitle: input.title,
+          headSha: input.headSha,
+          baseSha: input.baseSha,
+          trigger: input.trigger,
+          depth,
+          model: profile.model,
+          budget: profile.maxTokensPerReview,
+        });
+        const jobInput = {
+          organizationId: repository.organizationId,
+          type: REVIEW_TASK_JOB_TYPE,
+          ...(await taskJobInput(definitions, task, {
+            trigger: {
+              kind: TRIGGER_KINDS[input.trigger],
+              context: ReviewTriggerContext.parse({
+                ...context,
+                reviewId: review.id,
+                ...(checkType && { pass: firstPass(checkType) }),
+              }),
+            },
+            repositoryId: input.repositoryId,
+            ref: input.headSha,
+          })),
+          reviewRunId: reviewRun.id,
+        };
+        const { job, created } =
+          checkType && playbook
+            ? await startReviewLoop(db, dispatcher, review, playbook, depth, {
+                ...jobInput,
+                dedupeKey: reviewPassJobKey(
+                  input.repositoryId,
+                  input.prNumber,
+                  input.headSha,
+                  task.id,
+                  checkType,
+                  1,
+                ),
+              })
+            : await dispatcher.createAndPublish({
+                ...jobInput,
+                dedupeKey: reviewJobKey(input.repositoryId, input.prNumber, input.headSha, task.id),
+              });
+        if (!created) {
+          // A concurrent enqueue of the same head got there first.
+          throw new DuplicateReviewRun(job);
+        }
+        runs.push({ taskId: task.id, checkType, reviewId: review.id, jobId: job.id });
       }
-      runs.push({ taskId: task.id, reviewId: review.id, jobId: job.id });
     }
   } catch (error) {
     // Nothing of this review run is left: its jobs (also one inserted before
@@ -392,7 +435,16 @@ async function activeReviewRun(
     const runJobs = await listActiveJobsByDedupePrefix(db, `${prefix}${review.headSha}:`);
     const runs = runReviews.flatMap((r) => {
       const runJob = runJobs.find((j) => reviewIdOfJob(j.payload) === r.id);
-      return runJob && r.taskId ? [{ taskId: r.taskId, reviewId: r.id, jobId: runJob.id }] : [];
+      return runJob && r.taskId
+        ? [
+            {
+              taskId: r.taskId,
+              checkType: (r.checkType as ReviewCheckType | null) ?? null,
+              reviewId: r.id,
+              jobId: runJob.id,
+            },
+          ]
+        : [];
     });
     const first = runs[0] ?? { reviewId: review.id, jobId: job.id };
     return { reviewRunId, runs, reviewId: first.reviewId, jobId: first.jobId };

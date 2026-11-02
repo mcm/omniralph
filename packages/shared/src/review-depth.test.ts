@@ -4,6 +4,7 @@ import {
   isReviewDepth,
   REVIEW_DEPTH_IDS,
   REVIEW_DEPTHS,
+  reviewPassLimits,
   reviewProfileConfigForDepth,
 } from "./review-depth.js";
 import { ReviewProfileConfig } from "./review-job.js";
@@ -21,9 +22,15 @@ describe("REVIEW_DEPTHS", () => {
         maxTokensPerReview: 60_000,
         maxFiles: 15,
         allowRepoExploration: false,
+        maxPasses: 1,
+        verifyFindings: true,
+        securityMinPasses: 1,
         details: {
           modelLabel: "Haiku 5.5",
-          tokenCapLabel: "60k per review",
+          tokenCapLabel: "60k per pass",
+          passesLabel: "1 per check type",
+          verificationLabel: "Every finding, in a fresh session",
+          securityLabel: "1 pass",
           reads: "The diff only",
           comments: "Inline findings plus a summary",
           typicalTime: "Shortest",
@@ -37,9 +44,15 @@ describe("REVIEW_DEPTHS", () => {
         maxTokensPerReview: 200_000,
         maxFiles: 40,
         allowRepoExploration: true,
+        maxPasses: 2,
+        verifyFindings: true,
+        securityMinPasses: 1,
         details: {
           modelLabel: "Sonnet 5.5",
-          tokenCapLabel: "200k per review",
+          tokenCapLabel: "200k per pass",
+          passesLabel: "Up to 2 per check type",
+          verificationLabel: "Every finding, in a fresh session",
+          securityLabel: "1 pass, up to 2",
           reads: "The diff and related files",
           comments: "Inline findings plus a summary",
           typicalTime: "Baseline",
@@ -54,9 +67,15 @@ describe("REVIEW_DEPTHS", () => {
         maxTokensPerReview: 500_000,
         maxFiles: 100,
         allowRepoExploration: true,
+        maxPasses: 3,
+        verifyFindings: true,
+        securityMinPasses: 2,
         details: {
           modelLabel: "Opus 5.5",
-          tokenCapLabel: "500k per review",
+          tokenCapLabel: "500k per pass",
+          passesLabel: "Up to 3 per check type",
+          verificationLabel: "Every finding, in a fresh session",
+          securityLabel: "At least 2 passes, up to 3",
           reads: "The diff, related files and their tests across the repo",
           comments: "Inline findings plus a summary",
           typicalTime: "About 2× Standard",
@@ -69,6 +88,20 @@ describe("REVIEW_DEPTHS", () => {
     expect(REVIEW_DEPTH_IDS.every(isReviewDepth)).toBe(true);
     expect(isReviewDepth("thorough")).toBe(false);
     expect(isReviewDepth(null)).toBe(false);
+  });
+});
+
+describe("reviewPassLimits", () => {
+  it("caps every check type at the depth's passes: Quick 1, Standard 2, Deep 3", () => {
+    expect(reviewPassLimits("quick", "stability")).toEqual({ minPasses: 1, maxPasses: 1 });
+    expect(reviewPassLimits("standard", "performance")).toEqual({ minPasses: 1, maxPasses: 2 });
+    expect(reviewPassLimits("deep", "compatibility")).toEqual({ minPasses: 1, maxPasses: 3 });
+  });
+
+  it("runs security at least twice at Deep only", () => {
+    expect(reviewPassLimits("quick", "security")).toEqual({ minPasses: 1, maxPasses: 1 });
+    expect(reviewPassLimits("standard", "security")).toEqual({ minPasses: 1, maxPasses: 2 });
+    expect(reviewPassLimits("deep", "security")).toEqual({ minPasses: 2, maxPasses: 3 });
   });
 });
 

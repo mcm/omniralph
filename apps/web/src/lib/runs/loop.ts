@@ -81,16 +81,35 @@ export interface LoopAdapter {
   /**
    * Starts the verifier job of `iteration`, a run of its `verifierPlaybookId`
    * (the run's playbook's `loop.verifierPlaybookId`) that checks `worker`'s
-   * output, and returns its ID.
+   * output, and returns its ID; or returns the iteration's verdict at once
+   * when there is nothing for a verifier to check (e.g. the worker reported
+   * nothing).
    */
   startVerifier(
     db: LoopExecutor,
     run: LoopRunRef,
     iteration: RunIteration,
     worker: Job,
-  ): Promise<string>;
+  ): Promise<string | { verdict: LoopVerdict }>;
+  /**
+   * The verdict of `iteration` from its completed `verifier` job; null when
+   * the verifier didn't answer with one (the iteration fails). Without it,
+   * the verifier's answer must be a `LoopVerdict` (`readLoopVerdict`).
+   */
+  judge?(
+    db: LoopExecutor,
+    run: LoopRunRef,
+    iteration: RunIteration,
+    verifier: Job,
+  ): Promise<LoopVerdict | null>;
   /** The loop ended: applies its outcome to the run (e.g. finishes it). */
   finish(db: LoopExecutor, run: LoopRunRef, end: LoopEnd): Promise<void>;
+  /**
+   * After the driver's transaction that started or advanced the run's loop
+   * committed: e.g. makes the jobs it inserted claimable, or carries on
+   * with a run its `finish` ended. Not called when the transaction changed nothing.
+   */
+  afterCommit?(db: Database, run: LoopRunRef): Promise<void>;
 }
 
 const adapters = new Map<LoopRunKind, LoopAdapter>();
@@ -127,18 +146,21 @@ export function sinkMayLoop(sink: SinkKind): boolean {
  * Null for a playbook whose role doesn't loop through the driver (the
  * single-session roles, and coding roles) or that names no verifier: its run
  * is one session. A run whose loop already started gets its first iteration back.
+ * `options` may replace the playbook's limits and start the first worker itself.
  */
 export async function startLoop(
   db: Database,
   run: LoopRunRef,
   playbook: Pick<Playbook, "role" | "loop">,
+  options: StartLoopOptions = {},
 ): Promise<RunIteration | null> {
   const settings = playbookLoopSettings(playbook);
   if (!settings) return null;
-  const { verifierPlaybookId, ...limits } = settings;
+  const { verifierPlaybookId, ...playbookLimits } = settings;
   if (verifierPlaybookId === null) return null;
+  const limits = { ...playbookLimits, ...options.limits };
   const adapter = adapterFor(run.kind);
-  return db.transaction(async (tx) => {
+  const started = await db.transaction(async (tx) => {
     const iteration = await insertRunIteration(tx, {
       run,
       number: 1,
@@ -146,10 +168,28 @@ export async function startLoop(
       verifierPlaybookId,
       ...limits,
     });
-    if (!iteration) return (await listRunIterations(tx, run))[0]!;
-    const workerJobId = await adapter.startWorker(tx, run, iteration);
-    return (await updateRunIteration(tx, iteration.id, { workerJobId }))!;
+    if (!iteration) return { iteration: (await listRunIterations(tx, run))[0]!, started: false };
+    const workerJobId = await (options.startWorker
+      ? options.startWorker(tx, iteration)
+      : adapter.startWorker(tx, run, iteration));
+    return {
+      iteration: (await updateRunIteration(tx, iteration.id, { workerJobId }))!,
+      started: true,
+    };
   });
+  if (started.started) await adapter.afterCommit?.(db, run);
+  return started.iteration;
+}
+
+export interface StartLoopOptions {
+  /** Limits that replace the playbook's (e.g. a review depth's pass cap). */
+  limits?: Partial<PlaybookLoopLimits>;
+  /**
+   * Starts the first iteration's worker instead of the adapter's
+   * `startWorker` (e.g. a job the caller builds), in the driver's transaction;
+   * returns its ID. Throwing rolls the iteration back.
+   */
+  startWorker?: (tx: RalphTransaction, iteration: RunIteration) => Promise<string>;
 }
 
 /** How a loop job finished. */
@@ -183,7 +223,8 @@ export async function advanceLoop(
   finish: LoopJobFinish,
   now: () => Date = () => new Date(),
 ): Promise<boolean> {
-  return db.transaction(async (tx) => {
+  let advanced: LoopRunRef | null = null;
+  const inLoop = await db.transaction(async (tx) => {
     const iteration = await getRunIterationByJob(tx, job.id, { lock: true });
     if (!iteration) return false;
     const run: LoopRunRef = {
@@ -193,6 +234,7 @@ export async function advanceLoop(
     };
     const adapter = adapterFor(run.kind);
     if (iteration.workerJobId === job.id && iteration.status === "working") {
+      advanced = run;
       if (finish.status !== "completed") {
         return failIteration(
           tx,
@@ -204,16 +246,22 @@ export async function advanceLoop(
           now,
         );
       }
-      const verifierJobId = await adapter.startVerifier(tx, run, iteration, job);
+      const verifier = await adapter.startVerifier(tx, run, iteration, job);
+      if (typeof verifier !== "string") {
+        // Nothing to verify: the adapter's verdict settles the iteration.
+        await recordVerdict(tx, adapter, run, iteration, verifier.verdict, "working", now);
+        return true;
+      }
       await updateRunIteration(
         tx,
         iteration.id,
-        { status: "verifying", verifierJobId, verifyingAt: now() },
+        { status: "verifying", verifierJobId: verifier, verifyingAt: now() },
         "working",
       );
       return true;
     }
     if (iteration.verifierJobId === job.id && iteration.status === "verifying") {
+      advanced = run;
       if (finish.status !== "completed") {
         return failIteration(
           tx,
@@ -225,7 +273,9 @@ export async function advanceLoop(
           now,
         );
       }
-      const verdict = readLoopVerdict(job.result);
+      const verdict = adapter.judge
+        ? await adapter.judge(tx, run, iteration, job)
+        : readLoopVerdict(job.result);
       if (!verdict) {
         return failIteration(
           tx,
@@ -237,10 +287,13 @@ export async function advanceLoop(
           now,
         );
       }
-      await recordVerdict(tx, adapter, run, iteration, verdict, now);
+      await recordVerdict(tx, adapter, run, iteration, verdict, "verifying", now);
     }
     return true;
   });
+  const changed = advanced as LoopRunRef | null;
+  if (changed) await adapterFor(changed.kind).afterCommit?.(db, changed);
+  return inLoop;
 }
 
 /** The verdict in a verifier's query run result; null when it didn't answer with one. */
@@ -288,6 +341,7 @@ async function recordVerdict(
   run: LoopRunRef,
   iteration: RunIteration,
   verdict: LoopVerdict,
+  fromStatus: "working" | "verifying",
   now: () => Date,
 ): Promise<void> {
   const finishedAt = now();
@@ -302,7 +356,7 @@ async function recordVerdict(
       metric: verdict.metric ?? null,
       finishedAt,
     },
-    "verifying",
+    fromStatus,
   );
   if (!done) return;
   const iterations = await listRunIterations(tx, run);

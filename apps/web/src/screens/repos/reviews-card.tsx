@@ -242,6 +242,9 @@ export function ReviewsCard({ detail, titleId }: { detail: RepositoryDetail; tit
                   items={[
                     { term: "Model", detail: depth.details.model },
                     { term: "Token cap", detail: depth.details.tokenCap },
+                    { term: "Passes", detail: depth.details.passes },
+                    { term: "Verification", detail: depth.details.verification },
+                    { term: "Security", detail: depth.details.security },
                     { term: "Reads", detail: depth.details.reads },
                     { term: "Comments", detail: depth.details.comments },
                     { term: "Typical time", detail: depth.details.typicalTime },

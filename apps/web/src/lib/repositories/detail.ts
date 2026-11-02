@@ -228,6 +228,9 @@ export function reviewDepthOptions(): ReviewDepthOption[] {
       details: {
         model: details.modelLabel,
         tokenCap: details.tokenCapLabel,
+        passes: details.passesLabel,
+        verification: details.verificationLabel,
+        security: details.securityLabel,
         reads: details.reads,
         comments: details.comments,
         typicalTime: details.typicalTime,

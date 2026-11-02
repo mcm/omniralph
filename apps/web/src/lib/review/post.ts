@@ -126,9 +126,10 @@ function finishedReview(review: Review): boolean {
   return review.status === "completed" || review.status === "budget_exhausted";
 }
 
-/** The task name of a review of a review run. */
+/** The task name of a review of a review run, with its check type for a looped review's. */
 function reviewTaskLabel(review: Review, taskName: (taskId: string) => string): string {
-  return review.taskId ? taskName(review.taskId) : "Review";
+  const name = review.taskId ? taskName(review.taskId) : "Review";
+  return review.checkType ? `${name} (${review.checkType})` : name;
 }
 
 /** Names of the tasks of a review run's reviews and of the tasks that reported `rows`. */

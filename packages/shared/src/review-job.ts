@@ -4,7 +4,7 @@
  * reports to `/result`.
  */
 import { z } from "zod";
-import { Finding, FindingCategory } from "./finding.js";
+import { Finding, FindingCategory, FindingSeverity } from "./finding.js";
 import { RunSpecJobPayload } from "./run-spec.js";
 import { TokenUsage } from "./usage.js";
 
@@ -50,6 +50,96 @@ export const MAX_OPEN_FINDING_BODY_CHARS = 1000;
 /** See `ReviewTriggerContext.mode`. */
 export const REVIEW_MODES = ["incremental", "full", "fresh"] as const;
 export type ReviewMode = (typeof REVIEW_MODES)[number];
+
+/**
+ * The check types a looped review can run (`planChecks` in the engine plans
+ * the ones that apply to a change), in the order they are planned.
+ */
+export const REVIEW_CHECK_TYPES = [
+  "security",
+  "stability",
+  "performance",
+  "compatibility",
+  "maintainability",
+] as const;
+export const ReviewCheckType = z.enum(REVIEW_CHECK_TYPES);
+export type ReviewCheckType = z.infer<typeof ReviewCheckType>;
+
+/**
+ * The check types a looped review fans out to: every one `planChecks` plans
+ * by default (maintainability only runs when enabled, and nothing enables it
+ * yet).
+ */
+export const LOOPED_REVIEW_CHECK_TYPES = [
+  "security",
+  "stability",
+  "performance",
+  "compatibility",
+] as const satisfies readonly ReviewCheckType[];
+
+/** Most confirmed findings of earlier passes a pass is given. */
+export const MAX_PASS_CONFIRMED_FINDINGS = 100;
+/** Most unreached areas a pass is given. */
+export const MAX_PASS_UNREACHED_AREAS = 50;
+
+/**
+ * One pass of a looped review's check type: which check type and pass it is,
+ * the findings earlier passes of the check type confirmed (not to be
+ * reported again) and the areas their verifier said they didn't reach (what
+ * this pass covers). The first pass has neither.
+ */
+export const ReviewPassContext = z.object({
+  checkType: ReviewCheckType,
+  number: z.int().min(1),
+  confirmed: z
+    .array(
+      z.object({
+        path: z.string().min(1),
+        startLine: z.int().min(1),
+        endLine: z.int().min(1),
+        severity: FindingSeverity,
+        category: FindingCategory,
+        title: z.string().max(200),
+      }),
+    )
+    .max(MAX_PASS_CONFIRMED_FINDINGS),
+  unreached: z
+    .array(
+      z.object({
+        path: z.string().min(1),
+        startLine: z.int().min(1).nullable(),
+        endLine: z.int().min(1).nullable(),
+        reason: z.string().max(2_000),
+      }),
+    )
+    .max(MAX_PASS_UNREACHED_AREAS),
+});
+export type ReviewPassContext = z.infer<typeof ReviewPassContext>;
+
+/**
+ * One pass of a looped review's check type, as the review records it once
+ * the pass's verifier settled it (`reviews.passes`).
+ */
+export interface ReviewPassRecord {
+  /** 1 for the first pass. */
+  number: number;
+  /** The files the pass reviewed. */
+  files: string[];
+  /** Findings the pass reported. */
+  reported: number;
+  /** Findings the verifier confirmed (all of `reported` when the pass wasn't verified). */
+  confirmed: number;
+  /** Confirmed findings no earlier pass had confirmed. */
+  new: number;
+  /** Findings the verifier rejected or didn't answer: never posted. */
+  dropped: number;
+  /** `verified`; `unverified` when the verifier failed and the findings were kept as reported. */
+  verification: "verified" | "unverified";
+  /** Areas of the change the verifier said the pass didn't reach. */
+  unreached: number;
+  /** The verifier's summary; null without one. */
+  summary: string | null;
+}
 
 /**
  * The trigger context `enqueueReview` stores for a run of a `review` task
@@ -116,6 +206,13 @@ export const ReviewTriggerContext = z.object({
     title: z.string().max(1000),
     body: z.string().max(100_000).nullable(),
   }),
+  /**
+   * Set for one pass of a looped review's check type: the run plans the
+   * change's check types (`planChecks`) and reviews only this check type's
+   * files (narrowed to the unreached areas after the first pass) with its
+   * rubric sections. Absent: a single-pass review of the whole change.
+   */
+  pass: ReviewPassContext.optional(),
 });
 export type ReviewTriggerContext = z.infer<typeof ReviewTriggerContext>;
 
@@ -165,6 +262,17 @@ export const ReviewJobResult = z.object({
    */
   fixedOpenFindings: z.array(z.int().min(0)).max(1000).optional(),
   durationMs: z.int().min(0),
+  /**
+   * A looped review pass's plan: its check type and the files it reviewed
+   * (none when the change has no file for the check type, so nothing was
+   * reviewed). Absent for a single-pass review.
+   */
+  pass: z
+    .object({
+      checkType: ReviewCheckType,
+      files: z.array(z.string().min(1)).max(MAX_REVIEW_SKIPPED),
+    })
+    .optional(),
 });
 export type ReviewJobResult = z.infer<typeof ReviewJobResult>;
 
@@ -180,6 +288,7 @@ export const ReviewTaskContext = ReviewTriggerContext.pick({
   changeRequest: true,
   reviewConfig: true,
   previousReview: true,
+  pass: true,
 });
 export type ReviewTaskContext = z.infer<typeof ReviewTaskContext>;
 

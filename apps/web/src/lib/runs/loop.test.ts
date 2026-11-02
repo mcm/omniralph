@@ -23,8 +23,15 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const { advanceLoop, loopFeedback, loopOutcome, registerLoopAdapter, sinkMayLoop, startLoop } =
-  await import("./loop");
+const {
+  advanceLoop,
+  loopFeedback,
+  loopOutcome,
+  readLoopVerdict,
+  registerLoopAdapter,
+  sinkMayLoop,
+  startLoop,
+} = await import("./loop");
 const { jobHooks } = await import("@/lib/sinks");
 const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/playbooks");
 
@@ -131,6 +138,12 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
   /** What the adapter was asked to do, per run. */
   const calls = new Map<string, string[]>();
   const ends = new Map<string, string>();
+  /** Runs whose adapter settles each iteration without a verifier. */
+  const unverified = new Set<string>();
+  /** Runs whose adapter judges the verifier's answer itself (every answer converges). */
+  const judged = new Set<string>();
+  /** How often each run's transactions committed. */
+  const commits = new Map<string, number>();
 
   async function newJob(run: LoopRunRef, kind: "worker" | "verifier"): Promise<string> {
     const { job } = await insertJob(db, {
@@ -147,17 +160,32 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    registerLoopAdapter("review", {
+    // Reviews register their own adapter (`lib/review/loop.ts`): the driver's tests use triage runs.
+    registerLoopAdapter("triage", {
       async startWorker(_tx, run, it) {
         calls.get(run.id)!.push(`worker ${it.number}${it.feedback ? `: ${it.feedback}` : ""}`);
         return newJob(run, "worker");
       },
       async startVerifier(_tx, run, it, worker) {
+        if (unverified.has(run.id)) {
+          calls.get(run.id)!.push(`no verifier ${it.number}`);
+          return {
+            verdict: { converged: it.number >= 2, summary: "Nothing to check.", findings: [] },
+          };
+        }
         calls.get(run.id)!.push(`${it.verifierPlaybookId} ${it.number} of ${worker.type}`);
         return newJob(run, "verifier");
       },
+      async judge(_tx, run, it, verifier) {
+        if (!judged.has(run.id)) return readLoopVerdict(verifier.result);
+        calls.get(run.id)!.push(`judged ${it.number}`);
+        return { converged: true, summary: "Judged by the adapter.", findings: [] };
+      },
       async finish(_tx, run, end) {
         ends.set(run.id, `${end.outcome} after ${end.iterations.length}`);
+      },
+      async afterCommit(_db, run) {
+        commits.set(run.id, (commits.get(run.id) ?? 0) + 1);
       },
     });
   });
@@ -168,7 +196,7 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
   });
 
   function newRun(): LoopRunRef {
-    const run = { kind: "review" as const, id: randomUUID(), organizationId: orgId };
+    const run = { kind: "triage" as const, id: randomUUID(), organizationId: orgId };
     calls.set(run.id, []);
     return run;
   }
@@ -349,5 +377,83 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
     await hooks.onCompleted!(db, (await getJob(db, verifierId))!);
     expect(await lastIteration(run)).toMatchObject({ verdict: "converged", outcome: "converged" });
     expect(ends.get(run.id)).toBe("converged after 1");
+  });
+
+  it("settles an iteration without a verifier when the adapter answers its verdict", async () => {
+    const run = newRun();
+    unverified.add(run.id);
+    await startLoop(db, run, { role: "review", loop: { ...checked, maxIterations: 5 } });
+    for (let i = 0; i < 2; i++) {
+      const working = await lastIteration(run);
+      await advanceLoop(db, await finishJob(working.workerJobId!, answered(null)), {
+        status: "completed",
+      });
+    }
+    expect(await listRunIterations(db, run)).toMatchObject([
+      { number: 1, status: "done", verdict: "continue", verifierJobId: null },
+      { number: 2, status: "done", verdict: "converged", outcome: "converged" },
+    ]);
+    expect(calls.get(run.id)).toEqual([
+      "worker 1",
+      "no verifier 1",
+      "worker 2: Nothing to check.",
+      "no verifier 2",
+    ]);
+    expect(ends.get(run.id)).toBe("converged after 2");
+  });
+
+  it("lets the adapter judge its verifier's answer", async () => {
+    const run = newRun();
+    judged.add(run.id);
+    await startLoop(db, run, { role: "review", loop: checked });
+    await iterate(run, answered({ looksGood: true }));
+    expect(await lastIteration(run)).toMatchObject({
+      verdict: "converged",
+      summary: "Judged by the adapter.",
+    });
+    expect(calls.get(run.id)).toContain("judged 1");
+  });
+
+  it("starts with the caller's limits and first worker, and reports each commit", async () => {
+    const run = newRun();
+    const first = (await startLoop(
+      db,
+      run,
+      { role: "review", loop: { ...checked, maxIterations: 9 } },
+      {
+        limits: { maxIterations: 1 },
+        startWorker: async () => {
+          calls.get(run.id)!.push("caller's worker");
+          return newJob(run, "worker");
+        },
+      },
+    ))!;
+    expect(first.maxIterations).toBe(1);
+    expect(commits.get(run.id)).toBe(1);
+    await iterate(run, verdict(false));
+    expect(calls.get(run.id)).toEqual([
+      "caller's worker",
+      "builtin:check-findings 1 of loop.worker",
+    ]);
+    expect(ends.get(run.id)).toBe("max-iterations after 1");
+    expect(commits.get(run.id)).toBe(3);
+  });
+
+  it("rolls the first iteration back when the caller's worker can't start", async () => {
+    const run = newRun();
+    await expect(
+      startLoop(
+        db,
+        run,
+        { role: "review", loop: checked },
+        {
+          startWorker: async () => {
+            throw new Error("duplicate");
+          },
+        },
+      ),
+    ).rejects.toThrow("duplicate");
+    expect(await listRunIterations(db, run)).toEqual([]);
+    expect(commits.get(run.id)).toBeUndefined();
   });
 });

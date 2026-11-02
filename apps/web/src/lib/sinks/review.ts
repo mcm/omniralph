@@ -1,4 +1,5 @@
 import "server-only";
+import "@/lib/review/loop";
 import { ReviewTaskResult } from "@omniralph/shared";
 import {
   applyReviewResult,

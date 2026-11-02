@@ -5,6 +5,7 @@ import {
   BUDGET_FILL_RATIO,
   createPathFilter,
   isTestPath,
+  planCheckPass,
   planChecks,
   planReview,
   splitBudget,
@@ -519,4 +520,71 @@ describe("isTestPath", () => {
       expect(isTestPath(path)).toBe(false);
     },
   );
+});
+
+describe("planCheckPass", () => {
+  const change = diffOf("src/api.ts", "src/api.test.ts", "docs/api.md", "src/db.ts");
+
+  it("reviews the check type's files on the first pass, with the depth's whole token cap", () => {
+    const pass = planCheckPass(
+      change,
+      { maxTokensPerReview: 10_000, maxFiles: 100 },
+      {
+        checkType: "performance",
+        number: 1,
+        unreached: [{ path: "src/db.ts" }],
+      },
+    );
+    expect(pathsOf(pass.files)).toEqual(["src/api.ts", "src/db.ts"]);
+    expect(pass.tasks.map((t) => [t.id, pathsOf(t.files), t.budget])).toEqual([
+      ["performance-1", ["src/api.ts", "src/db.ts"], 10_000],
+    ]);
+  });
+
+  it("narrows a later pass to the files of the unreached areas", () => {
+    const pass = planCheckPass(change, ROOMY, {
+      checkType: "stability",
+      number: 2,
+      unreached: [{ path: "src/db.ts" }, { path: "docs/api.md" }, { path: "elsewhere.ts" }],
+    });
+    expect(pathsOf(pass.files)).toEqual(["docs/api.md", "src/db.ts"]);
+    expect(pass.tasks.map((t) => pathsOf(t.files))).toEqual([["docs/api.md", "src/db.ts"]]);
+  });
+
+  it("reviews all the check type's files again when no unreached area is one of them", () => {
+    const pass = planCheckPass(change, ROOMY, {
+      checkType: "performance",
+      number: 2,
+      unreached: [{ path: "src/api.test.ts" }],
+    });
+    expect(pathsOf(pass.files)).toEqual(["src/api.ts", "src/db.ts"]);
+  });
+
+  it("reviews nothing for a check type that doesn't apply to the change", () => {
+    const pass = planCheckPass(diffOf("README.md"), ROOMY, {
+      checkType: "security",
+      number: 1,
+      unreached: [],
+    });
+    expect(pass.entry).toBeUndefined();
+    expect(pass.files).toEqual([]);
+    expect(pass.tasks).toEqual([]);
+  });
+
+  it("splits a large change's pass into groups that share the cap by size", () => {
+    const many = diffOf(
+      ...Array.from({ length: 25 }, (_, i) => `src/${i < 12 ? "a" : "b"}/f${i}.ts`),
+    );
+    const pass = planCheckPass(
+      many,
+      { maxTokensPerReview: 9_000, maxFiles: 100 },
+      {
+        checkType: "security",
+        number: 1,
+        unreached: [],
+      },
+    );
+    expect(pass.tasks.map((t) => t.files.length)).toEqual([12, 13]);
+    expect(pass.tasks.reduce((sum, t) => sum + t.budget, 0)).toBe(9_000);
+  });
 });

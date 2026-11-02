@@ -36,27 +36,14 @@ import type * as Adapters from "@/lib/scm/adapters";
 import type * as Tasks from "@omniralph/tasks";
 
 vi.mock("server-only", () => ({}));
-// A second review task, as a repository could enable next to builtin:review-pr.
-vi.mock("@omniralph/tasks", async (importOriginal) => {
-  const actual = await importOriginal<typeof Tasks>();
-  const security = {
-    ...actual.getBuiltinPlaybook("builtin:review-pr")!,
-    id: "builtin:security-review",
-    name: "Security review",
-  };
-  const getBuiltinPlaybook = (id: string) =>
-    id === security.id ? security : actual.getBuiltinPlaybook(id);
-  const getBuiltinRunSpec = (id: string) => {
-    const playbook = getBuiltinPlaybook(id);
-    return playbook && actual.playbookRunSpec(playbook);
-  };
-  return {
-    ...actual,
-    getBuiltinPlaybook,
-    getBuiltinRunSpec,
-    getBuiltinTask: (id: string) => getBuiltinRunSpec(id)?.task ?? null,
-  };
-});
+// Single-pass reviews (builtin:review-pr without its loop verifier), and a second review task,
+// as a repository could enable next to builtin:review-pr.
+vi.mock("@omniralph/tasks", async (importOriginal) =>
+  (await import("./test-single-pass")).singlePassTasks(
+    await importOriginal<typeof Tasks>(),
+    (reviewPr) => [{ ...reviewPr, id: "builtin:security-review", name: "Security review" }],
+  ),
+);
 const SECURITY_TASK_ID = "builtin:security-review";
 
 const HEAD = "f".repeat(40);
