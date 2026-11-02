@@ -1,11 +1,12 @@
 /**
- * What a user may do with a run: which retry targets (`POST /api/ui/runs/{id}/retry`) and
- * whether Stop (`POST /api/ui/runs/{id}/stop`) apply. Pure, so the run detail's `actions`
+ * What a user may do with a run: which retry targets (`POST /api/ui/runs/{id}/retry`),
+ * whether Stop (`POST /api/ui/runs/{id}/stop`) applies, and whether a triage's open questions
+ * can be answered (`POST /api/ui/runs/{id}/triage/answers`). Pure, so the run detail's `actions`
  * and the action endpoints decide the same way.
  */
 import type { RunKind, RunStatus } from "@omniralph/db";
 import { RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
-import type { RunActions } from "@/lib/api/runs";
+import type { RunActions, TriageSummaryOutcome } from "@/lib/api/runs";
 import { hasRole, type Role } from "@/lib/auth/roles";
 
 /** The role each run action needs in the run's organization. */
@@ -124,4 +125,12 @@ export function runActions(
               .map((a) => a.id),
     },
   };
+}
+
+/**
+ * Whether a user with `role` may answer a triage run's open questions: the run needs answers
+ * (its last triage completed and left some) and the user has the `answer` role.
+ */
+export function canAnswerTriageQuestions(outcome: TriageSummaryOutcome, role: Role): boolean {
+  return outcome === "needs_answers" && hasRole({ role }, RUN_ACTION_ROLES.answer);
 }

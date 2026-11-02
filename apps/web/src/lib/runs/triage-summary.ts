@@ -13,6 +13,8 @@ import {
 import { TriageRunResult } from "@omniralph/shared";
 import { z } from "zod";
 import type { RunTriageSummary, TriageSummaryOutcome } from "@/lib/api/runs";
+import type { Role } from "@/lib/auth/roles";
+import { canAnswerTriageQuestions } from "./actions";
 
 /** The issue a triage job read, in its payload's trigger context. */
 const JobIssue = z.object({
@@ -44,30 +46,39 @@ function outcomeOf(
   }
 }
 
-/** The summary of a triage run's detail (the run with its jobs, newest first). */
-export function triageSummary({ run, jobs }: TriageRunWithJobs): RunTriageSummary {
+/**
+ * The summary of a triage run's detail (the run with its jobs, newest first), for a user with
+ * `role` in its organization.
+ */
+export function triageSummary({ run, jobs }: TriageRunWithJobs, role: Role): RunTriageSummary {
   const parsed = TriageRunResult.safeParse(run.lastResult);
   const result = parsed.success ? parsed.data : null;
   const first = jobs.at(-1);
   const input = first ? JobIssue.safeParse(first.payload) : null;
+  const outcome = outcomeOf(run.status, result);
   return {
-    outcome: outcomeOf(run.status, result),
+    outcome,
     summary: result?.summary || null,
     error: result?.error ?? null,
     change: result?.outcome?.outcome ?? null,
     size: result?.outcome?.size ?? null,
     storyCount: result?.outcome?.stories.length ?? 0,
     openQuestions: result?.outcome?.openQuestions ?? [],
+    answerQuestions: canAnswerTriageQuestions(outcome, role),
     originalIssue: input?.success ? input.data.trigger.context.issue : null,
   };
 }
 
-/** A triage run's summary; null when the run isn't a triage run (or is gone). */
+/**
+ * A triage run's summary for a user with `role` in its organization; null when the run isn't a
+ * triage run (or is gone).
+ */
 export async function loadRunTriageSummary(
   db: Database,
   run: RunIndexEntry,
+  role: Role,
 ): Promise<RunTriageSummary | null> {
   if (run.kind !== "triage") return null;
   const detail = await getTriageRunDetail(db, run.organizationId, run.id);
-  return detail && triageSummary(detail);
+  return detail && triageSummary(detail, role);
 }

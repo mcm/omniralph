@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runActions, storyRetryable } from "./actions";
+import { canAnswerTriageQuestions, runActions, storyRetryable } from "./actions";
 
 const open = { merged: false, closed: false };
 
@@ -115,5 +115,18 @@ describe("runActions", () => {
     expect(storyRetryable("waiting", { id: "r", status: "running", pullRequest: null })).toBe(
       false,
     );
+  });
+});
+
+describe("canAnswerTriageQuestions", () => {
+  it("lets members and admins answer a triage that needs answers", () => {
+    expect(canAnswerTriageQuestions("needs_answers", "member")).toBe(true);
+    expect(canAnswerTriageQuestions("needs_answers", "admin")).toBe(true);
+  });
+
+  it("is closed while triaging, and once the triage is ready, failed or stopped", () => {
+    for (const outcome of ["triaging", "ready", "failed", "stopped"] as const) {
+      expect(canAnswerTriageQuestions(outcome, "admin")).toBe(false);
+    }
   });
 });

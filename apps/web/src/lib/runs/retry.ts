@@ -28,6 +28,8 @@ import { retryRalphRun, type RalphRetryTarget } from "@/lib/ralph/retry";
 import { rerunOrganizationReview } from "@/lib/reviews/manage";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { retryTriageRun } from "@/lib/triage/retry";
+import type { StartTriageOutcome } from "@/lib/triage/start";
+import type { TrackerProvider } from "@omniralph/tracker";
 import { RETRYABLE_ATTEMPT_STATUSES } from "./actions";
 import { loadRunDetail } from "./detail";
 import { ralphDepsOf } from "./ralph-deps";
@@ -212,21 +214,41 @@ async function retryTriage(
         "run_busy",
       );
     case "in_progress":
-      throw notRetryable(
+    case "query_disabled":
+    case "load_failed":
+    case "failed":
+      throw triageStartError(result, tracker.provider);
+  }
+}
+
+/**
+ * Why a triage run that was queued again (a retry, or answers to its open questions) couldn't
+ * start: `prepareTriage` or `enqueueTriage` ended it, and the session says so too.
+ */
+export function triageStartError(
+  result: Extract<
+    StartTriageOutcome,
+    { status: "in_progress" | "query_disabled" | "load_failed" | "failed" }
+  >,
+  provider: TrackerProvider,
+): ApiRouteError {
+  switch (result.status) {
+    case "in_progress":
+      return notRetryable(
         `Triage only rewrites work items whose work hasn't started, and ${result.issues.join(", ")} ${result.issues.length === 1 ? "is" : "are"} already in progress or done.`,
       );
     case "query_disabled":
-      throw notRetryable(
+      return notRetryable(
         `Ask is turned off for ${result.repository}, so triage can't run. Turn on the repo's Ask switch first.`,
       );
     case "load_failed":
-      throw new ApiRouteError(
+      return new ApiRouteError(
         502,
-        `Couldn't load the work item from ${trackerName(tracker.provider)}: ${result.error}`,
+        `Couldn't load the work item from ${trackerName(provider)}: ${result.error}`,
         "tracker_failed",
       );
     case "failed":
-      throw new ApiRouteError(502, `Couldn't queue the triage: ${result.error}`, "retry_failed");
+      return new ApiRouteError(502, `Couldn't queue the triage: ${result.error}`, "retry_failed");
   }
 }
 
