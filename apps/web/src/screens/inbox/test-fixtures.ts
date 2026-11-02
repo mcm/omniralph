@@ -133,6 +133,7 @@ export function storyDetail(overrides: Partial<WorkItemDetail> = {}): WorkItemDe
     stories: [],
     activity: [],
     triageRunning: false,
+    triageQuestions: null,
     run: null,
     actions: {
       start: false,

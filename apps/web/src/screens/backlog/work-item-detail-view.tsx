@@ -32,6 +32,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState, type ReactNode } from "react";
 import { useCurrentUser } from "@/components/current-user";
+import { OpenQuestionsForm } from "@/components/runs/open-questions-form";
 import { BlockedByLine } from "@/components/work-items/blocked";
 import { CHANGE_REPO, ChangeRepoSheet } from "@/components/work-items/change-repo-sheet";
 import { KindBadge } from "@/components/work-items/kind";
@@ -66,6 +67,8 @@ export const REMOVE_FROM_BACKLOG = "Remove from backlog…";
 export const CHOOSE_A_REPO = "Choose a repo";
 export const NO_STORIES = "No stories yet";
 export const NO_ACTIVITY = "No activity yet";
+/** The PRD tab's heading over its triage's open questions form. */
+export const OPEN_QUESTIONS = "Open questions";
 
 /** "Open SOC-412 in <tracker>": the ⋯ menu's link to the item's tracker, by its name. */
 export function openInTracker(identifier: string, tracker: TrackerProvider): string {
@@ -307,6 +310,20 @@ function WorkItemDetailContent({
         ]}
       >
         <TabPanel value="prd" keepMounted>
+          {item.triageQuestions ? (
+            <section
+              className="or-backlog-detail__questions"
+              aria-labelledby={`${item.id}-questions`}
+            >
+              <h3 id={`${item.id}-questions`} className="or-backlog-detail__subtitle">
+                {OPEN_QUESTIONS}
+              </h3>
+              <OpenQuestionsForm
+                runId={item.triageQuestions.runId}
+                questions={item.triageQuestions.questions}
+              />
+            </section>
+          ) : null}
           <PrdView
             workItemId={item.id}
             mode="editable"
@@ -345,7 +362,8 @@ function WorkItemDetailContent({
  * The open work item beside the Backlog list (Design board Backlog): the bar with its
  * organization (only under "All organizations"), identifier and size, then the toolbar
  * (Start epic or Triage now, Edit PRD, Share review link, and the ⋯ menu); its title, the
- * "Blocked by" line and the routes line; and the tabs PRD (`PrdView`, editable), Stories and
+ * "Blocked by" line and the routes line; and the tabs PRD (the open questions its triage left,
+ * when the user can answer them, then `PrdView`, editable), Stories and
  * Activity (`?tab=`). Every action changes the view before the server answers. A live query
  * shared with `PrdView` (one fetch): a `work_item` event naming it, or a `run` event, refetches
  * it. On phone the badges move under the title (CSS).

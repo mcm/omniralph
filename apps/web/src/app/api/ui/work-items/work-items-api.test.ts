@@ -318,6 +318,62 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
       });
     });
 
+    it("exposes the open questions of its newest triage run while that run is completed", async () => {
+      const epic = ready("Questions");
+      expect((await detail(epic)).triageQuestions).toBeNull();
+
+      const triage = async (
+        createdAt: string,
+        status: "queued" | "completed",
+        openQuestions: string[],
+      ) => {
+        const { run } = await createTriageRun(db, {
+          organizationId: state.orgId,
+          trackerIssueId: epic.id,
+          trackerSessionId: `triage-${randomUUID()}`,
+          trigger: "label",
+        });
+        await db
+          .update(triageRuns)
+          .set({
+            status,
+            createdAt: new Date(createdAt),
+            lastResult: {
+              summary: "s",
+              error: null,
+              outcome: {
+                outcome: "prd",
+                size: "M",
+                title: "Questions",
+                description: "# PRD",
+                openQuestions,
+                stories: [],
+              },
+              usage: { inputTokens: 1, outputTokens: 1 },
+              durationMs: 10,
+            },
+          })
+          .where(eq(triageRuns.id, run.id));
+        return run.id;
+      };
+
+      // An older run's questions don't count once a newer one answered them all.
+      await triage("2026-10-01T00:00:00.000Z", "completed", ["Old?"]);
+      const answered = await triage("2026-10-02T00:00:00.000Z", "completed", []);
+      expect((await detail(epic)).triageQuestions).toBeNull();
+
+      await db.delete(triageRuns).where(eq(triageRuns.id, answered));
+      const asking = await triage("2026-10-03T00:00:00.000Z", "completed", ["Who?", "When?"]);
+      expect((await detail(epic)).triageQuestions).toEqual({
+        runId: asking,
+        questions: ["Who?", "When?"],
+      });
+
+      // Triaging again (with an earlier result kept): nothing to answer until it finishes.
+      await triage("2026-10-04T00:00:00.000Z", "queued", ["Who?"]);
+      expect((await detail(epic)).triageQuestions).toBeNull();
+    });
+
     it("reads the PRD, stories, activity, triage, run, actions and blockers", async () => {
       const epic = ready("Epic", { description: "# PRD: Epic\n\nBuild it." });
       acme.add({

@@ -11,13 +11,17 @@ import {
   workItemUrlId,
   type Database,
   type Repository,
+  type TriageRun,
 } from "@omniralph/db";
+import { TriageRunResult } from "@omniralph/shared";
 import type { WorkItemActions, WorkItemDetail, WorkItemRoute } from "@/lib/api/work-items";
+import type { Role } from "@/lib/auth/roles";
 import { featureStartReason } from "@/lib/ralph/feature";
 import { relationsStartReason } from "@/lib/ralph/relations";
 import { matchesWorkItem, specificity } from "@/lib/routing/match";
 import { siblingIssueUrl } from "@/lib/tracker/adapters";
 import { createRouter, type RouteOutcome } from "@/lib/routing/resolve";
+import { canAnswerTriageQuestions } from "@/lib/runs/actions";
 import { ACTIVITY_LIMIT, workItemActivity } from "./activity";
 import { organizationBacklog } from "./backlog";
 import { groupFor } from "./group";
@@ -161,6 +165,23 @@ async function startRefusalFor(
   }
 }
 
+/**
+ * The open questions of the item's newest triage run (`triageRuns`, newest first) that a user
+ * with `role` can answer: set when that run is completed and its last result left open
+ * questions, else null.
+ */
+export function workItemTriageQuestions(
+  triageRuns: readonly Pick<TriageRun, "id" | "status" | "lastResult">[],
+  role: Role,
+): WorkItemDetail["triageQuestions"] {
+  const newest = triageRuns[0];
+  if (!newest || newest.status !== "completed") return null;
+  const parsed = TriageRunResult.safeParse(newest.lastResult);
+  const questions = parsed.success ? (parsed.data.outcome?.openQuestions ?? []) : [];
+  if (questions.length === 0 || !canAnswerTriageQuestions("needs_answers", role)) return null;
+  return { runId: newest.id, questions };
+}
+
 /** The item's latest run, with its unified status, or null. */
 export async function latestWorkItemRun(
   db: Database,
@@ -248,6 +269,7 @@ export async function loadWorkItemDetail(
     activity: workItemActivity({ events, triageRuns, comments }),
     triageRunning,
     run,
+    triageQuestions: workItemTriageQuestions(triageRuns, organization.role),
     actions: workItemActions({
       group,
       run,

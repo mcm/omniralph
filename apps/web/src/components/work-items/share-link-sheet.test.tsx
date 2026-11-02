@@ -76,6 +76,7 @@ const detail: WorkItemDetail = {
   stories: [],
   activity: [],
   triageRunning: false,
+  triageQuestions: null,
   run: null,
   actions: {
     start: true,
