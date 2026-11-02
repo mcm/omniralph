@@ -123,23 +123,25 @@ A looped role that doesn't code (`review`, `triage`; `roleHasLoopSettings`) take
 Each limit it leaves out has its default (`LOOP_DEFAULTS` in `packages/tasks/src/playbooks.ts`);
 `playbookLoopSettings` reads them:
 
-| Field           | Default | What it does                                                                                    |
-| --------------- | ------- | ----------------------------------------------------------------------------------------------- |
-| `maxIterations` | 5       | Most worker-then-verifier iterations a run gets (1 to 50).                                      |
-| `stallRounds`   | 2       | Iterations in a row whose reported metric doesn't beat its best before the run stops (1 to 20). |
+| Field                | Default | What it does                                                                                            |
+| -------------------- | ------- | ------------------------------------------------------------------------------------------------------- |
+| `verifierPlaybookId` | none    | The `verifier` playbook that checks each iteration's work. A playbook that names none runs one session. |
+| `maxIterations`      | 5       | Most worker-then-verifier iterations a run gets (1 to 50).                                              |
+| `stallRounds`        | 2       | Iterations in a row whose reported metric doesn't beat its best before the run stops (1 to 20).         |
 
 A story playbook loops by its [coding settings](#coding-settings) instead (`maxAttemptsPerStory`,
 `maxRoundsPerStory`, `stallRounds`), so a `loop` block on it is refused with "A story playbook
 loops by its coding settings; remove loop.". On a single-session role it is refused with "A
 chat-ask playbook doesn't loop: its runs are one session. Remove loop.". The playbook editor
 shows a **Loop** card for every looped role (the story's attempts, rounds and stall rounds, or
-another role's iterations and stall rounds, each with what it does) and none for the rest; a
+another role's verifier, iterations and stall rounds, each with what it does) and none for the rest; a
 playbook's page shows the same settings read-only.
 
 The control panel's loop driver (`apps/web/src/lib/runs/loop.ts`, [ADR 0013](adr/0013-run-loop.md))
-runs these loops. `startLoop` copies the playbook's limits onto the run's first iteration (a
-playbook edit doesn't change a running loop) and starts its worker; once the worker finishes, a
-verifier session checks its output and answers with a verdict (`converged`, a `summary`, the
+runs these loops. `startLoop` copies the playbook's verifier and limits onto the run's first
+iteration (a playbook edit doesn't change a running loop) and starts its worker; a playbook that
+names no verifier gets no loop, and its run is one session. Once the worker finishes, a session of
+the verifier playbook checks its output and answers with a verdict (`converged`, a `summary`, the
 `findings` the next iteration should address, and optionally a progress `metric`). The run stops
 when the verifier reports convergence, after `maxIterations`, or when the metric hasn't beaten its
 best for `stallRounds` iterations; otherwise the findings become the next worker's input. A failed
@@ -380,6 +382,7 @@ appears on and an example message:
 | Setup command names are unique                                                                                                          | `setupCommands.<i>.name`                          | Setup command name semgrep is used twice                                                                                                         |
 | Only query roles have an output schema; only story and request playbooks have coding settings                                           | `outputSchema`, `coding`                          | A review playbook can't declare an output schema.                                                                                                |
 | Only a looped role that doesn't code has a loop block                                                                                   | `loop`                                            | A chat-ask playbook doesn't loop: its runs are one session. Remove loop.                                                                         |
+| A loop's verifier is a `verifier` playbook                                                                                              | `loop.verifierPlaybookId`                         | builtin:describe-pr isn't a verifier playbook.                                                                                                   |
 | A review playbook sets no model, fallback model or token budget                                                                         | `model`, `fallbackModel`, `tokenBudget`           | Review playbooks can't set a model; the repo's review depth sets it.                                                                             |
 | The template parses                                                                                                                     | `promptTemplate`                                  | Line 1, column 7: Section `pr.title` is never closed.                                                                                            |
 | Every variable exists for the role's task type and every one of its triggers                                                            | `promptTemplate`                                  | `{{pr.titel}}` isn't a variable query tasks can use. / `{{diff}}` isn't available for chat.request.                                              |

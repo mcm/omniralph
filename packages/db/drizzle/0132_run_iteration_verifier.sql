@@ -1,0 +1,2 @@
+-- No run has looped yet (no kind of run registers a loop adapter), so run_iterations is empty and the column needs no default.
+ALTER TABLE "run_iterations" ADD COLUMN "verifier_playbook_id" text NOT NULL;

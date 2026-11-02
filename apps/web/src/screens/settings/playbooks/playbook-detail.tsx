@@ -394,6 +394,15 @@ function LoopCard({ playbook }: { playbook: Playbook }) {
   return (
     <Card title="Loop">
       <dl className="or-playbook__facts">
+        <Fact term="Verifier">
+          {loop.verifierPlaybookId === null ? (
+            <None>None: each run is one session</None>
+          ) : (
+            <AppLink href={playbookHref(loop.verifierPlaybookId)}>
+              <code className="or-mono">{loop.verifierPlaybookId}</code>
+            </AppLink>
+          )}
+        </Fact>
         <Fact term="Most iterations">{countLabel(loop.maxIterations, "iteration")}</Fact>
         <Fact term="Stall rounds">
           Stops after {countLabel(loop.stallRounds, "iteration")} without a better score

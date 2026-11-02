@@ -514,7 +514,7 @@ describe("creating a playbook", () => {
     expect(writes()[0]!.body).toMatchObject({ tools: { agent: [] } });
   });
 
-  it("shows loop settings for looped roles only, and sends a review's loop limits", async () => {
+  it("shows loop settings for looped roles only, and sends a review's verifier and loop limits", async () => {
     renderAt(`${PLAYBOOKS_PATH}/new`);
     expect(await pageTitle("New playbook")).toBeTruthy();
     for (const role of ["request", "chat-ask", "pr-description", "correlation", "review-summary"]) {
@@ -528,11 +528,17 @@ describe("creating a playbook", () => {
     expect(within(loop).getByText(/a verifier checks the work/)).toBeTruthy();
     expect(screen.queryByLabelText("Attempts per story")).toBeNull();
     expect((field("Stall rounds") as HTMLInputElement).value).toBe("2");
+    // No verifier by default: a run is one session until one is chosen.
+    expect((field("Verifier") as HTMLSelectElement).value).toBe("");
+    expect(within(loop).getByText(/With no verifier, a run is one session/)).toBeTruthy();
+    await userEvent.selectOptions(field("Verifier"), "builtin:verify-task-strict");
     await userEvent.clear(field("Most iterations"));
     await userEvent.type(field("Most iterations"), "8");
     await userEvent.click(screen.getByRole("button", { name: "Create playbook" }));
     await waitFor(() => expect(writes()).toHaveLength(1));
-    expect(writes()[0]!.body).toMatchObject({ loop: { maxIterations: 8, stallRounds: 2 } });
+    expect(writes()[0]!.body).toMatchObject({
+      loop: { verifierPlaybookId: "builtin:verify-task-strict", maxIterations: 8, stallRounds: 2 },
+    });
   });
 
   it("checks the loop settings before sending anything", async () => {
@@ -870,10 +876,18 @@ describe("the draft", () => {
         role: "review",
         systemPrompt: "Be strict.",
         promptTemplate: "Review {{pr.title}}.",
-        loop: { maxIterations: 9 },
+        loop: { verifierPlaybookId: "builtin:verify-task", maxIterations: 9 },
       }),
     );
-    expect(draftToInput(review).loop).toEqual({ maxIterations: 9, stallRounds: 2 });
+    expect(draftToInput(review).loop).toEqual({
+      verifierPlaybookId: "builtin:verify-task",
+      maxIterations: 9,
+      stallRounds: 2,
+    });
+    // Choosing no verifier drops it: the review's runs are one session.
+    expect(
+      draftToInput({ ...review, loop: { ...review.loop, verifierPlaybookId: "" } }).loop,
+    ).toEqual({ maxIterations: 9, stallRounds: 2 });
     expect(draftToInput({ ...review, role: "chat-ask" })).not.toHaveProperty("loop");
     expect(draftToInput({ ...review, role: "story" })).not.toHaveProperty("loop");
     // A request keeps the attempts it had: the editor doesn't show them.

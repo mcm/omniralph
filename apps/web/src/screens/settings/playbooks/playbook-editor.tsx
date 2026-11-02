@@ -503,8 +503,30 @@ function LoopCard({
       </Card>
     );
   }
+  const { verifierPlaybookId } = draft.loop;
+  const verifiers =
+    !verifierPlaybookId || options.verifierPlaybooks.some((p) => p.id === verifierPlaybookId)
+      ? options.verifierPlaybooks
+      : [...options.verifierPlaybooks, { id: verifierPlaybookId, name: verifierPlaybookId }];
   return (
     <Card title="Loop" headingLevel={3}>
+      <Field
+        label="Verifier"
+        description="After each iteration, this playbook checks the work without seeing how it was done. Its findings feed the next iteration. With no verifier, a run is one session."
+      >
+        <Select
+          value={verifierPlaybookId}
+          onChange={(event) => setLoop({ verifierPlaybookId: event.target.value })}
+          errorMessage={errorAt(errors, "loop.verifierPlaybookId")}
+        >
+          <option value="">None: one session</option>
+          {verifiers.map((playbook) => (
+            <option key={playbook.id} value={playbook.id}>
+              {playbook.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
       <LoopNumberField
         label="Most iterations"
         description="Each iteration runs this playbook, then a verifier checks the work and feeds back what it found. The run stops when the verifier is satisfied, or after this many iterations."

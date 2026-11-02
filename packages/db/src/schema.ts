@@ -2691,6 +2691,8 @@ export const runIterations = pgTable(
     error: text("error"),
     /** Set on the run's last iteration: why the loop stopped. */
     outcome: text("outcome").$type<RunLoopOutcome>(),
+    /** The run's loop: the `verifier` playbook that checks each iteration, and its limits. */
+    verifierPlaybookId: text("verifier_playbook_id").notNull(),
     maxIterations: integer("max_iterations").notNull(),
     stallRounds: integer("stall_rounds").notNull(),
     createdAt: createdAt(),

@@ -66,6 +66,8 @@ export interface CodingDraft {
 
 /** A looped non-coding playbook's loop limits, as typed. */
 export interface LoopDraft {
+  /** A looped playbook's verifier; "" for none (its runs are one session). */
+  verifierPlaybookId: string;
   maxIterations: string;
   stallRounds: string;
 }
@@ -151,6 +153,7 @@ function codingDraft(coding: Playbook["coding"]): CodingDraft {
 
 function loopDraft(loop: Playbook["loop"]): LoopDraft {
   return {
+    verifierPlaybookId: loop?.verifierPlaybookId ?? "",
     maxIterations: String(loop?.maxIterations ?? LOOP_DEFAULTS.maxIterations),
     stallRounds: String(loop?.stallRounds ?? LOOP_DEFAULTS.stallRounds),
   };
@@ -346,8 +349,12 @@ export function draftToInput(draft: PlaybookDraft): Record<string, unknown> {
     };
   }
   if (roleHasLoopSettings(draft.role)) {
+    const { verifierPlaybookId: _verifier, ...keptLoop } = baseLoop ?? {};
     input.loop = {
-      ...baseLoop,
+      ...keptLoop,
+      ...(draft.loop.verifierPlaybookId
+        ? { verifierPlaybookId: draft.loop.verifierPlaybookId }
+        : {}),
       maxIterations: Number(draft.loop.maxIterations),
       stallRounds: Number(draft.loop.stallRounds),
     };
@@ -420,7 +427,9 @@ export function shownFields(role: PlaybookRole): string[] {
             : []),
         ]
       : []),
-    ...(roleHasLoopSettings(role) ? ["loop.maxIterations", "loop.stallRounds"] : []),
+    ...(roleHasLoopSettings(role)
+      ? ["loop.verifierPlaybookId", "loop.maxIterations", "loop.stallRounds"]
+      : []),
   ];
 }
 

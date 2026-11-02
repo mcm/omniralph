@@ -238,24 +238,36 @@ export const MAX_LOOP_ITERATIONS = 50;
 export const MAX_LOOP_STALL_ROUNDS = 20;
 
 /**
- * A looped non-coding playbook's limits: unset ones get `LOOP_DEFAULTS`.
+ * A looped non-coding playbook's loop: the `verifier` playbook that checks
+ * each iteration's work, and its limits (unset ones get `LOOP_DEFAULTS`).
  * Its run stops when the verifier reports convergence, after `maxIterations`
- * iterations, or after `stallRounds` iterations in a row without a better metric.
+ * iterations, or after `stallRounds` iterations in a row without a better
+ * metric. A playbook that names no verifier runs one session.
  */
 export const PlaybookLoop = z.object({
+  /** The `verifier` playbook that checks each iteration's work; none runs one session. */
+  verifierPlaybookId: DefinitionId.optional(),
   /** Most worker-then-verifier iterations a run gets. */
   maxIterations: z.int().min(1).max(MAX_LOOP_ITERATIONS).optional(),
   /** Iterations in a row the reported metric may fail to beat its best. */
   stallRounds: z.int().min(1).max(MAX_LOOP_STALL_ROUNDS).optional(),
 });
 export type PlaybookLoop = z.infer<typeof PlaybookLoop>;
-export type PlaybookLoopSettings = Required<PlaybookLoop>;
+/** A looped non-coding playbook's loop with its defaults filled in. */
+export interface PlaybookLoopSettings {
+  /** Null when the playbook names no verifier: its runs are one session. */
+  verifierPlaybookId: string | null;
+  maxIterations: number;
+  stallRounds: number;
+}
+/** The limits a loop stops on. */
+export type PlaybookLoopLimits = Pick<PlaybookLoopSettings, "maxIterations" | "stallRounds">;
 
 /** The loop limits a looped non-coding playbook gets when it doesn't set them. */
 export const LOOP_DEFAULTS = {
   maxIterations: DEFAULT_LOOP_MAX_ITERATIONS,
   stallRounds: DEFAULT_LOOP_STALL_ROUNDS,
-} as const satisfies PlaybookLoopSettings;
+} as const satisfies PlaybookLoopLimits;
 
 /**
  * The loop limits of `playbook`'s runs over `LOOP_DEFAULTS`, or null when its
@@ -265,7 +277,7 @@ export function playbookLoopSettings(
   playbook: Pick<Playbook, "role" | "loop">,
 ): PlaybookLoopSettings | null {
   if (!roleHasLoopSettings(playbook.role)) return null;
-  return { ...LOOP_DEFAULTS, ...dropUndefined(playbook.loop ?? {}) };
+  return { verifierPlaybookId: null, ...LOOP_DEFAULTS, ...dropUndefined(playbook.loop ?? {}) };
 }
 
 const Model = z.string().min(1).max(200);
