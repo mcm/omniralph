@@ -46,7 +46,10 @@ export type TriageReplyOutcome =
   /** An empty reply. */
   | { kind: "ignored" };
 
-type ContinueTriageOutcome = Exclude<StartTriageOutcome, { status: "exists" | "already_running" }>;
+export type ContinueTriageOutcome = Exclude<
+  StartTriageOutcome,
+  { status: "exists" | "already_running" }
+>;
 
 /** The previous triage the run's last result holds, if it produced one. */
 export function previousOutcome(run: Pick<TriageRun, "lastResult">): TriageOutcome | null {
@@ -70,6 +73,20 @@ export async function handleTriageReply(
 
   const text = parseInstruction(event.body).text || event.body.trim();
   if (!text) return { kind: "ignored" };
+  return replyToTriage(deps, run, text);
+}
+
+/**
+ * Hands `text` to triage run `run` as a reply in its session would (the tracker session's
+ * replies and the answers sent from Omniralph both come here): stored as pending while a job
+ * is queued or running, refused while another triage of the issue is active, else the run
+ * triages again with it and its last result.
+ */
+export async function replyToTriage(
+  deps: TriageDeps,
+  run: TriageRun,
+  text: string,
+): Promise<TriageReplyOutcome> {
   const taken = await replyToTriageRun(deps.db, run.id, text);
   return afterReply(deps, run, taken);
 }

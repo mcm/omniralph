@@ -116,6 +116,7 @@ function triageSummary(overrides: Partial<RunTriageSummary> = {}): RunTriageSumm
     size: "L",
     storyCount: 3,
     openQuestions: ["Which currency do invoices use?", "Who can export?"],
+    answerQuestions: false,
     originalIssue: { title: "billing export", description: "export invoices pls" },
     ...overrides,
   };

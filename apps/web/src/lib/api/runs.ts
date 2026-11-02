@@ -497,6 +497,55 @@ export const runAnswerRequestSchema = z.object({
 });
 export type RunAnswerRequest = z.infer<typeof runAnswerRequestSchema>;
 
+/** Longest answer to one of a triage's open questions `POST /api/ui/runs/{id}/triage/answers` takes. */
+export const TRIAGE_ANSWER_MAX_LENGTH = 4000;
+
+/** Longest open question the answers repeat (a question longer than any PRD holds is refused). */
+const TRIAGE_QUESTION_MAX_LENGTH = 20_000;
+
+/** One answered open question: its index in the summary's `openQuestions`, its text as shown. */
+export const triageAnswerSchema = z.object({
+  index: z
+    .number({ error: "Say which question this answers." })
+    .int("Say which question this answers.")
+    .min(0, "That question doesn't exist."),
+  /** The question as the user read it: answers to questions that changed since are refused. */
+  question: z
+    .string({ error: "Say which question this answers." })
+    .max(TRIAGE_QUESTION_MAX_LENGTH, "That question doesn't exist."),
+  answer: z
+    .string({ error: "Write an answer." })
+    .trim()
+    .min(1, "Write an answer.")
+    .max(
+      TRIAGE_ANSWER_MAX_LENGTH,
+      `Keep each answer under ${TRIAGE_ANSWER_MAX_LENGTH} characters.`,
+    ),
+});
+export type TriageAnswer = z.infer<typeof triageAnswerSchema>;
+
+/**
+ * `POST /api/ui/runs/{id}/triage/answers` body: answers to some or all of a triage run's open
+ * questions, each question at most once.
+ */
+export const runTriageAnswersRequestSchema = z.object({
+  answers: z
+    .array(triageAnswerSchema, { error: "Answer at least one question." })
+    .min(1, "Answer at least one question.")
+    .refine(
+      (answers) => new Set(answers.map((a) => a.index)).size === answers.length,
+      "Answer each question once.",
+    ),
+});
+export type RunTriageAnswersRequest = z.input<typeof runTriageAnswersRequestSchema>;
+
+/**
+ * `POST /api/ui/runs/{id}/triage/answers` answer: the run triages again with the answers
+ * (`retriage`), or will once its current job is over (`pending`).
+ */
+export const runTriageAnswersResultSchema = z.object({ kind: z.enum(["retriage", "pending"]) });
+export type RunTriageAnswersResult = z.infer<typeof runTriageAnswersResultSchema>;
+
 /**
  * Where a message for an attempt is: waiting for its agent's next heartbeat, delivered into
  * the live session, kept as guidance (its attempt rejected it, or ended before it was
@@ -656,6 +705,11 @@ export const runTriageSummarySchema = z.object({
   storyCount: z.number(),
   /** What the last triage couldn't decide: the PRD's `## Open Questions`. */
   openQuestions: z.array(z.string()),
+  /**
+   * Whether the user may answer the open questions (`POST /api/ui/runs/{id}/triage/answers`):
+   * the run needs answers and the user has the `answer` role.
+   */
+  answerQuestions: z.boolean(),
   /** The issue before triage; null when its first job's input is gone. */
   originalIssue: z.object({ title: z.string(), description: z.string() }).nullable(),
 });

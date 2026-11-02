@@ -169,8 +169,24 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/runs/{id}/triage", () => {
       size: "L",
       storyCount: 3,
       openQuestions: ["Which currency?"],
+      answerQuestions: true,
       originalIssue: { title: "Title 1", description: "export invoices pls" },
     });
+  });
+
+  it("lets the user answer only a triage that needs answers", async () => {
+    for (const [status, questions] of [
+      ["completed", []],
+      ["running", ["Which currency?"]],
+      ["queued", ["Which currency?"]],
+      ["stopped", ["Which currency?"]],
+    ] as const) {
+      const run = await triageRun(status, result([...questions]), ["x"]);
+      expect((await summaryOf(run.id)).answerQuestions, status).toBe(false);
+    }
+    state.user = { ...member, role: "admin" };
+    const run = await triageRun("completed", result(["Which currency?"]), ["x"]);
+    expect((await summaryOf(run.id)).answerQuestions).toBe(true);
   });
 
   it("is ready to start when nothing is left to answer", async () => {
