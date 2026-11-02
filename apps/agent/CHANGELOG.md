@@ -1,5 +1,21 @@
 # @omniralph/agent
 
+## 2.3.1
+
+### Patch Changes
+
+- [#125](https://github.com/mcm/omniralph/pull/125) [`7b500e7`](https://github.com/mcm/omniralph/commit/7b500e73e19260e80034966e08b94f33c56994af) Thanks [@omniralph](https://github.com/apps/omniralph)! - Story playbooks name an epic audit (`auditPlaybookId`, the new built-in `builtin:audit-epic` by default, and `maxAuditRounds`) that checks a finished epic against its requirements before its PR opens.
+
+- [#125](https://github.com/mcm/omniralph/pull/125) [`52cc5c4`](https://github.com/mcm/omniralph/commit/52cc5c4bf85aabd7a34d0639014f96c120275076) Thanks [@omniralph](https://github.com/apps/omniralph)! - A looped review or triage playbook names the verifier playbook that checks each iteration (`loop.verifierPlaybookId`); one that names none runs one session.
+
+- [#125](https://github.com/mcm/omniralph/pull/125) [`c84fec7`](https://github.com/mcm/omniralph/commit/c84fec7057a37bbfd63210d499694326df0e55cf) Thanks [@omniralph](https://github.com/apps/omniralph)! - Triage no longer plans a "Validate functional requirements" sub-issue for an epic: the epic audit checks its requirements before the pull request opens.
+
+- [#125](https://github.com/mcm/omniralph/pull/125) [`d6ef03d`](https://github.com/mcm/omniralph/commit/d6ef03d10542e852f5ebfa29d9557a29c95017cd) Thanks [@omniralph](https://github.com/apps/omniralph)! - Playbook roles now declare whether their runs loop, with the new `verifier` and `audit` roles and a `loop` block (most iterations, stall rounds) for looped playbooks that don't code.
+
+- [#125](https://github.com/mcm/omniralph/pull/125) [`fc2ce7e`](https://github.com/mcm/omniralph/commit/fc2ce7e5ab2d39c8f37d858f676be579f4776cbc) Thanks [@omniralph](https://github.com/apps/omniralph)! - Story sessions see their task's acceptance criteria again: the story payload carries them in `story.acceptanceCriteria`, and the agent falls back to parsing the description for payloads without it.
+
+- [#125](https://github.com/mcm/omniralph/pull/125) [`a1f747e`](https://github.com/mcm/omniralph/commit/a1f747e34ed5507f102bcaee6d6b6bfc71d0b77d) Thanks [@omniralph](https://github.com/apps/omniralph)! - Story playbooks name a task verifier (`verifierPlaybookId`, the new built-in `builtin:verify-task` by default) that checks each task against its acceptance criteria before it counts as done.
+
 ## 2.3.0
 
 ### Minor Changes
