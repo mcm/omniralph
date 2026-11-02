@@ -9,14 +9,17 @@ import {
   describePrTemplateContext,
   fitPullRequestDescription,
   readPullRequestDescription,
+  verifyTaskTemplateContext,
 } from "@omniralph/ralph";
-import type { RalphDescribePrPayload } from "@omniralph/shared";
+import type { RalphDescribePrPayload, RalphVerifyTaskPayload } from "@omniralph/shared";
 import {
   MAX_ATTEMPTS_PER_STORY,
   MAX_ROUNDS_PER_STORY,
   QueryRunResult,
   RalphDescribePrTriggerContext,
   RalphPushResult,
+  RalphTaskVerdict,
+  RalphVerifyTaskTriggerContext,
   RunSpecJobPayload,
   STALL_ROUNDS,
   type RalphPushPayload,
@@ -390,4 +393,93 @@ export function describePrText(job: Pick<Job, "result">): { title: string; body:
   if (!parsed.success || parsed.data.outcome !== "answered") return null;
   const text = readPullRequestDescription(parsed.data.structured);
   return text ? fitPullRequestDescription(text) : null;
+}
+
+/**
+ * The query task that verifies the attempts of a story job (`job.taskId`, the story
+ * playbook it ran): that task's `verifierTaskId`. Null when the job didn't run a story
+ * playbook (only story runs verify their tasks).
+ */
+export async function verifierTaskFor(
+  job: Pick<Job, "taskId">,
+  definitions: PlaybookSource,
+): Promise<string | null> {
+  const task = job.taskId ? await codingTask(job.taskId, definitions) : null;
+  return task?.verifierTaskId ?? null;
+}
+
+/** The `run.invoked` trigger context of a task verifier's query run. */
+export function verifyTaskTriggerContext(
+  payload: RalphVerifyTaskPayload,
+): RalphVerifyTaskTriggerContext {
+  return RalphVerifyTaskTriggerContext.parse({
+    ...verifyTaskTemplateContext({
+      branch: payload.branch,
+      baseBranch: payload.baseBranch,
+      epic: {
+        identifier: payload.epic.identifier,
+        title: payload.epic.title,
+        description: payload.epic.prd,
+      },
+      story: payload.story,
+      commitSha: payload.commitSha,
+      qualityGates: payload.qualityGates,
+    }),
+    invoker: { kind: "ralph-run", id: payload.runId },
+    payload,
+  });
+}
+
+/**
+ * A task verifier job's routing and payload, spread into `createAndPublish`'s input: a
+ * query run of `taskId` (trigger `run.invoked`, `payload` in its trigger context) in a
+ * disposable checkout of the attempt's commit (the lane's branch when it committed
+ * nothing). A string says why there is none: that task isn't a query task taking
+ * `run.invoked`.
+ */
+export async function verifyTaskJobInput(
+  taskId: string,
+  payload: RalphVerifyTaskPayload,
+  definitions: PlaybookSource,
+): Promise<ReturnType<typeof runSpecJobInput> | string> {
+  const task = await getPlaybookTask(definitions, taskId);
+  if (task?.taskType !== "query" || !task.triggers.includes("run.invoked")) {
+    return `${taskId} isn't a query task started by run.invoked`;
+  }
+  return taskJobInput(definitions, task, {
+    trigger: { kind: "run.invoked", context: verifyTaskTriggerContext(payload) },
+    repositoryId: payload.repositoryId,
+    ref: payload.commitSha ?? payload.branch,
+    requireCheckout: true,
+  });
+}
+
+/** What a finished task verifier job said about its attempt (`taskVerdictOf`). */
+export type TaskVerdictOutcome =
+  | { kind: "verdict"; verdict: RalphTaskVerdict }
+  /** The verifier couldn't check the attempt: why. */
+  | { kind: "failed"; error: string };
+
+/**
+ * The verdict of a completed task verifier job: its answered query run's
+ * `{ criteria, summary }`. A run that answered nothing usable, or found nothing to
+ * check out, failed rather than rejected.
+ */
+export function taskVerdictOf(job: Pick<Job, "result">): TaskVerdictOutcome {
+  const parsed = QueryRunResult.safeParse(job.result);
+  if (!parsed.success) return { kind: "failed", error: "the verifier sent an invalid result" };
+  if (parsed.data.outcome !== "answered") {
+    return {
+      kind: "failed",
+      error:
+        parsed.data.outcome === "no_checkout"
+          ? "the verifier couldn't check out the change"
+          : "the verifier ran out of its token budget",
+    };
+  }
+  const verdict = RalphTaskVerdict.safeParse(parsed.data.structured);
+  if (!verdict.success) {
+    return { kind: "failed", error: "the verifier's answer isn't a verdict per criterion" };
+  }
+  return { kind: "verdict", verdict: verdict.data };
 }

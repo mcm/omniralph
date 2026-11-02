@@ -7,12 +7,15 @@
  * treated as manual.
  */
 import {
+  agentAcceptedTaskTypes,
   ensureLane,
+  getAgent,
   getLane,
   getLaneByRepository,
   getMainLane,
   getRepositoryWithConnection,
   listFollowUps,
+  pinnedAgentFor,
   type Database,
   type RalphLane,
   type RalphRun,
@@ -147,4 +150,57 @@ async function laneIn(
     );
     return null;
   }
+}
+
+/**
+ * An agent while it may still take a run's jobs (not revoked, accepting
+ * `coding` tasks itself or by the organization's default, in the run's
+ * organization).
+ */
+async function usableAgentId(
+  db: Database,
+  organizationId: string,
+  agentId: string | null,
+): Promise<string | undefined> {
+  if (!agentId) return undefined;
+  const agent = await getAgent(db, agentId);
+  if (
+    !agent ||
+    agent.revokedAt ||
+    agent.organizationId !== organizationId ||
+    !agentAcceptedTaskTypes(agent).includes("coding")
+  ) {
+    return undefined;
+  }
+  return agent.id;
+}
+
+/**
+ * The agent that holds a lane's worktree (the one that started its last job),
+ * while it may still take the run's jobs. No pinned fallback: another agent
+ * doesn't have the worktree.
+ */
+export async function stickyAgentId(
+  db: Database,
+  run: Pick<RalphRun, "organizationId">,
+  lane: Pick<RalphLane, "agentId">,
+): Promise<string | undefined> {
+  return usableAgentId(db, run.organizationId, lane.agentId);
+}
+
+/**
+ * The agent a lane's jobs go to: its sticky agent while usable (see
+ * `usableAgentId`), else one its repository is pinned to, else undefined
+ * (any agent of the organization may take them).
+ */
+export async function laneAgentId(
+  db: Database,
+  run: Pick<RalphRun, "organizationId">,
+  lane: Pick<RalphLane, "agentId" | "repositoryId">,
+): Promise<string | undefined> {
+  return (
+    (await usableAgentId(db, run.organizationId, lane.agentId)) ??
+    (await pinnedAgentFor(db, run.organizationId, lane.repositoryId)) ??
+    undefined
+  );
 }

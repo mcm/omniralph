@@ -13,7 +13,9 @@ import {
   updateStory,
   type Job,
   type RalphRun,
+  type RalphPendingFollowUp,
   type RalphStory,
+  type RalphTaskVerification,
   type RalphTransaction,
   isTrackerRun,
   runReference,
@@ -39,6 +41,7 @@ import { postActivity, quietly, quote, tail } from "./notify";
 import { addRecommendations } from "./recommendations";
 import { addRoundMetric, bestValue, isStalled, metricTrend } from "./rounds";
 import type { RalphDeps } from "./run";
+import { runningVerification, startTaskVerifier, verificationOutcome } from "./verify";
 
 /** Marks follow-ups the orchestrator filed (cyralph's `FOLLOW_UP_MARK`). */
 export const FOLLOW_UP_MARK = "Filed by Omniralph while working on";
@@ -120,6 +123,12 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
       busy = true;
       continue;
     }
+    // The task verifier of an attempt its session reported complete finished.
+    const verification = runningVerification(story);
+    if (verification) {
+      await applyVerification(ctx, story, verification, job);
+      continue;
+    }
     const parsed = job?.status === "completed" ? RalphStoryResult.safeParse(job.result) : null;
     // A coding run's story gets its task's attempts and rounds.
     const caps = await jobStoryCaps(job, organizationPlaybooks(ctx.db, ctx.run.organizationId));
@@ -128,7 +137,7 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
       const repositoryId = (await storyLane(ctx.tx, ctx.run, story))?.repositoryId;
       if (repositoryId) await recordStoryHiddenRef(ctx.tx, ctx.run, repositoryId, parsed.data);
     }
-    if (parsed?.success) await applyStoryResult(ctx, story, parsed.data, caps);
+    if (parsed?.success && job) await applyStoryResult(ctx, story, job, parsed.data, caps);
     else {
       const why = parsed ? "the agent sent an invalid result" : jobFailure(job);
       await recordFailedAttempt(ctx, story, `The previous attempt failed: ${why}.`, {
@@ -142,10 +151,11 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
 async function applyStoryResult(
   ctx: OutcomeContext,
   story: RalphStory,
+  job: Job,
   result: RalphStoryResult,
   caps: StoryCaps,
 ): Promise<void> {
-  const { tx, tracker } = ctx;
+  const { tx } = ctx;
   let run = ctx.run;
   if (result.progress !== undefined) {
     run = (await updateRun(tx, run.id, { progress: result.progress })) ?? run;
@@ -190,16 +200,112 @@ async function applyStoryResult(
     return;
   }
 
-  const sha = result.commitSha ?? null;
+  // Done only once an independent verifier has checked it against its acceptance criteria.
+  const verifier = await startTaskVerifier({ ...ctx, run }, story, job, result);
+  if (verifier.started) return;
+  if (verifier.problem) {
+    await postActivity(conversationFor(run, ctx), {
+      type: "thought",
+      body: `⚠️ I couldn't start the verifier for **${story.identifier}** (${verifier.problem}), so it counts as done as its session reported.`,
+    });
+  }
+  await completeStory({ ...ctx, run }, story, {
+    summary: result.summary,
+    commitSha: result.commitSha ?? null,
+    followUps: result.followUps,
+    wroteProgress: result.progress !== undefined,
+  });
+}
+
+/**
+ * Applies a finished task verifier (`verification`, its job `job`) to its story, under
+ * the run's row lock: the check is stored in the story's `verifications`; a verdict that
+ * accepts every criterion completes the story; one that sends a criterion back fails the
+ * attempt with the reasons as its feedback (`recordFailedAttempt`, the story job's
+ * attempts); a verifier that couldn't check (it failed, was canceled or answered nothing
+ * usable) is noted in the thread and the story completes as its session reported, so a
+ * broken verifier never holds the epic up.
+ */
+async function applyVerification(
+  ctx: OutcomeContext,
+  story: RalphStory,
+  verification: RalphTaskVerification,
+  job: Job | null,
+): Promise<void> {
+  const now = ctx.now ?? new Date();
+  const outcome = verificationOutcome(verification, job, now);
+  const verifications = story.verifications.map((v) =>
+    v.jobId === verification.jobId ? outcome.verification : v,
+  );
+  const updated =
+    (await updateStory(ctx.tx, story.id, {
+      verifications,
+      // A sent-back attempt's commit is on the branch all the same.
+      ...(outcome.kind === "rejected" && verification.commitSha
+        ? { commitSha: verification.commitSha }
+        : {}),
+    })) ?? story;
+  const pending = verification.pending ?? { summary: "", followUps: [], wroteProgress: true };
+  if (outcome.kind === "rejected") {
+    const storyJob = await getJob(ctx.db, verification.storyJobId);
+    const caps = await jobStoryCaps(
+      storyJob,
+      organizationPlaybooks(ctx.db, ctx.run.organizationId),
+    );
+    await recordFailedAttempt(ctx, updated, outcome.feedback, {
+      maxAttempts: caps.maxAttemptsPerStory,
+    });
+    return;
+  }
+  if (outcome.kind === "failed") {
+    await postActivity(conversationFor(ctx.run, ctx), {
+      type: "thought",
+      body: `⚠️ I couldn't verify **${story.identifier}** against its acceptance criteria (${outcome.verification.error}), so it counts as done as its session reported.`,
+    });
+  }
+  await completeStory(ctx, updated, {
+    summary: pending.summary,
+    commitSha: verification.commitSha,
+    followUps: pending.followUps,
+    wroteProgress: pending.wroteProgress,
+    verified: outcome.kind === "accepted" ? outcome.verification.criteria.length : null,
+  });
+}
+
+/** What completing a story applies: its session's report. */
+interface CompletedAttempt {
+  summary: string;
+  commitSha: string | null;
+  followUps: readonly (RalphFollowUp | RalphPendingFollowUp)[];
+  /** The session wrote the progress log itself (else an entry is added from the summary). */
+  wroteProgress: boolean;
+  /** Criteria the verifier accepted; null or absent when it wasn't verified. */
+  verified?: number | null;
+}
+
+/**
+ * Completes a story: `completed` with the attempt counted and its commit, a progress
+ * entry when its session didn't write one, the work item completed with a comment (not
+ * for a single issue, whose PR/MR finishes it), a note in the thread and its follow-ups
+ * filed (they block its open dependents).
+ */
+async function completeStory(
+  ctx: OutcomeContext,
+  story: RalphStory,
+  attempt: CompletedAttempt,
+): Promise<void> {
+  const { tx, tracker } = ctx;
+  let run = ctx.run;
+  const sha = attempt.commitSha;
   await updateStory(tx, story.id, {
     status: "completed",
     attempts: story.attempts + 1,
     commitSha: sha,
     lastFeedback: null,
   });
-  if (result.progress === undefined) {
+  if (!attempt.wroteProgress) {
     const base = run.progress || initialProgress(runReference(run));
-    const entry = progressEntry(story, result.summary, ctx.now ?? new Date());
+    const entry = progressEntry(story, attempt.summary, ctx.now ?? new Date());
     run = (await updateRun(tx, run.id, { progress: appendProgress(base, entry) })) ?? run;
   }
 
@@ -218,7 +324,7 @@ async function applyStoryResult(
     const note = [
       `✅ Completed by Omniralph${sha ? ` in \`${sha.slice(0, 10)}\`` : ""} on \`${lane?.branch ?? ""}\`${where}.`,
       "",
-      tail(result.summary.trim() || "Done.", 4000),
+      tail(attempt.summary.trim() || "Done.", 4000),
     ].join("\n");
     await quietly(`Commenting on ${story.identifier}`, () =>
       tracker.addComment(story.trackerIssueId, note),
@@ -227,11 +333,14 @@ async function applyStoryResult(
 
   const stories = await listStories(tx, run.id);
   const done = stories.filter((s) => s.status === "completed" || s.status === "canceled").length;
+  const verified = attempt.verified
+    ? ` Verified against ${attempt.verified === 1 ? "its acceptance criterion" : `its ${attempt.verified} acceptance criteria`}.`
+    : "";
   await postActivity(conversationFor(run, ctx), {
     type: "thought",
-    body: `✅ **${story.identifier}** complete${sha ? ` (\`${sha.slice(0, 10)}\`)` : ""}. ${done}/${stories.length} stories done.`,
+    body: `✅ **${story.identifier}** complete${sha ? ` (\`${sha.slice(0, 10)}\`)` : ""}.${verified} ${done}/${stories.length} stories done.`,
   });
-  await fileFollowUps({ ...ctx, run }, story, result.followUps, { blocking: false });
+  await fileFollowUps({ ...ctx, run }, story, attempt.followUps, { blocking: false });
 }
 
 /**

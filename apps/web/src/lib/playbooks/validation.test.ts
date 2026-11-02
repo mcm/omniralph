@@ -100,6 +100,41 @@ describe("validatePlaybookAgainst", () => {
     });
   });
 
+  it("accepts a story playbook naming the built-in verifier, and refuses one that isn't a verifier", () => {
+    expect(
+      validatePlaybookAgainst(
+        clone("builtin:implement-story", {
+          coding: { verifierPlaybookId: "builtin:verify-task" },
+        }),
+        BUILTIN_PLAYBOOKS,
+      ),
+    ).toMatchObject({ ok: true });
+    const result = validatePlaybookAgainst(
+      clone("builtin:implement-story", { coding: { verifierPlaybookId: "builtin:describe-pr" } }),
+      BUILTIN_PLAYBOOKS,
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      fieldErrors: {
+        "coding.verifierPlaybookId": "builtin:describe-pr isn't a verifier playbook.",
+      },
+    });
+  });
+
+  it("refuses a verifier on a request playbook", () => {
+    expect(
+      validatePlaybookAgainst(
+        clone("builtin:handle-request", {
+          coding: { verifierPlaybookId: "builtin:verify-task" },
+        }),
+        BUILTIN_PLAYBOOKS,
+      ),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { "coding.verifierPlaybookId": expect.stringContaining("Only story playbooks") },
+    });
+  });
+
   it("refuses a template variable the role's triggers don't provide", () => {
     const result = validatePlaybookAgainst(
       clone("builtin:ask-about-code", { promptTemplate: "{{nope}}" }),

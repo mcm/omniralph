@@ -110,6 +110,8 @@ export const playbookFormOptionsSchema = z.object({
   prDescriptionPlaybooks: z.array(
     z.object({ id: z.string(), name: z.string(), builtin: z.boolean() }),
   ),
+  /** The `verifier` playbooks a story playbook can check its tasks with. */
+  verifierPlaybooks: z.array(z.object({ id: z.string(), name: z.string(), builtin: z.boolean() })),
   /**
    * Host tool names to suggest: those the organization's non-revoked agents report with a
    * path and those its playbooks require, sorted. Any valid name is still accepted.

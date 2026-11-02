@@ -57,7 +57,7 @@ import type { IssuePriority, IssueSummary } from "@omniralph/tracker";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { ralphJobPayload } from "./coding";
-import { bindBuiltinPlaybooks, bindCodingPlaybook } from "./testing";
+import { bindBuiltinPlaybooks, bindCodingPlaybook, acceptTaskVerifier } from "./testing";
 import { exchangeJobMessages } from "./messages";
 import { askPermission, expirePermission, readPermission } from "./permissions";
 import { handleReply, type ReplyResult } from "./reply";
@@ -206,6 +206,7 @@ describe.skipIf(!databaseAvailable)("replies in a run's agent session", () => {
       await completeJob(db, { jobId: job.id, agentId: agentA, result: outcome });
     }
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+    if (job.type === "ralph.story") await acceptTaskVerifier(db, deps(), job.ralphRunId!, agentA);
   }
 
   const storyResult = (overrides: Partial<RalphStoryResult> = {}): RalphStoryResult => ({

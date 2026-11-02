@@ -13,6 +13,7 @@ import {
   DEFAULT_LOOP_MAX_ITERATIONS,
   DEFAULT_LOOP_STALL_ROUNDS,
   DEFAULT_PR_DESCRIPTION_TASK_ID,
+  DEFAULT_VERIFIER_TASK_ID,
   MAX_SETUP_COMMANDS,
   NamedContent,
   RunSpecAgent,
@@ -203,6 +204,7 @@ export type PlaybookTools = z.infer<typeof PlaybookTools>;
 const {
   draftPullRequest: _draftPullRequest,
   prDescriptionTaskId: _prDescriptionTaskId,
+  verifierTaskId: _verifierTaskId,
   ...KEPT_CODING_FIELDS
 } = CODING_FIELDS;
 
@@ -214,6 +216,11 @@ export const PlaybookCoding = z.object({
   ...KEPT_CODING_FIELDS,
   /** The `pr-description` playbook that writes the PR title and description. */
   prDescriptionPlaybookId: DefinitionId.optional(),
+  /**
+   * Story playbooks only: the `verifier` playbook that checks each task its session
+   * reports complete against the task's acceptance criteria (`builtin:verify-task` when unset).
+   */
+  verifierPlaybookId: DefinitionId.optional(),
 });
 export type PlaybookCoding = z.infer<typeof PlaybookCoding>;
 
@@ -367,6 +374,13 @@ export const Playbook = z.preprocess(
         message: "Only story and request playbooks have coding settings.",
       });
     }
+    if (playbook.coding?.verifierPlaybookId !== undefined && playbook.role !== "story") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["coding", "verifierPlaybookId"],
+        message: `Only story playbooks verify their tasks; remove verifierPlaybookId from a ${playbook.role} playbook.`,
+      });
+    }
     if (playbook.loop !== undefined && !roleHasLoopSettings(playbook.role)) {
       ctx.addIssue({
         code: "custom",
@@ -441,11 +455,15 @@ export function playbookRunSpec(playbook: Playbook): PlaybookRunSpec {
   });
   let coding: Partial<TaskDefinitionInput> = {};
   if (role.taskType === "coding") {
-    const { prDescriptionPlaybookId, ...settings } = playbook.coding ?? {};
+    const { prDescriptionPlaybookId, verifierPlaybookId, ...settings } = playbook.coding ?? {};
     coding = {
       ...CODING_DEFAULTS,
       ...dropUndefined(settings),
       prDescriptionTaskId: prDescriptionPlaybookId ?? DEFAULT_PR_DESCRIPTION_TASK_ID,
+      // Only story runs verify their tasks.
+      ...(playbook.role === "story" && {
+        verifierTaskId: verifierPlaybookId ?? DEFAULT_VERIFIER_TASK_ID,
+      }),
     };
   }
   const task = TaskDefinition.parse(

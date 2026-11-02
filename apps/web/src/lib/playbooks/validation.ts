@@ -51,6 +51,7 @@ export type PlaybookValidation =
 const PLAYBOOK_FIELD: Record<string, string> = {
   ...Object.fromEntries(CODING_FIELD_NAMES.map((name) => [name, `coding.${name}`])),
   prDescriptionTaskId: "coding.prDescriptionPlaybookId",
+  verifierTaskId: "coding.verifierPlaybookId",
   // The agent half of the run spec is the playbook's own tools.
   agentId: "tools.agent",
   // The role fixes both.
@@ -73,8 +74,9 @@ function zodFieldErrors(error: z.ZodError): Record<string, string> {
  * - `outputSchema`: a correlation or PR description playbook whose output isn't
  *   the fixed `{ findings, summary }` / `{ title, body }`;
  * - what `validateTaskDefinition` finds in its run spec (template, variable
- *   limits, output schema, coding settings, its PR description playbook among
- *   `playbooks`).
+ *   limits, output schema, coding settings, its PR description and task verifier
+ *   playbooks among `playbooks`);
+ * - `coding.verifierPlaybookId`: a playbook that isn't a `verifier` playbook.
  */
 export function validatePlaybookAgainst(
   input: unknown,
@@ -111,6 +113,13 @@ export function validatePlaybookAgainst(
   if (playbook.role === "pr-description") {
     const problem = prDescriptionProblem(spec.task);
     if (problem) add("outputSchema", problem);
+  }
+  const verifierId = playbook.coding?.verifierPlaybookId;
+  if (verifierId !== undefined) {
+    const verifier = playbooks.find((other) => other.id === verifierId);
+    if (verifier && verifier.role !== "verifier") {
+      add("coding.verifierPlaybookId", `${verifierId} isn't a verifier playbook.`);
+    }
   }
   const validation = validateTaskDefinition(spec.task, context);
   if (!validation.ok) {

@@ -429,6 +429,30 @@ describe("playbookRunSpec", () => {
     expect(task.draftPullRequest).toBeUndefined();
   });
 
+  it("verifies a story playbook's tasks with its verifier (the built-in by default), and no request's", () => {
+    const story = (coding?: PlaybookInput["coding"]) =>
+      playbookRunSpec(
+        Playbook.parse({ ...chat, role: "story", promptTemplate: "{{epic.title}}", coding }),
+      ).task;
+    expect(story().verifierTaskId).toBe("builtin:verify-task");
+    expect(story({ verifierPlaybookId: UUID }).verifierTaskId).toBe(UUID);
+    const request = Playbook.parse({ ...chat, role: "request", promptTemplate: "{{branch}}" });
+    expect(playbookRunSpec(request).task.verifierTaskId).toBeUndefined();
+    expect(
+      Playbook.safeParse({
+        ...chat,
+        role: "request",
+        promptTemplate: "{{branch}}",
+        coding: { verifierPlaybookId: UUID },
+      }).error?.issues,
+    ).toEqual([
+      expect.objectContaining({
+        path: ["coding", "verifierPlaybookId"],
+        message: expect.stringContaining("Only story playbooks verify their tasks"),
+      }),
+    ]);
+  });
+
   it("gives the built-in story and request playbooks 3 review and CI fix rounds", () => {
     for (const id of ["builtin:implement-story", "builtin:handle-request"]) {
       const { task } = playbookRunSpec(getBuiltinPlaybook(id)!);

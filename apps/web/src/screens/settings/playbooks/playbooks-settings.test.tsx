@@ -436,6 +436,7 @@ describe("a playbook's page", () => {
       ["Attempts per story", "1 attempt"],
       ["Rounds per story", "8 rounds"],
       ["Stall rounds", "Set aside after 3 rounds without a better score"],
+      ["Task verifier", "builtin:verify-task"],
     ]);
     expect(
       within(screen.getByRole("region", { name: "Used by" })).getByText("Story, Request"),

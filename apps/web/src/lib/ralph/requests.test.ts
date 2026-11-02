@@ -48,6 +48,7 @@ import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import { linearRun } from "@/lib/testing/linear-run";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
+import { acceptTaskVerifier } from "./testing";
 import { ralphJobPayload } from "./coding";
 import {
   DELIVERED_NOTE,
@@ -237,6 +238,7 @@ describe.skipIf(!databaseAvailable)("request mode (mentions and requests)", () =
       });
     }
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+    if (job.type === "ralph.story") await acceptTaskVerifier(db, deps(), job.ralphRunId!, agentId);
   }
 
   const storyResult = (overrides: Partial<RalphStoryResult> = {}): RalphStoryResult => ({

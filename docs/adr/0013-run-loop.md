@@ -1,6 +1,6 @@
 # ADR 0013: Runs loop: work, verify, feed the findings back
 
-- **Status:** Accepted (TOOL-952, TOOL-954).
+- **Status:** Accepted (TOOL-952, TOOL-954, TOOL-955).
 - **Date:** 2026-11-02
 
 ## Context
@@ -73,6 +73,22 @@ verifier jobs, the verifier's `verdict`, `summary`, `findings` and `metric`, an 
 copied limits, its timestamps, and on the last iteration the loop's `outcome`. Every write records
 a live `run` change for the run, and the run detail (`GET /api/ui/runs/{id}`) lists them as
 `iterations`.
+
+### Coding: the task verifier
+
+Coding runs keep their own loop (story attempts and rounds), and gain a verifier step: when a
+story attempt reports `complete` and its checks pass, `applyStoryResult`
+(`apps/web/src/lib/ralph/outcome.ts`) doesn't complete the story but starts the story playbook's
+verifier (`verifierTaskId`, `builtin:verify-task` by default; `apps/web/src/lib/ralph/verify.ts`),
+invoked as the PR description is: a `ralph.verify-task` query run with
+`RunInvoker { kind: "ralph-run" }`, in a checkout of the attempt's commit, whose `run-result` sink
+hands its verdicts back. The story stays `running` with the verifier as its last job; the
+session's summary and follow-ups wait in the story's `verifications` entry. `applyJobOutcomes`
+applies the verdict: all criteria accepted completes the story, a rejected one is a failed attempt
+with the reasons as its feedback, and a verifier that couldn't check is noted in the thread and the
+story completes, so the epic is never held up by a broken verifier. It is a light check of
+evidence: agents rarely claim done falsely, and the verifier judges what each criterion asks for,
+not how it would have built it.
 
 ## Consequences
 

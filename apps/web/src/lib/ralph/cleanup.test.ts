@@ -52,7 +52,7 @@ import { cleanupLabel } from "./display";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { handleReply } from "./reply";
 import { startRun, type StartRunDeps } from "./start";
-import { bindCodingPlaybook } from "./testing";
+import { bindCodingPlaybook, acceptTaskVerifier } from "./testing";
 
 vi.mock("server-only", () => ({}));
 
@@ -197,6 +197,7 @@ describe.skipIf(!databaseAvailable)("cleanup after a merge", () => {
     const done = (await getJob(db, job.id))!;
     if (isCleanupJob(done.type)) await onRalphCleanupJobFinished(db, done, deps());
     else await onRalphJobFinished(db, done, deps());
+    if (done.type === "ralph.story") await acceptTaskVerifier(db, deps(), done.ralphRunId!, agentA);
   }
 
   const storyResult = (overrides: Partial<RalphStoryResult> = {}): RalphStoryResult => ({

@@ -3,6 +3,7 @@ import {
   CODING_DEFAULTS,
   CORRELATION_OUTPUT_SCHEMA,
   DEFAULT_PR_DESCRIPTION_TASK_ID,
+  DEFAULT_VERIFIER_TASK_ID,
   HostToolName,
   InstallablePackageName,
   LOOP_DEFAULTS,
@@ -49,6 +50,8 @@ export interface CodingDraft {
   cleanupMergedWorktrees: boolean;
   unmergedBranchTimeoutMinutes: string;
   prDescriptionPlaybookId: string;
+  /** A story playbook's task verifier. */
+  verifierPlaybookId: string;
   /** A story playbook's loop settings, as typed. */
   maxAttemptsPerStory: string;
   maxRoundsPerStory: string;
@@ -131,6 +134,7 @@ function codingDraft(coding: Playbook["coding"]): CodingDraft {
       set.unmergedBranchTimeoutMinutes ?? CODING_DEFAULTS.unmergedBranchTimeoutMinutes,
     ),
     prDescriptionPlaybookId: set.prDescriptionPlaybookId ?? DEFAULT_PR_DESCRIPTION_TASK_ID,
+    verifierPlaybookId: set.verifierPlaybookId ?? DEFAULT_VERIFIER_TASK_ID,
     maxAttemptsPerStory: String(set.maxAttemptsPerStory ?? CODING_DEFAULTS.maxAttemptsPerStory),
     maxRoundsPerStory: String(set.maxRoundsPerStory ?? CODING_DEFAULTS.maxRoundsPerStory),
     stallRounds: String(set.stallRounds ?? CODING_DEFAULTS.stallRounds),
@@ -256,8 +260,8 @@ export function draftErrors(draft: PlaybookDraft): Record<string, string> {
 /**
  * The playbook `draft` saves: the fields it started from with the edited ones over them.
  * Review roles set no model or budget of their own only when the editor hides those; a
- * coding playbook's unedited coding settings stay as they were. Only a looped non-coding
- * role keeps a loop block.
+ * coding playbook's unedited coding settings stay as they were (but a task verifier, which
+ * only a story playbook has). Only a looped non-coding role keeps a loop block.
  */
 export function draftToInput(draft: PlaybookDraft): Record<string, unknown> {
   const {
@@ -305,8 +309,9 @@ export function draftToInput(draft: PlaybookDraft): Record<string, unknown> {
   if (schema !== undefined) input.outputSchema = schema;
   if (isCodingRole(draft.role)) {
     const { coding } = draft;
+    const { verifierPlaybookId: _verifier, ...keptCoding } = baseCoding ?? {};
     input.coding = {
-      ...baseCoding,
+      ...keptCoding,
       worktreeSetupCommand: coding.worktreeSetupCommand.trim() || null,
       runPrdQualityGates: coding.runPrdQualityGates,
       allowPreparation: coding.allowPreparation,
@@ -319,6 +324,7 @@ export function draftToInput(draft: PlaybookDraft): Record<string, unknown> {
             maxAttemptsPerStory: Number(coding.maxAttemptsPerStory),
             maxRoundsPerStory: Number(coding.maxRoundsPerStory),
             stallRounds: Number(coding.stallRounds),
+            verifierPlaybookId: coding.verifierPlaybookId,
           }
         : {}),
     };
@@ -387,7 +393,12 @@ export function shownFields(role: PlaybookRole): string[] {
           "coding.unmergedBranchTimeoutMinutes",
           "coding.prDescriptionPlaybookId",
           ...(showsLoopSettings(role)
-            ? ["coding.maxAttemptsPerStory", "coding.maxRoundsPerStory", "coding.stallRounds"]
+            ? [
+                "coding.maxAttemptsPerStory",
+                "coding.maxRoundsPerStory",
+                "coding.stallRounds",
+                "coding.verifierPlaybookId",
+              ]
             : []),
         ]
       : []),

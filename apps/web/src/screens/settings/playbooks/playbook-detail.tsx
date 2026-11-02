@@ -14,6 +14,7 @@ import {
 } from "@omniralph/ui";
 import {
   CODING_DEFAULTS,
+  DEFAULT_VERIFIER_TASK_ID,
   playbookLoopSettings,
   roleLoops,
   roleTaskType,
@@ -368,6 +369,13 @@ function LoopCard({ playbook }: { playbook: Playbook }) {
           <Fact term="Rounds per story">{countLabel(coding.maxRoundsPerStory, "round")}</Fact>
           <Fact term="Stall rounds">
             Set aside after {countLabel(coding.stallRounds, "round")} without a better score
+          </Fact>
+          <Fact term="Task verifier">
+            <AppLink href={playbookHref(coding.verifierPlaybookId ?? DEFAULT_VERIFIER_TASK_ID)}>
+              <code className="or-mono">
+                {coding.verifierPlaybookId ?? DEFAULT_VERIFIER_TASK_ID}
+              </code>
+            </AppLink>
           </Fact>
         </dl>
       </Card>

@@ -99,6 +99,20 @@ const CASES: [string, AttemptLabelContext, string, string, string][] = [
     "Couldn't push the branch for this run",
   ],
   [
+    "ralph.verify-task",
+    FULL,
+    "Checking SOC-1720 against its acceptance criteria",
+    "Checked SOC-1720 against its acceptance criteria",
+    "Couldn't check SOC-1720 against its acceptance criteria",
+  ],
+  [
+    "ralph.verify-task",
+    {},
+    "Checking this run against its acceptance criteria",
+    "Checked this run against its acceptance criteria",
+    "Couldn't check this run against its acceptance criteria",
+  ],
+  [
     "ralph.prepare",
     { story: "SOC-1721" },
     "Running the preparation commands for SOC-1721",

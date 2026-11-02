@@ -145,6 +145,7 @@ const formOptions: PlaybookFormOptions = {
   tools: { builtin: [...CLAUDE_CODE_TOOLS], agent: [...AGENT_TOOLS], tracker: [...TRACKER_TOOLS] },
   mcpServers: ["@omniralph/code-graph:graph"],
   prDescriptionPlaybooks: [{ id: "builtin:describe-pr", name: "Describe a PR", builtin: true }],
+  verifierPlaybooks: [{ id: "builtin:verify-task", name: "Verify a task", builtin: true }],
   hostTools: ["gh", "opengrep"],
 };
 
@@ -385,6 +386,11 @@ describe("creating a playbook", () => {
     expect((field("Rounds per story") as HTMLInputElement).value).toBe("8");
     await userEvent.clear(field("Attempts per story"));
     await userEvent.type(field("Attempts per story"), "5");
+    // Its tasks are verified by the built-in verifier unless it names another.
+    expect(
+      within(loop).getByText(/reviews the change against each acceptance criterion/),
+    ).toBeTruthy();
+    expect((field("Task verifier") as HTMLSelectElement).value).toBe("builtin:verify-task");
 
     // Coding settings.
     await userEvent.type(field("Worktree setup"), "pnpm install");
@@ -446,6 +452,7 @@ describe("creating a playbook", () => {
         maxAttemptsPerStory: 5,
         maxRoundsPerStory: 8,
         stallRounds: 3,
+        verifierPlaybookId: "builtin:verify-task",
       },
     });
 
@@ -493,6 +500,7 @@ describe("creating a playbook", () => {
     for (const role of ["request", "chat-ask", "pr-description", "correlation", "review-summary"]) {
       await userEvent.selectOptions(field("Role"), role);
       expect(screen.queryByRole("region", { name: "Loop" })).toBeNull();
+      expect(screen.queryByLabelText("Task verifier")).toBeNull();
     }
     await userEvent.selectOptions(field("Role"), "review");
     const loop = screen.getByRole("region", { name: "Loop" });
@@ -852,6 +860,20 @@ describe("the draft", () => {
     expect(
       draftToInput({ ...request, coding: { ...request.coding, maxAttemptsPerStory: "9" } }),
     ).toMatchObject({ coding: { maxAttemptsPerStory: 5 } });
+  });
+
+  it("keeps a task verifier only on a story playbook", () => {
+    const story = draftFromPlaybook({
+      ...customPlaybook,
+      coding: { ...customPlaybook.coding, verifierPlaybookId: "builtin:verify-task" },
+    });
+    expect(draftToInput(story)).toMatchObject({
+      coding: { verifierPlaybookId: "builtin:verify-task" },
+    });
+    // A story turned into a request doesn't keep a verifier its role refuses.
+    const asRequest = draftToInput({ ...story, role: "request" });
+    expect(asRequest.coding).not.toHaveProperty("verifierPlaybookId");
+    expect(Playbook.safeParse({ ...asRequest, id: CUSTOM_ID }).success).toBe(true);
   });
 
   it("gives a new correlation playbook its fixed output", () => {

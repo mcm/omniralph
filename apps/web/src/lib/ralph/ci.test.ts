@@ -48,7 +48,7 @@ import { handleWebhook } from "@/lib/webhooks/ingest";
 import { reconcileCi, respondToCi } from "./ci";
 import { onRalphCleanupJobFinished, onRalphJobFinished, onRalphJobStarted } from "./jobs";
 import { ralphJobPayload } from "./coding";
-import { bindCodingPlaybook } from "./testing";
+import { bindCodingPlaybook, acceptTaskVerifier } from "./testing";
 import { startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
@@ -194,6 +194,7 @@ describe.skipIf(!databaseAvailable)("failed CI on ralph pull requests", () => {
       status: "completed",
     });
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+    if (job.type === "ralph.story") await acceptTaskVerifier(db, deps(), job.ralphRunId!, agentA);
   }
 
   const storyResult = (overrides: Partial<RalphStoryResult> = {}): RalphStoryResult => ({

@@ -1059,3 +1059,64 @@ export function describePrTemplateContext(ctx: DescribePrPromptContext): Describ
     progressLog: progress ? lastPart(progress, 12_000) : null,
   };
 }
+
+/** What a task verifier checks (see `verifyTaskTemplateContext`). */
+export interface VerifyTaskPromptContext {
+  branch: string;
+  baseBranch: string;
+  epic: { identifier: string; title: string; description: string };
+  story: {
+    identifier: string;
+    title: string;
+    /** Its description without the acceptance criteria. */
+    description: string;
+    acceptanceCriteria: readonly string[];
+  };
+  /** The attempt's commit; null when it committed nothing. */
+  commitSha: string | null;
+  /** The checks the attempt passed. */
+  qualityGates: readonly string[];
+}
+
+/** What `builtin:verify-task`'s template renders (see `verifyTaskTemplateContext`). */
+export interface VerifyTaskTemplateContext {
+  branch: string;
+  baseBranch: string;
+  epic: {
+    identifier: string;
+    title: string;
+    /** The PRD, cut to 6000 characters; null when blank. */
+    prd: string | null;
+  };
+  story: {
+    identifier: string;
+    title: string;
+    description: string | null;
+    acceptanceCriteria: TemplateList<string>;
+  };
+  /** The full SHA of the attempt's commit; null when it committed nothing. */
+  commit: string | null;
+  qualityGates: CommandList;
+}
+
+/** `ctx` as the trigger context of a `builtin:verify-task` run (see `VerifyTaskTemplateContext`). */
+export function verifyTaskTemplateContext(ctx: VerifyTaskPromptContext): VerifyTaskTemplateContext {
+  const prd = ctx.epic.description.trim();
+  return {
+    branch: ctx.branch,
+    baseBranch: ctx.baseBranch,
+    epic: {
+      identifier: ctx.epic.identifier,
+      title: oneLine(ctx.epic.title),
+      prd: prd ? prdExcerpt(prd) : null,
+    },
+    story: {
+      identifier: ctx.story.identifier,
+      title: oneLine(ctx.story.title),
+      description: ctx.story.description.trim() || null,
+      acceptanceCriteria: templateList(ctx.story.acceptanceCriteria),
+    },
+    commit: ctx.commitSha,
+    qualityGates: commandList(uniqueCommands(ctx.qualityGates)),
+  };
+}
