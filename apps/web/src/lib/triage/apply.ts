@@ -2,8 +2,7 @@
  * Applies a finished `triage.run` job to the tracker (agents hold no tracker token):
  * the issue's title and description become the PRD (with its open questions
  * at the end), a new epic gets its story sub-issues, a reformatted epic's
- * Backlog/Todo sub-issues are rewritten (with their missing relations and a
- * validation sub-issue), and the issue moves through the tracker's readiness state
+ * Backlog/Todo sub-issues are rewritten (with their missing relations), and the issue moves through the tracker's readiness state
  * mapping: to its first Ready-to-start state when nothing is left to answer, else to its
  * first Needs-refining state. Triage never starts the epic itself. The outcome is
  * reported in the run's tracker session.
@@ -40,19 +39,8 @@ import {
 } from "@omniralph/shared";
 import { z } from "zod";
 import { getTrackerGateway } from "@/lib/tracker/client";
-import {
-  toIssuePriority,
-  TrackerNotFoundError,
-  type IssueSummary,
-  type TrackerGateway,
-} from "@omniralph/tracker";
-import {
-  VALIDATION_AUDIT_TITLE,
-  dependencyViolations,
-  parseWorkItem,
-  renderValidationAudit,
-  workItemFormat,
-} from "@omniralph/planning";
+import { TrackerNotFoundError, type IssueSummary, type TrackerGateway } from "@omniralph/tracker";
+import { dependencyViolations, workItemFormat } from "@omniralph/planning";
 import { PlannedItems } from "@/lib/ralph/relations";
 import { createPlannedSubIssues, runManualLabels } from "@/lib/ralph/epic-loader";
 import { errorMessage, postActivity, quietly } from "@/lib/ralph/notify";
@@ -89,7 +77,7 @@ export type ApplyTriageOutcome =
   | { status: "failed"; error: string }
   | {
       status: "applied";
-      /** New sub-issues: a new epic's stories, or a reformatted epic's validation sub-issue. */
+      /** New sub-issues: a new epic's stories. */
       created: IssueSummary[];
       /** Identifiers of the sub-issues a reformat rewrote. */
       reformatted: string[];
@@ -103,8 +91,6 @@ export type ApplyTriageOutcome =
 export type TriageReadiness = "ready" | "needs_refining";
 
 const EPIC_SIZES = new Set(["L", "XL"]);
-/** Title of the validation story `buildTriagePrompt` asks for (the last story). */
-const VALIDATION_TITLE = /^validate\b/i;
 
 const READINESS_NAMES = { ready: "Ready to start", needs_refining: "Needs refining" } as const;
 
@@ -115,19 +101,6 @@ export function readyToStartMessage(issue: Pick<IssueSummary, "identifier">): st
 
 /** Sub-issue state types a reformat may rewrite. */
 const REFORMATTABLE = new Set(["backlog", "unstarted"]);
-
-/** The validation sub-issue a reformatted epic gets when it has none: the validation audit. */
-export const VALIDATION_STORY_TITLE = VALIDATION_AUDIT_TITLE;
-
-/**
- * The validation audit's body for the epic described by `description`: one
- * criterion per requirement of a new-format epic (a placeholder line for an
- * epic with none, such as a legacy PRD).
- */
-export function validationStoryBody(description: string): string {
-  const epic = parseWorkItem(description);
-  return renderValidationAudit(epic?.format === "epic" ? epic.requirements : []);
-}
 
 /** What the sink needs from the trigger context `enqueueTriage` stores. */
 export const TriageRunContext = TriageJobContext;
@@ -207,13 +180,11 @@ export function triagedDescription(
 
 /**
  * The sub-issues of a new epic, in story order: each story's priority and
- * manual flag, "blocks" relations from its dependency indexes, and the
- * validation story (the last one) blocked by every other story.
+ * manual flag, and "blocks" relations from its dependency indexes. There is no
+ * validation story: the epic audit checks the requirements before the PR opens.
  */
 export function storyPlan(stories: TriageAgentOutput["stories"]): MaterializationPlan {
   const id = (i: number) => `story-${i}`;
-  const last = stories.length - 1;
-  const validation = last > 0 && VALIDATION_TITLE.test(stories[last]!.title) ? last : -1;
   return {
     issues: stories.map((s, i) => ({
       storyId: id(i),
@@ -224,12 +195,11 @@ export function storyPlan(stories: TriageAgentOutput["stories"]): Materializatio
       completed: false,
       manual: s.manual,
     })),
-    relations: stories.flatMap((s, i) => {
-      const deps = i === validation ? stories.map((_, j) => j).filter((j) => j !== i) : s.dependsOn;
-      return [...new Set(deps)]
+    relations: stories.flatMap((s, i) =>
+      [...new Set(s.dependsOn)]
         .filter((d) => d !== i && d >= 0 && d < stories.length)
-        .map((d) => ({ blocker: id(d), blocked: id(i) }));
-    }),
+        .map((d) => ({ blocker: id(d), blocked: id(i) })),
+    ),
   };
 }
 
@@ -292,7 +262,6 @@ export function openQuestionsComment(
 interface SubIssueReformat {
   reformatted: IssueSummary[];
   relations: number;
-  validation: IssueSummary | null;
   ignored: string[];
 }
 
@@ -337,24 +306,22 @@ async function outsideBlocker(
  * lack (existing ones are kept). A blocker outside the epic follows the
  * dependency rules (`outsideBlocker`): a task in another epic is replaced by
  * that epic, and one the rules don't allow is ignored. Updates for an issue
- * that isn't a sub-issue of `issue`, or one in another state, are ignored and reported. An epic
- * without a validation sub-issue gets one, blocked by every other
- * non-canceled sub-issue. Nothing is ever canceled, deleted or reparented.
+ * that isn't a sub-issue of `issue`, or one in another state, are ignored and reported. No
+ * sub-issue is created (an epic gets no validation sub-issue: the epic audit checks its
+ * requirements), and nothing is ever canceled, deleted or reparented.
  */
 export async function reformatSubIssues(
   tracker: TrackerGateway,
   issue: IssueSummary,
   children: readonly IssueSummary[],
   updates: TriageAgentOutput["subIssueUpdates"],
-  /** The epic's new description, whose requirements the validation audit lists. */
-  description: string,
 ): Promise<SubIssueReformat> {
   const byRef = new Map<string, IssueSummary>();
   for (const child of children) {
     byRef.set(child.id, child);
     byRef.set(child.identifier, child);
   }
-  const done: SubIssueReformat = { reformatted: [], relations: 0, validation: null, ignored: [] };
+  const done: SubIssueReformat = { reformatted: [], relations: 0, ignored: [] };
   const items = new PlannedItems(tracker);
 
   for (const update of updates) {
@@ -392,25 +359,6 @@ export async function reformatSubIssues(
     }
   }
 
-  const live = children.filter((c) => c.stateType !== "canceled");
-  if (live.length > 0 && !live.some((c) => VALIDATION_TITLE.test(c.title.trim()))) {
-    const priorities = live.map((c) => c.priority).filter((p) => p > 0);
-    const orders = children.map((c) => c.subIssueSortOrder).filter((o) => o !== undefined);
-    const validation = await tracker.createIssue({
-      teamId: issue.teamId,
-      parentId: issue.id,
-      title: VALIDATION_STORY_TITLE,
-      description: validationStoryBody(description),
-      priority: toIssuePriority(priorities.length > 0 ? Math.max(...priorities) : 3),
-      ...(orders.length > 0 && { subIssueSortOrder: Math.max(...orders) + 1 }),
-      ...(issue.projectName && { projectName: issue.projectName }),
-    });
-    for (const child of live) {
-      await tracker.createBlocksRelation(child.id, validation.id);
-      done.relations += 1;
-    }
-    done.validation = validation;
-  }
   return done;
 }
 
@@ -495,23 +443,13 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
       triage.outcome === "reformat" &&
       (children.length > 0 || triage.subIssueUpdates.length > 0)
     ) {
-      reformat = await reformatSubIssues(
-        gateway,
-        issue,
-        children,
-        triage.subIssueUpdates,
-        triage.description,
-      );
-      if (reformat.validation) created = [reformat.validation];
+      reformat = await reformatSubIssues(gateway, issue, children, triage.subIssueUpdates);
       if (reformat.reformatted.length > 0) {
         notes.push(
           `**Sub-issues reformatted:** ${reformat.reformatted.map((c) => c.identifier).join(", ")}`,
         );
       }
       if (reformat.relations > 0) notes.push(`**Blocks relations added:** ${reformat.relations}`);
-      if (reformat.validation) {
-        notes.push(`**Validation sub-issue created:** ${reformat.validation.identifier}`);
-      }
       if (reformat.ignored.length > 0) {
         notes.push(`**Ignored sub-issue updates:** ${reformat.ignored.join("; ")}`);
       }

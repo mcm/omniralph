@@ -33,7 +33,8 @@ const PLAN_CHECKLIST = `- [ ] Sized the whole body of work and chose the structu
 - [ ] Steps for a person are separate manual tasks
 - [ ] Every task has a priority, and its dependencies as blocks relations the
       dependency rules allow; no drafting labels or metadata in titles or bodies
-- [ ] An epic ends with the validation audit, blocked by every other task
+- [ ] An epic has no validation task: Omniralph audits its requirements
+      before its pull request opens
 - [ ] The issue is in the team or project (or has the label) that routes it; no
       \`[repo=…]\` tag unless the user asked for one
 - [ ] No \`## Open Questions\` section left in any description`;
@@ -90,7 +91,8 @@ story or fix) before continuing.
 Split the epic into tasks by the Splitting rule, each in the story format (or
 the fix format for a bug), with a \`Covers:\` line naming the requirements it
 owns. Present them as \`common.md\` → "Drafting tasks with the user" shows.
-End with the validation audit.
+Don't add a validation task: Omniralph audits the epic against its
+requirements before its pull request opens.
 
 ## Final step: save to {{trackerName}}
 
@@ -110,7 +112,6 @@ user review and confirm it is ready to save. Only after they confirm, use the
   - Use the task in the story or fix format as the description.
   - Set its priority, its \`blockedBy\` dependencies, and the manual label for
     steps for a person.
-- Create the validation audit sub-issue, blocked by all the other sub-issues.
 - Do the post-creation steps: replace drafting labels with {{trackerName}}
   identifiers, and verify the blocks relations.
 
@@ -142,9 +143,9 @@ a loose collection of thoughts, a feature request with partial detail, or an
 older format. Your job is to elicit the missing context and write the full
 structure back to the **same** issue.
 
-Depending on the size, the issue becomes an epic (with one sub-issue per task
-and the validation audit, when the work is **L** or larger) or stays a single
-story or fix (when smaller).
+Depending on the size, the issue becomes an epic (with one sub-issue per task,
+when the work is **L** or larger) or stays a single story or fix (when
+smaller).
 
 Follow the planning rules in \`common.md\`.
 
@@ -205,7 +206,8 @@ resulting structure before continuing.
 
 Split the epic into tasks by the Splitting rule, in the story or fix format,
 each with its \`Covers:\` line, and present them as \`common.md\` → "Drafting
-tasks with the user" shows. End with the validation audit.
+tasks with the user" shows. Don't add a validation task: Omniralph audits the
+epic against its requirements before its pull request opens.
 
 ## Final step: update the issue in {{trackerName}}
 
@@ -230,7 +232,6 @@ In both cases:
 - Create a sub-issue for each task, in task order: plain task title, the task
   in the story or fix format, a priority, its \`blockedBy\` dependencies, and
   the manual label for steps for a person.
-- Create the validation audit sub-issue, blocked by all the other sub-issues.
 - Do the post-creation steps: replace drafting labels with {{trackerName}}
   identifiers, and verify the blocks relations.
 
@@ -269,7 +270,8 @@ Before doing anything else, use the {{trackerName}} MCP tools to fetch the
 issue and all of its sub-issues.
 
 - Read the epic's (or the task's) full description.
-- Enumerate every sub-issue, including the validation audit if one exists.
+- Enumerate every sub-issue, including a legacy \`Validate functional
+  requirements\` task if one exists.
 - Note each sub-issue's identifier, title, description, status, priority,
   labels (especially the manual label), and blocking relations.
 - Note any sub-issues already completed, in progress, or cancelled: these
@@ -289,7 +291,8 @@ Then summarize for the user:
   in-progress task is mid-run, and that changes are picked up by replying in
   the Omniralph session or by re-delegating.
 - The tasks that exist today, in order.
-- Whether the validation audit exists.
+- Whether a legacy validation task exists (it still runs as a task; new epics
+  don't get one, since Omniralph audits each epic before its pull request).
 - The current state of each sub-issue (completed tasks cannot be meaningfully
   edited; in-progress tasks should be flagged before changing).
 
@@ -405,10 +408,10 @@ Guidelines:
   uses a legacy \`Ralph Priority\` when a sub-issue has no {{trackerName}}
   priority, so set the {{trackerName}} priority first. Leave completed and
   in-progress tasks untouched.
-- Make sure the validation audit follows \`common.md\`. If it is labelled
-  manual, explain that Omniralph opens the pull request only once every task is
-  done (unless the repo sets \`openPullRequestEarly\`), and ask whether to keep
-  it that way.
+- Don't add a validation task. A legacy one is kept as a task; if it is
+  labelled manual, explain that Omniralph opens the pull request only once
+  every task is done (unless the repo sets \`openPullRequestEarly\`), and ask
+  whether to keep it that way.
 
 ## Step 6: Update the requirements
 
@@ -449,10 +452,10 @@ they confirm, use the {{trackerName}} MCP tools:
   is cosmetic, so don't mention it to the user.
 - Replace any \`new-N\` labels in descriptions with the new {{trackerName}}
   identifiers.
-- Update the validation audit to list the revised requirements, and make sure
-  it is blocked by every new task too.
-- If a single task is being turned into an epic, create the tasks and the
-  validation audit as in the \`new\` and \`triage\` final steps.
+- If the epic has a legacy validation task, update it to list the revised
+  requirements, and make sure it is blocked by every new task too.
+- If a single task is being turned into an epic, create the tasks as in the
+  \`new\` and \`triage\` final steps, with no validation task.
 
 **If the issue stays (or becomes) a single task, smaller than L:**
 
@@ -682,11 +685,10 @@ In task order, each in the story format with its \`Covers:\` line:
    criterion points to a finding and is evidence an agent can check: a lint
    rule, the contrast script, a command's output, or a named screenshot
    inspected.
-4. **The review task**, last, blocked by every other sub-issue. It takes the
-   place of the validation audit and covers every requirement. Title:
-   \`Validate the UI/UX bar and functional requirements\`. Keep the leading
-   "Validate" so Omniralph's triage recognises it as the validation task.
-   Body: the template below.
+4. **The review task**, last, blocked by every other sub-issue. It covers
+   every requirement. Title:
+   \`Validate the UI/UX bar and functional requirements\`. Body: the template
+   below.
 
 ### Review task template
 
@@ -745,8 +747,8 @@ Detector findings checked and judged false positives go in \`.impeccable/critiqu
 
 Show the user a summary table before writing: the size, the tasks with
 priority and blockers, the bar, and the mode. Then follow \`mode-new.md\` →
-"Final step" for an epic, with the review task in place of the validation
-audit. That covers the epic issue, the sub-issues in task order, the review
+"Final step" for an epic, with the review task as the last sub-issue. That
+covers the epic issue, the sub-issues in task order, the review
 task blocked by all of them, and the post-creation steps.
 
 When you finish, tell the user two things (and don't offer to delegate; see

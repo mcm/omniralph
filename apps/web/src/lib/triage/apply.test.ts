@@ -16,7 +16,6 @@ import {
   type Database,
   type Job,
 } from "@omniralph/db";
-import { renderValidationAudit } from "@omniralph/planning";
 import type { TriageAgentOutput } from "@omniralph/ralph";
 import type { QueryRunResult, RunSpecJobPayload, TriageOutcome } from "@omniralph/shared";
 import {
@@ -115,24 +114,22 @@ const result = (overrides: Partial<TriageOutcome> = {}): QueryRunResult => ({
 });
 
 describe("storyPlan", () => {
-  it("orders stories, maps dependencies and blocks the validation story by every other", () => {
+  it("orders stories and maps their dependencies to blocks relations", () => {
     const plan = storyPlan([
       story("First"),
       story("Second", { dependsOn: [0], manual: true, priority: 3 }),
-      story("Third"),
-      story("Validate functional requirements", { dependsOn: [1] }),
+      story("Third", { dependsOn: [0, 1, 0, 2, 5] }),
     ]);
     expect(plan.issues.map((i) => [i.title, i.subIssueSortOrder, i.priority, i.manual])).toEqual([
       ["First", 0, 2, false],
       ["Second", 1, 3, true],
       ["Third", 2, 2, false],
-      ["Validate functional requirements", 3, 2, false],
     ]);
+    // Duplicates, self-dependencies and out-of-range indexes are left out.
     expect(plan.relations).toEqual([
       { blocker: "story-0", blocked: "story-1" },
-      { blocker: "story-0", blocked: "story-3" },
-      { blocker: "story-1", blocked: "story-3" },
-      { blocker: "story-2", blocked: "story-3" },
+      { blocker: "story-0", blocked: "story-2" },
+      { blocker: "story-1", blocked: "story-2" },
     ]);
   });
 });
@@ -340,13 +337,14 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     expect(body).toContain("Which columns?");
   });
 
-  it("creates a new XL epic's sub-issues with priorities, relations and the manual label", async () => {
+  it("creates a new XL epic's sub-issues with priorities, relations and the manual label, and no validation sub-issue", async () => {
     const issue = addIssue({ projectName: "Widgets" });
     const stories = [
       story("Add the export endpoint", { priority: 1 }),
+      // A legacy validation task returned anyway is dropped: the epic audit checks the requirements.
+      story("Validate functional requirements", { priority: 3, dependsOn: [0] }),
       story("Add the export button", { dependsOn: [0], priority: 2 }),
-      story("Announce it", { manual: true, priority: 4 }),
-      story("Validate functional requirements", { priority: 3 }),
+      story("Announce it", { manual: true, priority: 4, dependsOn: [1] }),
     ];
     const { job, sessionId } = await completedJob(issue, result({ size: "XL", stories }));
 
@@ -359,23 +357,22 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       ["Add the export endpoint", 1, 0, [], "Widgets"],
       ["Add the export button", 2, 1, [], "Widgets"],
       ["Announce it", 4, 2, ["manual"], "Widgets"],
-      ["Validate functional requirements", 3, 3, [], "Widgets"],
     ]);
     expect(children[0]!.description).toBe(stories[0]!.body);
-    const [endpoint, button, announce, validation] = children;
-    expect(validation!.description).toBe(
-      renderValidationAudit([{ id: "FR-1", text: "The system must export widgets as CSV" }]),
-    );
+    const [endpoint, button, announce] = children;
     expect((await linear.getBlockers(button!.id)).map((b) => b.id)).toEqual([endpoint!.id]);
     expect(await linear.getBlockers(endpoint!.id)).toEqual([]);
-    expect((await linear.getBlockers(validation!.id)).map((b) => b.id).sort()).toEqual(
-      [endpoint!.id, button!.id, announce!.id].sort(),
+    // Its dependency on the dropped validation task goes with it.
+    expect(await linear.getBlockers(announce!.id)).toEqual([]);
+    // The requirements stay in the epic's description, where the audit reads them.
+    expect((await linear.getIssue(issue.id)).description).toContain(
+      "FR-1: The system must export widgets as CSV",
     );
     expect((await linear.getIssue(issue.id)).stateType).toBe("unstarted");
     const body = JSON.stringify(responses(sessionId));
     expect(body).toContain("Size:** XL");
     expect(body).toContain(
-      `epic with 4 new sub-issues: ${children.map((c) => c.identifier).join(", ")}`,
+      `epic with 3 new sub-issues: ${children.map((c) => c.identifier).join(", ")}`,
     );
   });
 
@@ -385,13 +382,12 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       story("Add the export endpoint", { priority: 1 }),
       story("Add the export button", { dependsOn: [0] }),
       story("Announce it", { manual: true }),
-      story("Validate functional requirements", { priority: 3 }),
     ];
     const { job } = await completedJob(issue, result({ size: "L", stories }));
     await applyTriageJob(deps(), job);
     const issueCount = linear.issues.size;
     const updates = linear.issueUpdates.length;
-    const [endpoint, button, announce, validation] = await linear.getChildren(issue.id);
+    const [endpoint] = await linear.getChildren(issue.id);
 
     // A delegation of a never-run issue loads with `completePrd`: still nothing new.
     const loaded = await loadEpic(linear, issue.id, {
@@ -410,14 +406,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       ["Add the export endpoint", 1, [], false],
       ["Add the export button", 2, [endpoint!.id], false],
       ["Announce it", 2, [], true],
-      [
-        "Validate functional requirements",
-        3,
-        [endpoint!.id, button!.id, announce!.id].sort(),
-        false,
-      ],
     ]);
-    expect(loaded.epic.stories[3]!.key).toBe(validation!.id);
   });
 
   it("creates no story sub-issues next to an epic's existing ones", async () => {
@@ -425,7 +414,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     const existing = linear.add({ title: "Old story", parentId: issue.id, stateType: "backlog" });
     const { job, sessionId } = await completedJob(
       issue,
-      result({ size: "XL", stories: [story("One"), story("Validate functional requirements")] }),
+      result({ size: "XL", stories: [story("One"), story("Two")] }),
     );
 
     expect(await applyTriageJob(deps(), job)).toMatchObject({ status: "applied", created: [] });
@@ -446,7 +435,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     ...overrides,
   });
 
-  it("reformats Backlog/Todo sub-issues, adds missing relations and the validation sub-issue", async () => {
+  it("reformats Backlog/Todo sub-issues and adds missing relations, creating no validation sub-issue", async () => {
     const issue = addIssue({ title: "Export widgets as CSV", projectName: "Widgets" });
     const child = (title: string, overrides: Partial<IssueSummary> = {}) =>
       linear.add({ title, parentId: issue.id, priority: 3, stateType: "backlog", ...overrides });
@@ -497,22 +486,9 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       third.id,
       dropped.id,
     ]);
-    expect(children).toHaveLength(5);
-    const validation = children[4]!;
-    expect(validation).toMatchObject({
-      title: "Validate functional requirements",
-      parentId: issue.id,
-      subIssueSortOrder: 4,
-      projectName: "Widgets",
-    });
-    // The validation audit, listing the epic's requirements.
-    expect(validation.description).toBe(
-      renderValidationAudit([{ id: "FR-1", text: "The system must export widgets as CSV" }]),
-    );
-    expect((await linear.getBlockers(validation.id)).map((b) => b.id).sort()).toEqual(
-      [first.id, second.id, third.id].sort(),
-    );
-    expect(applied).toMatchObject({ created: [{ id: validation.id }] });
+    // No validation sub-issue: the epic audit checks the requirements before the PR opens.
+    expect(children).toHaveLength(4);
+    expect(applied).toMatchObject({ created: [] });
     // Nothing canceled, deleted or reparented.
     expect(linear.stateChanges).toEqual([{ issueId: issue.id, target: { id: "state-unstarted" } }]);
     expect((await linear.getIssue(dropped.id)).stateType).toBe("canceled");
@@ -521,7 +497,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     expect(body).toContain("reformatted");
     expect(body).toContain("epic with 4 existing sub-issues");
     expect(body).toContain(`Sub-issues reformatted:** ${first.identifier}, ${second.identifier}`);
-    expect(body).toContain(`Validation sub-issue created:** ${validation.identifier}`);
+    expect(body).not.toContain("Validation sub-issue");
   });
 
   it("keeps an existing validation sub-issue and ignores updates of foreign issues", async () => {
@@ -729,7 +705,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     const issue = addIssue();
     const { job, sessionId, run } = await completedJob(
       issue,
-      result({ size: "L", stories: [story("One"), story("Validate functional requirements")] }),
+      result({ size: "L", stories: [story("One"), story("Two")] }),
     );
     // A sub-issue was added and started meanwhile.
     linear.add({

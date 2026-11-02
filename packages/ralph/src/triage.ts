@@ -116,7 +116,7 @@ function quote(tag: string, text: string): string[] {
 
 /**
  * The methodology for `tracker`: the triage steps and the shared planning rules (formats,
- * requirement wording, criteria, sizing, splitting, the validation audit and the dependency
+ * requirement wording, criteria, sizing, splitting, the epic audit and the dependency
  * rules), assembled from `@omniralph/planning`.
  */
 export function triageMethodology(tracker: TriageTracker): string {

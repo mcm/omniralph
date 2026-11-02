@@ -1,7 +1,7 @@
 /**
  * The shared planning rules, each written once as a Markdown fragment: the
  * formats (with their templates), sizing, splitting by feature, checkable
- * criteria, requirement wording and the dependency rules. The triage prompts,
+ * criteria, requirement wording, the epic audit and the dependency rules. The triage prompts,
  * the story prompts and the plugin compose their text from these.
  *
  * A fragment may name the tracker as `{{trackerName}}` and the repo's tracker
@@ -18,7 +18,6 @@ import {
   REQUIREMENT_PREFIX,
   SCOPE_PARTS,
   STORY_TEMPLATE,
-  VALIDATION_AUDIT_TEMPLATE,
   VALIDATION_AUDIT_TITLE,
   heading,
 } from "./templates.js";
@@ -97,13 +96,13 @@ A fix in an epic may add a ${code(`${COVERS_LABEL}:`)} line before ${code(headin
 ${fence(FIX_TEMPLATE)}`,
 };
 
-/** The validation audit that closes every epic. */
-export const VALIDATION_AUDIT_RULE: Fragment = {
-  id: "validation-audit",
-  title: "Validation audit",
-  body: `Every epic ends with a validation audit: its last task, titled ${code(VALIDATION_AUDIT_TITLE)}, blocked by every other task in the epic. It has one criterion per requirement of the epic, copied as the epic words it, and this body:
-
-${fence(VALIDATION_AUDIT_TEMPLATE)}`,
+/** The epic audit Omniralph runs before an epic's pull request, in place of a validation task. */
+export const EPIC_AUDIT_RULE: Fragment = {
+  id: "epic-audit",
+  title: "Epic audit",
+  body: `When every task of an epic is done, Omniralph audits the epic against its requirements before its pull request opens: it checks each requirement against the code, and files each gap it finds as a new task in the epic. So an epic carries only real work:
+- Plan no validation or audit task (no ${code(VALIDATION_AUDIT_TITLE)} task). Keep the epic's requirements in its description, where the audit reads them.
+- An epic that already has a ${code(VALIDATION_AUDIT_TITLE)} task keeps it: it still runs as a task, and the epic is audited too.`,
 };
 
 /** T-shirt sizing and the task / epic threshold. */
@@ -111,7 +110,7 @@ export const SIZING_RULE: Fragment = {
   id: "sizing",
   title: "Sizing",
   body: `Size the whole body of work, not one piece of it: XS, S, M, L or XL. Weigh the number of distinct requirements, the surface it touches (database, API, UI, integrations, infrastructure), the unknowns and risk, and how many focused agent sessions it would realistically take.
-- **L or larger (L, XL): an epic.** One task per story or fix, then the validation audit as the last task.
+- **L or larger (L, XL): an epic.** One task per story or fix, and no validation task: the epic audit checks the requirements.
 - **Smaller than L (XS, S, M): a single task.** One story, or one fix when it is a bug, with its acceptance criteria in its own description and no sub-issues.`,
 };
 
@@ -165,7 +164,7 @@ export const DEPENDENCY_RULE: Fragment = {
 /**
  * Every shared rule, in the order the methodology presents them: the work
  * items, the formats and their templates, requirement wording, criteria,
- * sizing, splitting, the validation audit and the dependency rules.
+ * sizing, splitting, the epic audit and the dependency rules.
  */
 export const SHARED_RULES: readonly Fragment[] = [
   WORK_ITEMS_RULE,
@@ -176,7 +175,7 @@ export const SHARED_RULES: readonly Fragment[] = [
   CHECKABLE_CRITERIA_RULE,
   SIZING_RULE,
   SPLITTING_RULE,
-  VALIDATION_AUDIT_RULE,
+  EPIC_AUDIT_RULE,
   DEPENDENCY_RULE,
 ];
 

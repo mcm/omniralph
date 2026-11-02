@@ -8,7 +8,7 @@ from this repo: don't edit them there, since the next publish overwrites them.
 ## Where the text comes from
 
 - **Shared rules and templates** (the epic, story and fix formats, requirement wording,
-  checkable criteria, sizing, splitting, the validation audit and the dependency rules) come
+  checkable criteria, sizing, splitting, the epic audit and the dependency rules) come
   from `packages/planning/src/methodology/rules.ts` and `templates.ts`. Omniralph's triage
   prompts render the same fragments, so planning in Claude and triage in Omniralph follow the
   same rules.

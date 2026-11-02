@@ -224,7 +224,7 @@ Acceptance criteria are evidence to check, not tests to write. Each one names so
 ### Sizing
 
 Size the whole body of work, not one piece of it: XS, S, M, L or XL. Weigh the number of distinct requirements, the surface it touches (database, API, UI, integrations, infrastructure), the unknowns and risk, and how many focused agent sessions it would realistically take.
-- **L or larger (L, XL): an epic.** One task per story or fix, then the validation audit as the last task.
+- **L or larger (L, XL): an epic.** One task per story or fix, and no validation task: the epic audit checks the requirements.
 - **Smaller than L (XS, S, M): a single task.** One story, or one fix when it is a bug, with its acceptance criteria in its own description and no sub-issues.
 
 ### Splitting into tasks
@@ -236,19 +236,11 @@ Each task is built in one fresh, unattended agent session, so it must be small e
 - Every task is in scope for the epic, and every requirement is owned by at least one task.
 - A step only a person can do (credentials, DNS, third-party consoles, a migration run by operations, a design sign-off) is its own manual task, never a criterion on an agent's task.
 
-### Validation audit
+### Epic audit
 
-Every epic ends with a validation audit: its last task, titled `Validate functional requirements`, blocked by every other task in the epic. It has one criterion per requirement of the epic, copied as the epic words it, and this body:
-
-```markdown
-Audit the finished epic against its requirements. For each requirement below, find the evidence that it holds on the epic's branch: the code that implements it, and the tests the repo's conventions call for on that behavior. Check every story's acceptance criteria the same way. Fix each gap you find, as part of this task.
-
-## Acceptance Criteria
-
-- [ ] FR-1: [the requirement, as the epic words it]
-- [ ] Every acceptance criterion of the other tasks in this epic holds
-- [ ] The repo's checks pass
-```
+When every task of an epic is done, Omniralph audits the epic against its requirements before its pull request opens: it checks each requirement against the code, and files each gap it finds as a new task in the epic. So an epic carries only real work:
+- Plan no validation or audit task (no `Validate functional requirements` task). Keep the epic's requirements in its description, where the audit reads them.
+- An epic that already has a `Validate functional requirements` task keeps it: it still runs as a task, and the epic is audited too.
 
 ### Dependency rules
 
@@ -328,8 +320,8 @@ each mode file), the target structure is one of:
   - `blockedBy` = the tasks (and any work items outside the epic) it depends
     on, as the dependency rules allow;
   - the **manual** label (`addLabels`) for steps for a person.
-- The validation audit as the last sub-issue, `blockedBy` every other
-  sub-issue.
+- No validation sub-issue: Omniralph audits the epic against its
+  requirements before its pull request opens.
 - If the epic as a whole waits on other work, make the **epic** `blockedBy`
   it: Omniralph won't start any task until it's done.
 
@@ -453,4 +445,5 @@ Sorting by due date and by title orders tasks as it does today, and the sort cho
 - [ ] Reloading the page keeps the chosen sort
 ```
 
-The epic ends with the validation audit, listing FR-1 to FR-4.
+There is no validation task: Omniralph audits FR-1 to FR-4 before the epic's
+pull request opens.

@@ -730,10 +730,10 @@ The issue's title and description are rewritten as a PRD following the `linear-p
 (Introduction, Goals, Quality Gates, Non-Goals, Design and Technical Considerations, Success
 Metrics) with a t-shirt size, then:
 
-| Size     | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| XS, S, M | A single issue: the description carries the user story and its acceptance criteria.                                                                                                                                                                                                                                                                                                                                                                                                |
-| L, XL    | An epic: the description is the PRD without stories, and each story becomes a sub-issue (with priorities, sort order, its acceptance criteria, `manual` stories labelled with the organization's first manual label, and "blocks" relations from the dependencies), plus a last `Validate functional requirements` sub-issue blocked by every other story. These go through the same materialization as a delegated PRD, so Om builds the epic as `children` without rewriting it. |
+| Size     | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| XS, S, M | A single issue: the description carries the user story and its acceptance criteria.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| L, XL    | An epic: the description is the PRD without stories, and each story becomes a sub-issue (with priorities, sort order, its acceptance criteria, `manual` stories labelled with the organization's first manual label, and "blocks" relations from the dependencies). There is no validation sub-issue: Om audits the epic against its requirements before its PR opens. These go through the same materialization as a delegated PRD, so Om builds the epic as `children` without rewriting it. |
 
 An L/XL issue that already has sub-issues gets no new story sub-issues next to them; triage it
 again to reformat them.
@@ -746,8 +746,8 @@ sub-issues, or a PRD with the wrong sections) is reformatted in place:
   changed) and missing "blocks" relations between siblings added; existing relations are kept.
 - Sub-issues in any other state, and updates that don't name one of the issue's sub-issues, are
   ignored and listed in the response.
-- An epic without a sub-issue whose title starts with "Validate" gets a `Validate functional
-  requirements` sub-issue, ordered last and blocked by every sub-issue that isn't canceled.
+- No validation sub-issue is added: Om audits the epic against its requirements before its PR
+  opens. An existing `Validate functional requirements` sub-issue is kept, and still runs as a task.
 - Triage never cancels, deletes, merges or re-parents sub-issues.
 
 An issue already in the right format is left as it is (`unchanged`); only its open questions are
