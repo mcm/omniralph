@@ -28,6 +28,7 @@ export function playbookEditHref(id: string): string {
 export const PLAYBOOK_ROLE_LABELS: Record<PlaybookRole, string> = {
   review: "Review",
   "review-summary": "Review summary",
+  "docs-check": "Documentation check",
   correlation: "Correlation",
   story: "Story",
   request: "Request",

@@ -262,6 +262,20 @@ const CASES: [string, AttemptLabelContext, string, string, string][] = [
     "Couldn't check the review findings for the pull request",
   ],
   [
+    "review.verify-docs",
+    FULL,
+    "Checking the documentation updates for pull request #42 in customer-portal",
+    "Checked the documentation updates for pull request #42 in customer-portal",
+    "Couldn't check the documentation updates for pull request #42 in customer-portal",
+  ],
+  [
+    "review.verify-docs",
+    {},
+    "Checking the documentation updates for the pull request",
+    "Checked the documentation updates for the pull request",
+    "Couldn't check the documentation updates for the pull request",
+  ],
+  [
     "review.reply",
     { provider: "gitlab", pullRequestNumber: 7 },
     "Replying to a review comment on merge request !7",

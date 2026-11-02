@@ -1,4 +1,4 @@
-import { addTokenUsage, type Finding } from "@omniralph/shared";
+import { addTokenUsage, type DocumentationUpdate, type Finding } from "@omniralph/shared";
 import { dedupeFindings } from "./dedupe.js";
 import { parseDiff, type DiffFile } from "./diff.js";
 import { diff, isAncestor, showFile } from "./git.js";
@@ -239,6 +239,11 @@ export interface ReviewSessions {
   retryAfterMs?: number;
   /** The sessions' `summary` answers, in order. */
   summaries: string[];
+  /**
+   * The sessions' `documentationUpdates` answers, in order; null when no
+   * session answered with the field (any review but a documentation check).
+   */
+  documentationUpdates: DocumentationUpdate[] | null;
 }
 
 export function emptyReviewSessions(): ReviewSessions {
@@ -250,6 +255,7 @@ export function emptyReviewSessions(): ReviewSessions {
     tasksRun: 0,
     stopReason: "completed",
     summaries: [],
+    documentationUpdates: null,
   };
 }
 
@@ -270,6 +276,12 @@ export function addTaskResult(
     }
   }
   if (result.summary !== undefined) sessions.summaries.push(result.summary);
+  if (result.documentationUpdates !== undefined) {
+    sessions.documentationUpdates = [
+      ...(sessions.documentationUpdates ?? []),
+      ...result.documentationUpdates,
+    ];
+  }
   if (STOP_PRIORITY[result.stopReason] > STOP_PRIORITY[sessions.stopReason]) {
     sessions.stopReason = result.stopReason;
     sessions.error = result.error;

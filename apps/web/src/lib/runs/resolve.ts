@@ -1,8 +1,10 @@
 import "server-only";
 import { getRepositoryWithConnection, type Database, type Job } from "@omniralph/db";
 import {
+  DocumentationCheckContext,
   ReviewTaskContext,
   RunSpecJobPayload,
+  documentationProfileConfig,
   poolForTaskType,
   type JobRepository,
   type JobToken,
@@ -48,6 +50,9 @@ export class RunSpecError extends Error {
  * - a review run: its depth preset (from its trigger context: the
  *   repository's, or the one a mention or re-run asked for) sets the model,
  *   token cap, max files and exploration (`narrowByReviewDepth`);
+ * - a documentation check (role `docs-check`): its documentation depth (the
+ *   trigger context's `documentation.depth`) sets them instead, and it always
+ *   reads files beyond the diff (`narrowByDocumentationDepth`);
  * - any other run: model = the playbook's `model` (null for the Claude Code
  *   default), fallback = its `fallbackModel`, budget = its fixed `tokens` or
  *   null ("No limit"). No review setting changes it.
@@ -114,7 +119,45 @@ export async function resolveRunSpec(
   if (!reviewConfig.success) {
     throw new RunSpecError(`Review run of playbook ${task.id} has no valid review configuration`);
   }
+  if (playbook.role === "docs-check") {
+    const documentation = DocumentationCheckContext.safeParse(
+      payload.trigger.context.documentation,
+    );
+    if (!documentation.success) {
+      throw new RunSpecError(
+        `Documentation check of playbook ${task.id} has no valid documentation depth`,
+      );
+    }
+    return narrowByDocumentationDepth(spec, documentation.data);
+  }
   return narrowByReviewDepth(spec, reviewConfig.data.profile);
+}
+
+/**
+ * A documentation check as its documentation depth sets it: the depth's
+ * model, token cap and file limit (`documentationProfileConfig`), never the
+ * repo's review depth, and its exploration tools at every depth (the
+ * documentation lives outside the diff). The trigger context's
+ * `reviewConfig.profile` becomes the same profile, which the agent's review
+ * lifecycle plans and explores by.
+ */
+export function narrowByDocumentationDepth(
+  spec: RunSpec,
+  documentation: Pick<DocumentationCheckContext, "depth">,
+): RunSpec {
+  const profile = documentationProfileConfig(documentation.depth);
+  const context = spec.trigger.context;
+  const reviewConfig = context.reviewConfig as Record<string, unknown>;
+  return narrowByReviewDepth(
+    {
+      ...spec,
+      trigger: {
+        ...spec.trigger,
+        context: { ...context, reviewConfig: { ...reviewConfig, profile } },
+      },
+    },
+    profile,
+  );
 }
 
 /**

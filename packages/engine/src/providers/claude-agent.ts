@@ -64,10 +64,13 @@ export const DISALLOWED_TOOLS: readonly string[] = [
 /** What a valid answer adds to a task's result besides its findings. */
 function outputExtra(
   parsed: Extract<ParsedOutput, { ok: true }>,
-): Pick<TaskReviewResult, "fixedPrevious" | "summary"> {
+): Pick<TaskReviewResult, "fixedPrevious" | "summary" | "documentationUpdates"> {
   return {
     fixedPrevious: parsed.fixedPrevious,
     ...(parsed.summary !== undefined && { summary: parsed.summary }),
+    ...(parsed.documentationUpdates !== undefined && {
+      documentationUpdates: parsed.documentationUpdates,
+    }),
   };
 }
 
@@ -371,7 +374,10 @@ export class ClaudeAgentProvider
     const finish = (
       stopReason: ReviewStopReason,
       raw: Finding[],
-      extra: Pick<TaskReviewResult, "error" | "retryAfterMs" | "fixedPrevious" | "summary"> = {},
+      extra: Pick<
+        TaskReviewResult,
+        "error" | "retryAfterMs" | "fixedPrevious" | "summary" | "documentationUpdates"
+      > = {},
     ): TaskReviewResult => {
       const { inside, outside } = filterToDiff(raw, request.task.files);
       discarded.outsideDiff += outside.length;
@@ -617,7 +623,7 @@ export class ClaudeAgentProvider
       quoted,
       "</previous_answer>",
       "",
-      'Reply with only the corrected JSON object {"findings": [...]}, keeping the same findings (and the same "previousFindings" list and "summary", if it had them). Drop any finding you cannot express in the required format.',
+      'Reply with only the corrected JSON object {"findings": [...]}, keeping the same findings (and the same "previousFindings" list, "summary" and "documentationUpdates", if it had them). Drop any finding you cannot express in the required format.',
     ].join("\n");
   }
 

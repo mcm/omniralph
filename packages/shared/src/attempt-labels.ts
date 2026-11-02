@@ -6,6 +6,7 @@
  */
 import { CHAT_ASK_JOB_TYPE } from "./chat-ask.js";
 import { CORRELATION_JOB_TYPE } from "./correlation.js";
+import { DOCUMENTATION_VERIFICATION_JOB_TYPE } from "./documentation-check.js";
 import { FINDING_VERIFICATION_JOB_TYPE } from "./finding-verification.js";
 import {
   INSTALL_JOB_TYPE,
@@ -188,6 +189,13 @@ const PHRASES: Record<string, (context: AttemptLabelContext) => Phrase> = {
     ),
   [FINDING_VERIFICATION_JOB_TYPE]: (c) =>
     phrase("check", "Checking", "Checked", `the review findings for ${pullRequestReference(c)}`),
+  [DOCUMENTATION_VERIFICATION_JOB_TYPE]: (c) =>
+    phrase(
+      "check",
+      "Checking",
+      "Checked",
+      `the documentation updates for ${pullRequestReference(c)}`,
+    ),
   [REVIEW_REPLY_JOB_TYPE]: (c) =>
     phrase("reply", "Replying", "Replied", `to a review comment on ${pullRequestReference(c)}`),
   [LEARN_RULE_JOB_TYPE]: (c) => {

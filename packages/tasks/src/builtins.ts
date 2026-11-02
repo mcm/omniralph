@@ -5,6 +5,7 @@
  */
 import { ASK_ABOUT_CODE_PLAYBOOK } from "./builtin/ask-about-code.js";
 import { AUDIT_EPIC_PLAYBOOK } from "./builtin/audit-epic.js";
+import { CHECK_DOCS_PLAYBOOK } from "./builtin/check-docs.js";
 import { CORRELATE_FINDINGS_PLAYBOOK } from "./builtin/correlate-findings.js";
 import { DESCRIBE_PR_PLAYBOOK } from "./builtin/describe-pr.js";
 import { HANDLE_REQUEST_PLAYBOOK } from "./builtin/handle-request.js";
@@ -14,6 +15,7 @@ import { REPLY_PLAYBOOK } from "./builtin/reply.js";
 import { REVIEW_PR_PLAYBOOK } from "./builtin/review-pr.js";
 import { SUMMARIZE_PR_PLAYBOOK } from "./builtin/summarize-pr.js";
 import { TRIAGE_PLAYBOOK } from "./builtin/triage.js";
+import { VERIFY_DOCS_PLAYBOOK } from "./builtin/verify-docs.js";
 import { VERIFY_FINDINGS_PLAYBOOK } from "./builtin/verify-findings.js";
 import { VERIFY_TASK_PLAYBOOK } from "./builtin/verify-task.js";
 import { validateCodingTask } from "./coding.js";
@@ -42,6 +44,8 @@ const PLAYBOOK_INPUTS: readonly PlaybookInput[] = [
   VERIFY_TASK_PLAYBOOK,
   AUDIT_EPIC_PLAYBOOK,
   VERIFY_FINDINGS_PLAYBOOK,
+  CHECK_DOCS_PLAYBOOK,
+  VERIFY_DOCS_PLAYBOOK,
 ];
 
 export const BUILTIN_PLAYBOOKS: readonly Playbook[] = PLAYBOOK_INPUTS.map((playbook) =>

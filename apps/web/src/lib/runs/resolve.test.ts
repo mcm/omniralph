@@ -6,7 +6,10 @@ import {
   REVIEW_TASKS_MIN_AGENT_VERSION,
   SETUP_COMMANDS_MIN_AGENT_VERSION,
   TRACKER_PROTOCOL_MIN_AGENT_VERSION,
+  documentationCheckContext,
+  documentationProfileConfig,
   reviewProfileConfigForDepth,
+  type DocumentationDepth,
   type JobToken,
   type ReviewDepth,
   type ReviewProfileConfig,
@@ -424,6 +427,9 @@ describe("model and budget of every built-in playbook", () => {
     "builtin:verify-task": { model: "claude-sonnet-5-5", tokenBudget: null },
     "builtin:audit-epic": { model: "claude-opus-5-5", tokenBudget: null },
     "builtin:verify-findings": { model: "claude-sonnet-5-5", tokenBudget: 100_000 },
+    // A documentation check's come from its documentation depth (Standard here).
+    "builtin:check-docs": { model: "claude-sonnet-5-5", tokenBudget: 250_000 },
+    "builtin:verify-docs": { model: "claude-sonnet-5-5", tokenBudget: 100_000 },
   };
 
   /** A run of a built-in playbook on a repository of `depth` (a review's preset comes from it). */
@@ -440,6 +446,9 @@ describe("model and budget of every built-in playbook", () => {
               rules: [],
               pathExcludes: [],
             },
+            ...(playbook.role === "docs-check" && {
+              documentation: documentationCheckContext(depth),
+            }),
           }
         : {};
     return resolveRunSpec(
@@ -480,6 +489,74 @@ describe("model and budget of every built-in playbook", () => {
         expect(actual, taskId).toEqual(expected);
       }
     }
+  });
+});
+
+describe("a documentation check's run spec", () => {
+  /** A `builtin:check-docs` run on a repository whose review depth is `reviewDepth`. */
+  function resolveCheck(
+    reviewDepth: ReviewDepth,
+    documentation: Record<string, unknown> | undefined,
+  ) {
+    state.repository = repository(reviewDepth);
+    return resolveRunSpec(
+      db,
+      job({
+        taskType: "review",
+        taskId: "builtin:check-docs",
+        payload: {
+          trigger: {
+            kind: "pr.updated",
+            context: {
+              reviewConfig: {
+                profile: reviewProfileConfigForDepth(reviewDepth),
+                customInstructions: null,
+                rules: [],
+                pathExcludes: [],
+              },
+              ...(documentation && { documentation }),
+            },
+          },
+          repositoryId: REPO_ID,
+        },
+      }),
+      tokens,
+      BUILTIN_PLAYBOOK_SOURCE,
+    );
+  }
+
+  it.each([
+    ["quick", "deep", "claude-haiku-5-5", 100_000],
+    ["standard", "quick", "claude-sonnet-5-5", 250_000],
+    ["deep", "quick", "claude-opus-5-5", 500_000],
+  ] as const)(
+    "takes the model and token cap of the %s documentation depth, whatever the review depth (%s)",
+    async (depth, reviewDepth, model, tokenBudget) => {
+      const spec = await resolveCheck(reviewDepth, documentationCheckContext(depth));
+      expect(spec).toMatchObject({ model, tokenBudget, fallbackModel: null });
+      // The agent plans and budgets its sessions by the trigger context's profile: the same one.
+      expect(
+        (spec.trigger.context.reviewConfig as { profile: ReviewProfileConfig }).profile,
+      ).toEqual(documentationProfileConfig(depth as DocumentationDepth));
+    },
+  );
+
+  it("reads files beyond the diff at every depth, even on a Quick review repository", async () => {
+    for (const depth of ["quick", "standard", "deep"] as const) {
+      const spec = await resolveCheck("quick", documentationCheckContext(depth));
+      expect(spec.agent.tools.builtin).toEqual(["Read", "Grep", "Glob"]);
+      expect(
+        (spec.trigger.context.reviewConfig as { profile: ReviewProfileConfig }).profile
+          .allowRepoExploration,
+      ).toBe(true);
+    }
+  });
+
+  it("can't be resolved without a valid documentation depth", async () => {
+    await expect(resolveCheck("standard", undefined)).rejects.toThrow(RunSpecError);
+    await expect(
+      resolveCheck("standard", { ...documentationCheckContext("quick"), depth: "thorough" }),
+    ).rejects.toThrow(/no valid documentation depth/);
   });
 });
 

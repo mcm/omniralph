@@ -65,7 +65,7 @@ const REVIEW_TRIGGERS = ["pr.updated", "pr.mention", "review.rerun"] as const;
 
 /**
  * Each playbook role with the task type, triggers and sink it fixes, and
- * whether its runs loop. `triage`, `learn-rule`, `reply-to-finding` and the
+ * whether its runs loop. `docs-check`, `triage`, `learn-rule`, `reply-to-finding` and the
  * loop's helpers (`verifier`, `audit`) are built-in only. The single-session
  * roles (`loop: "none"`) are the declared exceptions; a new role loops unless
  * it says otherwise.
@@ -84,6 +84,17 @@ export const PLAYBOOK_ROLES = {
     sink: "sticky-comment",
     builtinOnly: false,
     loop: "none",
+  },
+  /**
+   * Finds documentation a PR's change makes wrong or incomplete, verified each
+   * iteration (`builtin:check-docs`): its result goes to a sticky comment.
+   */
+  "docs-check": {
+    taskType: "review",
+    triggers: REVIEW_TRIGGERS,
+    sink: "sticky-comment",
+    builtinOnly: true,
+    loop: "looped",
   },
   correlation: {
     taskType: "query",

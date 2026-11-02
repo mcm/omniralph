@@ -18,11 +18,13 @@ import {
   type ReviewTask,
 } from "@omniralph/engine";
 import {
+  MAX_DOCUMENTATION_UPDATES,
   MAX_LEASE_SECONDS,
   MAX_REVIEW_FINDINGS,
   MAX_REVIEW_SKIPPED,
   MAX_REVIEW_SUMMARY_LENGTH,
   ReviewTaskContext,
+  documentationUpdatesByFile,
   type RunSpec,
   type ReviewTaskResult,
 } from "@omniralph/shared";
@@ -160,7 +162,8 @@ function capSummary(summaries: readonly string[]): string | undefined {
  * 4. Finish: the findings are filtered to the diff, made self-contained and
  *    deduplicated against the open previous findings, the fixed-vote rule
  *    picks the fixed ones, and the most severe `MAX_REVIEW_FINDINGS` are
- *    kept. A rate limit throws `RetryableJobError`; an error fails the run.
+ *    kept. A documentation check (the trigger context's `documentation`)
+ *    reports its sessions' `documentationUpdates`, one per file. A rate limit throws `RetryableJobError`; an error fails the run.
  * 5. Teardown: the teardown commands run, then the worktree is removed.
  */
 export async function runReviewTask(
@@ -173,7 +176,8 @@ export async function runReviewTask(
   if (!parsed.success) throw new Error("the review run's trigger context is invalid");
   if (!spec.repository) throw new Error("a review run needs a repository");
   const repository = spec.repository;
-  const { baseSha, headSha, previousReview, reviewConfig, changeRequest, pass } = parsed.data;
+  const { baseSha, headSha, previousReview, reviewConfig, changeRequest, pass, documentation } =
+    parsed.data;
   const git = { env: ctx.env(), signal: ctx.signal };
   const log = ctx.logger.child({
     taskId: spec.task.id,
@@ -350,6 +354,15 @@ export async function runReviewTask(
       );
     }
     const summary = capSummary(sessions.summaries);
+    // A documentation check always reports its updates, one per file; other reviews only
+    // when a session answered with them.
+    const documentationUpdates =
+      documentation || sessions.documentationUpdates
+        ? documentationUpdatesByFile(sessions.documentationUpdates ?? []).slice(
+            0,
+            MAX_DOCUMENTATION_UPDATES,
+          )
+        : undefined;
     return {
       findings: capFindings(finished.findings),
       usage: sessions.usage,
@@ -359,6 +372,7 @@ export async function runReviewTask(
       discarded: { ...sessions.discarded, duplicate: finished.duplicate },
       fixedOpenFindings: finished.fixedOpenFindings,
       ...(summary !== undefined && { summary }),
+      ...(documentationUpdates && { documentationUpdates }),
       durationMs: Date.now() - started,
       ...(checkPass &&
         pass && {
