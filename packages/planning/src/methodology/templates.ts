@@ -23,18 +23,6 @@ export const OPTIONAL_EPIC_SECTIONS: readonly string[] = [
 /** The two parts of an epic's `## Scope`, as `###` headings. */
 export const SCOPE_PARTS = { in: "In", out: "Out" } as const;
 
-/**
- * The sections of the interim fix format, which tasks are no longer written in.
- * Only the parser and the story prompts still read them, until they read the
- * three-paragraph task.
- */
-export const FIX_SECTIONS = {
-  current: "Current behavior",
-  expected: "Expected behavior",
-  unchanged: "Unchanged behavior",
-  acceptanceCriteria: "Acceptance Criteria",
-} as const;
-
 /** The heading of the checklist in the interim story and fix formats and in legacy PRDs. */
 export const ACCEPTANCE_CRITERIA_SECTION = "Acceptance Criteria";
 

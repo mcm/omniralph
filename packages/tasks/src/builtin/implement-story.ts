@@ -2,21 +2,24 @@
  * Story runs (`ralph.story` before the port): one attempt at one story of an
  * epic delegated in the tracker, in the run's branch worktree. The prompt is
  * ralph's story prompt (`buildStoryPrompt` in `@omniralph/ralph`): the epic
- * (a PRD, or background for a planning-format epic), the story list, the story
- * and how to work it. The wording that comes from the methodology (the epic as
- * context, a Fix's framing, criteria as evidence) is `@omniralph/planning`'s. The story-specific rules of
+ * (a PRD, or background for a planning-format epic or a three-paragraph task),
+ * the story list, the story (a task's three paragraphs: what to build, how as
+ * guidance, and the stop condition; else a legacy story's description and
+ * criteria) and how to work it. The wording that comes from the methodology
+ * (the epic as context, the paragraphs' headings, a Fix's framing, criteria as
+ * evidence) is `@omniralph/planning`'s. The story-specific rules of
  * ralph's story system prompt close it, since the engineer persona's system
  * prompt is mode-neutral. Omniralph commits, runs the gates and pushes.
  */
 import {
-  COVERED_REQUIREMENTS_HEADING,
-  COVERED_REQUIREMENTS_NOTE,
   CRITERIA_AS_EVIDENCE_NOTE,
   EPIC_CONTEXT_HEADING,
   EPIC_CONTEXT_NOTE,
-  FIX_SECTIONS,
   FIX_TASK_NOTE,
-  UNKNOWN_REQUIREMENT_TEXT,
+  FIX_TASK_PROMPT_NOTE,
+  TASK_APPROACH_NOTE,
+  TASK_DONE_NOTE,
+  TASK_PROMPT_HEADINGS,
 } from "@omniralph/planning";
 import type { PlaybookInput } from "../playbooks.js";
 import { ENGINEER_PERSONA } from "./engineer.js";
@@ -78,41 +81,55 @@ ${EPIC_CONTEXT_NOTE}
 Kind: {{story.kind}}
 {{#story.fix}}
 
+{{#story.task}}
+${FIX_TASK_PROMPT_NOTE}
+{{/story.task}}
+{{^story.task}}
 ${FIX_TASK_NOTE}
+{{/story.task}}
 {{/story.fix}}
 
 {{#story.repository}}
 Repository: \`{{story.repository}}\`. This story belongs in this repository rather than the epic's main one, and this worktree is a checkout of it: make every change here.
 
 {{/story.repository}}
+{{#story.task}}
+{{#story.description}}
+{{#story.fix}}
+### ${TASK_PROMPT_HEADINGS.build.fix}
+{{/story.fix}}
+{{^story.fix}}
+### ${TASK_PROMPT_HEADINGS.build.story}
+{{/story.fix}}
+{{story.description}}
+
+{{/story.description}}
+{{#story.approach}}
+{{#story.fix}}
+### ${TASK_PROMPT_HEADINGS.approach.fix}
+{{/story.fix}}
+{{^story.fix}}
+### ${TASK_PROMPT_HEADINGS.approach.story}
+{{/story.fix}}
+${TASK_APPROACH_NOTE}
+{{story.approach}}
+
+{{/story.approach}}
+{{#story.acceptanceCriteria}}
+### ${TASK_PROMPT_HEADINGS.done}
+${TASK_DONE_NOTE}
+{{#items}}
+- [ ] {{.}}
+{{/items}}
+
+{{/story.acceptanceCriteria}}
+{{/story.task}}
+{{^story.task}}
 {{#story.description}}
 ### Description
 {{story.description}}
 
 {{/story.description}}
-{{#story.fix.current}}
-### ${FIX_SECTIONS.current}
-{{story.fix.current}}
-
-{{/story.fix.current}}
-{{#story.fix.expected}}
-### ${FIX_SECTIONS.expected}
-{{story.fix.expected}}
-
-{{/story.fix.expected}}
-{{#story.fix.unchanged}}
-### ${FIX_SECTIONS.unchanged}
-{{story.fix.unchanged}}
-
-{{/story.fix.unchanged}}
-{{#story.covers}}
-### ${COVERED_REQUIREMENTS_HEADING}
-${COVERED_REQUIREMENTS_NOTE}
-{{#items}}
-- {{id}}: {{#text}}{{text}}{{/text}}{{^text}}${UNKNOWN_REQUIREMENT_TEXT}{{/text}}
-{{/items}}
-
-{{/story.covers}}
 {{#story.acceptanceCriteria}}
 ### Acceptance Criteria
 ${CRITERIA_AS_EVIDENCE_NOTE}
@@ -121,6 +138,7 @@ ${CRITERIA_AS_EVIDENCE_NOTE}
 {{/items}}
 
 {{/story.acceptanceCriteria}}
+{{/story.task}}
 {{#story.notes}}
 ### Notes
 {{story.notes}}
@@ -184,7 +202,7 @@ Review each one with \`git stash show -p --include-untracked <sha>\` and apply w
 1. Study the PRD context above to understand the bigger picture.
 {{/epic.planning}}
 2. Read the progress log at \`{{progressFile}}\` for status, learnings and gotchas.
-3. Implement ONLY this story ({{story.id}}), satisfying every acceptance criterion. Do not start other stories. Implement it end to end: no TODOs, stubs or placeholders for anything its acceptance criteria cover. The tests and error handling its new code needs are part of this story, not later work.
+3. Implement ONLY this story ({{story.id}}), {{#story.task}}and keep working until everything under "${TASK_PROMPT_HEADINGS.done}" holds{{/story.task}}{{^story.task}}satisfying every acceptance criterion{{/story.task}}. Do not start other stories. Implement it end to end: no TODOs, stubs or placeholders for anything its acceptance criteria cover. The tests and error handling its new code needs are part of this story, not later work.
 4. Run the quality gates and fix any failures.
 5. Do NOT create git commits or push. The orchestrator commits after verifying the story.
 6. Document learnings (see below).

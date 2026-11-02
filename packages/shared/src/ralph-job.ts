@@ -224,6 +224,12 @@ export const RalphStoryPayload = RalphJobBase.extend({
      * absent from older servers' payloads.
      */
     approach: z.string().max(MAX_DOCUMENT_LENGTH).default(""),
+    /**
+     * The story is a three-paragraph task: `description`, `approach` and `acceptanceCriteria`
+     * are its paragraphs (else it's a legacy story). Absent from older servers' payloads: the
+     * agent then takes a story with an approach for a task.
+     */
+    task: z.boolean().optional(),
     /** `fix` when the work item has one of the tracker's fix labels, else `story`. */
     kind: z.enum(RALPH_STORY_KINDS).default("story"),
     /**

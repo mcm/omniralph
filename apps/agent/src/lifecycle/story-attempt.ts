@@ -93,6 +93,8 @@ export function promptEpic(payload: RalphStoryPayload): { epic: Epic; story: Sto
   const repo = (name: string | null | undefined) =>
     name ? { repo: { id: "", name, routedBy: "" } } : {};
   const listed = payload.stories.find((s) => s.identifier === payload.story.identifier);
+  // A three-paragraph task (older servers don't say: one with an approach is).
+  const task = payload.story.task ?? payload.story.approach.trim() !== "";
   const story: Story = {
     key: payload.story.identifier,
     storyId: payload.story.identifier,
@@ -101,7 +103,9 @@ export function promptEpic(payload: RalphStoryPayload): { epic: Epic; story: Sto
     kind: payload.story.kind,
     ...(payload.story.url && { url: payload.story.url }),
     title: payload.story.title,
-    description: body.description,
+    // A task's description is its paragraph 1, as written; a legacy story's may still hold its criteria.
+    description: task ? payload.story.description : body.description,
+    ...(task && { approach: payload.story.approach }),
     // Older servers send no criteria field: they're then in the description, if anywhere.
     acceptanceCriteria: payload.story.acceptanceCriteria ?? body.acceptanceCriteria,
     priority: 0,

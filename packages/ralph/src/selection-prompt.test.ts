@@ -303,32 +303,89 @@ describe("prompt", () => {
       expect(legacy).not.toContain("<epic-context>");
     });
 
-    it("lists the covered requirements with the epic's text, flagging unknown ones", () => {
-      const p = build({ covers: ["FR-2", "FR-7", "the badge"] });
-      expect(p).toContain(
-        "- FR-2: The system must sort by priority.\n- FR-7: (not among the epic's requirements)\n\n### Acceptance Criteria",
+    const task = (over: Partial<Story> = {}, e: Epic = planning) =>
+      build(
+        {
+          description: "I want you to badge urgent tasks, so that reviewers see them first.",
+          approach: "Build it by adding a `Badge` to `TaskRow`, like the status pill.",
+          acceptanceCriteria: ["Urgent tasks show a red badge.", "Sorting works as before."],
+          ...over,
+        },
+        e,
       );
-      expect(p).not.toContain("the badge");
-      expect(build({})).not.toContain("### Requirements This Task Covers");
+
+    it("presents a task's three paragraphs under their own headings", async () => {
+      const p = task();
+      const at = [
+        "### What to Build\n",
+        "### How to Build It (guidance)\n",
+        "### Don't Stop Until\n",
+      ].map((h) => p.indexOf(h));
+      expect(at[0]).toBeGreaterThan(0);
+      expect(at[1]).toBeGreaterThan(at[0]!);
+      expect(at[2]).toBeGreaterThan(at[1]!);
+      expect(p).toContain("### What to Build\nI want you to badge urgent tasks");
+      expect(p).toMatch(
+        /\(guidance\)\nThis is guidance on how to build it, not part of what is checked.*\nBuild it by adding/,
+      );
+      expect(p).toMatch(
+        /### Don't Stop Until\nThis is your stop condition: keep working until every criterion below holds.* A criterion is evidence to check, not a test to write/,
+      );
+      expect(p).toContain("- [ ] Urgent tasks show a red badge.\n- [ ] Sorting works as before.");
+      expect(p).toContain(
+        '3. Implement ONLY this story (US-002), and keep working until everything under "Don\'t Stop Until" holds.',
+      );
+      expect(p).not.toContain("### Description");
+      expect(p).not.toContain("### Acceptance Criteria");
+      expect(p).not.toContain("This task is a Fix");
+      // A blank paragraph 2 is left out.
+      expect(task({ approach: "" })).not.toContain("(guidance)");
+      await expect(p).toMatchFileSnapshot("__snapshots__/story-prompt.task-story.md");
     });
 
-    it("frames a Fix by its behavior sections, apart from the rest of its description", () => {
-      const p = build({
+    it("frames a Fix's paragraph 1 as the bug, and paragraph 3's behavior as kept working", async () => {
+      const p = task({
         kind: "fix",
-        description:
-          "Seen on Safari.\n\n## Current behavior\nBadges vanish.\n\n## Unchanged behavior\nSorting stays.",
+        description: "I want you to fix badges vanishing on Safari: they should stay.",
+        approach: "Build it by checking the `:has()` selector, the likely cause.",
       });
-      expect(p).toContain("Kind: Fix\n\nThis task is a Fix:");
-      expect(p).toContain(
-        "### Description\nSeen on Safari.\n\n### Current behavior\nBadges vanish.",
+      expect(p).toMatch(
+        /Kind: Fix\n\nThis task is a Fix: "What Is Broken" below is the bug and what should happen instead\. .*keep every behavior named under "Don't Stop Until" working as it does now/,
       );
-      expect(p).toContain("### Unchanged behavior\nSorting stays.");
-      expect(p).not.toContain("### Expected behavior");
+      expect(p).toContain("### What Is Broken\nI want you to fix badges vanishing");
+      expect(p).toContain("### Likely Cause and How to Fix It (guidance)\n");
+      expect(p).not.toContain("### What to Build");
       expect(p).toContain("regression test only where the affected code already has tests");
-      // A Story's own `##` sections stay in its description.
-      const story = build({ description: "Lead.\n\n## Current behavior\nKept." });
-      expect(story).toContain("### Description\nLead.\n\n## Current behavior\nKept.");
-      expect(story).not.toContain("This task is a Fix");
+      await expect(p).toMatchFileSnapshot("__snapshots__/story-prompt.task-fix.md");
+    });
+
+    it("shows a legacy PRD's epic as context for a task", () => {
+      const p = task({}, epic);
+      expect(p).toContain("## Epic: Task Priority (ENG-1)");
+      expect(p).toContain("### Epic Context (background, not your task)");
+      expect(p).not.toContain("<prd-document>");
+      // A legacy story of the same PRD keeps the PRD framing.
+      expect(build({}, epic)).toContain("<prd-document>");
+    });
+
+    it("renders a legacy story's description and criteria as before, with no Covers list", async () => {
+      const p = build({ description: "Show a badge on urgent tasks." }, epic);
+      expect(p).toContain("### Description\nShow a badge on urgent tasks.\n");
+      expect(p).toContain(
+        "### Acceptance Criteria\nYour task is done when every criterion below holds.",
+      );
+      expect(p).toContain(
+        "3. Implement ONLY this story (US-002), satisfying every acceptance criterion.",
+      );
+      expect(p).not.toContain("### What to Build");
+      expect(p).not.toContain("Covers");
+      // A legacy Fix's description stays whole, with the legacy Fix framing.
+      const fix = build({ kind: "fix", description: "Lead.\n\n## Current behavior\nKept." }, epic);
+      expect(fix).toContain(
+        "This task is a Fix: make the current behavior become the expected behavior",
+      );
+      expect(fix).toContain("### Description\nLead.\n\n## Current behavior\nKept.");
+      await expect(p).toMatchFileSnapshot("__snapshots__/story-prompt.legacy.md");
     });
   });
 

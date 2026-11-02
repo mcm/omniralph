@@ -177,6 +177,7 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
       url: url(story.url),
       description: headOf(story.description),
       approach: headOf(story.approach ?? ""),
+      task: story.approach !== undefined,
       acceptanceCriteria: payloadCriteria(story.acceptanceCriteria),
       kind: workItemKind(story.labels ?? [], input.fixLabels),
     },

@@ -61,8 +61,6 @@ export interface Story {
    * `description` (paragraph 1) so a step can leave it out. Absent for a legacy story.
    */
   approach?: string;
-  /** The epic requirements the story owns, from its `Covers:` line (`FR-2`), in order. */
-  covers?: string[];
   identifier?: string;
   url?: string;
 }

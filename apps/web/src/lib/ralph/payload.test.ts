@@ -441,6 +441,7 @@ describe("the story's acceptance criteria", () => {
       approach: "Build it by adding `src/export.ts` with papaparse.",
       acceptanceCriteria: ["The export button downloads `widgets.csv`", "The CSV has a header row"],
       kind: "story",
+      task: true,
     });
     // The kind comes from the integration's fix labels.
     expect(payloadWith(["defect"]).story.kind).toBe("fix");
@@ -448,5 +449,7 @@ describe("the story's acceptance criteria", () => {
 
   it("are an empty list for a story without any", () => {
     expect(payloadFor("children", {}).story.acceptanceCriteria).toEqual([]);
+    // A legacy story isn't a three-paragraph task.
+    expect(payloadFor("children", {}).story.task).toBe(false);
   });
 });

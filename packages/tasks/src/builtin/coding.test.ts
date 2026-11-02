@@ -1,4 +1,3 @@
-import { FIX_SECTIONS, splitFixDescription } from "@omniralph/planning";
 import {
   buildDescribePrPrompt,
   buildRequestPrompt,
@@ -42,30 +41,6 @@ function render(template: string, context: object): string {
   return renderTemplate(template, context as Record<string, unknown>);
 }
 
-/**
- * A story's description with each part fenced as the template fences it: a
- * Fix's behavior sections stay under their headings (outside the fences), so
- * today's builder still finds them.
- */
-function fenceDescription(story: PromptContext["story"]): string {
-  const description = story.description.trim();
-  if (story.kind !== "fix") return description && fenced("story.description", description);
-  const parts = splitFixDescription(description);
-  const sections = [
-    ["current", parts.current],
-    ["expected", parts.expected],
-    ["unchanged", parts.unchanged],
-  ] as const;
-  return [
-    parts.description && fenced("story.description", parts.description),
-    ...sections.flatMap(([key, body]) =>
-      body ? [`## ${FIX_SECTIONS[key]}\n\n${fenced(`story.fix.${key}`, body)}`] : [],
-    ),
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
-
 /** `ctx` with each untrusted value fenced, for today's story builder. */
 function fenceStory(ctx: PromptContext): PromptContext {
   const { epic, story } = ctx;
@@ -77,16 +52,12 @@ function fenceStory(ctx: PromptContext): PromptContext {
     epic: {
       ...epic,
       description: epic.description.trim() && fenced("epic.prd", epic.description.trim()),
-      ...(epic.requirements && {
-        requirements: epic.requirements.map((r) => ({
-          ...r,
-          text: fenced("story.covers.items.text", r.text),
-        })),
-      }),
     },
     story: {
       ...story,
-      description: fenceDescription(story),
+      description:
+        story.description.trim() && fenced("story.description", story.description.trim()),
+      ...(story.approach?.trim() && { approach: fenced("story.approach", story.approach.trim()) }),
       acceptanceCriteria: story.acceptanceCriteria.map((c) =>
         fenced("story.acceptanceCriteria.items", c),
       ),
@@ -257,6 +228,47 @@ describe("builtin:implement-story", () => {
       await expect(prompt).toMatchFileSnapshot(`__snapshots__/implement-story.${name}.md`);
     },
   );
+
+  it("presents a task's three paragraphs, with the epic as context", () => {
+    const prompt = (name: string) =>
+      render(storyTask.promptTemplate, storyTemplateContext(STORY_FIXTURES[name]!));
+    const story = prompt("planning-story");
+    const sections = [
+      "### What to Build\n",
+      "### How to Build It (guidance)\n",
+      "### Don't Stop Until\n",
+    ];
+    const at = sections.map((s) => story.indexOf(s));
+    expect(at.every((i, n) => i > 0 && (n === 0 || i > at[n - 1]!))).toBe(true);
+    expect(story).toContain(
+      "(guidance)\nThis is guidance on how to build it, not part of what is checked",
+    );
+    expect(story).toContain("### Don't Stop Until\nThis is your stop condition");
+    expect(story).toContain("A criterion is evidence to check, not a test to write");
+    expect(story).toContain('keep working until everything under "Don\'t Stop Until" holds');
+    expect(story).not.toContain("### Acceptance Criteria");
+    expect(story).not.toContain("This task is a Fix");
+    // A Fix's paragraph 1 is the bug, and the behavior named in paragraph 3 must keep working.
+    const fix = prompt("planning-fix");
+    expect(fix).toContain("### What Is Broken\n");
+    expect(fix).toContain("### Likely Cause and How to Fix It (guidance)\n");
+    expect(fix).toMatch(
+      /This task is a Fix: .*keep every behavior named under "Don't Stop Until" working/,
+    );
+    expect(fix).not.toContain("### What to Build");
+    // A legacy PRD epic's task still reads the epic as context; paragraph 2 is left out when blank.
+    const task = prompt("prd-epic-task");
+    expect(task).toContain("### Epic Context (background, not your task)\n");
+    expect(task).not.toContain("<prd-document>");
+    expect(task).not.toContain("(guidance)");
+    // A legacy story keeps its description and acceptance criteria.
+    const legacy = prompt("prd-epic");
+    expect(legacy).toContain("### Description\n");
+    expect(legacy).toContain("### Acceptance Criteria\nYour task is done when every criterion");
+    expect(legacy).toContain("<prd-document>");
+    expect(legacy).not.toContain("### What to Build");
+    expect(prompt("single-issue")).toContain("This task is a Fix: make the current behavior");
+  });
 
   it("fences issue text, the PRD, progress, guidance and feedback", () => {
     const prompt = render(

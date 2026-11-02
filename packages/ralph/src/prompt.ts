@@ -6,16 +6,14 @@
  * Custom templates use a Handlebars-compatible subset: `{{var}}`, `{{#if var}}...{{else}}...{{/if}}`.
  */
 import {
-  COVERED_REQUIREMENTS_HEADING,
-  COVERED_REQUIREMENTS_NOTE,
   CRITERIA_AS_EVIDENCE_NOTE,
   EPIC_CONTEXT_HEADING,
   EPIC_CONTEXT_NOTE,
-  FIX_SECTIONS,
   FIX_TASK_NOTE,
-  UNKNOWN_REQUIREMENT_TEXT,
-  requirementId,
-  splitFixDescription,
+  FIX_TASK_PROMPT_NOTE,
+  TASK_APPROACH_NOTE,
+  TASK_DONE_NOTE,
+  TASK_PROMPT_HEADINGS,
 } from "@omniralph/planning";
 import { extractCodebasePatterns, recentProgressEntries } from "./progress.js";
 import { templateList, type TemplateList } from "./triage.js";
@@ -134,35 +132,33 @@ ${EPIC_CONTEXT_NOTE}
 {{#if storyIdentifier}}{{trackerName}} issue: {{storyIdentifier}}{{#if storyUrl}} ({{storyUrl}}){{/if}}
 {{/if}}Kind: {{storyKind}}
 {{#if isFix}}
-${FIX_TASK_NOTE}
+{{#if isTask}}${FIX_TASK_PROMPT_NOTE}{{else}}${FIX_TASK_NOTE}{{/if}}
 {{/if}}
 
 {{#if repository}}Repository: \`{{repository}}\`. This story belongs in this repository rather than the epic's main one, and this worktree is a checkout of it: make every change here.
 {{/if}}
+{{#if isTask}}
 {{#if storyDescription}}
-### Description
+### {{#if isFix}}${TASK_PROMPT_HEADINGS.build.fix}{{else}}${TASK_PROMPT_HEADINGS.build.story}{{/if}}
 {{storyDescription}}
 
 {{/if}}
-{{#if currentBehavior}}
-### ${FIX_SECTIONS.current}
-{{currentBehavior}}
+{{#if storyApproach}}
+### {{#if isFix}}${TASK_PROMPT_HEADINGS.approach.fix}{{else}}${TASK_PROMPT_HEADINGS.approach.story}{{/if}}
+${TASK_APPROACH_NOTE}
+{{storyApproach}}
 
 {{/if}}
-{{#if expectedBehavior}}
-### ${FIX_SECTIONS.expected}
-{{expectedBehavior}}
+{{#if acceptanceCriteria}}
+### ${TASK_PROMPT_HEADINGS.done}
+${TASK_DONE_NOTE}
+{{acceptanceCriteria}}
 
 {{/if}}
-{{#if unchangedBehavior}}
-### ${FIX_SECTIONS.unchanged}
-{{unchangedBehavior}}
-
-{{/if}}
-{{#if coveredRequirements}}
-### ${COVERED_REQUIREMENTS_HEADING}
-${COVERED_REQUIREMENTS_NOTE}
-{{coveredRequirements}}
+{{else}}
+{{#if storyDescription}}
+### Description
+{{storyDescription}}
 
 {{/if}}
 {{#if acceptanceCriteria}}
@@ -170,6 +166,7 @@ ${COVERED_REQUIREMENTS_NOTE}
 ${CRITERIA_AS_EVIDENCE_NOTE}
 {{acceptanceCriteria}}
 
+{{/if}}
 {{/if}}
 {{#if notes}}
 ### Notes
@@ -221,7 +218,7 @@ Review each one with \`git stash show -p --include-untracked <sha>\` and apply w
 ## Workflow
 {{#if planningEpic}}1. Read the epic context above for background, then build only what this task asks for.{{else}}1. Study the PRD context above to understand the bigger picture.{{/if}}
 2. Read the progress log at \`{{progressFile}}\` for status, learnings and gotchas.
-3. Implement ONLY this story ({{storyId}}), satisfying every acceptance criterion. Do not start other stories. Implement it end to end: no TODOs, stubs or placeholders for anything its acceptance criteria cover. The tests and error handling its new code needs are part of this story, not later work.
+3. Implement ONLY this story ({{storyId}}), {{#if isTask}}and keep working until everything under "${TASK_PROMPT_HEADINGS.done}" holds{{else}}satisfying every acceptance criterion{{/if}}. Do not start other stories. Implement it end to end: no TODOs, stubs or placeholders for anything its acceptance criteria cover. The tests and error handling its new code needs are part of this story, not later work.
 4. Run the quality gates and fix any failures.
 5. Do NOT create git commits or push. The orchestrator commits after verifying the story.
 6. Document learnings (see below).
@@ -341,43 +338,25 @@ export function storyKindLabel(story: Pick<Story, "kind">): StoryKindLabel {
   return story.kind === "fix" ? "Fix" : "Story";
 }
 
-/** Whether the epic is in the planning format (it has `## Requirements`), not a legacy PRD or a single issue. */
-function planningEpic(epic: Epic): boolean {
-  return epic.kind !== "single" && epic.requirements !== undefined;
+/** Whether the story is a three-paragraph task (it has an approach, even a blank one), not a legacy story. */
+export function isTaskStory(story: Pick<Story, "approach">): boolean {
+  return story.approach !== undefined;
 }
 
-/** A requirement of a story's `Covers:` line, with its text from the epic (null when the epic doesn't have it). */
-export interface CoveredRequirement {
-  id: string;
-  text: string | null;
-}
-
-/** The requirements of `story`'s `Covers:` line that are requirement identifiers, with their text from `epic`. */
-export function coveredRequirements(epic: Epic, story: Story): CoveredRequirement[] {
-  return (story.covers ?? [])
-    .filter((id) => requirementId(id))
-    .map((id) => ({
-      id,
-      text: epic.requirements?.find((r) => r.id === id)?.text.trim() || null,
-    }));
-}
-
-/** A story's description as its prompt shows it: a Fix's behavior sections apart from the rest. */
-function storyParts(story: Story) {
-  const description = story.description.trim();
-  if (story.kind !== "fix") {
-    return { description, current: null, expected: null, unchanged: null };
-  }
-  return splitFixDescription(description);
+/**
+ * Whether the story prompt frames the epic as background rather than a PRD: a planning-format
+ * epic (it has `## Requirements`), or any epic of a three-paragraph task. Never a single issue.
+ */
+function epicAsContext(epic: Epic, story: Story): boolean {
+  return epic.kind !== "single" && (epic.requirements !== undefined || isTaskStory(story));
 }
 
 export function buildStoryPrompt(ctx: PromptContext, template = DEFAULT_STORY_TEMPLATE): string {
   const { epic, story } = ctx;
   const completed = completedCount(epic);
   const { checks, qualityGates } = storyGates(ctx);
-  const parts = storyParts(story);
   const vars: Vars = {
-    planningEpic: planningEpic(epic) ? "yes" : undefined,
+    planningEpic: epicAsContext(epic, story) ? "yes" : undefined,
     trackerName: ctx.trackerName,
     epicTitle: epic.title,
     epicIdentifier: epic.identifier,
@@ -394,15 +373,10 @@ export function buildStoryPrompt(ctx: PromptContext, template = DEFAULT_STORY_TE
     storyUrl: story.url,
     storyKind: storyKindLabel(story),
     isFix: story.kind === "fix" ? "yes" : undefined,
+    isTask: isTaskStory(story) ? "yes" : undefined,
     repository: story.repo?.name,
-    storyDescription: parts.description || undefined,
-    currentBehavior: parts.current ?? undefined,
-    expectedBehavior: parts.expected ?? undefined,
-    unchangedBehavior: parts.unchanged ?? undefined,
-    coveredRequirements:
-      coveredRequirements(epic, story)
-        .map((r) => `- ${r.id}: ${r.text ?? UNKNOWN_REQUIREMENT_TEXT}`)
-        .join("\n") || undefined,
+    storyDescription: story.description.trim() || undefined,
+    storyApproach: story.approach?.trim() || undefined,
     acceptanceCriteria: story.acceptanceCriteria.map((c) => `- [ ] ${c}`).join("\n") || undefined,
     notes: story.notes,
     attachments: ctx.attachments,
@@ -829,7 +803,10 @@ export interface StoryTemplateContext {
     /** The PRD (the epic's description); null for a single issue or a blank one. */
     prd: string | null;
     single: boolean;
-    /** The epic is in the planning format: its description is background for the task, not a PRD. */
+    /**
+     * The epic's description is background for the task, not a PRD: the epic is in the planning
+     * format, or the story is a three-paragraph task. False for a single issue.
+     */
     planning: boolean;
   };
   stories: StoryListContext;
@@ -844,16 +821,15 @@ export interface StoryTemplateContext {
     kind: StoryKindLabel;
     /** The repository it's worked in, when not the epic's main one. */
     repository: string | null;
-    /** Trimmed, without a Fix's behavior sections; null when blank. */
+    /** It's a Fix (its kind is `Fix`). */
+    fix: boolean;
+    /** It's a three-paragraph task (else a legacy story). */
+    task: boolean;
+    /** What to build (a task's paragraph 1), or a legacy story's description; trimmed, null when blank. */
     description: string | null;
-    /** A Fix's behavior sections (each null when it has none); null for a Story. */
-    fix: {
-      current: string | null;
-      expected: string | null;
-      unchanged: string | null;
-    } | null;
-    /** The requirements of its `Covers:` line, with their text from the epic. */
-    covers: TemplateList<CoveredRequirement>;
+    /** How to build it (a task's paragraph 2), trimmed; null when blank or for a legacy story. */
+    approach: string | null;
+    /** Its criteria (a task's paragraph 3: its stop condition). */
     acceptanceCriteria: TemplateList<string>;
     notes: string | null;
   };
@@ -883,7 +859,6 @@ export interface StoryTemplateContext {
 export function storyTemplateContext(ctx: PromptContext): StoryTemplateContext {
   const { epic, story } = ctx;
   const { checks, qualityGates } = storyGates(ctx);
-  const parts = storyParts(story);
   return {
     tracker: { name: ctx.trackerName },
     epic: {
@@ -892,7 +867,7 @@ export function storyTemplateContext(ctx: PromptContext): StoryTemplateContext {
       url: epic.url ?? null,
       prd: epic.kind === "single" ? null : epic.description.trim() || null,
       single: epic.kind === "single",
-      planning: planningEpic(epic),
+      planning: epicAsContext(epic, story),
     },
     stories: storyListContext(epic, story),
     story: {
@@ -902,12 +877,10 @@ export function storyTemplateContext(ctx: PromptContext): StoryTemplateContext {
       title: oneLine(story.title),
       kind: storyKindLabel(story),
       repository: story.repo?.name ?? null,
-      description: parts.description || null,
-      fix:
-        story.kind === "fix"
-          ? { current: parts.current, expected: parts.expected, unchanged: parts.unchanged }
-          : null,
-      covers: templateList(coveredRequirements(epic, story)),
+      fix: story.kind === "fix",
+      task: isTaskStory(story),
+      description: story.description.trim() || null,
+      approach: story.approach?.trim() || null,
       acceptanceCriteria: templateList(story.acceptanceCriteria),
       notes: story.notes || null,
     },
