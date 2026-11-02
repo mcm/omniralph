@@ -176,6 +176,11 @@ export type RalphAttachment = z.infer<typeof RalphAttachment>;
 
 const RalphAttachments = z.array(RalphAttachment).max(200).default([]);
 
+/** Most acceptance criteria a task verifier checks. */
+export const MAX_VERIFIED_CRITERIA = 100;
+/** Longest acceptance criterion, or a verifier's reason, kept. */
+export const MAX_CRITERION_LENGTH = 4000;
+
 /** One of the epic's stories, for the story list in the prompt. */
 export const RalphStoryListItem = RalphIssue.extend({
   status: z.enum(RALPH_STORY_LIST_STATUSES),
@@ -211,6 +216,14 @@ export const RalphStoryPayload = RalphJobBase.extend({
     description: z.string().max(MAX_DOCUMENT_LENGTH),
     /** `fix` when the work item has one of the tracker's fix labels, else `story`. */
     kind: z.enum(RALPH_STORY_KINDS).default("story"),
+    /**
+     * The work item's acceptance criteria, which `description` doesn't carry. Absent from
+     * older servers' payloads: the agent then parses them from `description`.
+     */
+    acceptanceCriteria: z
+      .array(z.string().min(1).max(MAX_CRITERION_LENGTH))
+      .max(MAX_VERIFIED_CRITERIA)
+      .optional(),
   }),
   /** Every story of the epic in order (the prompt lists them); may be empty. */
   stories: z.array(RalphStoryListItem).max(500).default([]),
@@ -355,11 +368,6 @@ export const RalphDescribePrResult = z.object({
   usage: TokenUsage,
 });
 export type RalphDescribePrResult = z.infer<typeof RalphDescribePrResult>;
-
-/** Most acceptance criteria a task verifier checks. */
-export const MAX_VERIFIED_CRITERIA = 100;
-/** Longest acceptance criterion, or a verifier's reason, kept. */
-const MAX_CRITERION_LENGTH = 4000;
 
 /**
  * What a `ralph.verify-task` query run checks: one story attempt its session reported

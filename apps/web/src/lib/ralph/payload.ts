@@ -23,6 +23,8 @@ import {
   type Story,
 } from "@omniralph/ralph";
 import {
+  MAX_CRITERION_LENGTH,
+  MAX_VERIFIED_CRITERIA,
   RalphDescribePrPayload,
   RalphPreparePayload,
   RalphPushPayload,
@@ -139,6 +141,14 @@ export interface StoryPayloadInput {
   fixLabels?: readonly string[];
 }
 
+/** A story's acceptance criteria within the payload's limits (blank ones dropped). */
+function payloadCriteria(criteria: readonly string[]): string[] {
+  return criteria
+    .map((criterion) => criterion.trim().slice(0, MAX_CRITERION_LENGTH))
+    .filter(Boolean)
+    .slice(0, MAX_VERIFIED_CRITERIA);
+}
+
 export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
   const { run, lane, repository, connection, epic, story, row } = input;
   const identifier = story.identifier ?? story.storyId;
@@ -166,6 +176,7 @@ export function buildStoryPayload(input: StoryPayloadInput): RalphStoryPayload {
       trackerIssueId: row.trackerIssueId,
       url: url(story.url),
       description: headOf(story.description),
+      acceptanceCriteria: payloadCriteria(story.acceptanceCriteria),
       kind: story.kind === "fix" ? "fix" : workItemKind(story.labels ?? [], input.fixLabels),
     },
     stories: storyList(epic, input.stories).slice(0, 500),

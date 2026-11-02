@@ -18,6 +18,7 @@ import {
 import { storyIssueBody } from "@omniralph/ralph";
 import {
   excerpt,
+  MAX_CRITERION_LENGTH,
   MAX_VERIFIED_CRITERIA,
   RALPH_VERIFY_TASK_JOB_TYPE,
   RalphStoryPayload,
@@ -33,8 +34,6 @@ import { laneAgentId, storyLane } from "./lanes";
 import { postActivity } from "./notify";
 import type { OutcomeContext } from "./outcome";
 
-/** Longest acceptance criterion passed to the verifier. */
-const MAX_CRITERION_LENGTH = 4000;
 /** Longest story description passed to the verifier (the payload's limit). */
 const MAX_DESCRIPTION_LENGTH = 200_000;
 
@@ -61,14 +60,18 @@ async function storyCriteria(
   story: RalphStory,
   payload: RalphStoryPayload,
 ): Promise<{ description: string; acceptanceCriteria: string[] }> {
-  const text = await ctx.tracker
-    .getIssue(story.trackerIssueId)
-    .then((issue) => issue.description)
-    .catch((error: unknown) => {
-      console.warn(`${story.identifier}: could not read its acceptance criteria`, error);
-      return payload.story.description;
-    });
-  const body = storyIssueBody(text);
+  const issue = await ctx.tracker.getIssue(story.trackerIssueId).catch((error: unknown) => {
+    console.warn(`${story.identifier}: could not read its acceptance criteria`, error);
+    return null;
+  });
+  // Else the payload's criteria (an older payload has them, if at all, in its description).
+  const body =
+    issue === null && payload.story.acceptanceCriteria
+      ? {
+          description: payload.story.description,
+          acceptanceCriteria: payload.story.acceptanceCriteria,
+        }
+      : storyIssueBody(issue ? issue.description : payload.story.description);
   return {
     description: body.description.slice(0, MAX_DESCRIPTION_LENGTH),
     acceptanceCriteria: body.acceptanceCriteria
