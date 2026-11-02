@@ -85,7 +85,10 @@ export interface PromptInput {
 export interface AssembledPrompt {
   /** The full prompt: `stablePrefix` followed by the per-PR content. */
   text: string;
-  /** Base instruction, depth, check type, rubric and repo rules; identical per (repo, profile, check type, languages). */
+  /**
+   * Base instruction, depth, rubric (single-pass only) and repo rules; identical per
+   * (repo, profile, languages), and for a check-type pass the same for every check type.
+   */
   stablePrefix: string;
   languages: RubricLanguage[];
   /** The pass's check type; undefined for a single-pass review. */
@@ -167,16 +170,36 @@ const CHECK_TYPE_FOCUS: Readonly<Record<CheckType, string>> = {
 };
 
 /**
- * What a check-type pass looks for: its focus and the categories it may
- * report, leaving other check types' issues to their own passes.
+ * What a check-type pass looks for: its focus and the categories it reports.
+ * Other check types' issues are left to their own passes unless the problem is clear.
  */
 export function checkGuidance(checkType: CheckType): string {
   const categories = CHECK_TYPE_CATEGORIES[checkType];
   const scope =
     categories.length > 0
-      ? ` Report only findings in the ${categories.length === 1 ? "category" : "categories"} ${categories.map((c) => `\`${c}\``).join(", ")}.`
+      ? ` Report findings in the ${categories.length === 1 ? "category" : "categories"} ${categories.map((c) => `\`${c}\``).join(", ")}.`
       : "";
-  return `${CHECK_TYPE_FOCUS[checkType]}${scope} Other check types are reviewed in separate passes, so leave their issues out.`;
+  return `${CHECK_TYPE_FOCUS[checkType]}${scope} Other check types are reviewed in separate passes, so report an issue outside this pass's focus only when the problem is clear from the code, not a suspicion.`;
+}
+
+/**
+ * Heads a check-type pass's last section. It comes after the quoted data (the
+ * diff), so it says where that data ends.
+ */
+export const CHECK_TYPE_INTRO =
+  "The quoted data ended with the diff above. This section and the rubric below are instructions for this pass.";
+
+/** A check-type pass's closing block: its focus, then only its categories' rubric sections plus the shared ones. */
+export function checkTypeSection(
+  checkType: CheckType,
+  languages: readonly RubricLanguage[],
+): string {
+  return [
+    `# Check type\n\n${CHECK_TYPE_INTRO}\n\n${checkGuidance(checkType)}`,
+    renderCheckRubric(languages, CHECK_TYPE_CATEGORIES[checkType]),
+  ]
+    .filter((s): s is string => Boolean(s))
+    .join("\n\n");
 }
 
 /** A fenced block longer than any backtick run inside `content`, so the content can't close it. */
@@ -214,6 +237,11 @@ function repoRulesSection(config: ReviewConfig): string | undefined {
   return parts.length > 0 ? `# Repository rules\n\n${parts.join("\n\n")}` : undefined;
 }
 
+/**
+ * The prompt's cacheable start: base instruction, depth, rubric and repo rules. A
+ * check-type pass leaves out the rubric (its narrowed rubric comes last, with the
+ * check type), so every pass of one review shares this prefix and the per-PR content.
+ */
 export function buildStablePrefix(
   config: ReviewConfig,
   languages: readonly RubricLanguage[],
@@ -222,10 +250,7 @@ export function buildStablePrefix(
   return [
     BASE_INSTRUCTION,
     `# Review depth\n\n${depthGuidance(config.profile)}`,
-    checkType ? `# Check type\n\n${checkGuidance(checkType)}` : undefined,
-    checkType
-      ? renderCheckRubric(languages, CHECK_TYPE_CATEGORIES[checkType])
-      : renderRubric(languages),
+    checkType ? undefined : renderRubric(languages),
     repoRulesSection(config),
   ]
     .filter((s): s is string => Boolean(s))
@@ -334,9 +359,10 @@ function diffSection(files: readonly DiffFile[], incremental?: IncrementalScope)
 
 /**
  * Assembles the review prompt. The stable prefix (base instruction, depth,
- * check type, rubric, repo rules) comes first so it can be cached across reviews; the
- * per-PR content (conventions, hints, PR text, previous findings, diff) comes
- * last.
+ * rubric, repo rules) comes first so it can be cached across reviews, then the
+ * per-PR content (conventions, hints, PR text, previous findings, diff). A
+ * check-type pass ends with its check type and narrowed rubric, so the passes
+ * of one review share everything before that.
  */
 export function buildPrompt(input: PromptInput): AssembledPrompt {
   const languages = languagesForPaths(input.files.map((f) => f.path));
@@ -348,6 +374,7 @@ export function buildPrompt(input: PromptInput): AssembledPrompt {
     changeRequestSection(input.changeRequest),
     input.previousFindings?.length ? previousFindingsSection(input.previousFindings) : undefined,
     diffSection(input.files, input.incremental),
+    input.checkType ? checkTypeSection(input.checkType, languages) : undefined,
   ].filter((s): s is string => Boolean(s));
   return {
     text: [stablePrefix, ...perChange].join("\n\n") + "\n",

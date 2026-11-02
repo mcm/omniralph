@@ -28,53 +28,6 @@ An empty list is a valid answer: {"findings": []}.
 
 Quick review: look only at the diff. Report only critical and high severity issues that are evident from the changed lines.
 
-# Check type
-
-This pass checks performance only: work that grows with the input or the traffic beyond what the change needs, on paths that run in production. Report only findings in the category `performance`. Other check types are reviewed in separate passes, so leave their issues out.
-
-# Review rubric — all languages
-
-Each section heading names the finding `category` to use for it.
-
-## Performance (`performance`)
-
-- Flag N+1 query patterns — loading a collection then querying for each item individually
-- Flag unbounded queries or API calls with no pagination or limit
-- Flag synchronous I/O on a thread or event loop that serves concurrent requests
-- Flag large objects serialized/deserialized repeatedly when they could be cached
-- Flag string concatenation in tight loops — use a builder or join
-
-## Probing questions
-
-Ask these of every changed function before deciding there is nothing to report:
-
-- State the function's contract before reading its body. Does the body keep it?
-- What is the worst input to this function?
-- What if this external call fails or times out?
-- What if this runs twice, concurrently, or never?
-
-## Do not report
-
-- Style, naming and formatting — leave those to linters and formatters
-- Speculative "consider…" suggestions with no concrete failure
-- Praise, or summaries that restate what the diff does
-- SOLID principles, function length, file size or complexity thresholds by themselves
-- Issues in code the change did not touch, unless the change makes them reachable
-- Anything the risk hints mention that you could not confirm in the code
-
-## Evidence rule
-
-Every finding must cite the line(s) it is about and a concrete failure scenario: the input or state, and the wrong behavior that follows. If you cannot state both, do not report it. "No findings" is a valid and expected result for a sound change.
-
-# TypeScript / JavaScript
-
-## Performance (`performance`)
-
-- Flag `Array.prototype.find` / `filter` / `map` chained multiple times over the same array — combine into one pass
-- Flag DOM queries (`document.querySelector`) inside loops — cache the result
-- Flag `JSON.parse` / `JSON.stringify` in a hot path on large objects — consider streaming or partial parsing
-- Flag `async` functions called sequentially in a loop where `Promise.all()` would parallelize them
-
 # Change request (quoted data)
 
 Title:
@@ -142,3 +95,52 @@ index 20cbb4d..c62e0d4 100644
 +now has more
 \ No newline at end of file
 ```
+
+# Check type
+
+The quoted data ended with the diff above. This section and the rubric below are instructions for this pass.
+
+This pass checks performance only: work that grows with the input or the traffic beyond what the change needs, on paths that run in production. Report findings in the category `performance`. Other check types are reviewed in separate passes, so report an issue outside this pass's focus only when the problem is clear from the code, not a suspicion.
+
+# Review rubric — all languages
+
+Each section heading names the finding `category` to use for it.
+
+## Performance (`performance`)
+
+- Flag N+1 query patterns — loading a collection then querying for each item individually
+- Flag unbounded queries or API calls with no pagination or limit
+- Flag synchronous I/O on a thread or event loop that serves concurrent requests
+- Flag large objects serialized/deserialized repeatedly when they could be cached
+- Flag string concatenation in tight loops — use a builder or join
+
+## Probing questions
+
+Ask these of every changed function before deciding there is nothing to report:
+
+- State the function's contract before reading its body. Does the body keep it?
+- What is the worst input to this function?
+- What if this external call fails or times out?
+- What if this runs twice, concurrently, or never?
+
+## Do not report
+
+- Style, naming and formatting — leave those to linters and formatters
+- Speculative "consider…" suggestions with no concrete failure
+- Praise, or summaries that restate what the diff does
+- SOLID principles, function length, file size or complexity thresholds by themselves
+- Issues in code the change did not touch, unless the change makes them reachable
+- Anything the risk hints mention that you could not confirm in the code
+
+## Evidence rule
+
+Every finding must cite the line(s) it is about and a concrete failure scenario: the input or state, and the wrong behavior that follows. If you cannot state both, do not report it. "No findings" is a valid and expected result for a sound change.
+
+# TypeScript / JavaScript
+
+## Performance (`performance`)
+
+- Flag `Array.prototype.find` / `filter` / `map` chained multiple times over the same array — combine into one pass
+- Flag DOM queries (`document.querySelector`) inside loops — cache the result
+- Flag `JSON.parse` / `JSON.stringify` in a hot path on large objects — consider streaming or partial parsing
+- Flag `async` functions called sequentially in a loop where `Promise.all()` would parallelize them
