@@ -1,4 +1,4 @@
-import type { Finding, TokenUsage } from "@omniralph/shared";
+import type { DocumentationUpdate, Finding, TokenUsage } from "@omniralph/shared";
 import type { ReviewTask } from "../plan.js";
 
 export type ReviewStopReason = "completed" | "budget_exhausted" | "rate_limited" | "error";
@@ -44,6 +44,8 @@ export interface TaskReviewResult {
   fixedPrevious?: number[];
   /** The answer's optional `summary` (only from a valid, `completed` answer). */
   summary?: string;
+  /** The answer's optional `documentationUpdates` (only from a valid, `completed` answer). */
+  documentationUpdates?: DocumentationUpdate[];
 }
 
 export interface ReviewProvider {

@@ -47,6 +47,7 @@ installable's MCP server as <package>:<server>; other MCP servers can't be used.
 | ------------------ | --------- | ----------------------------------------------------------------------------------------- | ---------------- | ------------- | -------- |
 | `review`           | review    | `pr.updated`, `pr.mention`, `review.rerun`                                                | `review`         |               | `looped` |
 | `review-summary`   | review    | `pr.updated`, `pr.mention`, `review.rerun`                                                | `sticky-comment` |               | `none`   |
+| `docs-check`       | review    | `pr.updated`, `pr.mention`, `review.rerun`                                                | `sticky-comment` | Yes           | `looped` |
 | `correlation`      | query     | `run.invoked`                                                                             | `run-result`     |               | `none`   |
 | `story`            | coding    | `tracker.delegated`                                                                       | `ralph-run`      |               | `looped` |
 | `request`          | coding    | `tracker.mention`, `chat.request`, `pr.review-findings`, `pr.ci-failed`, `pr.fix-command` | `ralph-run`      |               | `none`   |
@@ -63,7 +64,9 @@ its findings feed the next iteration until the verifier is satisfied or a cap is
 [loop settings](#loop-settings)). Looping is the default: a new role loops unless it declares
 `none`. The single-session roles are the deliberate exceptions: chat answers, requests, finding
 replies, learned rules, correlation, PR descriptions and review summaries, plus the loop's own
-helpers. `verifier` checks a worker's output (a task against its acceptance criteria) and `audit`
+helpers. `docs-check` is the [documentation check](#documentation-check): a looped review-type
+run whose output goes to its own sticky comment. `verifier` checks a worker's output (a task against
+its acceptance criteria, a review pass's findings, a documentation check's updates) and `audit`
 checks a finished epic against its requirements before its PR opens; both are invoked by another
 run and hand their output back to it.
 
@@ -97,10 +100,11 @@ The sinks apply a run's output:
 A run's model and token cap come from one place, by kind of run (`resolveRunSpec` in
 `apps/web/src/lib/runs/resolve.ts`):
 
-| Run       | Model                                                                | Fallback model | Token budget                                          |
-| --------- | -------------------------------------------------------------------- | -------------- | ----------------------------------------------------- |
-| A review  | The review depth's (Quick, Standard or Deep)                         | None           | The review depth's cap; max files and exploration too |
-| Any other | The playbook's `model`, or the Claude Code default when it sets none | The playbook's | The playbook's fixed `tokens`, or **No limit**        |
+| Run                   | Model                                                                | Fallback model | Token budget                                                    |
+| --------------------- | -------------------------------------------------------------------- | -------------- | --------------------------------------------------------------- |
+| A review              | The review depth's (Quick, Standard or Deep)                         | None           | The review depth's cap; max files and exploration too           |
+| A documentation check | The [documentation depth](#documentation-depth)'s                    | None           | The documentation depth's cap and max files; it always explores |
+| Any other             | The playbook's `model`, or the Claude Code default when it sets none | The playbook's | The playbook's fixed `tokens`, or **No limit**                  |
 
 A review's depth is the repository's, or the one a `@bot review <depth>` mention or a re-run asked
 for. A review playbook can't set a model, fallback model or budget ("Review playbooks can't set a
@@ -119,7 +123,7 @@ through a `PlaybookSource` (`getPlaybook`, `organizationPlaybooks` in
 
 ### Loop settings
 
-A looped role that doesn't code (`review`, `triage`; `roleHasLoopSettings`) takes a `loop` block.
+A looped role that doesn't code (`review`, `docs-check`, `triage`; `roleHasLoopSettings`) takes a `loop` block.
 Each limit it leaves out has its default (`LOOP_DEFAULTS` in `packages/tasks/src/playbooks.ts`);
 `playbookLoopSettings` reads them:
 
@@ -246,26 +250,83 @@ follow-up) gets a new audit while rounds are left. Each audit is kept in `ralph_
 timestamps). The audit is a separate playbook with its own model (`builtin:audit-epic` uses
 `claude-opus-5-5`).
 
+### Documentation check
+
+`builtin:check-docs` (role `docs-check`, `packages/tasks/src/builtin/check-docs.ts`) finds the
+documentation a PR's change makes wrong or incomplete: text describing behavior, names, settings,
+flags, commands, parameters or examples the change modifies, renames or removes, and documentation
+that should mention something the change adds to what it already documents. It never asks for
+documentation of code the change doesn't touch, for problems that predate the change, or for style.
+It runs as a review task (the agent's review lifecycle, on a checkout of the head, with `Read`,
+`Grep` and `Glob` to read the repo beyond the diff at every depth) and answers the review task
+type's JSON with no findings:
+
+```json
+{
+  "findings": [],
+  "summary": "…",
+  "documentationUpdates": [{ "path": "…", "reason": "…", "suggestion": "…" }]
+}
+```
+
+`documentationUpdates` has one entry per file (`suggestion` optional), at most 100;
+`ReviewTaskResult` in `@omniralph/shared` parses it, and results without it (every other review)
+still parse. The PR text, the diff and earlier iterations' updates are quoted data in the prompt,
+and the system text says everything from the repo or the change is untrusted.
+
+The check loops ([loop settings](#loop-settings)) with `builtin:verify-docs` (role `verifier`) as its
+verifier: after each iteration, a fresh session on a read-only checkout of the head re-reads each
+update's file against the diff and confirms or rejects it, citing the line it relies on
+(`{ verdicts: [{ updateId, verdict, line, reason }], summary }`; `DocumentationVerificationOutput`).
+`applyDocumentationVerification` keeps the confirmed updates and drops rejected and unanswered ones
+with why; a verifier that fails confirms nothing and a rate-limited one runs again. The next
+iteration's trigger context (`documentation.earlier`) lists what was confirmed (not to be reported
+again) and dropped. The loop converges once an iteration confirms no update of a file no earlier
+iteration confirmed (`documentationLoopVerdict`), or stops at the depth's iteration cap.
+
+#### Documentation depth
+
+`DOCUMENTATION_DEPTHS` in `@omniralph/shared` (`documentation-check.ts`), beside the review depths,
+sets what a check reads, its model, token cap, file limit and iteration cap. Each preset has a
+one-line `summary` and `details` for the UI:
+
+| Depth    | Reads (`scope`)                                                                                     | Model               | Token cap | Iterations |
+| -------- | --------------------------------------------------------------------------------------------------- | ------------------- | --------- | ---------- |
+| Quick    | Markdown docs, READMEs, `docs/` and agent instruction files (`CLAUDE.md`, `AGENTS.md`, …)           | `claude-haiku-5-5`  | 100,000   | Up to 2    |
+| Standard | Quick's, plus comments and docstrings in the changed files (the default)                            | `claude-sonnet-5-5` | 250,000   | Up to 3    |
+| Deep     | Standard's, plus comments and docstrings anywhere in the repo that mention what the change modifies | `claude-opus-5-5`   | 500,000   | Up to 4    |
+
+A check's worker trigger context carries `documentation` (`documentationCheckContext`: the depth,
+its scope as the prompt's list, and from the second iteration on the earlier iterations'
+confirmed and dropped updates); its verifier's carries the depth and scope too
+(`documentationVerificationContext`). `resolveRunSpec` takes the model, token cap and file limit
+from `documentation.depth` (`documentationProfileConfig`), never the repo's review depth, and makes
+the trigger context's `reviewConfig.profile` the same profile with exploration on; a check without a
+valid depth can't be resolved. `documentationLoopLimits` gives the loop's iteration cap.
+
 ## Built-in playbooks
 
 The built-ins are in `packages/tasks/src/builtin/` and registered in `packages/tasks/src/builtins.ts`
 (`BUILTIN_PLAYBOOKS`). Each keeps the ID its task had; the personas they share (the reviewer, the
 engineer) are folded into each playbook.
 
-| Playbook                     | Role               | Model               | Token budget |
-| ---------------------------- | ------------------ | ------------------- | ------------ |
-| `builtin:review-pr`          | `review`           | The review depth's  | The depth's  |
-| `builtin:summarize-pr`       | `review-summary`   | The review depth's  | The depth's  |
-| `builtin:correlate-findings` | `correlation`      | `claude-sonnet-5-5` | 100,000      |
-| `builtin:implement-story`    | `story`            | `opus`              | No limit     |
-| `builtin:handle-request`     | `request`          | `opus`              | No limit     |
-| `builtin:describe-pr`        | `pr-description`   | `opus`              | No limit     |
-| `builtin:verify-task`        | `verifier`         | `claude-sonnet-5-5` | No limit     |
-| `builtin:audit-epic`         | `audit`            | `claude-opus-5-5`   | No limit     |
-| `builtin:ask-about-code`     | `chat-ask`         | `claude-sonnet-5-5` | 50,000       |
-| `builtin:triage`             | `triage`           | `opus`              | No limit     |
-| `builtin:learn-rule`         | `learn-rule`       | `claude-sonnet-5-5` | 5,000        |
-| `builtin:reply-to-finding`   | `reply-to-finding` | `claude-sonnet-5-5` | 20,000       |
+| Playbook                     | Role               | Model                     | Token budget              |
+| ---------------------------- | ------------------ | ------------------------- | ------------------------- |
+| `builtin:review-pr`          | `review`           | The review depth's        | The depth's               |
+| `builtin:summarize-pr`       | `review-summary`   | The review depth's        | The depth's               |
+| `builtin:verify-findings`    | `verifier`         | `claude-sonnet-5-5`       | 100,000                   |
+| `builtin:check-docs`         | `docs-check`       | The documentation depth's | The documentation depth's |
+| `builtin:verify-docs`        | `verifier`         | `claude-sonnet-5-5`       | 100,000                   |
+| `builtin:correlate-findings` | `correlation`      | `claude-sonnet-5-5`       | 100,000                   |
+| `builtin:implement-story`    | `story`            | `opus`                    | No limit                  |
+| `builtin:handle-request`     | `request`          | `opus`                    | No limit                  |
+| `builtin:describe-pr`        | `pr-description`   | `opus`                    | No limit                  |
+| `builtin:verify-task`        | `verifier`         | `claude-sonnet-5-5`       | No limit                  |
+| `builtin:audit-epic`         | `audit`            | `claude-opus-5-5`         | No limit                  |
+| `builtin:ask-about-code`     | `chat-ask`         | `claude-sonnet-5-5`       | 50,000                    |
+| `builtin:triage`             | `triage`           | `opus`                    | No limit                  |
+| `builtin:learn-rule`         | `learn-rule`       | `claude-sonnet-5-5`       | 5,000                     |
+| `builtin:reply-to-finding`   | `reply-to-finding` | `claude-sonnet-5-5`       | 20,000                    |
 
 `builtinProblems` checks the registry (each parses, has a unique `builtin:` ID, a valid template
 and valid variable limits, and its coding settings combine), and a snapshot test checks each

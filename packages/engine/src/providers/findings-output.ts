@@ -1,9 +1,23 @@
-import { Finding, FindingList } from "@omniralph/shared";
+import {
+  DocumentationUpdateList,
+  Finding,
+  FindingList,
+  type DocumentationUpdate,
+} from "@omniralph/shared";
 import type { DiffFile } from "../diff.js";
 
 export type ParsedOutput =
-  /** `summary` is the answer's optional `summary` string (a review task's overview of the change). */
-  | { ok: true; findings: Finding[]; fixedPrevious: number[]; summary?: string }
+  /**
+   * `summary` is the answer's optional `summary` string (a review task's overview of the change);
+   * `documentationUpdates` its optional list of documentation updates (a documentation check's).
+   */
+  | {
+      ok: true;
+      findings: Finding[];
+      fixedPrevious: number[];
+      summary?: string;
+      documentationUpdates?: DocumentationUpdate[];
+    }
   /** `items` (and `fixedPrevious`) are set when the JSON shape was right but some items are invalid. */
   | { ok: false; error: string; items?: unknown[]; fixedPrevious?: number[] };
 
@@ -61,9 +75,32 @@ function summaryOf(value: unknown): { summary?: string } | { error: string } {
 }
 
 /**
- * Parses the model's final answer: `{"findings": [...], "summary"?: string}`
- * or a bare array, optionally fenced. A `summary` that isn't a string makes
- * the answer invalid.
+ * The answer's `documentationUpdates`: absent, a valid list, or error
+ * messages when it's anything else.
+ */
+function documentationUpdatesOf(
+  value: unknown,
+): { documentationUpdates?: DocumentationUpdate[] } | { errors: string[] } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const updates = (value as { documentationUpdates?: unknown }).documentationUpdates;
+  if (updates === undefined || updates === null) return {};
+  const parsed = DocumentationUpdateList.safeParse(updates);
+  if (parsed.success) return { documentationUpdates: parsed.data };
+  return {
+    errors: parsed.error.issues.slice(0, 20).map((issue) => {
+      const field = issue.path.map((key) =>
+        typeof key === "number" ? `[${key}]` : `.${String(key)}`,
+      );
+      return `documentationUpdates${field.join("")}: ${issue.message}`;
+    }),
+  };
+}
+
+/**
+ * Parses the model's final answer: `{"findings": [...], "summary"?: string,
+ * "documentationUpdates"?: [...]}` or a bare array, optionally fenced. A
+ * `summary` that isn't a string, or `documentationUpdates` that aren't a
+ * valid list, make the answer invalid.
  */
 export function parseFindingsOutput(text: string): ParsedOutput {
   const candidate = jsonCandidate(text);
@@ -78,9 +115,10 @@ export function parseFindingsOutput(text: string): ParsedOutput {
   if (!items) return { ok: false, error: 'Expected an object {"findings": [...]}.' };
   const fixedPrevious = fixedPreviousIds(value);
   const summary = summaryOf(value);
+  const updates = documentationUpdatesOf(value);
   const parsed = FindingList.safeParse(items);
-  if (parsed.success && !("error" in summary)) {
-    return { ok: true, findings: parsed.data, fixedPrevious, ...summary };
+  if (parsed.success && !("error" in summary) && !("errors" in updates)) {
+    return { ok: true, findings: parsed.data, fixedPrevious, ...summary, ...updates };
   }
   const issues = (parsed.success ? [] : parsed.error.issues.slice(0, 20)).map((issue) => {
     const [index, ...rest] = issue.path;
@@ -88,6 +126,7 @@ export function parseFindingsOutput(text: string): ParsedOutput {
     return `findings[${String(index)}]${field}: ${issue.message}`;
   });
   if ("error" in summary) issues.push(summary.error);
+  if ("errors" in updates) issues.push(...updates.errors);
   return { ok: false, error: `Invalid findings:\n${issues.join("\n")}`, items, fixedPrevious };
 }
 

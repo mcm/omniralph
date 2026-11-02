@@ -5,6 +5,7 @@ export * from "./agent-settings.js";
 export * from "./pools.js";
 export * from "./review-job.js";
 export * from "./review-depth.js";
+export * from "./documentation-check.js";
 export * from "./settings.js";
 export * from "./feedback.js";
 export * from "./rules.js";

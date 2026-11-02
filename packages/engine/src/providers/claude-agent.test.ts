@@ -496,6 +496,41 @@ describe("ClaudeAgentProvider", () => {
     expect(kept.summary).toBeUndefined();
   });
 
+  it("returns a documentation check's updates, after one repair of invalid ones", async () => {
+    const updates = [
+      { path: "docs/settings.md", reason: "Names `timeout`.", suggestion: "`requestTimeout`" },
+    ];
+    const valid = fakeQuery([
+      result(JSON.stringify({ findings: [], summary: "One file.", documentationUpdates: updates })),
+    ]);
+    const res = await new ClaudeAgentProvider({
+      query: valid.query,
+      logger: silentLogger(),
+    }).review(request());
+    expect(res).toMatchObject({ stopReason: "completed", documentationUpdates: updates });
+
+    // A review answer without the field has none.
+    const plain = fakeQuery([result(JSON.stringify({ findings: [finding()] }))]);
+    const review = await new ClaudeAgentProvider({
+      query: plain.query,
+      logger: silentLogger(),
+    }).review(request());
+    expect(review.documentationUpdates).toBeUndefined();
+
+    const repaired = fakeQuery(
+      [result(JSON.stringify({ findings: [], documentationUpdates: [{ path: "README.md" }] }))],
+      [result(JSON.stringify({ findings: [], documentationUpdates: updates }))],
+    );
+    const fixed = await new ClaudeAgentProvider({
+      query: repaired.query,
+      logger: silentLogger(),
+    }).review(request());
+    expect(repaired.calls).toHaveLength(2);
+    expect(repaired.calls[1]!.prompt).toContain("documentationUpdates[0].reason");
+    expect(repaired.calls[1]!.prompt).toContain('"documentationUpdates"');
+    expect(fixed).toMatchObject({ stopReason: "completed", documentationUpdates: updates });
+  });
+
   it("drops and logs items that are still invalid after the repair", async () => {
     const bad = finding({ severity: "blocker" });
     const fake = fakeQuery(

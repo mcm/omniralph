@@ -62,6 +62,14 @@ const CODING_TRIGGERS = [...STORY_TRIGGERS, ...REQUEST_TRIGGERS] as const;
 const CODING_RUN_TRIGGERS = [...CODING_TRIGGERS, "run.invoked"] as const;
 /** Story triggers, and the `run.invoked` of a task verifier a story run invokes (`builtin:verify-task`). */
 const STORY_RUN_TRIGGERS = [...STORY_TRIGGERS, "run.invoked"] as const;
+/** Triggers of review runs. */
+const REVIEW_RUN_TRIGGERS = [
+  "pr.updated",
+  "pr.mention",
+  "review.rerun",
+] as const satisfies readonly TriggerKind[];
+/** Review triggers (a documentation check), and the `run.invoked` of its verifier (`builtin:verify-docs`). */
+const DOCUMENTATION_TRIGGERS = [...REVIEW_RUN_TRIGGERS, "run.invoked"] as const;
 /** Triggers whose runs start from a work item in the tracker. */
 const TRACKER_TRIGGERS = [
   "tracker.delegated",
@@ -407,6 +415,81 @@ export const VARIABLES: readonly VariableDefinition[] = [
     triggers: ["run.invoked"],
     description:
       "The pass's findings as a JSON array (`id`, `path`, `startLine`, `endLine`, `severity`, `category`, `title`, `body`, `suggestion`).",
+  },
+  // Documentation checks: the depth's scope (worker and verifier), what earlier iterations
+  // settled (worker), and the iteration's updates (verifier).
+  {
+    name: "documentation",
+    source: "trigger",
+    trust: "trusted",
+    triggers: DOCUMENTATION_TRIGGERS,
+    description:
+      "Set for a documentation check (`builtin:check-docs`) and its verifier; null otherwise.",
+  },
+  {
+    name: "documentation.depth",
+    source: "trigger",
+    trust: "trusted",
+    triggers: DOCUMENTATION_TRIGGERS,
+    description: "The documentation depth: `quick`, `standard` or `deep`.",
+  },
+  {
+    name: "documentation.scope",
+    source: "trigger",
+    trust: "trusted",
+    triggers: DOCUMENTATION_TRIGGERS,
+    description:
+      "The kinds of documentation the depth reads, as a Markdown list (Markdown docs; comments and docstrings in the changed files; those anywhere that mention the change).",
+  },
+  {
+    name: "documentation.earlier",
+    source: "trigger",
+    trust: "trusted",
+    triggers: REVIEW_RUN_TRIGGERS,
+    description:
+      "From a documentation check's second iteration on: what earlier iterations' verifiers confirmed and dropped (null on the first).",
+  },
+  {
+    name: "documentation.earlier.iteration",
+    source: "trigger",
+    trust: "trusted",
+    triggers: REVIEW_RUN_TRIGGERS,
+    description: "The iteration's number (2 or more).",
+  },
+  {
+    name: "documentation.earlier.confirmed",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "json",
+    triggers: REVIEW_RUN_TRIGGERS,
+    description:
+      "Documentation updates earlier iterations confirmed, as a JSON array (`path`, `reason`, `suggestion`).",
+  },
+  {
+    name: "documentation.earlier.dropped",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "json",
+    triggers: REVIEW_RUN_TRIGGERS,
+    description:
+      "Documentation updates earlier iterations' verifiers dropped, as a JSON array (`path`, `reason`: why).",
+  },
+  {
+    name: "verification.iteration",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description:
+      "Number of the documentation check iteration whose updates are verified (1 on the first).",
+  },
+  {
+    name: "verification.updates",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "json",
+    triggers: ["run.invoked"],
+    description:
+      "The iteration's documentation updates as a JSON array (`id`, `path`, `reason`, `suggestion`).",
   },
   // Coding runs (story and request runs) and the PR description they invoke. Titles and
   // identifiers are put on one line and render as is; issue text, the PRD, requests, guidance,

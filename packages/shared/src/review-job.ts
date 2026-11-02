@@ -4,6 +4,7 @@
  * reports to `/result`.
  */
 import { z } from "zod";
+import { DocumentationCheckContext, DocumentationUpdateList } from "./documentation-check.js";
 import { Finding, FindingCategory, FindingSeverity } from "./finding.js";
 import { RunSpecJobPayload } from "./run-spec.js";
 import { TokenUsage } from "./usage.js";
@@ -213,6 +214,12 @@ export const ReviewTriggerContext = z.object({
    * rubric sections. Absent: a single-pass review of the whole change.
    */
   pass: ReviewPassContext.optional(),
+  /**
+   * Set for a documentation check (`builtin:check-docs`): its depth, the kinds
+   * of documentation in its scope and what earlier iterations settled. The
+   * run spec takes its model and token cap from the depth.
+   */
+  documentation: DocumentationCheckContext.optional(),
 });
 export type ReviewTriggerContext = z.infer<typeof ReviewTriggerContext>;
 
@@ -289,6 +296,7 @@ export const ReviewTaskContext = ReviewTriggerContext.pick({
   reviewConfig: true,
   previousReview: true,
   pass: true,
+  documentation: true,
 });
 export type ReviewTaskContext = z.infer<typeof ReviewTaskContext>;
 
@@ -300,8 +308,13 @@ export function reviewTriggerContext(payload: unknown): ReviewTriggerContext {
 /** Longest `summary` a review task's result carries. */
 export const MAX_REVIEW_SUMMARY_LENGTH = 20_000;
 
-/** Result of a `review` task run: a `ReviewJobResult` plus the session's optional `summary`. */
+/**
+ * Result of a `review` task run: a `ReviewJobResult` plus the session's
+ * optional `summary` and, from a documentation check, its
+ * `documentationUpdates` (one per file; absent from every other review run).
+ */
 export const ReviewTaskResult = ReviewJobResult.extend({
   summary: z.string().min(1).max(MAX_REVIEW_SUMMARY_LENGTH).optional(),
+  documentationUpdates: DocumentationUpdateList.optional(),
 });
 export type ReviewTaskResult = z.infer<typeof ReviewTaskResult>;

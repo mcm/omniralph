@@ -54,6 +54,13 @@ describe("PLAYBOOK_ROLES", () => {
         builtinOnly: false,
         loop: "none",
       },
+      "docs-check": {
+        taskType: "review",
+        triggers: ["pr.updated", "pr.mention", "review.rerun"],
+        sink: "sticky-comment",
+        builtinOnly: true,
+        loop: "looped",
+      },
       correlation: {
         taskType: "query",
         triggers: ["run.invoked"],
@@ -142,7 +149,11 @@ describe("PLAYBOOK_ROLES", () => {
   });
 
   it("gives a loop block only to looped roles that don't code", () => {
-    expect(PLAYBOOK_ROLE_IDS.filter(roleHasLoopSettings)).toEqual(["review", "triage"]);
+    expect(PLAYBOOK_ROLE_IDS.filter(roleHasLoopSettings)).toEqual([
+      "review",
+      "docs-check",
+      "triage",
+    ]);
   });
 
   it("only uses triggers its task type accepts", () => {

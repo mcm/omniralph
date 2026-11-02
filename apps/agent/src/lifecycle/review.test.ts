@@ -400,6 +400,47 @@ ${diff}
     await expectTornDown();
   });
 
+  it("reports a documentation check's updates, one per file, and none for other reviews", async () => {
+    const { provider } = fakeProvider(() => ({
+      summary: "Two files mention the old name.",
+      documentationUpdates: [
+        { path: "README.md", reason: "Names `last`." },
+        { path: "docs/api.md", reason: "Documents `last()`." },
+        { path: "README.md", reason: "Its example calls `last`." },
+      ],
+    }));
+    const output = await runReviewTask(
+      spec({
+        documentation: { depth: "quick", scope: "- Markdown documentation.", earlier: null },
+      }),
+      context(),
+      { provider: () => provider },
+    );
+    expect(ReviewTaskResult.parse(output)).toMatchObject({
+      findings: [],
+      summary: "Two files mention the old name.",
+      documentationUpdates: [
+        { path: "README.md", reason: "Names `last`.\nIts example calls `last`." },
+        { path: "docs/api.md", reason: "Documents `last()`." },
+      ],
+    });
+
+    // A check whose session found nothing still reports an empty list.
+    const empty = await runReviewTask(
+      spec({
+        documentation: { depth: "quick", scope: "- Markdown documentation.", earlier: null },
+      }),
+      context(),
+      { provider: () => fakeProvider().provider },
+    );
+    expect(empty.documentationUpdates).toEqual([]);
+
+    const review = await runReviewTask(spec(), context(), {
+      provider: () => fakeProvider().provider,
+    });
+    expect(review.documentationUpdates).toBeUndefined();
+  });
+
   it("reviews only the commits since the previous review's head", async () => {
     const next = await remote.commit({ "src/extra.ts": "export const extra = 1;\n" }, "pr-2");
     remote.hideBranch("pr-2", "refs/pull/2/head");
