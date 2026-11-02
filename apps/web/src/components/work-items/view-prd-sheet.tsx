@@ -1,11 +1,15 @@
 "use client";
 
 import { Sheet } from "@omniralph/ui";
+import { useId } from "react";
+import { OpenQuestionsForm } from "@/components/runs/open-questions-form";
 import { useRunDetailOverlay } from "@/components/runs/run-detail-overlay";
 import { useRunDetail } from "@/components/runs/use-run-detail";
+import { useRunTriage } from "@/components/runs/use-run-triage";
 import type { RunRow } from "@/lib/api/runs";
 import { PrdView, type PrdViewProps } from "./prd-view";
 import { useWorkItemDetail } from "./use-work-item-detail";
+import "./view-prd-sheet.css";
 
 /** The run detail's toolbar action and the triage card's button that open `ViewPrdSheet`. */
 export const VIEW_PRD = "View PRD";
@@ -30,14 +34,18 @@ export interface ViewPrdSheetProps {
  * View PRD (a `Sheet` over the run detail, full screen on phone): the run's work item's
  * `PrdView`, read-only while the run is queued, running or waiting, editable otherwise.
  * Both the run and the work item are live queries (the ones the detail already holds), so
- * the mode follows the run's status and the PRD follows the tracker while it's open.
+ * the mode follows the run's status and the PRD follows the tracker while it's open. A
+ * triage run that needs answers shows the form to answer its open questions above the PRD.
  */
 export function ViewPrdSheet({ runId, workItem }: ViewPrdSheetProps) {
   const overlay = useRunDetailOverlay();
+  const questionsId = useId();
   const run = useRunDetail(runId);
   const item = useWorkItemDetail(workItem.id);
   // Until the run is known, assume Om is working: never offer an edit it would refuse.
   const mode = run.data ? prdModeForRun(run.data.status) : "read-only";
+  const triage = useRunTriage(runId, { enabled: run.data?.kind === "triage" });
+  const questions = triage.data?.answerQuestions ? triage.data.openQuestions : [];
 
   return (
     <Sheet
@@ -48,6 +56,14 @@ export function ViewPrdSheet({ runId, workItem }: ViewPrdSheetProps) {
         if (!open) overlay.close();
       }}
     >
+      {questions.length > 0 ? (
+        <section className="or-prd-sheet__questions" aria-labelledby={questionsId}>
+          <h3 id={questionsId} className="or-prd-sheet__subtitle">
+            Open questions
+          </h3>
+          <OpenQuestionsForm runId={runId} questions={questions} />
+        </section>
+      ) : null}
       <PrdView workItemId={workItem.id} mode={mode} />
     </Sheet>
   );

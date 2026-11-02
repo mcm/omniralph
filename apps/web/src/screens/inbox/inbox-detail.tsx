@@ -3,12 +3,14 @@
 import { EmptyState, StatusLine, toast, Toolbar, useSplitDetailShown } from "@omniralph/ui";
 import { DecisionButtons } from "@/components/runs/decision-buttons";
 import { ITEM_HANDLED, prdWorkItem } from "@/components/runs/decisions";
+import { OpenQuestionsForm } from "@/components/runs/open-questions-form";
 import { QuestionForm } from "@/components/runs/question-form";
 import {
   RunDetailOverlayProvider,
   useRunDetailOverlay,
 } from "@/components/runs/run-detail-overlay";
 import { RunReason } from "@/components/runs/run-reason";
+import { useRunTriage } from "@/components/runs/use-run-triage";
 import { ManualTaskChecklist } from "@/components/work-items/manual-task-checklist";
 import { ViewPrdSheet } from "@/components/work-items/view-prd-sheet";
 import type { InboxItem } from "@/lib/api/inbox";
@@ -38,7 +40,8 @@ interface InboxDetailProps {
 /**
  * The selected item's detail: its header badges and ⋯ menu, its status line, the title as
  * the pane's heading, why it's here, a manual story's task list (`ManualTaskChecklist`),
- * and its calls to action (a question's form, with its answers, for a run's open question),
+ * and its calls to action (a question's form, with its answers, for a run's open question;
+ * the open questions' form for a triage that needs answers),
  * then the cards that show why it's here (the run's progress, a PR/MR's AI review, what
  * went wrong) and the run's activity. The decisions' keyboard shortcuts are bound here, not
  * on the phone's inline row. The ⋯ menu's View PRD opens the PRD in a sheet over it.
@@ -91,11 +94,47 @@ function Detail({ item, now, showOrganization }: InboxDetailProps) {
           bindShortcuts={bindShortcuts}
         />
       ) : (
-        <DecisionButtons key={item.key} item={item} bindShortcuts={bindShortcuts} />
+        <TriageQuestionsOrDecisions key={item.key} item={item} bindShortcuts={bindShortcuts} />
       )}
       <InboxItemCards item={item} />
     </article>
   );
+}
+
+/** A triage item that left open questions for a person (Needs answers). */
+function triageRunWithQuestions(item: InboxItem): string | null {
+  return item.kind === "prd_ready" && item.openQuestions > 0 && item.run?.kind === "triage"
+    ? item.run.id
+    : null;
+}
+
+/**
+ * The item's calls to action: for a triage that needs answers, the form to answer its open
+ * questions (Send answers first, then the item's decisions), once its triage summary says
+ * the user may answer; the decisions alone otherwise (and while the summary loads).
+ */
+function TriageQuestionsOrDecisions({
+  item,
+  bindShortcuts,
+}: {
+  item: InboxItem;
+  bindShortcuts: boolean;
+}) {
+  const runId = triageRunWithQuestions(item);
+  const triage = useRunTriage(runId ?? "", { enabled: runId !== null });
+  const summary = runId ? triage.data : undefined;
+  if (runId && summary?.answerQuestions && summary.openQuestions.length > 0) {
+    return (
+      <OpenQuestionsForm
+        variant="inbox"
+        runId={runId}
+        questions={summary.openQuestions}
+        item={item}
+        bindShortcuts={bindShortcuts}
+      />
+    );
+  }
+  return <DecisionButtons item={item} bindShortcuts={bindShortcuts} />;
 }
 
 /** The detail pane when the selected item is gone (decided elsewhere, or by someone else). */
