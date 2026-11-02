@@ -12,7 +12,13 @@ import {
   useLinkComponent,
   type MenuItem,
 } from "@omniralph/ui";
-import { CODING_DEFAULTS, roleTaskType, type Playbook } from "@omniralph/tasks";
+import {
+  CODING_DEFAULTS,
+  playbookLoopSettings,
+  roleLoops,
+  roleTaskType,
+  type Playbook,
+} from "@omniralph/tasks";
 import {
   IconCopy,
   IconCopyPlus,
@@ -342,6 +348,43 @@ function CodingCard({ playbook }: { playbook: Playbook }) {
   );
 }
 
+/** A count in words: "1 attempt", "3 attempts". */
+function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/**
+ * A looped playbook's loop settings, unset ones at their defaults: a story playbook's
+ * attempts and rounds, any other looped playbook's iterations.
+ */
+function LoopCard({ playbook }: { playbook: Playbook }) {
+  const loop = playbookLoopSettings(playbook);
+  if (loop === null) {
+    const coding = { ...CODING_DEFAULTS, ...dropUndefined(playbook.coding ?? {}) };
+    return (
+      <Card title="Loop">
+        <dl className="or-playbook__facts">
+          <Fact term="Attempts per story">{countLabel(coding.maxAttemptsPerStory, "attempt")}</Fact>
+          <Fact term="Rounds per story">{countLabel(coding.maxRoundsPerStory, "round")}</Fact>
+          <Fact term="Stall rounds">
+            Set aside after {countLabel(coding.stallRounds, "round")} without a better score
+          </Fact>
+        </dl>
+      </Card>
+    );
+  }
+  return (
+    <Card title="Loop">
+      <dl className="or-playbook__facts">
+        <Fact term="Most iterations">{countLabel(loop.maxIterations, "iteration")}</Fact>
+        <Fact term="Stall rounds">
+          Stops after {countLabel(loop.stallRounds, "iteration")} without a better score
+        </Fact>
+      </dl>
+    </Card>
+  );
+}
+
 function dropUndefined<T extends object>(value: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(value).filter(([, entry]) => entry !== undefined),
@@ -489,6 +532,7 @@ export function PlaybookDetail({ id }: { id: string }) {
       <ToolsCard playbook={playbook} />
       <RequirementsCard detail={detail} />
       <CommandsCard playbook={playbook} />
+      {roleLoops(playbook.role) ? <LoopCard playbook={playbook} /> : null}
       {roleTaskType(playbook.role) === "coding" ? <CodingCard playbook={playbook} /> : null}
       <UsedByCard usedBy={detail.usedBy} />
       {isAdmin && !detail.builtin ? (

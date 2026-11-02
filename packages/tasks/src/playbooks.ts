@@ -10,6 +10,8 @@ import {
   AgentTools,
   CODING_DEFAULTS,
   CODING_FIELDS,
+  DEFAULT_LOOP_MAX_ITERATIONS,
+  DEFAULT_LOOP_STALL_ROUNDS,
   DEFAULT_PR_DESCRIPTION_TASK_ID,
   MAX_SETUP_COMMANDS,
   NamedContent,
@@ -45,59 +47,112 @@ export interface PlaybookRoleSpec {
   sink: SinkKind;
   /** Only a built-in playbook can take the role (its sink is tied to that playbook's output). */
   builtinOnly: boolean;
+  /**
+   * Whether its runs loop (work, verify, feed the findings back) or run one
+   * session. Looping is the default; `none` is a deliberate exception.
+   */
+  loop: PlaybookLoopKind;
 }
+
+/** Whether a role's runs loop (`looped`) or run one session (`none`). */
+export const PLAYBOOK_LOOP_KINDS = ["looped", "none"] as const;
+export type PlaybookLoopKind = (typeof PLAYBOOK_LOOP_KINDS)[number];
 
 const REVIEW_TRIGGERS = ["pr.updated", "pr.mention", "review.rerun"] as const;
 
 /**
- * Each playbook role with the task type, triggers and sink it fixes. `triage`,
- * `learn-rule` and `reply-to-finding` are built-in only.
+ * Each playbook role with the task type, triggers and sink it fixes, and
+ * whether its runs loop. `triage`, `learn-rule`, `reply-to-finding` and the
+ * loop's helpers (`verifier`, `audit`) are built-in only. The single-session
+ * roles (`loop: "none"`) are the declared exceptions; a new role loops unless
+ * it says otherwise.
  */
 export const PLAYBOOK_ROLES = {
-  review: { taskType: "review", triggers: REVIEW_TRIGGERS, sink: "review", builtinOnly: false },
+  review: {
+    taskType: "review",
+    triggers: REVIEW_TRIGGERS,
+    sink: "review",
+    builtinOnly: false,
+    loop: "looped",
+  },
   "review-summary": {
     taskType: "review",
     triggers: REVIEW_TRIGGERS,
     sink: "sticky-comment",
     builtinOnly: false,
+    loop: "none",
   },
   correlation: {
     taskType: "query",
     triggers: ["run.invoked"],
     sink: "run-result",
     builtinOnly: false,
+    loop: "none",
   },
-  story: { taskType: "coding", triggers: STORY_TRIGGERS, sink: "ralph-run", builtinOnly: false },
+  story: {
+    taskType: "coding",
+    triggers: STORY_TRIGGERS,
+    sink: "ralph-run",
+    builtinOnly: false,
+    loop: "looped",
+  },
   request: {
     taskType: "coding",
     triggers: REQUEST_TRIGGERS,
     sink: "ralph-run",
     builtinOnly: false,
+    loop: "none",
   },
   "pr-description": {
     taskType: "query",
     triggers: ["run.invoked"],
     sink: "run-result",
     builtinOnly: false,
+    loop: "none",
   },
   "chat-ask": {
     taskType: "query",
     triggers: ["chat.request"],
     sink: "chat-thread",
     builtinOnly: false,
+    loop: "none",
   },
-  triage: { taskType: "query", triggers: ["tracker.triage"], sink: "triage", builtinOnly: true },
+  triage: {
+    taskType: "query",
+    triggers: ["tracker.triage"],
+    sink: "triage",
+    builtinOnly: true,
+    loop: "looped",
+  },
   "learn-rule": {
     taskType: "query",
     triggers: ["finding.dismissed"],
     sink: "learned-rule",
     builtinOnly: true,
+    loop: "none",
   },
   "reply-to-finding": {
     taskType: "query",
     triggers: ["finding.mention"],
     sink: "finding-thread",
     builtinOnly: true,
+    loop: "none",
+  },
+  /** Checks a worker's output (a task against its acceptance criteria): a loop's helper. */
+  verifier: {
+    taskType: "query",
+    triggers: ["run.invoked"],
+    sink: "run-result",
+    builtinOnly: true,
+    loop: "none",
+  },
+  /** Checks a finished epic against its requirements before its PR opens: a loop's helper. */
+  audit: {
+    taskType: "query",
+    triggers: ["run.invoked"],
+    sink: "run-result",
+    builtinOnly: true,
+    loop: "none",
   },
 } as const satisfies Record<string, PlaybookRoleSpec>;
 
@@ -109,6 +164,19 @@ export const PlaybookRoleSchema = z.enum(PLAYBOOK_ROLE_IDS);
 export const CUSTOM_PLAYBOOK_ROLES = PLAYBOOK_ROLE_IDS.filter(
   (role) => !PLAYBOOK_ROLES[role].builtinOnly,
 );
+
+/** Whether `role`'s runs loop. */
+export function roleLoops(role: PlaybookRole): boolean {
+  return PLAYBOOK_ROLES[role].loop === "looped";
+}
+
+/**
+ * Whether `role`'s playbooks carry a `loop` block: looped roles but the
+ * coding ones, whose attempts and rounds are their coding settings.
+ */
+export function roleHasLoopSettings(role: PlaybookRole): boolean {
+  return roleLoops(role) && roleTaskType(role) !== "coding";
+}
 
 /** The task type a role's runs have. */
 export function roleTaskType(role: PlaybookRole): TaskType {
@@ -149,6 +217,42 @@ export const PlaybookCoding = z.object({
 });
 export type PlaybookCoding = z.infer<typeof PlaybookCoding>;
 
+/** Most iterations a looped playbook may allow. */
+export const MAX_LOOP_ITERATIONS = 50;
+/** Most stall rounds a looped playbook may allow. */
+export const MAX_LOOP_STALL_ROUNDS = 20;
+
+/**
+ * A looped non-coding playbook's limits: unset ones get `LOOP_DEFAULTS`.
+ * Its run stops when the verifier reports convergence, after `maxIterations`
+ * iterations, or after `stallRounds` iterations in a row without a better metric.
+ */
+export const PlaybookLoop = z.object({
+  /** Most worker-then-verifier iterations a run gets. */
+  maxIterations: z.int().min(1).max(MAX_LOOP_ITERATIONS).optional(),
+  /** Iterations in a row the reported metric may fail to beat its best. */
+  stallRounds: z.int().min(1).max(MAX_LOOP_STALL_ROUNDS).optional(),
+});
+export type PlaybookLoop = z.infer<typeof PlaybookLoop>;
+export type PlaybookLoopSettings = Required<PlaybookLoop>;
+
+/** The loop limits a looped non-coding playbook gets when it doesn't set them. */
+export const LOOP_DEFAULTS = {
+  maxIterations: DEFAULT_LOOP_MAX_ITERATIONS,
+  stallRounds: DEFAULT_LOOP_STALL_ROUNDS,
+} as const satisfies PlaybookLoopSettings;
+
+/**
+ * The loop limits of `playbook`'s runs over `LOOP_DEFAULTS`, or null when its
+ * role has no loop block (a single-session role, or a coding role).
+ */
+export function playbookLoopSettings(
+  playbook: Pick<Playbook, "role" | "loop">,
+): PlaybookLoopSettings | null {
+  if (!roleHasLoopSettings(playbook.role)) return null;
+  return { ...LOOP_DEFAULTS, ...dropUndefined(playbook.loop ?? {}) };
+}
+
 const Model = z.string().min(1).max(200);
 
 const PlaybookFields = z.object({
@@ -179,6 +283,8 @@ const PlaybookFields = z.object({
   tokenBudget: TokenBudget.default(null),
   /** Story and request playbooks only. */
   coding: PlaybookCoding.optional(),
+  /** Looped non-coding roles only (`roleHasLoopSettings`); unset limits get `LOOP_DEFAULTS`. */
+  loop: PlaybookLoop.optional(),
   /**
    * Most characters of a variable's value rendered into the prompt, by
    * catalog name (e.g. `{ hunk: 5000 }`); longer values are cut and marked.
@@ -259,6 +365,15 @@ export const Playbook = z.preprocess(
         code: "custom",
         path: ["coding"],
         message: "Only story and request playbooks have coding settings.",
+      });
+    }
+    if (playbook.loop !== undefined && !roleHasLoopSettings(playbook.role)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["loop"],
+        message: roleLoops(playbook.role)
+          ? `A ${playbook.role} playbook loops by its coding settings; remove loop.`
+          : `A ${playbook.role} playbook doesn't loop: its runs are one session. Remove loop.`,
       });
     }
     if (taskType === "review") {

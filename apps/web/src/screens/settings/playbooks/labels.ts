@@ -36,6 +36,8 @@ export const PLAYBOOK_ROLE_LABELS: Record<PlaybookRole, string> = {
   triage: "Triage",
   "learn-rule": "Learn rule",
   "reply-to-finding": "Reply to finding",
+  verifier: "Verifier",
+  audit: "Epic audit",
 };
 
 /** Each trigger kind in plain words: what starts a run. */

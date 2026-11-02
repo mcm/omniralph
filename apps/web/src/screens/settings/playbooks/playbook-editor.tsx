@@ -13,7 +13,7 @@ import {
   TokenInput,
   useLinkComponent,
 } from "@omniralph/ui";
-import { CUSTOM_PLAYBOOK_ROLES, type PlaybookRole } from "@omniralph/tasks";
+import { CUSTOM_PLAYBOOK_ROLES, roleTaskType, type PlaybookRole } from "@omniralph/tasks";
 import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { createElement, useId, useState, type FormEvent, type ReactNode } from "react";
@@ -49,6 +49,7 @@ import {
   newDraft,
   packageError,
   rowKey,
+  showsLoopSettings,
   unplacedErrors,
   type CommandDraft,
   type PlaybookDraft,
@@ -386,6 +387,94 @@ function CodingCard({
   );
 }
 
+/** One whole-number loop setting, with what it does in plain words. */
+function LoopNumberField({
+  label,
+  description,
+  value,
+  error,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  value: string;
+  error: string | undefined;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Field label={label} description={description}>
+      <TextInput
+        inputMode="numeric"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        errorMessage={error}
+      />
+    </Field>
+  );
+}
+
+/**
+ * A looped role's loop settings: a story playbook's attempts and rounds (its coding
+ * settings), any other looped playbook's iterations. Single-session roles have none.
+ */
+function LoopCard({
+  draft,
+  setLoop,
+  setCoding,
+  errors,
+}: {
+  draft: PlaybookDraft;
+  setLoop: (change: Partial<PlaybookDraft["loop"]>) => void;
+  setCoding: (change: Partial<PlaybookDraft["coding"]>) => void;
+  errors: Errors;
+}) {
+  if (roleTaskType(draft.role) === "coding") {
+    return (
+      <Card title="Loop" headingLevel={3}>
+        <LoopNumberField
+          label="Attempts per story"
+          description="How many times Om works a story, feeding back what failed its checks, before setting it aside."
+          value={draft.coding.maxAttemptsPerStory}
+          error={errorAt(errors, "coding.maxAttemptsPerStory")}
+          onChange={(maxAttemptsPerStory) => setCoding({ maxAttemptsPerStory })}
+        />
+        <LoopNumberField
+          label="Rounds per story"
+          description="How many rounds a story that keeps filing follow-up work (a review loop) gets."
+          value={draft.coding.maxRoundsPerStory}
+          error={errorAt(errors, "coding.maxRoundsPerStory")}
+          onChange={(maxRoundsPerStory) => setCoding({ maxRoundsPerStory })}
+        />
+        <LoopNumberField
+          label="Stall rounds"
+          description="Set a story aside after this many rounds in a row without a better score."
+          value={draft.coding.stallRounds}
+          error={errorAt(errors, "coding.stallRounds")}
+          onChange={(stallRounds) => setCoding({ stallRounds })}
+        />
+      </Card>
+    );
+  }
+  return (
+    <Card title="Loop" headingLevel={3}>
+      <LoopNumberField
+        label="Most iterations"
+        description="Each iteration runs this playbook, then a verifier checks the work and feeds back what it found. The run stops when the verifier is satisfied, or after this many iterations."
+        value={draft.loop.maxIterations}
+        error={errorAt(errors, "loop.maxIterations")}
+        onChange={(maxIterations) => setLoop({ maxIterations })}
+      />
+      <LoopNumberField
+        label="Stall rounds"
+        description="Stop early after this many iterations in a row without a better score."
+        value={draft.loop.stallRounds}
+        error={errorAt(errors, "loop.stallRounds")}
+        onChange={(stallRounds) => setLoop({ stallRounds })}
+      />
+    </Card>
+  );
+}
+
 /**
  * The editor's form: every field of a custom playbook, saved with one request (create or
  * replace). Its answer is written into the cached list and detail before the page moves to
@@ -437,6 +526,8 @@ function PlaybookForm({
     setDraft((current) => ({ ...current, requires: { ...current.requires, ...change } }));
   const setCoding = (change: Partial<PlaybookDraft["coding"]>) =>
     setDraft((current) => ({ ...current, coding: { ...current.coding, ...change } }));
+  const setLoop = (change: Partial<PlaybookDraft["loop"]>) =>
+    setDraft((current) => ({ ...current, loop: { ...current.loop, ...change } }));
 
   function changeRole(role: PlaybookRole) {
     const allowed = agentToolsFor(role);
@@ -738,6 +829,10 @@ function PlaybookForm({
             errors={errors}
           />
         </Card>
+
+        {showsLoopSettings(draft.role) ? (
+          <LoopCard draft={draft} setLoop={setLoop} setCoding={setCoding} errors={errors} />
+        ) : null}
 
         {isCodingRole(draft.role) ? (
           <CodingCard draft={draft} update={setCoding} options={options} errors={errors} />

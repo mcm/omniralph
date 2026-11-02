@@ -204,6 +204,10 @@ export const DEFAULT_MAX_ATTEMPTS_PER_STORY = 3;
 export const DEFAULT_MAX_ROUNDS_PER_STORY = 8;
 /** Rounds without a better metric before a story is set aside (`STALL_ROUNDS` in `@omniralph/shared`). */
 export const DEFAULT_STALL_ROUNDS = 3;
+/** Iterations a looped non-coding run gets (`LOOP_DEFAULTS` in `./playbooks`). */
+export const DEFAULT_LOOP_MAX_ITERATIONS = 5;
+/** Iterations without a better metric before a looped non-coding run stops. */
+export const DEFAULT_LOOP_STALL_ROUNDS = 2;
 /** Story attempts a run makes before it stops and asks (`MAX_ITERATIONS_PER_RUN` of the control panel). */
 export const DEFAULT_MAX_ITERATIONS_PER_RUN = 50;
 /** Most review or CI fix rounds (`MAX_FIX_ROUNDS` in `@omniralph/shared`; a test there checks they agree). */

@@ -27,6 +27,7 @@ A playbook (`Playbook` in `packages/tasks/src/playbooks.ts`) has these fields:
 | `outputSchema`                                | A JSON schema of an object the output must match; query roles only, empty for a Markdown answer.                                                                                                                                                                                                                                    |
 | `tokenBudget`                                 | A fixed `{ tokens }`, or `null` for **No limit**. A review playbook sets none: its review depth does.                                                                                                                                                                                                                               |
 | `coding`                                      | Story and request playbooks only ([coding settings](#coding-settings)): attempts and rounds per story, stall rounds, attempts per run, review and CI fix rounds, push timing, the worktree setup command, preparation, the epic's completed state, branch cleanup and the `prDescriptionPlaybookId` that writes the PR description. |
+| `loop`                                        | Looped roles that don't code only ([loop settings](#loop-settings)): `maxIterations` and `stallRounds`.                                                                                                                                                                                                                             |
 | `variableLimits`, `maxTurns`, `idleTimeoutMs` | Most characters of a variable rendered into the prompt, most turns, and how long a session may go quiet.                                                                                                                                                                                                                            |
 
 A playbook has no task types, skills, sink, pool, triggers or draft PR timing of its own. Parsing
@@ -42,18 +43,29 @@ installable's MCP server as <package>:<server>; other MCP servers can't be used.
 
 `PLAYBOOK_ROLES` maps each role to what it fixes:
 
-| Role               | Task type | Triggers                                                                                  | Sink             | Built-in only |
-| ------------------ | --------- | ----------------------------------------------------------------------------------------- | ---------------- | ------------- |
-| `review`           | review    | `pr.updated`, `pr.mention`, `review.rerun`                                                | `review`         |               |
-| `review-summary`   | review    | `pr.updated`, `pr.mention`, `review.rerun`                                                | `sticky-comment` |               |
-| `correlation`      | query     | `run.invoked`                                                                             | `run-result`     |               |
-| `story`            | coding    | `tracker.delegated`                                                                       | `ralph-run`      |               |
-| `request`          | coding    | `tracker.mention`, `chat.request`, `pr.review-findings`, `pr.ci-failed`, `pr.fix-command` | `ralph-run`      |               |
-| `pr-description`   | query     | `run.invoked`                                                                             | `run-result`     |               |
-| `chat-ask`         | query     | `chat.request`                                                                            | `chat-thread`    |               |
-| `triage`           | query     | `tracker.triage`                                                                          | `triage`         | Yes           |
-| `learn-rule`       | query     | `finding.dismissed`                                                                       | `learned-rule`   | Yes           |
-| `reply-to-finding` | query     | `finding.mention`                                                                         | `finding-thread` | Yes           |
+| Role               | Task type | Triggers                                                                                  | Sink             | Built-in only | Loop     |
+| ------------------ | --------- | ----------------------------------------------------------------------------------------- | ---------------- | ------------- | -------- |
+| `review`           | review    | `pr.updated`, `pr.mention`, `review.rerun`                                                | `review`         |               | `looped` |
+| `review-summary`   | review    | `pr.updated`, `pr.mention`, `review.rerun`                                                | `sticky-comment` |               | `none`   |
+| `correlation`      | query     | `run.invoked`                                                                             | `run-result`     |               | `none`   |
+| `story`            | coding    | `tracker.delegated`                                                                       | `ralph-run`      |               | `looped` |
+| `request`          | coding    | `tracker.mention`, `chat.request`, `pr.review-findings`, `pr.ci-failed`, `pr.fix-command` | `ralph-run`      |               | `none`   |
+| `pr-description`   | query     | `run.invoked`                                                                             | `run-result`     |               | `none`   |
+| `chat-ask`         | query     | `chat.request`                                                                            | `chat-thread`    |               | `none`   |
+| `triage`           | query     | `tracker.triage`                                                                          | `triage`         | Yes           | `looped` |
+| `learn-rule`       | query     | `finding.dismissed`                                                                       | `learned-rule`   | Yes           | `none`   |
+| `reply-to-finding` | query     | `finding.mention`                                                                         | `finding-thread` | Yes           | `none`   |
+| `verifier`         | query     | `run.invoked`                                                                             | `run-result`     | Yes           | `none`   |
+| `audit`            | query     | `run.invoked`                                                                             | `run-result`     | Yes           | `none`   |
+
+**Loop** says whether a role's runs loop: a worker session does the work, a verifier checks it, and
+its findings feed the next iteration until the verifier is satisfied or a cap is reached (see
+[loop settings](#loop-settings)). Looping is the default: a new role loops unless it declares
+`none`. The single-session roles are the deliberate exceptions: chat answers, requests, finding
+replies, learned rules, correlation, PR descriptions and review summaries, plus the loop's own
+helpers. `verifier` checks a worker's output (a task against its acceptance criteria) and `audit`
+checks a finished epic against its requirements before its PR opens; both are invoked by another
+run and hand their output back to it.
 
 A custom playbook can't take a built-in-only role (`CUSTOM_PLAYBOOK_ROLES`). The **task type**
 decides how the agent runs it:
@@ -62,7 +74,7 @@ decides how the agent runs it:
 | --------- | ------------------------------------------------------------------------------------------------------- |
 | `query`   | One read-only session; its answer (Markdown, or JSON matching an output schema) goes to the sink.       |
 | `review`  | One reviewer of a PR/MR's review run: it reports findings, merged and posted with the other playbooks'. |
-| `coding`  | A session that changes code in a worktree and ships it (Om's stories and requests).                     |
+| `loop`    | Looped roles that don't code only ([loop settings](#loop-settings)): `maxIterations` and `stallRounds`. |
 
 A run's **pool** (whose concurrency slots it takes) follows from its task type: `long` for coding
 runs, `short` for query and review runs. Nobody picks one.
@@ -104,6 +116,25 @@ request playbook's coding settings fill in `CODING_DEFAULTS`, and both halves ta
 ID and name. So agents need no change for playbooks. The control panel looks playbooks up
 through a `PlaybookSource` (`getPlaybook`, `organizationPlaybooks` in
 `apps/web/src/lib/playbooks/index.ts`); a job's `task_id` holds the playbook ID.
+
+### Loop settings
+
+A looped role that doesn't code (`review`, `triage`; `roleHasLoopSettings`) takes a `loop` block.
+Each limit it leaves out has its default (`LOOP_DEFAULTS` in `packages/tasks/src/playbooks.ts`);
+`playbookLoopSettings` reads them:
+
+| Field           | Default | What it does                                                                                    |
+| --------------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `maxIterations` | 5       | Most worker-then-verifier iterations a run gets (1 to 50).                                      |
+| `stallRounds`   | 2       | Iterations in a row whose reported metric doesn't beat its best before the run stops (1 to 20). |
+
+A story playbook loops by its [coding settings](#coding-settings) instead (`maxAttemptsPerStory`,
+`maxRoundsPerStory`, `stallRounds`), so a `loop` block on it is refused with "A story playbook
+loops by its coding settings; remove loop.". On a single-session role it is refused with "A
+chat-ask playbook doesn't loop: its runs are one session. Remove loop.". The playbook editor
+shows a **Loop** card for every looped role (the story's attempts, rounds and stall rounds, or
+another role's iterations and stall rounds, each with what it does) and none for the rest; a
+playbook's page shows the same settings read-only.
 
 ### Coding settings
 
@@ -271,6 +302,7 @@ appears on and an example message:
 | Agent tools are allowed for the role's task type                                              | `tools.agent`                           | review runs can't use the agent tool ship.                                                                                                       |
 | Setup command names are unique                                                                | `setupCommands.<i>.name`                | Setup command name semgrep is used twice                                                                                                         |
 | Only query roles have an output schema; only story and request playbooks have coding settings | `outputSchema`, `coding`                | A review playbook can't declare an output schema.                                                                                                |
+| Only a looped role that doesn't code has a loop block                                         | `loop`                                  | A chat-ask playbook doesn't loop: its runs are one session. Remove loop.                                                                         |
 | A review playbook sets no model, fallback model or token budget                               | `model`, `fallbackModel`, `tokenBudget` | Review playbooks can't set a model; the repo's review depth sets it.                                                                             |
 | The template parses                                                                           | `promptTemplate`                        | Line 1, column 7: Section `pr.title` is never closed.                                                                                            |
 | Every variable exists for the role's task type and every one of its triggers                  | `promptTemplate`                        | `{{pr.titel}}` isn't a variable query tasks can use. / `{{diff}}` isn't available for chat.request.                                              |

@@ -11,7 +11,11 @@ import {
   TRIGGERS_BY_TASK_TYPE,
   playbookRequirements,
   playbookRunSpec,
+  playbookLoopSettings,
   playbookTaskType,
+  roleHasLoopSettings,
+  roleLoops,
+  LOOP_DEFAULTS,
   type PlaybookInput,
 } from "./index.js";
 
@@ -34,69 +38,111 @@ function messages(input: unknown): Record<string, string> {
 }
 
 describe("PLAYBOOK_ROLES", () => {
-  it("fixes each role's task type, triggers and sink", () => {
+  it("fixes each role's task type, triggers, sink and loop", () => {
     expect(PLAYBOOK_ROLES).toEqual({
       review: {
         taskType: "review",
         triggers: ["pr.updated", "pr.mention", "review.rerun"],
         sink: "review",
         builtinOnly: false,
+        loop: "looped",
       },
       "review-summary": {
         taskType: "review",
         triggers: ["pr.updated", "pr.mention", "review.rerun"],
         sink: "sticky-comment",
         builtinOnly: false,
+        loop: "none",
       },
       correlation: {
         taskType: "query",
         triggers: ["run.invoked"],
         sink: "run-result",
         builtinOnly: false,
+        loop: "none",
       },
       story: {
         taskType: "coding",
         triggers: ["tracker.delegated"],
         sink: "ralph-run",
         builtinOnly: false,
+        loop: "looped",
       },
       request: {
         taskType: "coding",
         triggers: REQUEST_TRIGGERS,
         sink: "ralph-run",
         builtinOnly: false,
+        loop: "none",
       },
       "pr-description": {
         taskType: "query",
         triggers: ["run.invoked"],
         sink: "run-result",
         builtinOnly: false,
+        loop: "none",
       },
       "chat-ask": {
         taskType: "query",
         triggers: ["chat.request"],
         sink: "chat-thread",
         builtinOnly: false,
+        loop: "none",
       },
       triage: {
         taskType: "query",
         triggers: ["tracker.triage"],
         sink: "triage",
         builtinOnly: true,
+        loop: "looped",
       },
       "learn-rule": {
         taskType: "query",
         triggers: ["finding.dismissed"],
         sink: "learned-rule",
         builtinOnly: true,
+        loop: "none",
       },
       "reply-to-finding": {
         taskType: "query",
         triggers: ["finding.mention"],
         sink: "finding-thread",
         builtinOnly: true,
+        loop: "none",
+      },
+      verifier: {
+        taskType: "query",
+        triggers: ["run.invoked"],
+        sink: "run-result",
+        builtinOnly: true,
+        loop: "none",
+      },
+      audit: {
+        taskType: "query",
+        triggers: ["run.invoked"],
+        sink: "run-result",
+        builtinOnly: true,
+        loop: "none",
       },
     });
+  });
+
+  it("loops every role but the declared single-session exceptions", () => {
+    expect(PLAYBOOK_ROLE_IDS.filter((role) => !roleLoops(role)).toSorted()).toEqual([
+      "audit",
+      "chat-ask",
+      "correlation",
+      "learn-rule",
+      "pr-description",
+      "reply-to-finding",
+      "request",
+      "review-summary",
+      "verifier",
+    ]);
+  });
+
+  it("gives a loop block only to looped roles that don't code", () => {
+    expect(PLAYBOOK_ROLE_IDS.filter(roleHasLoopSettings)).toEqual(["review", "triage"]);
   });
 
   it("only uses triggers its task type accepts", () => {
@@ -106,7 +152,7 @@ describe("PLAYBOOK_ROLES", () => {
     }
   });
 
-  it("leaves triage, learn-rule and reply-to-finding to built-ins", () => {
+  it("leaves triage, learn-rule, reply-to-finding, verifier and audit to built-ins", () => {
     expect(CUSTOM_PLAYBOOK_ROLES).toEqual([
       "review",
       "review-summary",
@@ -257,6 +303,39 @@ describe("Playbook", () => {
       coding: "Only story and request playbooks have coding settings.",
       "tools.agent": "review runs can't use the agent tool ship.",
     });
+  });
+
+  it("keeps a looped playbook's loop limits and fills the unset ones", () => {
+    const review = Playbook.parse({
+      ...chat,
+      role: "review",
+      promptTemplate: "{{pr.title}}",
+      loop: { maxIterations: 8 },
+    });
+    expect(review.loop).toEqual({ maxIterations: 8 });
+    expect(playbookLoopSettings(review)).toEqual({
+      maxIterations: 8,
+      stallRounds: LOOP_DEFAULTS.stallRounds,
+    });
+    expect(playbookLoopSettings({ role: "triage" })).toEqual(LOOP_DEFAULTS);
+    expect(playbookLoopSettings(Playbook.parse(chat))).toBeNull();
+    expect(playbookLoopSettings({ role: "story" })).toBeNull();
+  });
+
+  it("refuses loop limits out of range", () => {
+    const review = { ...chat, role: "review", promptTemplate: "{{pr.title}}" };
+    expect(
+      Object.keys(messages({ ...review, loop: { maxIterations: 0, stallRounds: 21 } })),
+    ).toEqual(["loop.maxIterations", "loop.stallRounds"]);
+  });
+
+  it("refuses a loop block on a role that doesn't loop, or loops by its coding settings", () => {
+    expect(messages({ ...chat, loop: { maxIterations: 3 } })).toEqual({
+      loop: "A chat-ask playbook doesn't loop: its runs are one session. Remove loop.",
+    });
+    expect(
+      messages({ ...chat, role: "story", promptTemplate: "{{epic.title}}", loop: {} }),
+    ).toEqual({ loop: "A story playbook loops by its coding settings; remove loop." });
   });
 
   it("refuses unknown roles and duplicate setup command names", () => {
