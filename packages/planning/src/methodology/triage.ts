@@ -68,7 +68,7 @@ export const TRIAGE_STORIES_STEP: Fragment = {
 - \`priority\`: 1 Urgent, 2 High, 3 Medium, 4 Low. Priority beats order when Omniralph picks the next task, so use one priority for the whole epic, or priorities that agree with the order on purpose.
 - \`dependsOn\`: the 0-based indexes, in \`stories\`, of the tasks it really depends on. These become "blocks" relations.
 - \`manual\`: true for a step only a person can do.
-- The **last** entry is the validation audit, titled \`${VALIDATION_AUDIT_TITLE}\`, depending on every other entry. Its body is the validation audit; Omniralph writes it from the epic's requirements, whatever you put there.`,
+- No validation or audit entry (no \`${VALIDATION_AUDIT_TITLE}\` task): Omniralph audits the epic against its requirements before its pull request opens, so every entry is real work.`,
 };
 
 /** Reformatting existing sub-issues. */
@@ -109,7 +109,7 @@ export const TRIAGE_STEPS: readonly Fragment[] = [
  * The triage methodology for a tracker: a `## How to triage` section with the
  * numbered triage steps, then a `## Planning rules` section with every shared
  * rule (formats and templates, requirement wording, criteria, sizing,
- * splitting, the validation audit and the dependency rules).
+ * splitting, the epic audit and the dependency rules).
  */
 export function renderTriageMethodology(context: MethodologyContext): string {
   const steps = TRIAGE_STEPS.map((step, index) =>

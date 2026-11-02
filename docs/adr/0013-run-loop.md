@@ -104,8 +104,9 @@ again. The epic's tasks at the time of each audit are kept with it (`ralph_runs.
 whose tasks haven't changed since its last audit publishes without another. After
 `maxAuditRounds` (2 by default), the PR opens anyway with the gaps left listed in its description;
 an audit that fails is noted and never holds the PR up, and an epic without requirements skips it
-with a note. This replaces the "Validate functional requirements" sub-issue for new epics; an epic
-that still has one runs it as a task and is audited as well.
+with a note. This replaces the "Validate functional requirements" sub-issue: triage and the planning
+methodology no longer plan one, and an epic that still has one runs it as a task and is audited
+as well.
 
 ## Consequences
 

@@ -2,13 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { splitFixDescription } from "./task-prompt.js";
 import { type Fragment, SHARED_RULES, renderFragment } from "./rules.js";
-import {
-  EPIC_TEMPLATE,
-  FIX_TEMPLATE,
-  STORY_TEMPLATE,
-  VALIDATION_AUDIT_TEMPLATE,
-  renderValidationAudit,
-} from "./templates.js";
+import { EPIC_TEMPLATE, FIX_TEMPLATE, STORY_TEMPLATE } from "./templates.js";
 import { TRIAGE_STEPS, renderTriageMethodology } from "./triage.js";
 
 const context = { trackerName: "Acme Tracker", conventionsFile: "ACME.md" };
@@ -24,7 +18,7 @@ function headings(markdown: string): string[] {
   return found;
 }
 
-const templates = { EPIC_TEMPLATE, STORY_TEMPLATE, FIX_TEMPLATE, VALIDATION_AUDIT_TEMPLATE };
+const templates = { EPIC_TEMPLATE, STORY_TEMPLATE, FIX_TEMPLATE };
 const fragments: Fragment[] = [...SHARED_RULES, ...TRIAGE_STEPS];
 
 describe("templates", () => {
@@ -59,25 +53,6 @@ describe("templates", () => {
       "## Unchanged behavior",
       "## Acceptance Criteria",
     ]);
-  });
-
-  it("ends the validation audit with a criterion per requirement", () => {
-    const audit = renderValidationAudit([
-      { id: "FR-1", text: "The system must parse epics. " },
-      { id: "FR-2", text: "WHEN a run fails, the system must retry." },
-    ]);
-    expect(headings(audit)).toEqual(["## Acceptance Criteria"]);
-    const criteria = audit.split("\n").filter((line) => line.startsWith("- [ ] "));
-    expect(criteria.slice(0, 2)).toEqual([
-      "- [ ] FR-1: The system must parse epics.",
-      "- [ ] FR-2: WHEN a run fails, the system must retry.",
-    ]);
-    expect(criteria.length).toBeGreaterThan(2);
-  });
-
-  it("gives the audit template a placeholder requirement", () => {
-    expect(headings(VALIDATION_AUDIT_TEMPLATE)).toEqual(["## Acceptance Criteria"]);
-    expect(VALIDATION_AUDIT_TEMPLATE).toMatch(/^- \[ \] FR-1: /m);
   });
 });
 
@@ -132,6 +107,14 @@ describe("renderTriageMethodology", () => {
     expect(methodology.indexOf("## How to triage")).toBeLessThan(
       methodology.indexOf("## Planning rules"),
     );
+  });
+
+  it("plans no validation task, leaving the requirements to the epic audit", () => {
+    expect(methodology).toContain(
+      "audits the epic against its requirements before its pull request opens",
+    );
+    expect(methodology).toContain("No validation or audit entry");
+    expect(methodology).not.toMatch(/validation audit/i);
   });
 
   it("names the tracker it is rendered for and leaves no placeholder", () => {

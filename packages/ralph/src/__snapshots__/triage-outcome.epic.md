@@ -46,16 +46,3 @@ Covers: FR-2
 ## Acceptance Criteria
 
 - [ ] Tasks have a priority column
-
----
-
-# Task: Validate functional requirements
-
-Audit the finished epic against its requirements. For each requirement below, find the evidence that it holds on the epic's branch: the code that implements it, and the tests the repo's conventions call for on that behavior. Check every story's acceptance criteria the same way. Fix each gap you find, as part of this task.
-
-## Acceptance Criteria
-
-- [ ] FR-1: The system must store a priority (high, medium, low) on every task
-- [ ] FR-2: The system must show each task's priority in the task list
-- [ ] Every acceptance criterion of the other tasks in this epic holds
-- [ ] The repo's checks pass

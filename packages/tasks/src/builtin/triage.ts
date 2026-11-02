@@ -212,7 +212,7 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
         additionalProperties: false,
       },
       description:
-        "outcome prd, L or larger only: the tasks to create as sub-issues, in order, the validation audit last. Empty otherwise.",
+        "outcome prd, L or larger only: the tasks to create as sub-issues, in order, with no validation task (Omniralph audits the epic before its pull request). Empty otherwise.",
     },
     subIssueUpdates: {
       type: "array",

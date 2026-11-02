@@ -23,12 +23,9 @@ export {
   REQUIREMENT_PREFIX,
   SCOPE_PARTS,
   STORY_TEMPLATE,
-  VALIDATION_AUDIT_TEMPLATE,
   VALIDATION_AUDIT_TITLE,
   heading,
-  renderValidationAudit,
 } from "./methodology/templates.js";
-export type { AuditRequirement } from "./methodology/templates.js";
 export {
   CHECKABLE_CRITERIA_RULE,
   DEPENDENCY_RULE,
@@ -39,7 +36,7 @@ export {
   SIZING_RULE,
   SPLITTING_RULE,
   STORY_FORMAT_RULE,
-  VALIDATION_AUDIT_RULE,
+  EPIC_AUDIT_RULE,
   WORK_ITEMS_RULE,
   renderFragment,
   renderSection,

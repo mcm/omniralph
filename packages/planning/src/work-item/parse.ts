@@ -11,14 +11,18 @@ import {
   EPIC_SECTIONS,
   FIX_SECTIONS,
   REQUIREMENT_PREFIX,
-  type AuditRequirement,
 } from "../methodology/templates.js";
 
 /** The planning formats: an epic, a story (new work) or a fix (a bug). */
 export type WorkItemFormat = "epic" | "story" | "fix";
 
 /** An epic requirement (`FR-1: The system must …`). */
-export type Requirement = AuditRequirement;
+export interface Requirement {
+  /** The identifier, e.g. `FR-1`. */
+  id: string;
+  /** What the system must do. */
+  text: string;
+}
 
 /** A `##` section of a work item. */
 export interface WorkItemSection {

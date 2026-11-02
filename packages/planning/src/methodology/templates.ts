@@ -1,7 +1,6 @@
 /**
  * The Markdown templates for the work items Omniralph builds against: an epic,
- * a story (a task for new work), a fix (a task for a bug) and the validation
- * audit that closes an epic. Each heading is defined once, here, so the
+ * a story (a task for new work) and a fix (a task for a bug). Each heading is defined once, here, so the
  * templates, the methodology text and the parser agree on it.
  */
 
@@ -40,7 +39,10 @@ export const COVERS_LABEL = "Covers";
 /** The prefix of a requirement's identifier (`FR-1`). */
 export const REQUIREMENT_PREFIX = "FR-";
 
-/** The title of the task that closes an epic. */
+/**
+ * The title of the legacy validation task that closed an epic before the epic audit
+ * replaced it. Epics are no longer planned with one; an existing one still runs as a task.
+ */
 export const VALIDATION_AUDIT_TITLE = "Validate functional requirements";
 
 /** A `##` heading line. */
@@ -106,39 +108,3 @@ ${heading(FIX_SECTIONS.acceptanceCriteria)}
 
 - [ ] [Evidence to check]
 - [ ] [More evidence to check]`;
-
-/** A requirement as the validation audit lists it. */
-export interface AuditRequirement {
-  /** The identifier, e.g. `FR-1`. */
-  id: string;
-  /** What the system must do. */
-  text: string;
-}
-
-const VALIDATION_AUDIT_INTRO = `Audit the finished epic against its requirements. For each requirement below, find the evidence that it holds on the epic's branch: the code that implements it, and the tests the repo's conventions call for on that behavior. Check every story's acceptance criteria the same way. Fix each gap you find, as part of this task.`;
-
-const VALIDATION_AUDIT_CLOSING = [
-  "Every acceptance criterion of the other tasks in this epic holds",
-  "The repo's checks pass",
-];
-
-/**
- * The validation audit: the body of the last task of an epic, one criterion
- * per requirement. Without requirements it renders a placeholder line, as the
- * template.
- */
-export function renderValidationAudit(requirements: readonly AuditRequirement[]): string {
-  const lines =
-    requirements.length > 0
-      ? requirements.map((requirement) => `${requirement.id}: ${requirement.text.trim()}`)
-      : [`${REQUIREMENT_PREFIX}1: [the requirement, as the epic words it]`];
-  const criteria = [...lines, ...VALIDATION_AUDIT_CLOSING].map((line) => `- [ ] ${line}`);
-  return `${VALIDATION_AUDIT_INTRO}
-
-${heading(ACCEPTANCE_CRITERIA_SECTION)}
-
-${criteria.join("\n")}`;
-}
-
-/** The validation audit with placeholder requirements. */
-export const VALIDATION_AUDIT_TEMPLATE = renderValidationAudit([]);

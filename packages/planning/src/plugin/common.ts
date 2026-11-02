@@ -175,8 +175,8 @@ each mode file), the target structure is one of:
   - \`blockedBy\` = the tasks (and any work items outside the epic) it depends
     on, as the dependency rules allow;
   - the **manual** label (\`addLabels\`) for steps for a person.
-- The validation audit as the last sub-issue, \`blockedBy\` every other
-  sub-issue.
+- No validation sub-issue: Omniralph audits the epic against its
+  requirements before its pull request opens.
 - If the epic as a whole waits on other work, make the **epic** \`blockedBy\`
   it: Omniralph won't start any task until it's done.
 
@@ -310,5 +310,6 @@ A fix filed in the same epic, titled \`Sort priorities by rank, not by name\`:
 ${EXAMPLE_FIX}
 \`\`\`
 
-The epic ends with the validation audit, listing FR-1 to FR-4.`,
+There is no validation task: Omniralph audits FR-1 to FR-4 before the epic's
+pull request opens.`,
 };

@@ -93,7 +93,7 @@ and fold it into your understanding before you start asking questions.
 
 1. **Read `references/common.md`.** It holds the planning rules every mode
    follows (the epic, story and fix formats and their templates, requirement
-   wording, checkable criteria, sizing, splitting, the validation audit and the
+   wording, checkable criteria, sizing, splitting, the epic audit and the
    dependency rules), how to ask clarifying questions, how the plan is written
    to Linear, and a worked example. Every mode depends on it.
 2. **Read the mode file** for the selected mode and follow its steps:

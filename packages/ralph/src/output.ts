@@ -6,7 +6,7 @@ import {
   type WorkItemFormat,
   lintWorkItem,
   parseWorkItem,
-  renderValidationAudit,
+  VALIDATION_AUDIT_TITLE,
   workItemFormat,
 } from "@omniralph/planning";
 import { z } from "zod";
@@ -384,7 +384,7 @@ export const TriageAgentOutput = z.object({
       }),
     )
     .describe(
-      "outcome prd, L or larger only: the tasks to create as sub-issues, in order, the validation audit last. Empty otherwise.",
+      "outcome prd, L or larger only: the tasks to create as sub-issues, in order, with no validation task (Omniralph audits the epic before its pull request). Empty otherwise.",
     ),
   subIssueUpdates: z
     .array(
@@ -429,8 +429,19 @@ const ACCEPTANCE_CRITERIA_HEADING = /^##[ \t]+Acceptance Criteria[ \t]*$/im;
 const SECTION_HEADING = /^##[ \t]+(.+?)[ \t]*$/gm;
 /** Sections only legacy PRDs have: the repo decides the checks, and outcomes stay in planning documents. */
 const LEGACY_ONLY_SECTION = /^##[ \t]+(Success Metrics|Quality Gates)[ \t]*$/im;
-/** The title of the validation audit that closes an epic (the last story). */
+/**
+ * The title of a validation task, such as a legacy epic's \`Validate functional requirements\`
+ * sub-issue: a reformat may rewrite one without putting it in the story format.
+ */
 const VALIDATION_TITLE = /^validate\b/i;
+
+/**
+ * Whether a planned story is the legacy validation task. Triage no longer plans one (the epic
+ * audit checks the requirements before the pull request opens), so one returned anyway is dropped.
+ */
+function isLegacyValidationTask(title: string): boolean {
+  return title.toLowerCase() === VALIDATION_AUDIT_TITLE.toLowerCase();
+}
 
 /** Whether `## Acceptance Criteria` is the description's last section. */
 function endsWithAcceptanceCriteria(description: string): boolean {
@@ -475,8 +486,8 @@ function formatProblem(
 }
 
 /**
- * A triage session's result, trimmed (blank and duplicate open questions dropped, dependency indexes
- * limited to other stories, the validation audit's body written from the epic's requirements), or
+ * A triage session's result, trimmed (blank and duplicate open questions dropped, a legacy
+ * validation task dropped from the stories, dependency indexes limited to the other stories kept), or
  * the problem with it: a result that doesn't match the schema, a description with
  * `## Success Metrics`, `## Quality Gates` or `## Open Questions`, a description not in the format
  * its outcome and size call for (an epic for L or larger, else a story or a fix), an epic without
@@ -520,12 +531,10 @@ export function validateTriageOutput(
         : ["epic", "story", "fix"];
   const descriptionProblem = formatProblem(description, formats);
   if (descriptionProblem) return { problem: `the description: ${descriptionProblem}` };
-  const requirements =
-    workItemFormat(description) === "epic" ? parseWorkItem(description, "epic").requirements : [];
-  const requirementIds = requirements.map((r) => r.id);
-  if (data.outcome === "prd" && epic && data.stories.length === 0) {
-    return { problem: `size ${data.size} is an epic but there are no \`stories\`` };
-  }
+  const requirementIds =
+    workItemFormat(description) === "epic"
+      ? parseWorkItem(description, "epic").requirements.map((r) => r.id)
+      : [];
   if (!epic && data.stories.length > 0) {
     return { problem: `size ${data.size} is a single issue but there are \`stories\`` };
   }
@@ -539,38 +548,38 @@ export function validateTriageOutput(
     return { problem: `outcome ${data.outcome} can't have \`subIssueUpdates\`` };
   }
 
+  // The indexes, in `data.stories`, of the stories kept, and each one's index in `stories`.
+  const kept = [...data.stories.keys()].filter(
+    (i) => !isLegacyValidationTask(oneLine(data.stories[i]!.title)),
+  );
+  const keptIndex = new Map(kept.map((from, to) => [from, to]));
+  if (data.outcome === "prd" && epic && kept.length === 0) {
+    return { problem: `size ${data.size} is an epic but there are no \`stories\`` };
+  }
   const stories: TriageAgentOutput["stories"] = [];
-  for (const [i, s] of data.stories.entries()) {
+  for (const [i, from] of kept.entries()) {
+    const s = data.stories[from]!;
     const storyTitle = oneLine(s.title);
     const body = s.body.trim();
-    if (!storyTitle) return { problem: `story ${i} has no title` };
-    const validation = i > 0 && i === data.stories.length - 1 && VALIDATION_TITLE.test(storyTitle);
-    if (!validation) {
-      if (!ACCEPTANCE_CRITERIA_HEADING.test(body)) {
-        return { problem: `story ${i} ("${storyTitle}") has no \`## Acceptance Criteria\`` };
-      }
-      const storyLegacy = legacyOnlySection(body);
-      if (storyLegacy) {
-        return { problem: `story ${i} ("${storyTitle}") has a \`${storyLegacy}\` section` };
-      }
-      const storyProblem = formatProblem(body, ["story", "fix"], requirementIds);
-      if (storyProblem) return { problem: `story ${i} ("${storyTitle}"): ${storyProblem}` };
+    if (!storyTitle) return { problem: `story ${from} has no title` };
+    if (!ACCEPTANCE_CRITERIA_HEADING.test(body)) {
+      return { problem: `story ${from} ("${storyTitle}") has no \`## Acceptance Criteria\`` };
     }
+    const storyLegacy = legacyOnlySection(body);
+    if (storyLegacy) {
+      return { problem: `story ${from} ("${storyTitle}") has a \`${storyLegacy}\` section` };
+    }
+    const storyProblem = formatProblem(body, ["story", "fix"], requirementIds);
+    if (storyProblem) return { problem: `story ${from} ("${storyTitle}"): ${storyProblem}` };
     const dependsOn = [
       ...new Set(
-        s.dependsOn.filter(
-          (d) => Number.isInteger(d) && d >= 0 && d < data.stories.length && d !== i,
-        ),
+        s.dependsOn
+          .filter((d) => Number.isInteger(d))
+          .map((d) => keptIndex.get(d))
+          .filter((d): d is number => d !== undefined && d !== i),
       ),
     ];
-    stories.push({
-      title: storyTitle,
-      // The validation audit's wording comes from the methodology, with the epic's requirements.
-      body: validation ? renderValidationAudit(requirements) : body,
-      priority: s.priority,
-      dependsOn,
-      manual: s.manual,
-    });
+    stories.push({ title: storyTitle, body, priority: s.priority, dependsOn, manual: s.manual });
   }
 
   const subIssueUpdates: TriageAgentOutput["subIssueUpdates"] = [];

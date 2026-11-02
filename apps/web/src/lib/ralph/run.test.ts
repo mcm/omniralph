@@ -1829,6 +1829,32 @@ Tasks have no priority.
       expect(thoughts(run).split("lists no requirements")).toHaveLength(2);
     });
 
+    it("runs an epic's legacy validation sub-issue as a task, then audits the epic", async () => {
+      const { epic, story } = prioritiesEpic();
+      const validate = tracker.add({
+        identifier: "ENG-702",
+        title: "Validate functional requirements",
+        parentId: epic.id,
+        description:
+          "Audit the finished epic.\n\n## Acceptance Criteria\n\n- [ ] FR-1: The system must store a priority on every task.",
+      });
+      await tracker.createBlocksRelation(story.id, validate.id);
+      const run = await delegate(epic.id);
+
+      expect((await work(run.id, { commitSha: sha(750) })).story.identifier).toBe("ENG-701");
+      // The legacy validation story is still a task of the epic, worked after the story it waits on.
+      expect((await work(run.id, { commitSha: sha(751) })).story.identifier).toBe("ENG-702");
+      // And the epic is audited too before its PR opens.
+      expect(auditPayload(await activeJob(run.id)).tasks.map((t) => t.identifier)).toEqual([
+        "ENG-701",
+        "ENG-702",
+      ]);
+      await audit(run.id, {});
+      expect((await activeJob(run.id)).type).toBe("ralph.describe-pr");
+      await describePr(run.id);
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+    });
+
     it("reads a legacy PRD's functional requirements, and opens the PR when the audit fails", async () => {
       const { epic } = prioritiesEpic(
         `${EPIC_DESCRIPTION}\n## Functional Requirements\n\n* FR-1: Must build the thing\n`,

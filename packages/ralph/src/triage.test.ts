@@ -1,9 +1,4 @@
-import {
-  VALIDATION_AUDIT_TITLE,
-  renderTriageMethodology,
-  renderValidationAudit,
-  workItemFormat,
-} from "@omniralph/planning";
+import { renderTriageMethodology, workItemFormat } from "@omniralph/planning";
 import { describe, expect, it } from "vitest";
 import { TRIAGE_OUTPUT_SCHEMA, type TriageAgentOutput, validateTriageOutput } from "./output.js";
 import { parsePrd } from "./prd.js";
@@ -99,16 +94,6 @@ const epic: TriageAgentOutput = {
       dependsOn: [0],
       manual: false,
     },
-    {
-      title: "Validate functional requirements",
-      body: renderValidationAudit([
-        { id: "FR-1", text: "The system must store a priority (high, medium, low) on every task" },
-        { id: "FR-2", text: "The system must show each task's priority in the task list" },
-      ]),
-      priority: 2,
-      dependsOn: [0, 1],
-      manual: false,
-    },
   ],
 };
 
@@ -177,19 +162,26 @@ describe("validateTriageOutput", () => {
     expect(validateTriageOutput(epic)).toEqual({ result: epic });
   });
 
-  it("writes the validation audit from the epic's requirements", () => {
-    const stories = epic.stories.map((s, i) =>
-      i === 2 ? { ...s, body: "Check everything.\n\n## Acceptance Criteria\n\n- [ ] All good" } : s,
-    );
-    const r = validateTriageOutput({ ...epic, stories });
+  it("drops a validation task, and the dependencies on it, since the epic audit checks requirements", () => {
+    const validation = {
+      title: " validate functional  requirements ",
+      body: "Check everything.\n\n## Acceptance Criteria\n\n- [ ] All good",
+      priority: 2,
+      dependsOn: [],
+      manual: false,
+    };
+    const [first, second] = epic.stories;
+    const r = validateTriageOutput({
+      ...epic,
+      stories: [first, validation, { ...second!, dependsOn: [0, 1] }],
+    });
     if (!("result" in r)) throw new Error(r.problem);
-    const audit = r.result.stories[2]!;
-    expect(audit.title).toBe(VALIDATION_AUDIT_TITLE);
-    expect(audit.body).toBe(epic.stories[2]!.body);
-    expect(audit.body).toContain(
-      "- [ ] FR-2: The system must show each task's priority in the task list",
-    );
-    expect(audit.body).not.toContain("All good");
+    expect(r.result.stories.map((s) => [s.title, s.dependsOn])).toEqual([
+      ["Add the priority column", []],
+      ["Show the priority", [0]],
+    ]);
+    // An epic whose only task is the validation task has no stories.
+    expect(problemOf({ ...epic, stories: [validation] })).toMatch(/epic but there are no/);
   });
 
   it("trims and deduplicates", () => {
@@ -549,7 +541,7 @@ describe("buildTriagePrompt", () => {
       "### Epic format",
       "### Story format",
       "### Fix format",
-      "### Validation audit",
+      "### Epic audit",
       "Reformat it, don't replan it",
       "becomes one open question",
       `\`${OPEN_QUESTIONS_HEADING}\``,
