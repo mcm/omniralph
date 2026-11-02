@@ -423,6 +423,7 @@ describe("model and budget of every built-in playbook", () => {
     "builtin:describe-pr": { model: "opus", tokenBudget: null },
     "builtin:verify-task": { model: "claude-sonnet-5-5", tokenBudget: null },
     "builtin:audit-epic": { model: "claude-opus-5-5", tokenBudget: null },
+    "builtin:verify-findings": { model: "claude-sonnet-5-5", tokenBudget: 100_000 },
   };
 
   /** A run of a built-in playbook on a repository of `depth` (a review's preset comes from it). */

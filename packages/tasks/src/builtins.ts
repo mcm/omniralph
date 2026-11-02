@@ -14,6 +14,7 @@ import { REPLY_PLAYBOOK } from "./builtin/reply.js";
 import { REVIEW_PR_PLAYBOOK } from "./builtin/review-pr.js";
 import { SUMMARIZE_PR_PLAYBOOK } from "./builtin/summarize-pr.js";
 import { TRIAGE_PLAYBOOK } from "./builtin/triage.js";
+import { VERIFY_FINDINGS_PLAYBOOK } from "./builtin/verify-findings.js";
 import { VERIFY_TASK_PLAYBOOK } from "./builtin/verify-task.js";
 import { validateCodingTask } from "./coding.js";
 import type { TaskDefinition } from "./definitions.js";
@@ -40,6 +41,7 @@ const PLAYBOOK_INPUTS: readonly PlaybookInput[] = [
   DESCRIBE_PR_PLAYBOOK,
   VERIFY_TASK_PLAYBOOK,
   AUDIT_EPIC_PLAYBOOK,
+  VERIFY_FINDINGS_PLAYBOOK,
 ];
 
 export const BUILTIN_PLAYBOOKS: readonly Playbook[] = PLAYBOOK_INPUTS.map((playbook) =>
