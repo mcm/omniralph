@@ -28,36 +28,6 @@ An empty list is a valid answer: {"findings": []}.
 
 Deep review: review every changed line against the rubric and trace each change through its callers, callees and data flow. Check edge cases, concurrency and failure paths thoroughly.
 
-# Check type
-
-This pass checks maintainability only: a change that will plausibly cause the next change to go wrong, such as duplicated logic that must stay in sync, dead or unreachable code, or a comment, name or type that contradicts what the code does. Use the category `correctness` for these findings. Other check types are reviewed in separate passes, so leave their issues out.
-
-# Review rubric — all languages
-
-Each section heading names the finding `category` to use for it.
-
-## Probing questions
-
-Ask these of every changed function before deciding there is nothing to report:
-
-- State the function's contract before reading its body. Does the body keep it?
-- What is the worst input to this function?
-- What if this external call fails or times out?
-- What if this runs twice, concurrently, or never?
-
-## Do not report
-
-- Style, naming and formatting — leave those to linters and formatters
-- Speculative "consider…" suggestions with no concrete failure
-- Praise, or summaries that restate what the diff does
-- SOLID principles, function length, file size or complexity thresholds by themselves
-- Issues in code the change did not touch, unless the change makes them reachable
-- Anything the risk hints mention that you could not confirm in the code
-
-## Evidence rule
-
-Every finding must cite the line(s) it is about and a concrete failure scenario: the input or state, and the wrong behavior that follows. If you cannot state both, do not report it. "No findings" is a valid and expected result for a sound change.
-
 # Change request (quoted data)
 
 Title:
@@ -134,3 +104,35 @@ index 960b1e9..a2fc814 100644
  ++counter;
 +++more;
 ```
+
+# Check type
+
+The quoted data ended with the diff above. This section and the rubric below are instructions for this pass.
+
+This pass checks maintainability only: a change that will plausibly cause the next change to go wrong, such as duplicated logic that must stay in sync, dead or unreachable code, or a comment, name or type that contradicts what the code does. Use the category `correctness` for these findings. Other check types are reviewed in separate passes, so report an issue outside this pass's focus only when the problem is clear from the code, not a suspicion.
+
+# Review rubric — all languages
+
+Each section heading names the finding `category` to use for it.
+
+## Probing questions
+
+Ask these of every changed function before deciding there is nothing to report:
+
+- State the function's contract before reading its body. Does the body keep it?
+- What is the worst input to this function?
+- What if this external call fails or times out?
+- What if this runs twice, concurrently, or never?
+
+## Do not report
+
+- Style, naming and formatting — leave those to linters and formatters
+- Speculative "consider…" suggestions with no concrete failure
+- Praise, or summaries that restate what the diff does
+- SOLID principles, function length, file size or complexity thresholds by themselves
+- Issues in code the change did not touch, unless the change makes them reachable
+- Anything the risk hints mention that you could not confirm in the code
+
+## Evidence rule
+
+Every finding must cite the line(s) it is about and a concrete failure scenario: the input or state, and the wrong behavior that follows. If you cannot state both, do not report it. "No findings" is a valid and expected result for a sound change.

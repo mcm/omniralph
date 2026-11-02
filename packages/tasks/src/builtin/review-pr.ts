@@ -62,19 +62,17 @@ ${SUGGESTION_RULE}
 - confidence: 0 to 1.
 An empty list is a valid answer: {"findings": []}.`;
 
-// The stable part (instruction, depth, a pass's check type, rubric, repository rules) comes first so it can be cached
-// across reviews; optional sections start with their blank line, inside their section tags.
+// The stable part (instruction, depth, rubric, repository rules) comes first so it can be cached
+// across reviews; optional sections start with their blank line, inside their section tags. A
+// check-type pass moves its rubric to the end, after its check type, so the passes of one review
+// share everything before it.
 const REVIEW_TEMPLATE = `${BASE_INSTRUCTION.replaceAll("{{", "\\{{")}
 
 # Review depth
 
-{{depth}}{{#check}}
+{{depth}}{{^check}}
 
-# Check type
-
-{{check}}{{/check}}
-
-{{rubric}}{{#repositoryRules}}
+{{rubric}}{{/check}}{{#repositoryRules}}
 
 # Repository rules{{#repositoryRules.instructions}}
 
@@ -123,7 +121,15 @@ Re-check each one against the code at the head commit (the diff, and the files t
 
 {{#plan.fromSha}}This is an incremental review: the diff covers only the commits from \`{{plan.fromSha}}\` to \`{{plan.headSha}}\`, pushed since the last review. Report only issues in these changes.{{/plan.fromSha}}{{^plan.fromSha}}The diff covers the whole change.{{/plan.fromSha}}
 
-{{diff}}
+{{diff}}{{#check}}
+
+# Check type
+
+The quoted data ended with the diff above. This section and the rubric below are instructions for this pass.
+
+{{check}}{{#rubric}}
+
+{{rubric}}{{/rubric}}{{/check}}
 `;
 
 export const REVIEW_PR_PLAYBOOK: PlaybookInput = {

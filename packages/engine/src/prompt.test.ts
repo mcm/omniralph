@@ -2,7 +2,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseDiff, type DiffFile } from "./diff.js";
 import { CHECK_TYPE_CATEGORIES, CHECK_TYPES, planReview } from "./plan.js";
-import { buildPrompt, fence, type ReviewConfig, type ReviewProfileConfig } from "./prompt.js";
+import {
+  buildPrompt,
+  CHECK_TYPE_INTRO,
+  checkGuidance,
+  fence,
+  type ReviewConfig,
+  type ReviewProfileConfig,
+} from "./prompt.js";
 import {
   filterRubric,
   languagesForPaths,
@@ -319,49 +326,59 @@ describe("check-type rubric", () => {
 describe("buildPrompt for a check type", () => {
   const files = fixture("basic");
 
-  it("adds the check type's focus after the depth and narrows the rubric", () => {
-    const single = buildPrompt({ config: { profile: standard }, files, changeRequest });
-    const security = buildPrompt({
-      config: { profile: standard },
-      files,
-      changeRequest,
-      checkType: "security",
-    });
+  it("ends with the check type's focus and narrowed rubric, after everything passes share", () => {
+    const config = {
+      profile: standard,
+      customInstructions: "Prefer early returns.",
+      rules: [{ kind: "custom" as const, enabled: true, text: "No default exports." }],
+    };
+    const single = buildPrompt({ config, files, changeRequest });
+    const security = buildPrompt({ config, files, changeRequest, checkType: "security" });
+    const performance = buildPrompt({ config, files, changeRequest, checkType: "performance" });
     expect(single.checkType).toBeUndefined();
     expect(single.text).not.toContain("# Check type");
-    expect(security.checkType).toBe("security");
-    expect(security.text).toContain(
-      "# Review depth\n\nStandard review: review every changed line against the rubric. Read surrounding code when a finding depends on it (callers, types, configuration), but stay focused on the change.\n\n# Check type\n\nThis pass checks security only:",
-    );
-    expect(security.text).toContain("explain in body how it could be exploited");
-    expect(security.text).toContain("Report only findings in the category `security`.");
-    expect(security.stablePrefix).toContain(renderCheckRubric(security.languages, ["security"]));
-    expect(security.stablePrefix).not.toContain("## Performance (`performance`)");
     expect(single.stablePrefix).toContain(renderRubric(single.languages));
-    // Everything after the stable prefix is the same as a single pass's.
-    expect(security.text.slice(security.stablePrefix.length)).toBe(
-      single.text.slice(single.stablePrefix.length),
+    expect(security.checkType).toBe("security");
+
+    // The passes share the stable prefix (no rubric) and the per-PR content, up to the check type.
+    expect(security.stablePrefix).toBe(performance.stablePrefix);
+    expect(security.stablePrefix).not.toContain("(`security`)");
+    expect(security.stablePrefix).toContain("# Repository rules");
+    const shared = security.text.slice(0, security.text.indexOf("\n\n# Check type\n\n"));
+    expect(performance.text.startsWith(`${shared}\n\n# Check type\n\n`)).toBe(true);
+    for (const section of ["# Repository rules", "# Change request (quoted data)", "# Diff"]) {
+      expect(shared).toContain(section);
+    }
+    // Without the rubric and the check block, a pass is the single-pass prompt.
+    expect(shared.replace("# Review depth", "")).toBe(
+      single.text
+        .slice(0, -1)
+        .replace(`\n\n${renderRubric(single.languages)}`, "")
+        .replace("# Review depth", ""),
     );
+
+    // The check type and its rubric come last.
+    const check = security.text.slice(shared.length);
+    expect(check).toBe(
+      `\n\n# Check type\n\n${CHECK_TYPE_INTRO}\n\n${checkGuidance("security")}\n\n${renderCheckRubric(security.languages, ["security"])}\n`,
+    );
+    expect(check).toContain("explain in body how it could be exploited");
+    expect(check).not.toContain("## Performance (`performance`)");
   });
 
-  it("names every category of a multi-category check type", () => {
-    const stability = buildPrompt({
-      config: { profile: standard },
-      files,
-      changeRequest,
-      checkType: "stability",
-    });
-    expect(stability.text).toContain(
-      "Report only findings in the categories `correctness`, `concurrency`, `resources`, `error-handling`.",
+  it("allows findings outside the check type's categories only when the problem is clear", () => {
+    expect(checkGuidance("security")).toContain("Report findings in the category `security`.");
+    expect(checkGuidance("stability")).toContain(
+      "Report findings in the categories `correctness`, `concurrency`, `resources`, `error-handling`.",
     );
-    const maintainability = buildPrompt({
-      config: { profile: standard },
-      files,
-      changeRequest,
-      checkType: "maintainability",
-    });
-    expect(maintainability.text).toContain("Use the category `correctness`");
-    expect(maintainability.text).not.toContain("Report only findings in the");
+    for (const type of CHECK_TYPES) {
+      expect(checkGuidance(type)).toContain(
+        "report an issue outside this pass's focus only when the problem is clear from the code, not a suspicion.",
+      );
+      expect(checkGuidance(type)).not.toContain("leave their issues out");
+    }
+    expect(checkGuidance("maintainability")).toContain("Use the category `correctness`");
+    expect(checkGuidance("maintainability")).not.toContain("Report findings in the");
   });
 });
 

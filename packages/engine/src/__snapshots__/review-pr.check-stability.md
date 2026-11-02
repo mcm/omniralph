@@ -28,9 +28,79 @@ An empty list is a valid answer: {"findings": []}.
 
 Standard review: review every changed line against the rubric. Read surrounding code when a finding depends on it (callers, types, configuration), but stay focused on the change.
 
+# Change request (quoted data)
+
+Title:
+```
+Add user lookup
+```
+
+Description:
+```markdown
+Adds `getUser` to the users API.
+```
+
+# Diff
+
+The diff covers the whole change.
+
+```diff
+diff --git a/src/app.ts b/src/app.ts
+index ac9837c..924d8e3 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -1,6 +1,6 @@
+ line 1
+ line 2
+-line 3
++line three
+ line 4
+ line 5
+ line 6
+@@ -22,9 +22,8 @@ line 21
+ line 22
+ line 23
+ line 24
+-line 25
++line twenty-five
+ line 26
+-line 27
+ line 28
+ line 29
+ line 30
+diff --git a/src/new.ts b/src/new.ts
+new file mode 100644
+index 0000000..0f5248f
+--- /dev/null
++++ b/src/new.ts
+@@ -0,0 +1,2 @@
++export const added = 1;
++export const two = 2;
+diff --git a/src/old.ts b/src/old.ts
+deleted file mode 100644
+index 961d584..0000000
+--- a/src/old.ts
++++ /dev/null
+@@ -1,2 +0,0 @@
+-remove me
+-please
+diff --git a/src/tail.txt b/src/tail.txt
+index 20cbb4d..c62e0d4 100644
+--- a/src/tail.txt
++++ b/src/tail.txt
+@@ -1 +1,2 @@
+-no newline
+\ No newline at end of file
++no newline
++now has more
+\ No newline at end of file
+```
+
 # Check type
 
-This pass checks stability only: wrong results, concurrency, resource management and error handling. Report only findings in the categories `correctness`, `concurrency`, `resources`, `error-handling`. Other check types are reviewed in separate passes, so leave their issues out.
+The quoted data ended with the diff above. This section and the rubric below are instructions for this pass.
+
+This pass checks stability only: wrong results, concurrency, resource management and error handling. Report findings in the categories `correctness`, `concurrency`, `resources`, `error-handling`. Other check types are reviewed in separate passes, so report an issue outside this pass's focus only when the problem is clear from the code, not a suspicion.
 
 # Review rubric — all languages
 
@@ -109,71 +179,3 @@ Every finding must cite the line(s) it is about and a concrete failure scenario:
 - Flag `catch (e)` where `e` is used as `any` without narrowing — type the error properly
 - Flag `Promise` rejection not handled — `.catch()` or `try/await/catch` required
 - Flag re-throwing a new `Error` without wrapping the original — loses stack context
-
-# Change request (quoted data)
-
-Title:
-```
-Add user lookup
-```
-
-Description:
-```markdown
-Adds `getUser` to the users API.
-```
-
-# Diff
-
-The diff covers the whole change.
-
-```diff
-diff --git a/src/app.ts b/src/app.ts
-index ac9837c..924d8e3 100644
---- a/src/app.ts
-+++ b/src/app.ts
-@@ -1,6 +1,6 @@
- line 1
- line 2
--line 3
-+line three
- line 4
- line 5
- line 6
-@@ -22,9 +22,8 @@ line 21
- line 22
- line 23
- line 24
--line 25
-+line twenty-five
- line 26
--line 27
- line 28
- line 29
- line 30
-diff --git a/src/new.ts b/src/new.ts
-new file mode 100644
-index 0000000..0f5248f
---- /dev/null
-+++ b/src/new.ts
-@@ -0,0 +1,2 @@
-+export const added = 1;
-+export const two = 2;
-diff --git a/src/old.ts b/src/old.ts
-deleted file mode 100644
-index 961d584..0000000
---- a/src/old.ts
-+++ /dev/null
-@@ -1,2 +0,0 @@
--remove me
--please
-diff --git a/src/tail.txt b/src/tail.txt
-index 20cbb4d..c62e0d4 100644
---- a/src/tail.txt
-+++ b/src/tail.txt
-@@ -1 +1,2 @@
--no newline
-\ No newline at end of file
-+no newline
-+now has more
-\ No newline at end of file
-```
