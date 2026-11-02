@@ -1,7 +1,7 @@
 /**
  * The shared planning rules, each written once as a Markdown fragment: the
  * formats (with their templates), sizing, splitting by feature, checkable
- * criteria, requirement wording, the epic audit and the dependency rules. The triage prompts,
+ * criteria, constraints and guidance, requirement wording, the epic audit and the dependency rules. The triage prompts,
  * the story prompts and the plugin compose their text from these.
  *
  * A fragment may name the tracker as `{{trackerName}}` and the repo's tracker
@@ -9,15 +9,13 @@
  * No fragment names a specific tracker.
  */
 import {
-  ACCEPTANCE_CRITERIA_SECTION,
   COVERS_LABEL,
   EPIC_SECTIONS,
   EPIC_TEMPLATE,
-  FIX_SECTIONS,
-  FIX_TEMPLATE,
   REQUIREMENT_PREFIX,
   SCOPE_PARTS,
-  STORY_TEMPLATE,
+  TASK_PARAGRAPHS,
+  TASK_TEMPLATE,
   VALIDATION_AUDIT_TITLE,
   heading,
 } from "./templates.js";
@@ -45,7 +43,7 @@ export const WORK_ITEMS_RULE: Fragment = {
   id: "work-items",
   title: "Work items",
   body: `Every work item has a kind and a role.
-- **Kind.** A **Story** is new work or an enhancement. A **Fix** is a bug: something that should work and doesn't. Omniralph tells a Fix by its bug label or its fix format; everything else is a Story.
+- **Kind.** A **Story** is new work or an enhancement. A **Fix** is a bug: something that should work and doesn't. Omniralph tells a Fix by its bug label; everything else is a Story. Both are written in the task format.
 - **Role.** A **task** is one piece of work an agent finishes in one session; it has no sub-issues. An **epic** is a set of tasks (its sub-issues) that ship together in one pull request, once every task is done. A **feature** groups epics; nobody builds a feature directly. A task with no epic is a **standalone task**, and counts as an epic of one.
 - What an agent builds against is the task and its epic, never a planning document. Outcomes and success measures belong in planning documents, not in epics or tasks.`,
 };
@@ -59,41 +57,35 @@ export const EPIC_FORMAT_RULE: Fragment = {
 - ${code(heading(EPIC_SECTIONS.scope))}: what the epic delivers under ${code(`### ${SCOPE_PARTS.in}`)} and what it deliberately leaves out under ${code(`### ${SCOPE_PARTS.out}`)}. Only what is really out of scope goes under ${SCOPE_PARTS.out}: never relabel requested work as later or optional; if part of it truly is optional, ask a person.
 - ${code(heading(EPIC_SECTIONS.design))} (optional): UI and UX decisions, flows, components to reuse.
 - ${code(heading(EPIC_SECTIONS.technicalNotes))} (optional): constraints, integration points, real file paths, patterns to follow.
-- ${code(heading(EPIC_SECTIONS.requirements))}: the numbered requirements (see Requirement wording). Every requirement is owned by at least one story.
+- ${code(heading(EPIC_SECTIONS.requirements))}: the numbered requirements (see Requirement wording). Every requirement is built by at least one task.
 
 Nothing else: no title heading (the title is its own field), no checklist, no other sections. The repo decides which checks run on every task, so an epic never lists commands to run.
 
 ${fence(EPIC_TEMPLATE)}`,
 };
 
-/** The story format and its template. */
-export const STORY_FORMAT_RULE: Fragment = {
-  id: "story-format",
-  title: "Story format",
-  body: `A story is a task for new work. Its description is exactly this shape:
-- One sentence: "As a [user], I want [capability] so that [benefit]."
-- A ${code(`${COVERS_LABEL}:`)} line naming the requirements of its epic the story owns, by identifier (${code(`${COVERS_LABEL}: ${REQUIREMENT_PREFIX}2, ${REQUIREMENT_PREFIX}4`)}). A standalone story has no epic, and no ${code(`${COVERS_LABEL}:`)} line.
-- Optionally, short context: files to touch, patterns to follow.
-- ${code(heading(ACCEPTANCE_CRITERIA_SECTION))} (exactly that, no trailing colon), a ${code("- [ ]")} checklist, as the last section.
+/** The task format, its Story and Fix kinds, and its template. */
+export const TASK_FORMAT_RULE: Fragment = {
+  id: "task-format",
+  title: "Task format",
+  body: `A task's description is three paragraphs, in this order, each opening with its own words. Story and Fix are kinds of the same shape; a task is a Fix when it carries the bug label.
+1. **${code(`${TASK_PARAGRAPHS.build.opening} …`)}** What to build, in one paragraph. For a Story: ${TASK_PARAGRAPHS.build.story}. For a Fix: ${TASK_PARAGRAPHS.build.fix}.
+2. **${code(`${TASK_PARAGRAPHS.approach.opening} …`)}** How to build it. For a Story: ${TASK_PARAGRAPHS.approach.story}. For a Fix: ${TASK_PARAGRAPHS.approach.fix}.
+3. **${code(`${TASK_PARAGRAPHS.done.opening} …`)}** When it is done, as prose or a short list. For a Story: ${TASK_PARAGRAPHS.done.story}. For a Fix: ${TASK_PARAGRAPHS.done.fix}.
 
-Don't repeat the title as a heading, and don't add identifiers, priority, dependency or metadata lines: those are {{trackerName}} fields. Never refer to another story by a drafting label such as US-001.
+The agent building the task gets all three paragraphs, with the third as its stop condition. The agent verifying it gets only the first and third, with the change, so it judges the result rather than the approach.
 
-${fence(STORY_TEMPLATE)}`,
+Nothing else: no headings, no ${code(`${COVERS_LABEL}:`)} line, no checklist section. Don't repeat the title, and don't add identifiers, priority, dependency or metadata lines: those are {{trackerName}} fields. Never refer to another task by a drafting label such as US-001.
+
+${fence(TASK_TEMPLATE)}`,
 };
 
-/** The fix format and its template. */
-export const FIX_FORMAT_RULE: Fragment = {
-  id: "fix-format",
-  title: "Fix format",
-  body: `A fix is a task for a bug. Its description has these sections, in this order, each always present:
-- ${code(heading(FIX_SECTIONS.current))}: what happens now, with the steps, input or state that show it.
-- ${code(heading(FIX_SECTIONS.expected))}: what must happen instead.
-- ${code(heading(FIX_SECTIONS.unchanged))}: the nearby behavior the fix must keep exactly as it is, so the fix doesn't break it.
-- ${code(heading(FIX_SECTIONS.acceptanceCriteria))}: a ${code("- [ ]")} checklist, as the last section.
-
-A fix in an epic may add a ${code(`${COVERS_LABEL}:`)} line before ${code(heading(FIX_SECTIONS.current))} when it owns requirements of the epic.
-
-${fence(FIX_TEMPLATE)}`,
+/** What belongs in a task's third paragraph and what its second paragraph is. */
+export const TASK_CONSTRAINTS_RULE: Fragment = {
+  id: "task-constraints",
+  title: "Constraints and guidance",
+  body: `- Every constraint that must hold goes in the ${code(TASK_PARAGRAPHS.done.opening)} paragraph, never in the ${code(TASK_PARAGRAPHS.approach.opening)} paragraph: no new table, never force-push, a behavior that must not change. The agent verifying the task never sees the second paragraph, so a constraint written there goes unchecked.
+- The ${code(TASK_PARAGRAPHS.approach.opening)} paragraph is guidance: where to look and how it would likely be built. The agent building the task may depart from it when the code shows a better way, so it holds nothing the task is judged by.`,
 };
 
 /** The epic audit Omniralph runs before an epic's pull request, in place of a validation task. */
@@ -111,7 +103,7 @@ export const SIZING_RULE: Fragment = {
   title: "Sizing",
   body: `Size the whole body of work, not one piece of it: XS, S, M, L or XL. Weigh the number of distinct requirements, the surface it touches (database, API, UI, integrations, infrastructure), the unknowns and risk, and how many focused agent sessions it would realistically take.
 - **L or larger (L, XL): an epic.** One task per story or fix, and no validation task: the epic audit checks the requirements.
-- **Smaller than L (XS, S, M): a single task.** One story, or one fix when it is a bug, with its acceptance criteria in its own description and no sub-issues.`,
+- **Smaller than L (XS, S, M): a single task.** One task in the task format, a Fix when it is a bug, with its done criteria in its own description and no sub-issues.`,
 };
 
 /** Splitting an epic into tasks by feature. */
@@ -122,7 +114,7 @@ export const SPLITTING_RULE: Fragment = {
 - Split by feature boundary, never by development phase: "Sign-in" is one story, not scaffolding, logic, tests and polish as four.
 - The tests, error handling, hardening and documentation of new code belong in the task that adds the code, never in a task of their own.
 - Order the tasks so earlier ones enable later ones, and block a task only on the tasks it really depends on.
-- Every task is in scope for the epic, and every requirement is owned by at least one task.
+- Every task is in scope for the epic, and every requirement is built by at least one task.
 - A step only a person can do (credentials, DNS, third-party consoles, a migration run by operations, a design sign-off) is its own manual task, never a criterion on an agent's task.`,
 };
 
@@ -130,10 +122,10 @@ export const SPLITTING_RULE: Fragment = {
 export const CHECKABLE_CRITERIA_RULE: Fragment = {
   id: "checkable-criteria",
   title: "Checkable criteria",
-  body: `Acceptance criteria are evidence to check, not tests to write. Each one names something an agent can confirm inside the repo, in the code, the output of a command or the behavior of the running software: "Deleting a project asks for confirmation first", not "Works correctly".
+  body: `A task's ${code(TASK_PARAGRAPHS.done.opening)} paragraph holds its done criteria: criteria the loop can check, each one evidence to check, not a test to write. Each one names something an agent can confirm inside the repo, in the code, the output of a command or the behavior of the running software: "Deleting a project asks for confirmation first", not "Works correctly".
 - Tests are written where the repo's conventions call for them on new behavior, never to prove a criterion. Don't phrase a criterion as a test to add.
 - A fix adds a regression test only where the affected code already has tests.
-- No outcomes or metrics: nothing measured after merge, such as adoption, a percentage improvement, fewer support requests or user satisfaction. Those belong in planning documents.
+- No criterion is an outcome or metric: nothing measured after merge, such as adoption, a percentage improvement, fewer support requests or user satisfaction. Those belong in planning documents.
 - Nothing that needs human judgement, production access or an outside account.`,
 };
 
@@ -144,7 +136,7 @@ export const REQUIREMENT_WORDING_RULE: Fragment = {
   body: `Requirements are a bullet list, numbered from 1: ${code(`- ${REQUIREMENT_PREFIX}1: The system must …`)}. Never headings.
 - One behavior per requirement, explicit and unambiguous, stated as what the system must do.
 - Add a condition only to conditional behavior: WHEN for an event or state (${code(`- ${REQUIREMENT_PREFIX}2: WHEN a run fails, the system must …`)}), IF for an unwanted condition (${code(`- ${REQUIREMENT_PREFIX}3: IF the token has expired, the system must …`)}). Behavior that always holds has no condition.
-- Stories name the requirements they own by identifier in their ${code(`${COVERS_LABEL}:`)} line, so keep identifiers stable once stories refer to them.`,
+- Tasks don't name the requirements they build: the epic audit checks every requirement against the finished branch on its own. Keep identifiers stable all the same, since people and audits refer to them.`,
 };
 
 /** The dependency rules between work items. */
@@ -164,15 +156,15 @@ export const DEPENDENCY_RULE: Fragment = {
 /**
  * Every shared rule, in the order the methodology presents them: the work
  * items, the formats and their templates, requirement wording, criteria,
- * sizing, splitting, the epic audit and the dependency rules.
+ * constraints and guidance, sizing, splitting, the epic audit and the dependency rules.
  */
 export const SHARED_RULES: readonly Fragment[] = [
   WORK_ITEMS_RULE,
   EPIC_FORMAT_RULE,
-  STORY_FORMAT_RULE,
-  FIX_FORMAT_RULE,
+  TASK_FORMAT_RULE,
   REQUIREMENT_WORDING_RULE,
   CHECKABLE_CRITERIA_RULE,
+  TASK_CONSTRAINTS_RULE,
   SIZING_RULE,
   SPLITTING_RULE,
   EPIC_AUDIT_RULE,

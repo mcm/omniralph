@@ -109,7 +109,7 @@ These rules are the same ones Omniralph's own triage follows.
 ### Work items
 
 Every work item has a kind and a role.
-- **Kind.** A **Story** is new work or an enhancement. A **Fix** is a bug: something that should work and doesn't. Omniralph tells a Fix by its bug label or its fix format; everything else is a Story.
+- **Kind.** A **Story** is new work or an enhancement. A **Fix** is a bug: something that should work and doesn't. Omniralph tells a Fix by its bug label; everything else is a Story. Both are written in the task format.
 - **Role.** A **task** is one piece of work an agent finishes in one session; it has no sub-issues. An **epic** is a set of tasks (its sub-issues) that ship together in one pull request, once every task is done. A **feature** groups epics; nobody builds a feature directly. A task with no epic is a **standalone task**, and counts as an epic of one.
 - What an agent builds against is the task and its epic, never a planning document. Outcomes and success measures belong in planning documents, not in epics or tasks.
 
@@ -120,7 +120,7 @@ An epic's description has these sections, in this order, each as a plain `##` he
 - `## Scope`: what the epic delivers under `### In` and what it deliberately leaves out under `### Out`. Only what is really out of scope goes under Out: never relabel requested work as later or optional; if part of it truly is optional, ask a person.
 - `## Design` (optional): UI and UX decisions, flows, components to reuse.
 - `## Technical notes` (optional): constraints, integration points, real file paths, patterns to follow.
-- `## Requirements`: the numbered requirements (see Requirement wording). Every requirement is owned by at least one story.
+- `## Requirements`: the numbered requirements (see Requirement wording). Every requirement is built by at least one task.
 
 Nothing else: no title heading (the title is its own field), no checklist, no other sections. The repo decides which checks run on every task, so an epic never lists commands to run.
 
@@ -154,56 +154,25 @@ Nothing else: no title heading (the title is its own field), no checklist, no ot
 - FR-3: IF [unwanted condition], the system must [behavior].
 ```
 
-### Story format
+### Task format
 
-A story is a task for new work. Its description is exactly this shape:
-- One sentence: "As a [user], I want [capability] so that [benefit]."
-- A `Covers:` line naming the requirements of its epic the story owns, by identifier (`Covers: FR-2, FR-4`). A standalone story has no epic, and no `Covers:` line.
-- Optionally, short context: files to touch, patterns to follow.
-- `## Acceptance Criteria` (exactly that, no trailing colon), a `- [ ]` checklist, as the last section.
+A task's description is three paragraphs, in this order, each opening with its own words. Story and Fix are kinds of the same shape; a task is a Fix when it carries the bug label.
+1. **`I want you to …`** What to build, in one paragraph. For a Story: build what the task delivers, for whom and why. For a Fix: fix what is broken, saying what happens now and what should happen instead.
+2. **`Build it by …`** How to build it. For a Story: where the code lives, the patterns to follow and the files to touch. For a Fix: the likely cause of the bug and where the code lives.
+3. **`Don't stop until …`** When it is done, as prose or a short list. For a Story: the done criteria the loop can check and every constraint that must hold. For a Fix: the fixed behavior, every constraint that must hold and the nearby behavior that must not change.
 
-Don't repeat the title as a heading, and don't add identifiers, priority, dependency or metadata lines: those are Linear fields. Never refer to another story by a drafting label such as US-001.
+The agent building the task gets all three paragraphs, with the third as its stop condition. The agent verifying it gets only the first and third, with the change, so it judges the result rather than the approach.
 
-```markdown
-As a [user], I want [capability] so that [benefit].
-
-Covers: FR-1, FR-3
-
-[Optional context: files to touch, patterns to follow.]
-
-## Acceptance Criteria
-
-- [ ] [Evidence to check]
-- [ ] [More evidence to check]
-```
-
-### Fix format
-
-A fix is a task for a bug. Its description has these sections, in this order, each always present:
-- `## Current behavior`: what happens now, with the steps, input or state that show it.
-- `## Expected behavior`: what must happen instead.
-- `## Unchanged behavior`: the nearby behavior the fix must keep exactly as it is, so the fix doesn't break it.
-- `## Acceptance Criteria`: a `- [ ]` checklist, as the last section.
-
-A fix in an epic may add a `Covers:` line before `## Current behavior` when it owns requirements of the epic.
+Nothing else: no headings, no `Covers:` line, no checklist section. Don't repeat the title, and don't add identifiers, priority, dependency or metadata lines: those are Linear fields. Never refer to another task by a drafting label such as US-001.
 
 ```markdown
-## Current behavior
+I want you to [Story: build what the task delivers, for whom and why. Fix: fix what is broken, saying what happens now and what should happen instead.]
 
-[What happens now, with the steps or input that show it.]
+Build it by [Story: where the code lives, the patterns to follow and the files to touch. Fix: the likely cause of the bug and where the code lives.]
 
-## Expected behavior
-
-[What must happen instead.]
-
-## Unchanged behavior
-
-[Nearby behavior the fix must keep exactly as it is.]
-
-## Acceptance Criteria
-
-- [ ] [Evidence to check]
-- [ ] [More evidence to check]
+Don't stop until [Story: the done criteria the loop can check and every constraint that must hold. Fix: the fixed behavior, every constraint that must hold and the nearby behavior that must not change.]:
+- [A done criterion to check]
+- [A constraint that must hold]
 ```
 
 ### Requirement wording
@@ -211,21 +180,26 @@ A fix in an epic may add a `Covers:` line before `## Current behavior` when it o
 Requirements are a bullet list, numbered from 1: `- FR-1: The system must …`. Never headings.
 - One behavior per requirement, explicit and unambiguous, stated as what the system must do.
 - Add a condition only to conditional behavior: WHEN for an event or state (`- FR-2: WHEN a run fails, the system must …`), IF for an unwanted condition (`- FR-3: IF the token has expired, the system must …`). Behavior that always holds has no condition.
-- Stories name the requirements they own by identifier in their `Covers:` line, so keep identifiers stable once stories refer to them.
+- Tasks don't name the requirements they build: the epic audit checks every requirement against the finished branch on its own. Keep identifiers stable all the same, since people and audits refer to them.
 
 ### Checkable criteria
 
-Acceptance criteria are evidence to check, not tests to write. Each one names something an agent can confirm inside the repo, in the code, the output of a command or the behavior of the running software: "Deleting a project asks for confirmation first", not "Works correctly".
+A task's `Don't stop until` paragraph holds its done criteria: criteria the loop can check, each one evidence to check, not a test to write. Each one names something an agent can confirm inside the repo, in the code, the output of a command or the behavior of the running software: "Deleting a project asks for confirmation first", not "Works correctly".
 - Tests are written where the repo's conventions call for them on new behavior, never to prove a criterion. Don't phrase a criterion as a test to add.
 - A fix adds a regression test only where the affected code already has tests.
-- No outcomes or metrics: nothing measured after merge, such as adoption, a percentage improvement, fewer support requests or user satisfaction. Those belong in planning documents.
+- No criterion is an outcome or metric: nothing measured after merge, such as adoption, a percentage improvement, fewer support requests or user satisfaction. Those belong in planning documents.
 - Nothing that needs human judgement, production access or an outside account.
+
+### Constraints and guidance
+
+- Every constraint that must hold goes in the `Don't stop until` paragraph, never in the `Build it by` paragraph: no new table, never force-push, a behavior that must not change. The agent verifying the task never sees the second paragraph, so a constraint written there goes unchecked.
+- The `Build it by` paragraph is guidance: where to look and how it would likely be built. The agent building the task may depart from it when the code shows a better way, so it holds nothing the task is judged by.
 
 ### Sizing
 
 Size the whole body of work, not one piece of it: XS, S, M, L or XL. Weigh the number of distinct requirements, the surface it touches (database, API, UI, integrations, infrastructure), the unknowns and risk, and how many focused agent sessions it would realistically take.
 - **L or larger (L, XL): an epic.** One task per story or fix, and no validation task: the epic audit checks the requirements.
-- **Smaller than L (XS, S, M): a single task.** One story, or one fix when it is a bug, with its acceptance criteria in its own description and no sub-issues.
+- **Smaller than L (XS, S, M): a single task.** One task in the task format, a Fix when it is a bug, with its done criteria in its own description and no sub-issues.
 
 ### Splitting into tasks
 
@@ -233,7 +207,7 @@ Each task is built in one fresh, unattended agent session, so it must be small e
 - Split by feature boundary, never by development phase: "Sign-in" is one story, not scaffolding, logic, tests and polish as four.
 - The tests, error handling, hardening and documentation of new code belong in the task that adds the code, never in a task of their own.
 - Order the tasks so earlier ones enable later ones, and block a task only on the tasks it really depends on.
-- Every task is in scope for the epic, and every requirement is owned by at least one task.
+- Every task is in scope for the epic, and every requirement is built by at least one task.
 - A step only a person can do (credentials, DNS, third-party consoles, a migration run by operations, a design sign-off) is its own manual task, never a criterion on an agent's task.
 
 ### Epic audit
