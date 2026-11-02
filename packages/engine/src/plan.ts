@@ -1,5 +1,7 @@
+import type { FindingCategory } from "@omniralph/shared";
 import picomatch from "picomatch";
 import type { DiffFile } from "./diff.js";
+import { languageForPath } from "./rubric/index.js";
 import { riskScan, type FileRisk } from "./riskScan.js";
 import { estimateTokens } from "./tokens.js";
 
@@ -139,11 +141,22 @@ function signalScore(risk: FileRisk): number {
   return risk.signals.reduce((max, s) => Math.max(max, SEVERITY_RANK[s.severity]), 0);
 }
 
-export function planReview(
+interface Selection {
+  included: Candidate[];
+  skipped: SkippedFile[];
+  estimatedInputTokens: number;
+  complexityScore: number;
+}
+
+/**
+ * The files a review reads: drops excluded, generated, binary and unchanged
+ * files, then the lowest-risk files over `maxFiles` and over the token budget.
+ */
+function selectFiles(
   files: readonly DiffFile[],
   profile: PlanProfile,
-  options: PlanOptions = {},
-): ReviewPlan {
+  options: PlanOptions,
+): Selection {
   const isExcluded = createPathFilter(options.pathExcludes);
   const estimate = options.estimateFileTokens ?? ((file: DiffFile) => estimateTokens(file.patch));
   const skipped: SkippedFile[] = [];
@@ -158,7 +171,7 @@ export function planReview(
   }
 
   const scan = riskScan(reviewable);
-  let candidates: Candidate[] = reviewable.map((file, index) => ({
+  const candidates: Candidate[] = reviewable.map((file, index) => ({
     file,
     risk: scan.files[index] as FileRisk,
     tokens: estimate(file),
@@ -186,16 +199,205 @@ export function planReview(
     const reason = dropped.get(candidate);
     if (reason) skipped.push({ path: candidate.file.path, reason });
   }
-  candidates = candidates.filter((c) => !dropped.has(c));
 
   return {
-    tasks: [
-      { id: "task-1", files: candidates.map((c) => c.file), budget: profile.maxTokensPerReview },
-    ],
+    included: candidates.filter((c) => !dropped.has(c)),
     skipped,
     estimatedInputTokens: total,
-    hotspots: selectHotspots(candidates.map((c) => c.risk)),
     complexityScore: scan.complexityScore,
+  };
+}
+
+export function planReview(
+  files: readonly DiffFile[],
+  profile: PlanProfile,
+  options: PlanOptions = {},
+): ReviewPlan {
+  const selection = selectFiles(files, profile, options);
+  return {
+    tasks: [
+      {
+        id: "task-1",
+        files: selection.included.map((c) => c.file),
+        budget: profile.maxTokensPerReview,
+      },
+    ],
+    skipped: selection.skipped,
+    estimatedInputTokens: selection.estimatedInputTokens,
+    hotspots: selectHotspots(selection.included.map((c) => c.risk)),
+    complexityScore: selection.complexityScore,
+  };
+}
+
+/** The check types a looped review can run, in the order passes are planned. */
+export const CHECK_TYPES = [
+  "security",
+  "stability",
+  "performance",
+  "compatibility",
+  "maintainability",
+] as const;
+
+export type CheckType = (typeof CHECK_TYPES)[number];
+
+/**
+ * The finding categories (and so the rubric `## … (category)` sections) each
+ * check type reviews. Maintainability has no rubric category yet: its pass
+ * reads only the shared rubric sections.
+ */
+export const CHECK_TYPE_CATEGORIES: Readonly<Record<CheckType, readonly FindingCategory[]>> = {
+  security: ["security"],
+  stability: ["correctness", "concurrency", "resources", "error-handling"],
+  performance: ["performance"],
+  compatibility: ["breaking-change", "tests"],
+  maintainability: [],
+};
+
+/** Most files one check-type pass reads at once; larger changes are split into groups. */
+export const MAX_FILES_PER_CHECK_GROUP = 20;
+
+const TEST_DIRECTORY = /(^|\/)(tests?|__tests__|spec|specs|e2e|__mocks__|fixtures?)\//i;
+const TEST_FILENAME = [
+  /\.(test|spec|e2e)\.[^/]+$/i, // foo.test.ts, foo.spec.js, foo.e2e.ts
+  /_(test|spec)\.[^/.]+$/i, // foo_test.go, foo_test.py, foo_spec.rb
+  /(^|\/)test_[^/]+\.py$/i, // test_foo.py
+  /(^|\/)conftest\.py$/i,
+  /[a-z0-9](Test|Tests|Spec|IT)\.(java|kt|kts|cs|swift|scala|php)$/, // FooTest.java, FooTests.cs
+];
+
+/** A test, spec, fixture or mock file, by its path. */
+export function isTestPath(path: string): boolean {
+  return TEST_DIRECTORY.test(path) || TEST_FILENAME.some((pattern) => pattern.test(path));
+}
+
+export interface ChecksOptions extends PlanOptions {
+  /** Plan the maintainability check type too (off by default). */
+  maintainability?: boolean;
+}
+
+export interface CheckPlanEntry {
+  type: CheckType;
+  /** The finding categories (rubric sections) the check type's passes review. */
+  categories: readonly FindingCategory[];
+  /** Every file the check type covers, in diff order. */
+  files: DiffFile[];
+  /**
+   * The check type's files in groups of related files (by directory), at most
+   * `MAX_FILES_PER_CHECK_GROUP` each; one group when the check type covers
+   * no more than that. Ids are `<type>-<n>`.
+   */
+  groups: ReviewTask[];
+}
+
+export interface CheckPlan {
+  /** The check types that apply, in `CHECK_TYPES` order; every included file is in at least one. */
+  checks: CheckPlanEntry[];
+  skipped: SkippedFile[];
+  /** Estimated input tokens of the included files' diffs. */
+  estimatedInputTokens: number;
+  hotspots: FileRisk[];
+  /** 1–10, over every reviewable (non-excluded, non-binary) file. */
+  complexityScore: number;
+}
+
+/** Whether `type` reviews `path` (before the fallback that gives stability every uncovered file). */
+function checkCovers(type: CheckType, path: string): boolean {
+  if (languageForPath(path) === undefined) return false;
+  return type === "performance" ? !isTestPath(path) : true;
+}
+
+function directoryOf(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash === -1 ? "" : path.slice(0, slash);
+}
+
+/**
+ * Splits `files` into groups of at most `max` related files: files are sorted
+ * by directory, each directory's files stay together when they fit in the
+ * current group, and a directory larger than `max` is split into chunks.
+ */
+export function groupFilesByDirectory(
+  files: readonly DiffFile[],
+  max: number = MAX_FILES_PER_CHECK_GROUP,
+): DiffFile[][] {
+  const size = Math.max(1, Math.floor(max));
+  if (files.length <= size) return files.length > 0 ? [[...files]] : [];
+
+  const byDirectory = new Map<string, DiffFile[]>();
+  for (const file of files) {
+    const directory = directoryOf(file.path);
+    const list = byDirectory.get(directory);
+    if (list) list.push(file);
+    else byDirectory.set(directory, [file]);
+  }
+
+  const groups: DiffFile[][] = [];
+  let current: DiffFile[] = [];
+  for (const directory of [...byDirectory.keys()].sort()) {
+    const directoryFiles = byDirectory.get(directory) as DiffFile[];
+    if (current.length > 0 && current.length + directoryFiles.length > size) {
+      groups.push(current);
+      current = [];
+    }
+    for (const file of directoryFiles) {
+      if (current.length === size) {
+        groups.push(current);
+        current = [];
+      }
+      current.push(file);
+    }
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
+/**
+ * Plans a looped review: the same file selection as `planReview`, then the
+ * check types that apply to the included files. Security, stability and
+ * compatibility cover every file in a rubric language, performance only
+ * those outside test paths, and maintainability (when enabled) every file in
+ * a rubric language. Files no check type covers (docs, config) go to
+ * stability, so every included file is reviewed by at least one check type.
+ */
+export function planChecks(
+  files: readonly DiffFile[],
+  profile: PlanProfile,
+  options: ChecksOptions = {},
+): CheckPlan {
+  const selection = selectFiles(files, profile, options);
+  const included = selection.included.map((c) => c.file);
+  const types = CHECK_TYPES.filter((type) => type !== "maintainability" || options.maintainability);
+
+  const covered = new Map<CheckType, DiffFile[]>(types.map((type) => [type, []]));
+  for (const file of included) {
+    const owners = types.filter((type) => checkCovers(type, file.path));
+    for (const type of owners.length > 0 ? owners : (["stability"] as const)) {
+      covered.get(type)?.push(file);
+    }
+  }
+
+  const checks: CheckPlanEntry[] = [];
+  for (const type of types) {
+    const typeFiles = covered.get(type) ?? [];
+    if (typeFiles.length === 0) continue;
+    checks.push({
+      type,
+      categories: CHECK_TYPE_CATEGORIES[type],
+      files: typeFiles,
+      groups: groupFilesByDirectory(typeFiles).map((group, index) => ({
+        id: `${type}-${index + 1}`,
+        files: group,
+        budget: profile.maxTokensPerReview,
+      })),
+    });
+  }
+
+  return {
+    checks,
+    skipped: selection.skipped,
+    estimatedInputTokens: selection.estimatedInputTokens,
+    hotspots: selectHotspots(selection.included.map((c) => c.risk)),
+    complexityScore: selection.complexityScore,
   };
 }
 

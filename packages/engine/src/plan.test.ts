@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseDiff } from "./diff.js";
-import { BUDGET_FILL_RATIO, createPathFilter, planReview } from "./plan.js";
+import { BUDGET_FILL_RATIO, createPathFilter, isTestPath, planChecks, planReview } from "./plan.js";
 import { estimateTokens } from "./tokens.js";
 
 const fixture = (name: string) =>
@@ -240,4 +240,150 @@ describe("estimateTokens", () => {
     expect(estimateTokens("abcdefgh")).toBe(3);
     expect(estimateTokens("x".repeat(350))).toBe(100);
   });
+});
+
+/** A diff adding one line to each of `paths`. */
+const diffOf = (...paths: string[]) =>
+  parseDiff(
+    paths
+      .map(
+        (path) =>
+          `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1,1 +1,2 @@\n line\n+added\n`,
+      )
+      .join(""),
+  );
+
+const pathsOf = (files: readonly { path: string }[]) => files.map((f) => f.path);
+
+/** Every included file is in at least one check type. */
+function expectFullCoverage(plan: ReturnType<typeof planChecks>) {
+  const covered = new Set(plan.checks.flatMap((c) => pathsOf(c.files)));
+  const included = new Set(plan.checks.flatMap((c) => c.groups.flatMap((g) => pathsOf(g.files))));
+  expect(covered).toEqual(included);
+  return covered;
+}
+
+describe("planChecks", () => {
+  it("plans stability alone over a docs-only change", () => {
+    const plan = planChecks(diffOf("README.md", "docs/guide.md", "config/app.yaml"), ROOMY);
+    expect(plan.checks.map((c) => c.type)).toEqual(["stability"]);
+    expect(pathsOf(plan.checks[0]!.files)).toEqual([
+      "README.md",
+      "docs/guide.md",
+      "config/app.yaml",
+    ]);
+    expect(expectFullCoverage(plan).size).toBe(3);
+  });
+
+  it("leaves performance out of a test-only change", () => {
+    const plan = planChecks(
+      diffOf("src/a.test.ts", "pkg/b_test.go", "tests/test_c.py", "src/test/java/DTest.java"),
+      ROOMY,
+    );
+    expect(plan.checks.map((c) => c.type)).toEqual(["security", "stability", "compatibility"]);
+    for (const check of plan.checks) expect(check.files).toHaveLength(4);
+  });
+
+  it("covers every file of a mixed change, sending files outside any rubric language to stability", () => {
+    const plan = planChecks(
+      diffOf("src/api.ts", "src/api.test.ts", "docs/api.md", ".github/workflows/ci.yml"),
+      ROOMY,
+    );
+    const byType = Object.fromEntries(plan.checks.map((c) => [c.type, pathsOf(c.files)]));
+    expect(byType).toEqual({
+      security: ["src/api.ts", "src/api.test.ts", ".github/workflows/ci.yml"],
+      stability: ["src/api.ts", "src/api.test.ts", "docs/api.md", ".github/workflows/ci.yml"],
+      performance: ["src/api.ts", ".github/workflows/ci.yml"],
+      compatibility: ["src/api.ts", "src/api.test.ts", ".github/workflows/ci.yml"],
+    });
+    expect(expectFullCoverage(plan)).toEqual(
+      new Set(["src/api.ts", "src/api.test.ts", "docs/api.md", ".github/workflows/ci.yml"]),
+    );
+  });
+
+  it("gives each check type its finding categories", () => {
+    const plan = planChecks(diffOf("src/a.ts"), ROOMY, { maintainability: true });
+    expect(Object.fromEntries(plan.checks.map((c) => [c.type, c.categories]))).toEqual({
+      security: ["security"],
+      stability: ["correctness", "concurrency", "resources", "error-handling"],
+      performance: ["performance"],
+      compatibility: ["breaking-change", "tests"],
+      maintainability: [],
+    });
+  });
+
+  it("plans maintainability only when enabled", () => {
+    expect(planChecks(diffOf("src/a.ts"), ROOMY).checks.map((c) => c.type)).not.toContain(
+      "maintainability",
+    );
+  });
+
+  it("plans nothing when every file is skipped", () => {
+    const plan = planChecks(diffOf("pnpm-lock.yaml", "dist/x.js"), ROOMY);
+    expect(plan.checks).toEqual([]);
+    expect(plan.skipped.map((s) => s.reason)).toEqual(["excluded", "excluded"]);
+  });
+
+  it("reuses planReview's exclusions, maxFiles and budget", () => {
+    const profile = { maxTokensPerReview: 4_000, maxFiles: 5 };
+    const review = planReview(budgetFiles, profile);
+    const checks = planChecks(budgetFiles, profile);
+    expect(checks.skipped).toEqual(review.skipped);
+    expect(checks.estimatedInputTokens).toBe(review.estimatedInputTokens);
+    expect(checks.hotspots).toEqual(review.hotspots);
+    expect(checks.complexityScore).toBe(review.complexityScore);
+    expect(expectFullCoverage(checks)).toEqual(new Set(pathsOf(review.tasks[0]!.files)));
+  });
+
+  it("keeps a check type in one group up to 20 files", () => {
+    const paths = Array.from({ length: 20 }, (_, i) => `src/m${i}/f.ts`);
+    const plan = planChecks(diffOf(...paths), ROOMY);
+    for (const check of plan.checks) {
+      expect(check.groups).toEqual([
+        { id: `${check.type}-1`, files: check.files, budget: ROOMY.maxTokensPerReview },
+      ]);
+    }
+  });
+
+  it("groups more than 20 files by directory, at most 20 per group", () => {
+    const paths = [
+      ...Array.from({ length: 12 }, (_, i) => `src/api/f${i}.ts`),
+      ...Array.from({ length: 12 }, (_, i) => `src/auth/f${i}.ts`),
+      ...Array.from({ length: 25 }, (_, i) => `lib/big/f${i}.ts`),
+    ];
+    const plan = planChecks(diffOf(...paths), ROOMY);
+    const security = plan.checks.find((c) => c.type === "security")!;
+    expect(security.groups.map((g) => g.id)).toEqual(["security-1", "security-2", "security-3"]);
+    const dirs = security.groups.map((g) => [
+      ...new Set(g.files.map((f) => f.path.slice(0, f.path.lastIndexOf("/")))),
+    ]);
+    // lib/big's 25 files split at 20; its last 5 share a group with src/api's 12.
+    expect(dirs).toEqual([["lib/big"], ["lib/big", "src/api"], ["src/auth"]]);
+    expect(security.groups.map((g) => g.files.length)).toEqual([20, 17, 12]);
+    expect(security.groups.flatMap((g) => pathsOf(g.files)).sort()).toEqual([...paths].sort());
+  });
+});
+
+describe("isTestPath", () => {
+  it.each([
+    "src/a.test.ts",
+    "src/a.spec.tsx",
+    "pkg/a_test.go",
+    "tests/test_a.py",
+    "a/conftest.py",
+    "spec/models/user_spec.rb",
+    "src/test/java/com/x/UserTest.java",
+    "Foo.Tests/UserServiceTests.cs",
+    "packages/x/__tests__/a.ts",
+    "test/fixtures/a.json",
+  ])("treats %s as a test path", (path) => {
+    expect(isTestPath(path)).toBe(true);
+  });
+
+  it.each(["src/testing.ts", "src/contest.py", "src/attestation.go", "src/Latest.java"])(
+    "treats %s as source",
+    (path) => {
+      expect(isTestPath(path)).toBe(false);
+    },
+  );
 });
