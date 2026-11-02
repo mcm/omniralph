@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { splitFixDescription } from "./task-prompt.js";
 import { type Fragment, SHARED_RULES, renderFragment } from "./rules.js";
-import { EPIC_TEMPLATE, FIX_TEMPLATE, STORY_TEMPLATE } from "./templates.js";
+import { EPIC_TEMPLATE, TASK_PARAGRAPHS, TASK_TEMPLATE } from "./templates.js";
 import { TRIAGE_STEPS, renderTriageMethodology } from "./triage.js";
 
 const context = { trackerName: "Acme Tracker", conventionsFile: "ACME.md" };
@@ -18,7 +18,7 @@ function headings(markdown: string): string[] {
   return found;
 }
 
-const templates = { EPIC_TEMPLATE, STORY_TEMPLATE, FIX_TEMPLATE };
+const templates = { EPIC_TEMPLATE, TASK_TEMPLATE };
 const fragments: Fragment[] = [...SHARED_RULES, ...TRIAGE_STEPS];
 
 describe("templates", () => {
@@ -35,25 +35,24 @@ describe("templates", () => {
     expect(EPIC_TEMPLATE).toMatch(/^- FR-1: The system must /m);
   });
 
-  it("lays out a story as the user sentence, a Covers line, then the acceptance criteria", () => {
-    const lines = STORY_TEMPLATE.split("\n");
-    expect(lines[0]).toMatch(/^As a .+, I want .+ so that .+\.$/);
-    const covers = lines.findIndex((line) => /^Covers: FR-\d+(, FR-\d+)*$/.test(line));
-    const criteria = lines.indexOf("## Acceptance Criteria");
-    expect(covers).toBeGreaterThan(0);
-    expect(criteria).toBeGreaterThan(covers);
-    expect(headings(STORY_TEMPLATE)).toEqual(["## Acceptance Criteria"]);
-    expect(lines.at(-1)).toMatch(/^- \[ \] /);
+  it("lays out a task as three paragraphs: build, how, and don't stop until", () => {
+    const paragraphs = TASK_TEMPLATE.split("\n\n");
+    expect(paragraphs.map((paragraph) => paragraph.split(" [")[0])).toEqual([
+      "I want you to",
+      "Build it by",
+      "Don't stop until",
+    ]);
+    expect(headings(TASK_TEMPLATE)).toEqual([]);
+    expect(TASK_TEMPLATE).not.toMatch(/Covers:|As a \[|- \[ \]/);
   });
 
-  it("lays out a fix as current, expected and unchanged behavior, then the acceptance criteria", () => {
-    expect(headings(FIX_TEMPLATE)).toEqual([
-      "## Current behavior",
-      "## Expected behavior",
-      "## Unchanged behavior",
-      "## Acceptance Criteria",
-    ]);
-  });
+  it.each(Object.entries(TASK_PARAGRAPHS))(
+    "explains the %s paragraph for a Story and for a Fix",
+    (_name, paragraph) => {
+      const text = TASK_TEMPLATE.split("\n\n").find((p) => p.startsWith(paragraph.opening));
+      expect(text).toContain(`[Story: ${paragraph.story}. Fix: ${paragraph.fix}.]`);
+    },
+  );
 });
 
 describe("fragments", () => {

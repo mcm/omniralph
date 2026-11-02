@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { SHARED_RULES, renderFragment } from "../methodology/rules.js";
-import { EPIC_TEMPLATE, FIX_TEMPLATE, STORY_TEMPLATE } from "../methodology/templates.js";
+import { EPIC_TEMPLATE, TASK_TEMPLATE } from "../methodology/templates.js";
 import { renderTriageMethodology } from "../methodology/triage.js";
 import { lintWorkItem } from "../work-item/lint.js";
 import { parseWorkItem } from "../work-item/parse.js";
@@ -124,11 +124,11 @@ describe("renderPluginFiles", () => {
 
   it("describes the formats, the dependency rules and the evidence rule", () => {
     const common = renderCommon();
-    for (const template of [EPIC_TEMPLATE, STORY_TEMPLATE, FIX_TEMPLATE]) {
+    for (const template of [EPIC_TEMPLATE, TASK_TEMPLATE]) {
       expect(common).toContain(template);
     }
     expect(common).toContain("### Dependency rules");
-    expect(common).toContain("Acceptance criteria are evidence to check, not tests to write.");
+    expect(common).toContain("each one evidence to check, not a test to write");
   });
 });
 
