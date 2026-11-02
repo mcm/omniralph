@@ -12,10 +12,12 @@
  * Stories are described by the tracker's own fields only: identifier, title, priority, child order,
  * state, labels and "blocks" relations. Title prefixes (`US-001: …`) and body metadata are not parsed.
  *
- * A description in one of the planning formats (an epic, story or fix, see `@omniralph/planning`)
- * is read with `parseWorkItem`; any other is read as before, as a legacy PRD or story body.
+ * A description in one of the planning formats (an epic, or a three-paragraph task, see
+ * `@omniralph/planning`) is read with `parseWorkItem`; any other is read as before, as a legacy PRD
+ * or story body.
  */
 import {
+  DEFAULT_FIX_LABELS,
   parseCriteria,
   parseRequirements,
   parseWorkItem,
@@ -159,26 +161,43 @@ export function epicRequirements(text: string | undefined | null): EpicRequireme
   return parseCriteria(section).map((text, i) => ({ id: `FR-${i + 1}`, text }));
 }
 
-/** What a story's work item body says: a story or fix in the planning formats, else a legacy body. */
+/** What a story's work item body says: a three-paragraph task, else a legacy body. */
 export interface StoryIssueBody extends StoryBody {
+  /** A task's kind, from the work item's labels; absent for a legacy body. */
   kind?: "fix" | "story";
-  covers?: string[];
+  /** A task's paragraph 2 ("Build it by …"); absent for a legacy body. */
+  approach?: string;
+}
+
+/** The work item fields a story's kind is read from. */
+export interface StoryKindSource {
+  /** The work item's labels. */
+  labels?: readonly string[];
+  /** The tracker's fix labels (default `Bug`). */
+  fixLabels?: readonly string[];
 }
 
 /**
- * A story work item's body: a new-format story or fix (`parseWorkItem`: its kind and `Covers:`
- * requirements too), else the legacy body (`parseStoryBody`). A body in the epic format is a legacy
- * body here: a story is a task. A legacy `## Ralph Metadata` section is never part of the story.
+ * A story work item's body: a three-paragraph task (`parseWorkItem`: paragraph 1 as the
+ * description, paragraph 2 as the approach, paragraph 3's criteria, and its kind from `labels`),
+ * else the legacy body (`parseStoryBody`). A body in the epic format is a legacy body here: a story
+ * is a task. A legacy `## Ralph Metadata` section is never part of the story.
  */
-export function storyIssueBody(text: string | undefined | null): StoryIssueBody {
+export function storyIssueBody(
+  text: string | undefined | null,
+  source: StoryKindSource = {},
+): StoryIssueBody {
   const legacy = parseStoryBody(text);
-  const item = parseWorkItem(stripLegacyMetadata(text ?? ""));
+  const item = parseWorkItem(stripLegacyMetadata(text ?? ""), {
+    ...(source.labels && { labels: source.labels }),
+    ...(source.fixLabels && { fixLabels: source.fixLabels }),
+  });
   if (!item || item.format === "epic") return legacy;
   return {
     description: item.description,
     acceptanceCriteria: item.acceptanceCriteria,
-    kind: item.format,
-    ...(item.covers.length > 0 && { covers: item.covers }),
+    ...(item.kind !== undefined && { kind: item.kind }),
+    approach: item.approach,
     ...(legacy.legacyRalphPriority !== undefined && {
       legacyRalphPriority: legacy.legacyRalphPriority,
     }),
@@ -186,15 +205,19 @@ export function storyIssueBody(text: string | undefined | null): StoryIssueBody 
 }
 
 /** The fields of a story that come straight from its work item. */
-function issueStory(issue: EpicIssue, body = storyIssueBody(issue.description)) {
+function issueStory(issue: EpicIssue, opts: Pick<EpicOptions, "fixLabels"> = {}) {
+  const body = storyIssueBody(issue.description, {
+    labels: issue.labels,
+    fixLabels: opts.fixLabels ?? DEFAULT_FIX_LABELS,
+  });
   return {
     key: issue.id,
     storyId: issue.identifier,
     title: issue.title.trim(),
     description: body.description,
+    ...(body.approach !== undefined && { approach: body.approach }),
     acceptanceCriteria: body.acceptanceCriteria,
     ...(body.kind !== undefined && { kind: body.kind }),
-    ...(body.covers !== undefined && { covers: body.covers }),
     priority: storyRank(issue.priority, body.legacyRalphPriority),
     ...(issue.subIssueSortOrder !== undefined && { sortOrder: issue.subIssueSortOrder }),
     issueId: issue.id,
@@ -221,6 +244,11 @@ export interface EpicOptions {
    * (default). Off (`allowPreparation: false`), they're plain text.
    */
   allowPreparation?: boolean;
+  /**
+   * The tracker's fix labels: a three-paragraph task with one of them is a Fix
+   * (default `Bug`, ignoring case).
+   */
+  fixLabels?: readonly string[];
 }
 
 function storyFromIssue(
@@ -239,7 +267,7 @@ function storyFromIssue(
     }
   }
   return withManualOptions(
-    { ...issueStory(issue), dependsOn, status: statusFromStateType(issue.stateType) },
+    { ...issueStory(issue, opts), dependsOn, status: statusFromStateType(issue.stateType) },
     opts,
   );
 }
@@ -344,12 +372,12 @@ export function prdEpic(issue: EpicIssue, prd: ParsedPrd): Epic {
 }
 
 /** A plain issue: the issue itself is the only story. */
-export function singleIssueEpic(issue: EpicIssue): Epic {
+export function singleIssueEpic(issue: EpicIssue, opts: Pick<EpicOptions, "fixLabels"> = {}): Epic {
   return {
     ...epicBase(issue, null),
     kind: "single",
     // The delegated issue is the work item; never treat it as already done.
-    stories: [{ ...issueStory(issue), dependsOn: [], status: "open" }],
+    stories: [{ ...issueStory(issue, opts), dependsOn: [], status: "open" }],
   };
 }
 

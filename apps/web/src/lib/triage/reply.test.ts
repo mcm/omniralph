@@ -43,11 +43,11 @@ vi.mock("server-only", () => ({}));
 const databaseAvailable = testDatabaseAvailable();
 
 const PRD = [
-  "As an admin, I want this done so that I can rely on it. Export widgets.",
+  "I want you to export widgets, so that admins can rely on it.",
   "",
-  "## Acceptance Criteria",
+  "Build it by following the existing code.",
   "",
-  "- [ ] It works",
+  "Don't stop until it works.",
 ].join("\n");
 
 const outcome = (overrides: Partial<TriageOutcome> = {}): TriageOutcome => ({

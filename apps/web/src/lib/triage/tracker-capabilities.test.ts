@@ -39,11 +39,11 @@ const { releaseTriageDelegation } = await import("./label");
 const databaseAvailable = testDatabaseAvailable();
 
 const PRD = [
-  "As an admin, I want this done so that I can rely on it. Rotate the keys.",
+  "I want you to rotate the keys, so that admins can rely on it.",
   "",
-  "## Acceptance Criteria",
+  "Build it by following the existing code.",
   "",
-  "- [ ] It works",
+  "Don't stop until it works.",
 ].join("\n");
 
 const RESULT: QueryRunResult = {
@@ -139,7 +139,7 @@ describe.skipIf(!databaseAvailable)("triage on a tracker without optional capabi
     });
 
     expect((await getTriageRun(db, run!.id))?.status).toBe("completed");
-    expect((await tracker.getIssue(issue.id)).description).toContain("Rotate the keys.");
+    expect((await tracker.getIssue(issue.id)).description).toContain("rotate the keys");
     expect(tracker.labelChanges).toEqual([{ issueId: issue.id, removed: [label.id] }]);
     // The final response is a comment too, and nothing was delegated.
     expect(commentsOn(issue.id)).toHaveLength(2);

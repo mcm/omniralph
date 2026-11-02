@@ -56,6 +56,11 @@ export interface Story {
   issueId?: string;
   /** A Fix (it has one of the tracker's fix labels) or a Story (new work); absent: a Story. */
   kind?: "fix" | "story";
+  /**
+   * How to build it: a three-paragraph task's paragraph 2 ("Build it by …"), kept apart from
+   * `description` (paragraph 1) so a step can leave it out. Absent for a legacy story.
+   */
+  approach?: string;
   /** The epic requirements the story owns, from its `Covers:` line (`FR-2`), in order. */
   covers?: string[];
   identifier?: string;

@@ -161,7 +161,7 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
     description: {
       type: "string",
       description:
-        "The issue's new description in markdown: an epic (L or larger), else a story or a fix, without a `## Open Questions` section.",
+        "The issue's new description in markdown: an epic (L or larger), else a task of three paragraphs, without a `## Open Questions` section.",
     },
     size: {
       type: "string",
@@ -189,7 +189,7 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
           body: {
             type: "string",
             description:
-              "The task in the story format (or the fix format for a bug), ending with a `## Acceptance Criteria` checklist. No IDs or metadata.",
+              'The task in three paragraphs: "I want you to …", "Build it by …" and "Don\'t stop until …". No IDs or metadata.',
           },
           priority: {
             type: "number",
@@ -230,7 +230,7 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
           body: {
             type: "string",
             description:
-              "The task in the story or fix format, ending with a `## Acceptance Criteria` checklist.",
+              'The task in three paragraphs: "I want you to …", "Build it by …" and "Don\'t stop until …".',
           },
           priority: {
             type: "number",
@@ -250,7 +250,7 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
         additionalProperties: false,
       },
       description:
-        "outcome reformat only: Backlog/Todo sub-issues rewritten in the story or fix format. Empty otherwise.",
+        "outcome reformat only: Backlog/Todo sub-issues rewritten as three-paragraph tasks. Empty otherwise.",
     },
     summary: {
       type: "string",

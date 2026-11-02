@@ -15,9 +15,10 @@
  *                                         way) gets the missing ones, matched by title.
  *  4. Anything else                    -> `single`: the issue itself is the only story.
  *
- * A description in the planning formats (an epic, story or fix) is never read as a legacy
- * PRD: the builders read it with `parseWorkItem`, and its stories run only the repo's checks.
+ * A description in the planning formats (an epic, or a three-paragraph task) is never read as a
+ * legacy PRD: the builders read it with `parseWorkItem`, and its stories run only the repo's checks.
  */
+import { DEFAULT_FIX_LABELS } from "@omniralph/planning";
 import {
   childrenEpic,
   DEFAULT_MANUAL_LABELS,
@@ -72,6 +73,11 @@ export interface LoadEpicOptions {
    * its PRD stories and nothing is created.
    */
   materialize?: boolean;
+  /**
+   * The tracker's fix labels: a three-paragraph task with one of them reads as a Fix
+   * (default `Bug`). A story job's payload reads the kind again with the integration's labels.
+   */
+  fixLabels?: readonly string[];
 }
 
 /**
@@ -134,6 +140,7 @@ async function epicOptionsFor(
   return {
     manualLabels: labels?.length ? labels : DEFAULT_MANUAL_LABELS,
     allowPreparation: allowPreparation !== false,
+    fixLabels: options.fixLabels ?? DEFAULT_FIX_LABELS,
   };
 }
 
@@ -283,7 +290,10 @@ export async function loadEpic(
     return { epic, root: issue, kind: "prd", materialized: created.length };
   }
 
-  return { epic: singleIssueEpic(epicIssue(issue)), root: issue, kind: "single", materialized: 0 };
+  const epic = singleIssueEpic(epicIssue(issue), {
+    fixLabels: options.fixLabels ?? DEFAULT_FIX_LABELS,
+  });
+  return { epic, root: issue, kind: "single", materialized: 0 };
 }
 
 /**
@@ -297,7 +307,11 @@ export async function reloadEpic(
   options: LoadEpicOptions = {},
 ): Promise<Epic> {
   const issue = await tracker.getIssue(run.trackerIssueId);
-  if (run.kind === "single") return singleIssueEpic(epicIssue(issue));
+  if (run.kind === "single") {
+    return singleIssueEpic(epicIssue(issue), {
+      fixLabels: options.fixLabels ?? DEFAULT_FIX_LABELS,
+    });
+  }
   const children = await tracker.getChildren(issue.id);
   // A mention's PRD whose stories were never created: its PRD stories, for context.
   const prd =

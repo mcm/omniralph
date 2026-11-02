@@ -256,36 +256,24 @@ lost among routine ones. Tasks have no notion of priority today.
 - FR-4: IF a task is saved with a priority outside high, medium or low, the system must reject it.`;
 
 /** A worked story of the example epic. */
-export const EXAMPLE_STORY = `As a user, I want to see each task's priority at a glance so that I know what needs attention first.
+export const EXAMPLE_STORY = `I want you to show each task's priority on its card, so that people with a long task list see what needs attention first without opening a task.
 
-Covers: FR-2
+Build it by reusing the badge component in \`src/components/badge.tsx\` with its color variants on the task cards in \`src/tasks/card.tsx\`.
 
-The badge component is \`src/components/badge.tsx\`; task cards are in \`src/tasks/card.tsx\`.
-
-## Acceptance Criteria
-
-- [ ] Each task card shows a priority badge: red for high, yellow for medium, gray for low
-- [ ] The badge is visible without hovering or clicking
-- [ ] A task without a stored priority shows the medium badge`;
+Don't stop until:
+- Each task card shows a priority badge: red for high, yellow for medium, gray for low
+- The badge is visible without hovering or clicking
+- A task without a stored priority shows the medium badge`;
 
 /** A worked fix of the example epic. */
-export const EXAMPLE_FIX = `## Current behavior
+export const EXAMPLE_FIX = `I want you to fix sorting by priority, which puts low before medium today: it should order tasks high, then medium, then low, within each status column.
 
-Sorting the task list by priority puts low before medium: the sort compares the priority names alphabetically.
+Build it by looking at the task list's sort, which likely compares the priority names alphabetically instead of by rank.
 
-## Expected behavior
-
-Sorting by priority orders tasks high, then medium, then low, within each status column.
-
-## Unchanged behavior
-
-Sorting by due date and by title orders tasks as it does today, and the sort choice stays in the URL.
-
-## Acceptance Criteria
-
-- [ ] With one task of each priority, sorting by priority lists them high, medium, low
-- [ ] Sorting by due date and by title gives the same order as before
-- [ ] Reloading the page keeps the chosen sort`;
+Don't stop until:
+- With one task of each priority, sorting by priority lists them high, medium, low
+- Sorting by due date and by title gives the same order as before
+- Reloading the page keeps the chosen sort`;
 
 /** The worked example, around the example epic, story and fix. */
 export const WORKED_EXAMPLE: Fragment = {
@@ -304,7 +292,7 @@ blocked by the story that stores the priority:
 ${EXAMPLE_STORY}
 \`\`\`
 
-A fix filed in the same epic, titled \`Sort priorities by rank, not by name\`:
+A fix filed in the same epic with the bug label, titled \`Sort priorities by rank, not by name\`:
 
 \`\`\`markdown
 ${EXAMPLE_FIX}

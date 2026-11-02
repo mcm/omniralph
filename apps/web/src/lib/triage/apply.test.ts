@@ -51,13 +51,13 @@ vi.mock("@/lib/tracker/linear/client", async (importOriginal) => ({
 
 const databaseAvailable = testDatabaseAvailable();
 
-/** A single task, in the story format. */
+/** A single task, in three paragraphs. */
 const PRD = [
-  "As a user, I want to export widgets as CSV so that I can share them.",
+  "I want you to export widgets as CSV, so that users can share them.",
   "",
-  "## Acceptance Criteria",
+  "Build it by adding an export action to the widget list.",
   "",
-  "- [ ] It works",
+  "Don't stop until it works.",
 ].join("\n");
 
 /** An epic, in the epic format. */
@@ -85,7 +85,7 @@ type Story = TriageAgentOutput["stories"][number];
 
 const story = (title: string, overrides: Partial<Story> = {}): Story => ({
   title,
-  body: `As a user, I want ${title.toLowerCase()}.\n\n## Acceptance Criteria\n\n- [ ] ${title} works`,
+  body: `I want you to ${title.toLowerCase()}.\n\nBuild it by following the existing code.\n\nDon't stop until ${title} works.`,
   priority: 2,
   dependsOn: [],
   manual: false,
@@ -250,7 +250,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     const [response] = responses(sessionId);
     expect(response).toMatchObject({ type: "response" });
     expect(response && "body" in response && response.body).toMatch(
-      /Size:\*\* S[\s\S]*Structure:\*\* single story[\s\S]*Status:\*\* Ready to start[\s\S]*ENG-\d+ is ready to start\. Start it from the Backlog, or delegate it to Om again\.$/,
+      /Size:\*\* S[\s\S]*Structure:\*\* single task[\s\S]*Status:\*\* Ready to start[\s\S]*ENG-\d+ is ready to start\. Start it from the Backlog, or delegate it to Om again\.$/,
     );
     expect(await getTriageRun(db, run.id)).toMatchObject({
       status: "completed",
@@ -429,7 +429,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
   const update = (child: IssueSummary, overrides: Partial<Update> = {}): Update => ({
     id: child.id,
     title: `${child.title} (reformatted)`,
-    body: `As a user, I want ${child.title}.\n\n## Acceptance Criteria\n\n- [ ] It works`,
+    body: `I want you to ${child.title}.\n\nBuild it by following the existing code.\n\nDon't stop until it works.`,
     priority: 2,
     blockedBy: [],
     ...overrides,

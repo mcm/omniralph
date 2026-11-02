@@ -41,11 +41,11 @@ process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 const databaseAvailable = testDatabaseAvailable();
 
 const PRD = [
-  "As an admin, I want this done so that I can rely on it. Rotate the keys.",
+  "I want you to rotate the keys, so that admins can rely on it.",
   "",
-  "## Acceptance Criteria",
+  "Build it by following the existing code.",
   "",
-  "- [ ] It works",
+  "Don't stop until it works.",
 ].join("\n");
 
 /** A `builtin:triage` run's result: the triage is its structured output. */
