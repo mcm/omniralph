@@ -8,8 +8,6 @@
 import type { TrackerGateway } from "@omniralph/tracker";
 import type { DependencyViolation } from "@omniralph/planning";
 import {
-  agentAcceptedTaskTypes,
-  getAgent,
   getMainLane,
   getRepositoryWithConnection,
   listActiveRunJobIds,
@@ -17,7 +15,6 @@ import {
   listMessages,
   listStories,
   lockRun,
-  pinnedAgentFor,
   updateLane,
   updateRun,
   setJobRalphStory,
@@ -93,7 +90,8 @@ import { gatherRunAttachments, payloadAttachments } from "./attachments";
 import { reloadEpic, runEpicOptions } from "./epic-loader";
 import { relationsWaitingMessage, relationViolations } from "./relations";
 import { deleteRunHiddenRefs } from "./hidden-refs";
-import { mainBranch, routeStories, storyLane, type StoryLanes } from "./lanes";
+import { runDedupeKey } from "./dedupe";
+import { laneAgentId, mainBranch, routeStories, storyLane, type StoryLanes } from "./lanes";
 import { postActivity, quietly } from "./notify";
 import { settleStrandedMessages } from "./messages";
 import { applyJobOutcomes, isBlockedFeedback } from "./outcome";
@@ -152,10 +150,7 @@ export interface RalphDeps {
 
 export { MAX_ITERATIONS_PER_RUN };
 
-/** At most one queued or running job per run (also enforced by the jobs' dedupe key). */
-export function runDedupeKey(runId: string): string {
-  return `ralph-run:${runId}`;
-}
+export { runDedupeKey };
 
 /** Runs that are over: `advanceRun` leaves them alone. */
 export const FINISHED_RUN_STATUSES: ReadonlySet<RalphRunStatus> = new Set([
@@ -434,58 +429,8 @@ async function chatRequestEpic(tx: RalphTransaction, run: RalphRun): Promise<Epi
   };
 }
 
-/**
- * An agent while it may still take a run's jobs (not revoked, accepting
- * `coding` tasks itself or by the organization's default, in the run's
- * organization).
- */
-async function usableAgentId(
-  db: Database,
-  organizationId: string,
-  agentId: string | null,
-): Promise<string | undefined> {
-  if (!agentId) return undefined;
-  const agent = await getAgent(db, agentId);
-  if (
-    !agent ||
-    agent.revokedAt ||
-    agent.organizationId !== organizationId ||
-    !agentAcceptedTaskTypes(agent).includes("coding")
-  ) {
-    return undefined;
-  }
-  return agent.id;
-}
-
-/**
- * The agent that holds a lane's worktree (the one that started its last job),
- * while it may still take the run's jobs. No pinned fallback: another agent
- * doesn't have the worktree.
- */
-export async function stickyAgentId(
-  db: Database,
-  run: Pick<RalphRun, "organizationId">,
-  lane: Pick<RalphLane, "agentId">,
-): Promise<string | undefined> {
-  return usableAgentId(db, run.organizationId, lane.agentId);
-}
-
-/**
- * The agent a lane's jobs go to: its sticky agent while usable (see
- * `usableAgentId`), else one its repository is pinned to, else undefined
- * (any agent of the organization may take them).
- */
-export async function laneAgentId(
-  db: Database,
-  run: Pick<RalphRun, "organizationId">,
-  lane: Pick<RalphLane, "agentId" | "repositoryId">,
-): Promise<string | undefined> {
-  return (
-    (await usableAgentId(db, run.organizationId, lane.agentId)) ??
-    (await pinnedAgentFor(db, run.organizationId, lane.repositoryId)) ??
-    undefined
-  );
-}
+// The agents a lane's jobs go to live with the lanes (the outcome of a story attempt needs them too).
+export { laneAgentId, stickyAgentId } from "./lanes";
 
 /** Ends a run that can't go on (e.g. its repository is gone), with an error in its session. */
 async function failRun(

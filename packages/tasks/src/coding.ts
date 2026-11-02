@@ -51,6 +51,48 @@ export function prDescriptionProblem(task: PrDescriptionTaskFields): string | nu
   return problem && `${task.id} doesn't output the { title, body } of a PR description: ${problem}`;
 }
 
+/**
+ * The output a story run reads from its task verifier: a verdict per acceptance
+ * criterion (`criterion`, `accepted`, `reason`) and a summary.
+ */
+export const TASK_VERIFIER_OUTPUT_SCHEMA: JsonSchema = {
+  type: "object",
+  properties: {
+    criteria: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          criterion: { type: "string" },
+          accepted: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["criterion", "accepted", "reason"],
+      },
+    },
+    summary: { type: "string" },
+  },
+  required: ["criteria", "summary"],
+};
+
+/**
+ * Why a story run can't invoke `task` as its task verifier, or null when it can: it
+ * must be a query task accepting `run.invoked` whose output schema guarantees the
+ * verdicts of `TASK_VERIFIER_OUTPUT_SCHEMA`.
+ */
+export function taskVerifierProblem(task: PrDescriptionTaskFields): string | null {
+  if (task.taskType !== "query" || !task.triggers.includes("run.invoked")) {
+    return `${task.id} isn't a query task started by run.invoked.`;
+  }
+  if (task.outputSchema === undefined) {
+    return `${task.id} has no output schema: a task verifier outputs { criteria, summary }.`;
+  }
+  const problem = outputSchemaProblem(task.outputSchema, TASK_VERIFIER_OUTPUT_SCHEMA);
+  return (
+    problem && `${task.id} doesn't output the { criteria, summary } of a task verifier: ${problem}`
+  );
+}
+
 type CodingTaskFields = Pick<
   TaskDefinition,
   | "taskType"
@@ -59,13 +101,15 @@ type CodingTaskFields = Pick<
   | "pushTiming"
   | "draftPullRequest"
   | "prDescriptionTaskId"
+  | "verifierTaskId"
 >;
 
 /**
  * Problems with a coding task, by field (empty when there are none, or the
  * task isn't a coding task): pushing only at the end with an early draft PR
  * (the draft would have nothing to show), a `prDescriptionTaskId` a coding
- * run can't invoke (`prDescriptionProblem`) (`getTask` finds tasks by ID), and on a
+ * run can't invoke (`prDescriptionProblem`), a `verifierTaskId` it can't invoke as its
+ * task verifier (`taskVerifierProblem`) (`getTask` finds tasks by ID), and on a
  * task that accepts a request trigger, a template that renders `epic.prd` or
  * `story` (or any `story.*` path) outside an optional section.
  */
@@ -85,6 +129,13 @@ export function validateCodingTask(
       ? prDescriptionProblem(describer)
       : `There is no task ${task.prDescriptionTaskId}.`;
     if (problem) errors.prDescriptionTaskId = problem;
+  }
+  if (task.verifierTaskId !== undefined) {
+    const verifier = getTask(task.verifierTaskId);
+    const problem = verifier
+      ? taskVerifierProblem(verifier)
+      : `There is no task ${task.verifierTaskId}.`;
+    if (problem) errors.verifierTaskId = problem;
   }
   const requests = task.triggers.filter((t) => (REQUEST_TRIGGERS as readonly string[]).includes(t));
   if (requests.length > 0) {

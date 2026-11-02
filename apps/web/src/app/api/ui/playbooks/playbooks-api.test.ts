@@ -369,6 +369,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
           expect.objectContaining({ id: "builtin:describe-pr", builtin: true }),
           { id: mine.id, name: "Our PR description", builtin: false },
         ],
+        // Built-in only: the verifier role is never a custom playbook's.
+        verifierPlaybooks: [{ id: "builtin:verify-task", name: "Verify a task", builtin: true }],
         // Reported with a path by non-revoked agents, or required by a playbook: sorted, once each.
         hostTools: ["gh", "opengrep", "trivy"],
       });

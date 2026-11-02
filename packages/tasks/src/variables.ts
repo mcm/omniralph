@@ -60,6 +60,8 @@ const FINDING_TRIGGERS = [
 const CODING_TRIGGERS = [...STORY_TRIGGERS, ...REQUEST_TRIGGERS] as const;
 /** Coding triggers, and the `run.invoked` of a query task a coding run invokes (`builtin:describe-pr`). */
 const CODING_RUN_TRIGGERS = [...CODING_TRIGGERS, "run.invoked"] as const;
+/** Story triggers, and the `run.invoked` of a task verifier a story run invokes (`builtin:verify-task`). */
+const STORY_RUN_TRIGGERS = [...STORY_TRIGGERS, "run.invoked"] as const;
 /** Triggers whose runs start from a work item in the tracker. */
 const TRACKER_TRIGGERS = [
   "tracker.delegated",
@@ -426,9 +428,18 @@ export const VARIABLES: readonly VariableDefinition[] = [
         "First 10 characters of the story's commit (null without one).",
       ],
       ["story.id", STORY_TRIGGERS, "ID of the story the run works on (its tracker identifier)."],
-      ["story.identifier", STORY_TRIGGERS, "Tracker identifier of the story (null without one)."],
+      [
+        "story.identifier",
+        STORY_RUN_TRIGGERS,
+        "Tracker identifier of the story (null without one).",
+      ],
       ["story.url", STORY_TRIGGERS, "URL of the story in the tracker (null without one)."],
-      ["story.title", STORY_TRIGGERS, "Title of the story, on one line."],
+      ["story.title", STORY_RUN_TRIGGERS, "Title of the story, on one line."],
+      [
+        "commit",
+        ["run.invoked"],
+        "Full SHA of the story attempt a task verifier checks (null when it committed nothing).",
+      ],
       [
         "story.kind",
         STORY_TRIGGERS,
@@ -492,7 +503,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     source: "trigger",
     trust: "untrusted",
     fence: "markdown",
-    triggers: STORY_TRIGGERS,
+    triggers: STORY_RUN_TRIGGERS,
     description:
       "Description of the story, without its acceptance criteria, `Covers:` line or a Fix's behavior sections (null when blank).",
   },
@@ -522,7 +533,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     name: "story.acceptanceCriteria.items",
     source: "trigger",
     trust: "untrusted",
-    triggers: STORY_TRIGGERS,
+    triggers: STORY_RUN_TRIGGERS,
     description:
       "An acceptance criterion of the story (`story.acceptanceCriteria` is null without any).",
   },

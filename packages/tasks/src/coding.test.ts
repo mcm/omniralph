@@ -69,6 +69,22 @@ describe("validateCodingTask", () => {
     });
   });
 
+  it("rejects a verifierTaskId that can't check a task's acceptance criteria", () => {
+    expect(errors({ ...story, verifierTaskId: "builtin:verify-task" })).toEqual({});
+    expect(errors({ ...story, verifierTaskId: "builtin:implement-story" })).toEqual({
+      verifierTaskId: "builtin:implement-story isn't a query task started by run.invoked.",
+    });
+    expect(errors({ ...story, verifierTaskId: "builtin:nope" })).toEqual({
+      verifierTaskId: "There is no task builtin:nope.",
+    });
+    // A query task started by run.invoked whose output isn't a verdict per criterion.
+    expect(errors({ ...story, verifierTaskId: "builtin:describe-pr" })).toEqual({
+      verifierTaskId: expect.stringContaining(
+        "builtin:describe-pr doesn't output the { criteria, summary } of a task verifier",
+      ),
+    });
+  });
+
   it("rejects epic.prd or story outside an optional section on a task a request starts", () => {
     for (const template of [
       "{{epic.prd}}",

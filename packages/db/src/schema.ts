@@ -2232,6 +2232,55 @@ export interface RalphStoryRecommendation {
   at: string;
 }
 
+/** The verifier's verdict on one acceptance criterion of a story attempt. */
+export interface RalphCriterionVerdictRecord {
+  criterion: string;
+  accepted: boolean;
+  /** The evidence it was accepted on, or why it was sent back. */
+  reason: string;
+}
+
+/** A follow-up a story's session reported, kept until its attempt is verified. */
+export interface RalphPendingFollowUp {
+  title: string;
+  description: string;
+  manual: boolean;
+  after?: "epic";
+  reason?: string;
+}
+
+/**
+ * One check of a story attempt by the story playbook's task verifier
+ * (`ralph_stories.verifications`, oldest first): `running` until the verifier
+ * finishes, then `accepted` (the story is done), `rejected` (the attempt failed with
+ * the reasons as feedback) or `failed` (the verifier couldn't check; the story counts
+ * as done and the thread says so).
+ */
+export interface RalphTaskVerification {
+  /** The verifier's `ralph.verify-task` job. */
+  jobId: string;
+  /** The `ralph.story` job of the attempt it checks. */
+  storyJobId: string;
+  /** The attempt it checks (1-based). */
+  attempt: number;
+  status: "running" | "accepted" | "rejected" | "failed";
+  /** The attempt's commit; null when it committed nothing. */
+  commitSha: string | null;
+  /** A verdict per acceptance criterion (empty until it finishes, or when it failed). */
+  criteria: RalphCriterionVerdictRecord[];
+  summary: string | null;
+  /** Why the verifier couldn't check (`failed`). */
+  error: string | null;
+  /** ISO timestamps. */
+  startedAt: string;
+  finishedAt: string | null;
+  /**
+   * While `running`: what completing the story applies once the verifier accepts it
+   * (the session's summary and follow-ups, and whether it wrote the progress log).
+   */
+  pending?: { summary: string; followUps: RalphPendingFollowUp[]; wroteProgress: boolean };
+}
+
 /** Uncommitted work ralph stashed in a lane's repository and hasn't dropped or pushed yet. */
 export interface RalphStash {
   sha: string;
@@ -2428,6 +2477,8 @@ export const ralphStories = pgTable(
       .$type<RalphStoryRecommendation[]>()
       .notNull()
       .default([]),
+    /** The task verifier's checks of its attempts, oldest first. */
+    verifications: jsonb("verifications").$type<RalphTaskVerification[]>().notNull().default([]),
     /** Why the last attempt didn't complete, passed to the next one. */
     lastFeedback: text("last_feedback"),
     commitSha: text("commit_sha"),

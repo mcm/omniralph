@@ -61,6 +61,8 @@ import {
   type RalphDescribePrPayload,
   type RalphPushResult,
   RalphStoryPayload,
+  RalphVerifyTaskTriggerContext,
+  RunSpecJobPayload,
   WorktreeCleanupPayload,
   type WorktreeCleanupResult,
   type RalphDescribePrResult,
@@ -314,6 +316,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     runId: string,
     outcome: Outcome = {},
     agentId = agentA,
+    /** What the task verifier says when the attempt completes (`pending` leaves it queued). */
+    verdict: VerifyOutcome | "pending" = { accept: true },
   ): Promise<RalphStoryPayload> {
     const job = await activeJob(runId);
     const started = await claimJob(db, {
@@ -344,8 +348,82 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     }
     await expectRalphHooks(job);
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+    // A completed attempt counts once the task verifier has checked it.
+    const [next] = await activeJobs(runId);
+    if (verdict !== "pending" && next?.type === "ralph.verify-task") await verify(runId, verdict);
     return storyPayload(job);
   }
+
+  type VerifyOutcome =
+    /** Accepts every criterion it was given. */
+    | { accept: true }
+    /** Sends these criteria back (by text) with a reason, accepting the rest. */
+    | { reject: Record<string, string> }
+    | { jobError: string }
+    /** A completed run whose output isn't a verdict. */
+    | { invalid: true };
+
+  /**
+   * Plays the agent's part for the run's queued task verifier: a `ralph.verify-task`
+   * query run whose `run-result` sink hands it to the ralph run. Returns the job.
+   */
+  async function verify(runId: string, outcome: VerifyOutcome = { accept: true }): Promise<Job> {
+    const job = await activeJob(runId);
+    expect(job.type).toBe("ralph.verify-task");
+    const agentId = job.targetAgentId ?? agentA;
+    const { claim } = await claimJob(db, {
+      organizationId: orgId,
+      agentId,
+      acceptedTaskTypes: ["query", "coding"],
+      pools: ["short", "long"],
+      agentVersion: "99.0.0",
+      maxDeliveries: MAX_JOB_DELIVERIES,
+    });
+    expect(claim?.job.id).toBe(job.id);
+    const sink = await taskSink(job, organizationPlaybooks(db, job.organizationId));
+    expect(sink?.kind).toBe("run-result");
+    expect(await sink!.onStarted!(db, job, agentId)).toEqual({ skip: false });
+    if ("jobError" in outcome) {
+      await failJob(db, {
+        jobId: job.id,
+        agentId,
+        retryable: false,
+        error: outcome.jobError,
+        maxDeliveries: MAX_JOB_DELIVERIES,
+      });
+    } else {
+      const given = verifyPayload(job).story.acceptanceCriteria;
+      const rejected = "reject" in outcome ? outcome.reject : {};
+      const criteria = (given.length > 0 ? given : ["The change does what the task describes"]).map(
+        (criterion) => ({
+          criterion,
+          accepted: !(criterion in rejected),
+          reason: rejected[criterion] ?? "Shown by the change.",
+        }),
+      );
+      const structured =
+        "invalid" in outcome ? { verdict: "fine" } : { criteria, summary: "Checked each one." };
+      await completeJob(db, {
+        jobId: job.id,
+        agentId,
+        result: {
+          outcome: "answered",
+          answer: null,
+          structured,
+          references: [],
+          usage: { inputTokens: 5, outputTokens: 5 },
+          durationMs: 1000,
+        },
+      });
+    }
+    await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+    return job;
+  }
+
+  /** A task verifier job's `ralph.verify-task` payload (in its trigger context). */
+  const verifyPayload = (job: Job) =>
+    RalphVerifyTaskTriggerContext.parse(RunSpecJobPayload.parse(job.payload).trigger.context)
+      .payload;
 
   const description = (overrides: Partial<RalphDescribePrResult> = {}): RalphDescribePrResult => ({
     title: "Build the epic",
@@ -726,7 +804,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
           url: "https://github.com/acme/api/pull/1",
         },
       ]);
-      expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).toHaveLength(4);
+      // Three stories, each checked by the task verifier, and the describe job.
+      expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).toHaveLength(7);
       expect(tracker.bodies(run.trackerSessionId, "error")).toEqual([]);
     });
 
@@ -833,7 +912,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(elicitation).toContain("**ENG-31: X** didn't complete after 3 attempts");
       expect(elicitation).toContain("**ENG-32** is blocked by ENG-31");
       expect(elicitation).toContain("Reply with guidance");
-      expect((await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).length).toBe(4);
+      // Four story attempts and the verifier of the one that completed.
+      expect((await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).length).toBe(5);
     });
 
     it("pauses with a readable gate failure and names the stuck story a chain waits on", async () => {
@@ -1280,6 +1360,211 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     });
   });
 
+  describe("the task verifier", () => {
+    const CRITERIA = ["Widgets are listed", "Widgets sort by name"];
+    const widgetsStory = () => {
+      const epic = tracker.add({
+        identifier: "ENG-600",
+        title: "Widgets",
+        description: EPIC_DESCRIPTION,
+      });
+      const story = tracker.add({
+        identifier: "ENG-601",
+        title: "List widgets",
+        parentId: epic.id,
+        description: `Show the widgets.\n\n## Acceptance Criteria\n\n${CRITERIA.map((c) => `- [ ] ${c}`).join("\n")}`,
+      });
+      return { epic, story };
+    };
+    const theStory = async (runId: string) => (await listStories(db, runId))[0]!;
+
+    it("checks a completed task's commit against its acceptance criteria before it counts as done", async () => {
+      const { epic, story } = widgetsStory();
+      const run = await delegate(epic.id);
+      await work(run.id, { commitSha: sha(600) }, agentA, "pending");
+
+      // Not done yet: an independent verifier checks it first.
+      expect(await storyStates(run.id)).toEqual([["ENG-601", "running", 0]]);
+      expect(tracker.issues.get(story.id)?.stateType).toBe("started");
+      const job = await activeJob(run.id);
+      expect(job).toMatchObject({
+        type: "ralph.verify-task",
+        taskType: "query",
+        // Its own playbook (and model), not the story's.
+        taskId: "builtin:verify-task",
+        ralphStoryId: (await theStory(run.id)).id,
+        // The lane's agent, which ran the attempt.
+        targetAgentId: agentA,
+      });
+      const spec = RunSpecJobPayload.parse(job.payload);
+      // A checkout of the attempt's commit, or no session at all.
+      expect(spec).toMatchObject({ ref: sha(600), requireCheckout: true });
+      expect(spec.trigger.context).toMatchObject({
+        invoker: { kind: "ralph-run", id: run.id },
+        commit: sha(600),
+        story: {
+          identifier: "ENG-601",
+          description: "Show the widgets.",
+          acceptanceCriteria: { items: CRITERIA },
+        },
+      });
+      expect(verifyPayload(job)).toMatchObject({
+        storyId: (await theStory(run.id)).id,
+        attempt: 1,
+        commitSha: sha(600),
+        story: { acceptanceCriteria: CRITERIA },
+        qualityGates: ["pnpm test", "pnpm lint"],
+      });
+      expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
+        "Checking it against its 2 acceptance criteria before it counts as done.",
+      );
+
+      await verify(run.id);
+      expect(await storyStates(run.id)).toEqual([["ENG-601", "completed", 1]]);
+      expect(tracker.issues.get(story.id)?.stateType).toBe("completed");
+      expect((await theStory(run.id)).verifications).toEqual([
+        expect.objectContaining({
+          jobId: job.id,
+          attempt: 1,
+          status: "accepted",
+          commitSha: sha(600),
+          criteria: CRITERIA.map((criterion) =>
+            expect.objectContaining({ criterion, accepted: true }),
+          ),
+          summary: "Checked each one.",
+          finishedAt: expect.any(String),
+        }),
+      ]);
+      expect((await theStory(run.id)).verifications[0]).not.toHaveProperty("pending");
+      expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
+        "**ENG-601** complete (`" +
+          sha(600).slice(0, 10) +
+          "`). Verified against its 2 acceptance criteria.",
+      );
+      await describePr(run.id);
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+    });
+
+    it("fails the attempt with the verifier's reason as feedback when it sends a criterion back", async () => {
+      const { epic } = widgetsStory();
+      const run = await delegate(epic.id);
+      await work(run.id, { commitSha: sha(610) }, agentA, {
+        reject: {
+          "Widgets sort by name": "The list isn't sorted: `listWidgets` returns insertion order.",
+        },
+      });
+
+      const story = await theStory(run.id);
+      // A failed attempt: the commit stays on the branch and the story runs again.
+      expect(story).toMatchObject({ status: "running", attempts: 1, commitSha: sha(610) });
+      expect(story.verifications).toEqual([
+        expect.objectContaining({
+          status: "rejected",
+          criteria: [
+            expect.objectContaining({ criterion: "Widgets are listed", accepted: true }),
+            expect.objectContaining({ criterion: "Widgets sort by name", accepted: false }),
+          ],
+        }),
+      ]);
+      expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
+        "**ENG-601** attempt 1/3 did not complete; retrying with feedback.",
+      );
+      const retry = await work(run.id, { commitSha: sha(611) });
+      expect(retry.attempt).toBe(2);
+      expect(retry.lastFeedback).toContain("sent this criterion back");
+      expect(retry.lastFeedback).toContain(
+        "- Widgets sort by name\n  Why: The list isn't sorted: `listWidgets` returns insertion order.",
+      );
+      expect(retry.lastFeedback).toContain("the criterion it accepted already hold");
+      expect(retry.lastFeedback).not.toContain("Widgets are listed");
+      // The second attempt is accepted: done.
+      expect(await storyStates(run.id)).toEqual([["ENG-601", "completed", 2]]);
+      expect((await theStory(run.id)).verifications.map((v) => [v.attempt, v.status])).toEqual([
+        [1, "rejected"],
+        [2, "accepted"],
+      ]);
+      expect((await theStory(run.id)).commitSha).toBe(sha(611));
+    });
+
+    it("sets a task aside when the verifier rejects its last attempt", async () => {
+      const { epic } = widgetsStory();
+      const run = await delegate(epic.id);
+      const reject = { reject: { "Widgets are listed": "Nothing renders." } };
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        await work(run.id, { commitSha: sha(620 + attempt) }, agentA, reject);
+      }
+      expect(await storyStates(run.id)).toEqual([["ENG-601", "exhausted", 3]]);
+      expect(tracker.bodies(run.trackerSessionId, "error").join("\n")).toContain(
+        "**ENG-601** did not complete after 3 attempts",
+      );
+    });
+
+    it("counts a task done when its verifier fails or answers no verdict, and says so in the thread", async () => {
+      const epic = tracker.add({
+        identifier: "ENG-630",
+        title: "Epic",
+        description: EPIC_DESCRIPTION,
+      });
+      tracker.add({ identifier: "ENG-631", title: "A", parentId: epic.id, priority: 1 });
+      tracker.add({ identifier: "ENG-632", title: "B", parentId: epic.id, priority: 2 });
+      const run = await delegate(epic.id);
+
+      await work(run.id, { commitSha: sha(631) }, agentA, { jobError: "Agent crashed" });
+      expect(await storyStates(run.id)).toEqual([
+        ["ENG-631", "completed", 1],
+        ["ENG-632", "running", 0],
+      ]);
+      await work(run.id, { commitSha: sha(632) }, agentA, { invalid: true });
+      expect(await storyStates(run.id)).toEqual([
+        ["ENG-631", "completed", 1],
+        ["ENG-632", "completed", 1],
+      ]);
+      const thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
+      expect(thoughts).toContain(
+        "I couldn't verify **ENG-631** against its acceptance criteria (Agent crashed), so it counts as done as its session reported.",
+      );
+      expect(thoughts).toContain(
+        "I couldn't verify **ENG-632** against its acceptance criteria (the verifier's answer isn't a verdict per criterion)",
+      );
+      const stories = await listStories(db, run.id);
+      expect(stories.map((s) => s.verifications.map((v) => [v.status, v.error]))).toEqual([
+        [["failed", "Agent crashed"]],
+        [["failed", "the verifier's answer isn't a verdict per criterion"]],
+      ]);
+      // The epic isn't held up.
+      await describePr(run.id);
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+    });
+
+    it("checks a task without acceptance criteria against its description", async () => {
+      const epic = tracker.add({
+        identifier: "ENG-640",
+        title: "Epic",
+        description: EPIC_DESCRIPTION,
+      });
+      tracker.add({
+        identifier: "ENG-641",
+        title: "Tidy",
+        parentId: epic.id,
+        description: "Tidy up.",
+      });
+      const run = await delegate(epic.id);
+      await work(run.id, {}, agentA, "pending");
+      const job = await activeJob(run.id);
+      // Nothing committed: it checks the lane's branch.
+      expect(RunSpecJobPayload.parse(job.payload).ref).toBe(verifyPayload(job).branch);
+      expect(verifyPayload(job)).toMatchObject({
+        commitSha: null,
+        story: { acceptanceCriteria: [] },
+      });
+      expect(tracker.bodies(run.trackerSessionId, "thought").join("\n")).toContain(
+        "It lists no acceptance criteria, so I'm checking it against its description",
+      );
+      await verify(run.id);
+      expect(await storyStates(run.id)).toEqual([["ENG-641", "completed", 1]]);
+    });
+  });
+
   describe("push and draft PR timing", () => {
     const setEarly = (openPullRequestEarly: boolean) =>
       updateRepositoryCoding(db, repoId, { openPullRequestEarly });
@@ -1532,7 +1817,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect(await recordedHiddenRefs(run.id)).toEqual([
         { repositoryId: repoId, ref, sha: sha(172), deleted: true },
       ]);
-      expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).toHaveLength(5);
+      // Two stories and their verifiers, the push, the describe job and the cleanup.
+      expect(await db.select().from(jobs).where(eq(jobs.ralphRunId, run.id))).toHaveLength(7);
       expect(await activeJobs(run.id)).toEqual([]);
       expect(await getRun(db, run.id)).toMatchObject({ status: "completed" });
     });
@@ -2539,6 +2825,8 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
     const later = new Date(Date.now() + RECONCILE_STALE_MS + 60_000);
     expect(await reconcileRuns(deps(), later)).toEqual({ reconciled: 1, failed: 0 });
     expect(await getRun(db, waiting.id)).toMatchObject({ status: "running" });
+    // The reconciled outcome goes through the task verifier like any other.
+    await verify(waiting.id);
     await describePr(waiting.id);
     expect(await getRun(db, waiting.id)).toMatchObject({ status: "completed" });
     expect((await listStories(db, waiting.id))[0]).toMatchObject({ commitSha: sha(7) });

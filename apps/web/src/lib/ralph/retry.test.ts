@@ -47,6 +47,7 @@ import { setRoutingRules, teamIs } from "@/lib/routing/testing";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { ralphJobPayload } from "./coding";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
+import { acceptTaskVerifier } from "./testing";
 import { stopRun } from "./reply";
 import { retryRalphRun, type RalphRetryTarget } from "./retry";
 import { MAX_ITERATIONS_PER_RUN } from "./run";
@@ -192,6 +193,7 @@ describe.skipIf(!databaseAvailable)("retrying epic and request runs from Omniral
       await completeJob(db, { jobId: job.id, agentId: agentA, result: outcome });
     }
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+    if (job.type === "ralph.story") await acceptTaskVerifier(db, deps(), job.ralphRunId!, agentA);
   }
 
   const storyResult = (overrides: Partial<RalphStoryResult> = {}): RalphStoryResult => ({

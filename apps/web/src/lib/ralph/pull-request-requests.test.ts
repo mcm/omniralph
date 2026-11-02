@@ -51,7 +51,7 @@ import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import { onRalphJobFinished, onRalphJobStarted, onReviewForRalph } from "./jobs";
 import { ralphJobPayload } from "./coding";
-import { bindCodingPlaybook } from "./testing";
+import { bindCodingPlaybook, acceptTaskVerifier } from "./testing";
 import { exchangeJobMessages } from "./messages";
 import { respondToReview } from "./pull-request-requests";
 import { startRun, type StartRunDeps } from "./start";
@@ -196,6 +196,7 @@ describe.skipIf(!databaseAvailable)("Omniralph reviews of ralph pull requests", 
       status: "completed",
     });
     await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+    if (job.type === "ralph.story") await acceptTaskVerifier(db, deps(), job.ralphRunId!, agentA);
   }
 
   const storyResult = (overrides: Partial<RalphStoryResult> = {}): RalphStoryResult => ({

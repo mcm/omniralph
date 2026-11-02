@@ -1490,6 +1490,7 @@ export type RalphStoryUpdate = Partial<
     | "rounds"
     | "roundMetrics"
     | "recommendations"
+    | "verifications"
     | "lastFeedback"
     | "commitSha"
     | "lastJobId"

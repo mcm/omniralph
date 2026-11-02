@@ -44,6 +44,7 @@ import { taskSink } from "@/lib/sinks";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { PLAN_COMMENT_HEADING } from "./conversation";
 import { onRalphJobFinished, onRalphJobStarted } from "./jobs";
+import { acceptTaskVerifier } from "./testing";
 import { startRun, type StartRunDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
@@ -155,6 +156,8 @@ describe.skipIf(!testDatabaseAvailable())(
       }
       await completeJob(db, { jobId: job.id, agentId, result });
       await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+      if (job.type === "ralph.story")
+        await acceptTaskVerifier(db, deps(), job.ralphRunId!, agentId);
       return job;
     }
 

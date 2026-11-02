@@ -421,16 +421,38 @@ function LoopCard({
   draft,
   setLoop,
   setCoding,
+  options,
   errors,
 }: {
   draft: PlaybookDraft;
   setLoop: (change: Partial<PlaybookDraft["loop"]>) => void;
   setCoding: (change: Partial<PlaybookDraft["coding"]>) => void;
+  options: PlaybookFormOptions;
   errors: Errors;
 }) {
   if (roleTaskType(draft.role) === "coding") {
+    const { verifierPlaybookId } = draft.coding;
+    const verifiers = options.verifierPlaybooks.some((p) => p.id === verifierPlaybookId)
+      ? options.verifierPlaybooks
+      : [...options.verifierPlaybooks, { id: verifierPlaybookId, name: verifierPlaybookId }];
     return (
       <Card title="Loop" headingLevel={3}>
+        <Field
+          label="Task verifier"
+          description="After a task passes its checks, this playbook reviews the change against each acceptance criterion. A criterion it sends back fails the attempt, with its reason as feedback."
+        >
+          <Select
+            value={verifierPlaybookId}
+            onChange={(event) => setCoding({ verifierPlaybookId: event.target.value })}
+            errorMessage={errorAt(errors, "coding.verifierPlaybookId")}
+          >
+            {verifiers.map((playbook) => (
+              <option key={playbook.id} value={playbook.id}>
+                {playbook.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
         <LoopNumberField
           label="Attempts per story"
           description="How many times Om works a story, feeding back what failed its checks, before setting it aside."
@@ -831,7 +853,13 @@ function PlaybookForm({
         </Card>
 
         {showsLoopSettings(draft.role) ? (
-          <LoopCard draft={draft} setLoop={setLoop} setCoding={setCoding} errors={errors} />
+          <LoopCard
+            draft={draft}
+            setLoop={setLoop}
+            setCoding={setCoding}
+            options={options}
+            errors={errors}
+          />
         ) : null}
 
         {isCodingRole(draft.role) ? (

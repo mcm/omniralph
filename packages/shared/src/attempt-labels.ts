@@ -19,6 +19,7 @@ import {
   RALPH_PUSH_JOB_TYPE,
   RALPH_REQUEST_JOB_TYPE,
   RALPH_STORY_JOB_TYPE,
+  RALPH_VERIFY_TASK_JOB_TYPE,
 } from "./ralph-job.js";
 import { REVIEW_REPLY_JOB_TYPE } from "./reply.js";
 import { REVIEW_TASK_JOB_TYPE } from "./review-job.js";
@@ -150,6 +151,8 @@ const PHRASES: Record<string, (context: AttemptLabelContext) => Phrase> = {
       "Pushed",
       namedThing(present(c.story) ?? present(c.workItem), "branch"),
     ),
+  [RALPH_VERIFY_TASK_JOB_TYPE]: (c) =>
+    phrase("check", "Checking", "Checked", `${workTarget(c)} against its acceptance criteria`),
   [RALPH_PREPARE_JOB_TYPE]: preparation,
   [WORKTREE_EXEC_JOB_TYPE]: preparation,
   [RALPH_CLEANUP_JOB_TYPE]: cleanup,

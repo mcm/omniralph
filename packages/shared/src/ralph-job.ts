@@ -10,6 +10,8 @@
  * - `ralph.request`: a coding run doing what a request from the tracker
  *   thread asks (a mention, or a reply no story took) in a lane's branch worktree.
  * - `ralph.push`: a coding run with no session that pushes a lane's branch.
+ * - `ralph.verify-task`: a query run of the story playbook's verifier that checks a
+ *   completed story attempt against the story's acceptance criteria.
  *
  * The agent's ralph capability still runs two legacy jobs (`RALPH_JOB_TYPES`):
  *
@@ -40,6 +42,11 @@ export const RALPH_CLEANUP_JOB_TYPE = "ralph.cleanup";
  * end`).
  */
 export const RALPH_PUSH_JOB_TYPE = "ralph.push";
+/**
+ * A query run of the story playbook's verifier (`verifierTaskId`) that checks a story
+ * attempt its session reported complete against the story's acceptance criteria.
+ */
+export const RALPH_VERIFY_TASK_JOB_TYPE = "ralph.verify-task";
 /** The legacy job types the agent's ralph capability runs. */
 export const RALPH_JOB_TYPES = [RALPH_PREPARE_JOB_TYPE, RALPH_CLEANUP_JOB_TYPE] as const;
 
@@ -341,6 +348,71 @@ export const RalphDescribePrResult = z.object({
   usage: TokenUsage,
 });
 export type RalphDescribePrResult = z.infer<typeof RalphDescribePrResult>;
+
+/** Most acceptance criteria a task verifier checks. */
+export const MAX_VERIFIED_CRITERIA = 100;
+/** Longest acceptance criterion, or a verifier's reason, kept. */
+const MAX_CRITERION_LENGTH = 4000;
+
+/**
+ * What a `ralph.verify-task` query run checks: one story attempt its session reported
+ * complete (and whose checks passed), against the story's acceptance criteria. The
+ * verifier never sees the session's own summary: it judges the change itself.
+ */
+export const RalphVerifyTaskPayload = RalphJobBase.extend({
+  /** The `ralph_stories` row. */
+  storyId: z.uuid(),
+  /** The attempt it checks (1 on the story's first). */
+  attempt: z.int().min(1),
+  epic: RalphIssue.extend({
+    /** The epic's PRD (its description), for context; empty for a single issue. */
+    prd: z.string().max(MAX_DOCUMENT_LENGTH),
+  }),
+  story: RalphIssue.extend({
+    /** The story's description without its acceptance criteria. */
+    description: z.string().max(MAX_DOCUMENT_LENGTH),
+    acceptanceCriteria: z
+      .array(z.string().min(1).max(MAX_CRITERION_LENGTH))
+      .max(MAX_VERIFIED_CRITERIA),
+  }),
+  /** The attempt's commit (checked out); null when it committed nothing. */
+  commitSha: CommitSha.nullable(),
+  /** The checks the attempt passed. */
+  qualityGates: z.array(z.string().min(1).max(4000)).max(100).default([]),
+});
+export type RalphVerifyTaskPayload = z.infer<typeof RalphVerifyTaskPayload>;
+
+/**
+ * The `run.invoked` trigger context of a task verifier (a query run of the story
+ * playbook's `verifierTaskId`): the invoking ralph run, the `ralph.verify-task` payload
+ * as `payload`, and the values the playbook's template renders
+ * (`verifyTaskTemplateContext` in `@omniralph/ralph`).
+ */
+export const RalphVerifyTaskTriggerContext = z.looseObject({
+  invoker: RalphRunInvoker,
+  payload: RalphVerifyTaskPayload,
+});
+export type RalphVerifyTaskTriggerContext = z.infer<typeof RalphVerifyTaskTriggerContext>;
+
+/** The verifier's verdict on one acceptance criterion. */
+export const RalphCriterionVerdict = z.object({
+  criterion: z.string().trim().min(1).max(MAX_CRITERION_LENGTH),
+  accepted: z.boolean(),
+  /** The evidence it accepted the criterion on, or why it sends it back. */
+  reason: z.string().trim().max(MAX_CRITERION_LENGTH),
+});
+export type RalphCriterionVerdict = z.infer<typeof RalphCriterionVerdict>;
+
+/**
+ * A task verifier's output (`builtin:verify-task`'s fixed output schema): a verdict per
+ * acceptance criterion and a summary. The attempt is accepted when no criterion is
+ * rejected.
+ */
+export const RalphTaskVerdict = z.object({
+  criteria: z.array(RalphCriterionVerdict).max(MAX_VERIFIED_CRITERIA),
+  summary: z.string().trim().max(10_000),
+});
+export type RalphTaskVerdict = z.infer<typeof RalphTaskVerdict>;
 
 /** Payload of a `ralph.prepare` job: the approved `cyralph-prepare` commands. */
 export const RalphPreparePayload = RalphJobBase.extend({

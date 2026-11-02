@@ -231,6 +231,9 @@ export type DraftPullRequestTiming = (typeof DRAFT_PULL_REQUEST_TIMINGS)[number]
 /** The query task that writes a coding run's PR description by default. */
 export const DEFAULT_PR_DESCRIPTION_TASK_ID = "builtin:describe-pr";
 
+/** The query task that checks a story attempt against its acceptance criteria by default. */
+export const DEFAULT_VERIFIER_TASK_ID = "builtin:verify-task";
+
 const FixRounds = z.int().min(0).max(CODING_MAX_FIX_ROUNDS);
 
 /** A one-line shell command (a repo's check or the worktree setup command). */
@@ -262,6 +265,12 @@ export const CODING_FIELDS = {
   draftPullRequest: z.enum(DRAFT_PULL_REQUEST_TIMINGS).optional(),
   /** Query task (accepting `run.invoked`) that writes the PR title and description. */
   prDescriptionTaskId: DefinitionId.optional(),
+  /**
+   * Query task (accepting `run.invoked`) that checks a story attempt its session reported
+   * complete against the story's acceptance criteria before the story counts as done. A
+   * story playbook's run spec always names one (`DEFAULT_VERIFIER_TASK_ID` by default).
+   */
+  verifierTaskId: DefinitionId.optional(),
   /** Run once in a fresh branch worktree (e.g. `pnpm install`); null for none. */
   worktreeSetupCommand: CodingCommand.nullable().optional(),
   /** Also run the PRD's `## Quality Gates` commands. */
