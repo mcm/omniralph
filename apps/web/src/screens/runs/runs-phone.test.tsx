@@ -262,7 +262,7 @@ describe("the step page", () => {
     renderStep();
     await waitFor(() => panel());
     const tabs = within(panel()).getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["Transcript", "Attempts1"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Transcript", "Story", "Attempts1"]);
     await waitFor(() =>
       expect(
         within(within(panel()).getByRole("list", { name: "Transcript" })).getAllByRole("listitem"),

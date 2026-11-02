@@ -283,3 +283,81 @@ describe("View PRD in the run toolbar", () => {
     await within(sheet).findByRole("button", { name: "Edit PRD" });
   });
 });
+
+describe("View PRD's stories", () => {
+  const STORIES: WorkItemDetail["stories"] = [
+    {
+      identifier: "SOC-430",
+      title: "Export endpoint",
+      state: { category: "done", name: "Done" },
+      url: "https://linear.app/acme/issue/SOC-430",
+      manual: false,
+      content: "As a user, I want **an export** endpoint.",
+    },
+    {
+      identifier: "SOC-431",
+      title: "Configure the bucket",
+      state: { category: "todo", name: "Todo" },
+      url: null,
+      manual: true,
+      content: "",
+    },
+  ];
+  const storiesSection = (sheet: HTMLElement) =>
+    within(sheet).getByRole("region", { name: /^Stories · / });
+  const rows = (section: HTMLElement) =>
+    Array.from(section.querySelector("ol")!.children) as HTMLElement[];
+
+  it("lists the stories after the PRD, each with its content behind a collapsed Details", async () => {
+    item = workItem({ stories: STORIES });
+    renderRuns();
+    const sheet = await openPrd();
+    const section = await waitFor(() => storiesSection(sheet));
+    expect(section.getAttribute("aria-labelledby")).toBeTruthy();
+    expect(within(section).getByRole("heading").textContent).toBe("Stories · 2");
+    // After the PRD body.
+    const prd = within(sheet).getByRole("heading", { name: "Introduction" });
+    expect(prd.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const [first, second] = rows(section);
+    expect(within(first!).getByRole("link").getAttribute("href")).toBe(
+      "https://linear.app/acme/issue/SOC-430",
+    );
+    expect(first!.textContent).toContain("Export endpoint");
+    expect(first!.textContent).toContain("Done");
+    const disclosure = first!.querySelector("details")!;
+    expect(disclosure.open).toBe(false);
+    expect(within(disclosure).getByText("an export").tagName).toBe("STRONG");
+
+    // No URL: an unlinked badge; empty content: no disclosure.
+    expect(within(second!).queryByRole("link")).toBeNull();
+    expect(second!.textContent).toContain("SOC-431");
+    expect(second!.textContent).toContain("manual");
+    expect(second!.querySelector("details")).toBeNull();
+    expect(itemFetches()).toBe(1);
+  });
+
+  it("shows no stories section when the item has none", async () => {
+    renderRuns();
+    const sheet = await openPrd();
+    expect(within(sheet).queryByRole("region", { name: /^Stories/ })).toBeNull();
+  });
+
+  it("follows the work item live", async () => {
+    const live = fakeAbly();
+    renderRuns(live);
+    const sheet = await openPrd();
+    await waitFor(() => expect(live.current().subscribed()).toContain(`org:${ORG}:changes`));
+    expect(within(sheet).queryByRole("region", { name: /^Stories/ })).toBeNull();
+
+    item = workItem({ stories: STORIES.slice(0, 1) });
+    act(() =>
+      live
+        .current()
+        .deliver(`org:${ORG}:changes`, changeEvent(ORG, { resource: "work_item", ids: [ITEM_ID] })),
+    );
+    await waitFor(() =>
+      expect(within(storiesSection(sheet)).getByRole("heading").textContent).toBe("Stories · 1"),
+    );
+  });
+});

@@ -118,6 +118,8 @@ export const workItemStorySchema = z.object({
   url: z.string().nullable(),
   /** A step for a person (the manual label). */
   manual: z.boolean(),
+  /** Markdown, possibly empty: the sub-issue's description, or the PRD story with its criteria. */
+  content: z.string(),
 });
 
 /** What happened to it, in a plain sentence, newest first. */

@@ -7,6 +7,7 @@ import { stepStatusLine } from "@/components/runs/progress";
 import { epicAuditTabs } from "@/components/runs/epic-audit";
 import { reviewFindingsTabs } from "@/components/runs/review-findings";
 import { StepPanel } from "@/components/runs/step-panel";
+import { storyContentTabs } from "@/components/runs/story-content";
 import { storyDiffTabs } from "@/components/runs/story-diff";
 import { useRunDetail } from "@/components/runs/use-run-detail";
 import { ApiError } from "@/lib/api/client";
@@ -83,6 +84,7 @@ function RunStepContent({ run, stepId }: { run: RunDetail; stepId: string }) {
         stepHref={runInListHref(run.id, NO_RUN_FILTERS, { step: step.id })}
         tabs={[
           ...epicAuditTabs(run, step),
+          ...storyContentTabs(run, step),
           ...storyDiffTabs(run, step),
           ...reviewFindingsTabs(run, step),
         ]}

@@ -1,0 +1,30 @@
+/* A work item's stories (`StoryList`): the Backlog Stories tab and View PRD. Only `--or-` tokens. */
+.or-story-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-story-list__story {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--or-line);
+  font-size: 13px;
+}
+
+.or-story-list__title {
+  flex: 1 1 200px;
+  min-width: 0;
+  color: var(--or-text);
+}
+
+/* The content gets a line of its own, below the row. */
+.or-story-list__details {
+  flex: 1 0 100%;
+  min-width: 0;
+}

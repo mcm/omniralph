@@ -776,6 +776,7 @@ export function describeWorkItemTrackerContract(
           title: "First",
           state: "done",
           parentId: parent.id,
+          description: "As a user, I want **the first** thing.",
         });
         const second = await h.seed({
           teamId: teamA,
@@ -800,6 +801,7 @@ export function describeWorkItemTrackerContract(
             state: { category: "done", name: expect.any(String) },
             url: expect.stringMatching(/^https:\/\//),
             manual: false,
+            content: "As a user, I want **the first** thing.",
           },
           {
             ref: second.id,
@@ -808,6 +810,7 @@ export function describeWorkItemTrackerContract(
             state: { category: "todo", name: expect.any(String) },
             url: expect.stringMatching(/^https:\/\//),
             manual: true,
+            content: "",
           },
           // `manual` isn't among the tracker's manual labels.
           expect.objectContaining({ identifier: third.identifier, manual: false }),
@@ -827,6 +830,10 @@ export function describeWorkItemTrackerContract(
             "### US-001: Export as CSV",
             "**Description:** As a user, I want a CSV.",
             "",
+            "**Acceptance Criteria:**",
+            "- [ ] The file opens in a spreadsheet",
+            "- [ ] Headers come first",
+            "",
             "### US-002: Check the export",
             "**Description:** A person checks it.",
             "**Labels:** manual",
@@ -840,6 +847,14 @@ export function describeWorkItemTrackerContract(
             state: null,
             url: null,
             manual: false,
+            content: [
+              "As a user, I want a CSV.",
+              "",
+              "## Acceptance Criteria",
+              "",
+              "- [ ] The file opens in a spreadsheet",
+              "- [ ] Headers come first",
+            ].join("\n"),
           },
           {
             ref: null,
@@ -848,6 +863,7 @@ export function describeWorkItemTrackerContract(
             state: null,
             url: null,
             manual: true,
+            content: "A person checks it.",
           },
         ]);
       });

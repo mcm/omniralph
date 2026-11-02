@@ -265,6 +265,7 @@ export async function loadWorkItemDetail(
       state: story.state,
       url: story.url,
       manual: story.manual,
+      content: story.content,
     })),
     activity: workItemActivity({ events, triageRuns, comments }),
     triageRunning,

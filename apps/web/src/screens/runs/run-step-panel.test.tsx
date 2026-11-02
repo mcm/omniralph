@@ -255,11 +255,11 @@ describe("StepPanel in the run detail", () => {
     expect(panel().closest(".or-progress-card")).not.toBeNull();
   });
 
-  it("has Transcript and Attempts {n} tabs, Transcript by default", async () => {
+  it("has Transcript, Story and Attempts {n} tabs, Transcript by default", async () => {
     renderRun();
     await loaded();
     const tabs = within(panel()).getAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["Transcript", "Attempts2"]);
+    expect(tabs.map((t) => t.textContent)).toEqual(["Transcript", "Story", "Attempts2"]);
     expect(tab("Attempts, 2")).toBeTruthy();
     expect(tab("Transcript").getAttribute("aria-selected")).toBe("true");
   });

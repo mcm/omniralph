@@ -11,7 +11,6 @@ import {
   OrgBadge,
   RepoBadge,
   SizeBadge,
-  StatusText,
   TabPanel,
   Tabs,
   Toolbar,
@@ -38,7 +37,7 @@ import { CHANGE_REPO, ChangeRepoSheet } from "@/components/work-items/change-rep
 import { KindBadge } from "@/components/work-items/kind";
 import { ManualTaskChecklist } from "@/components/work-items/manual-task-checklist";
 import { PrdView } from "@/components/work-items/prd-view";
-import { WORK_ITEM_STATE_TONES } from "@/components/work-items/state-tones";
+import { StoryList } from "@/components/work-items/story-list";
 import { START_EPIC, TRIAGE_NOW } from "@/components/work-items/start-triage-buttons";
 import {
   triagingTooltip,
@@ -148,28 +147,7 @@ export function WorkItemRoutesLine({
 /** Stories: the sub-issues, or the stories its PRD lists (no identifier or state). */
 function WorkItemStories({ item }: { item: WorkItemDetail }) {
   if (item.stories.length === 0) return <EmptyState headingLevel={3} title={NO_STORIES} />;
-  return (
-    <ol className="or-backlog-detail__stories" aria-label="Stories">
-      {item.stories.map((story, index) => (
-        <li key={story.identifier ?? `story-${index}`} className="or-backlog-detail__story">
-          {story.identifier ? (
-            <IssueBadge
-              tracker={item.tracker}
-              id={story.identifier}
-              href={story.url ?? undefined}
-            />
-          ) : null}
-          <span className="or-backlog-detail__story-title">{story.title}</span>
-          {story.state ? (
-            <StatusText tone={WORK_ITEM_STATE_TONES[story.state.category]}>
-              {story.state.name}
-            </StatusText>
-          ) : null}
-          {story.manual ? <MetaBadge text="manual" /> : null}
-        </li>
-      ))}
-    </ol>
-  );
+  return <StoryList tracker={item.tracker} stories={item.stories} />;
 }
 
 function WorkItemDetailContent({

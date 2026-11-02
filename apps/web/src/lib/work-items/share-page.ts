@@ -37,6 +37,8 @@ export interface SharedStory {
   /** The sub-issue's state name; null for a PRD story. */
   state: string | null;
   manual: boolean;
+  /** Markdown, possibly empty: what the story asks for. */
+  content: string;
 }
 
 export interface LoadSharedWorkItemDeps {
@@ -79,6 +81,7 @@ export async function loadSharedWorkItem(
         title: story.title,
         state: story.state?.name ?? null,
         manual: story.manual,
+        content: story.content,
       })),
       sharedBy: link.createdByName,
       expiresAt: link.expiresAt,
