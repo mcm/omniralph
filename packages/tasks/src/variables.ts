@@ -363,6 +363,51 @@ export const VARIABLES: readonly VariableDefinition[] = [
     description:
       "The task's findings as a JSON array (`id`, `path`, `startLine`, `endLine`, `severity`, `category`, `confidence`, `title`, `body`, `suggestion`); null without any.",
   },
+  // Finding verification: a review pass's findings, which the review run asks its verifier to check.
+  {
+    name: "verification.checkType",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description: "Check type of the review pass whose findings are verified (e.g. `security`).",
+  },
+  {
+    name: "verification.pass",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description: "Number of the review pass whose findings are verified (1 on the first).",
+  },
+  {
+    name: "verification.baseSha",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description: "Base commit of the reviewed change.",
+  },
+  {
+    name: "verification.headSha",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description: "Head commit of the reviewed change, which the verifier has checked out.",
+  },
+  {
+    name: "verification.files",
+    source: "trigger",
+    trust: "untrusted",
+    triggers: ["run.invoked"],
+    description: "The files the pass reviewed, one per line (null without any).",
+  },
+  {
+    name: "verification.findings",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "json",
+    triggers: ["run.invoked"],
+    description:
+      "The pass's findings as a JSON array (`id`, `path`, `startLine`, `endLine`, `severity`, `category`, `title`, `body`, `suggestion`).",
+  },
   // Coding runs (story and request runs) and the PR description they invoke. Titles and
   // identifiers are put on one line and render as is; issue text, the PRD, requests, guidance,
   // progress and feedback are fenced.

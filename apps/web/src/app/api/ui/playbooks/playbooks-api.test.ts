@@ -370,7 +370,10 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
           { id: mine.id, name: "Our PR description", builtin: false },
         ],
         // Built-in only: the verifier role is never a custom playbook's.
-        verifierPlaybooks: [{ id: "builtin:verify-task", name: "Verify a task", builtin: true }],
+        verifierPlaybooks: [
+          { id: "builtin:verify-task", name: "Verify a task", builtin: true },
+          { id: "builtin:verify-findings", name: "Verify findings", builtin: true },
+        ],
         auditPlaybooks: [{ id: "builtin:audit-epic", name: "Audit an epic", builtin: true }],
         // Reported with a path by non-revoked agents, or required by a playbook: sorted, once each.
         hostTools: ["gh", "opengrep", "trivy"],
