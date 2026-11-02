@@ -1,4 +1,4 @@
-import { EmptyState, IssueBadge, Markdown, MetaBadge } from "@omniralph/ui";
+import { DetailsSection, EmptyState, IssueBadge, Markdown, MetaBadge } from "@omniralph/ui";
 import { IconLinkOff } from "@tabler/icons-react";
 import { trackerLabel } from "@/lib/api/trackers";
 import { formatShareExpiry } from "@/lib/work-items/share-expiry";
@@ -53,6 +53,11 @@ export function ShareView({ token, page }: { token: string; page: SharedWorkItem
                     <span className="share-story-title">{story.title}</span>
                     {story.state ? <span className="share-muted">{story.state}</span> : null}
                     {story.manual ? <MetaBadge text="manual" /> : null}
+                    {story.content.trim() ? (
+                      <DetailsSection className="share-story-details">
+                        <Markdown>{story.content}</Markdown>
+                      </DetailsSection>
+                    ) : null}
                   </li>
                 ))}
               </ul>

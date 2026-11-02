@@ -179,22 +179,22 @@ afterEach(() => {
 });
 
 describe("the step panel's Diff tab", () => {
-  it("shows between Transcript and Attempts for an epic story with a commit", async () => {
+  it("shows between Story and Attempts for an epic story with a commit", async () => {
     renderRun({ search: "step=1" });
     await loaded();
-    expect(tabNames()).toEqual(["Transcript", "Diff", "Attempts1"]);
+    expect(tabNames()).toEqual(["Transcript", "Story", "Diff", "Attempts1"]);
   });
 
   it("doesn't show for a running story or a story without a commit", async () => {
     const first = renderRun({ search: "step=2" });
     await loaded();
-    expect(tabNames()).toEqual(["Transcript", "Attempts1"]);
+    expect(tabNames()).toEqual(["Transcript", "Story", "Attempts1"]);
     first.unmount();
 
     detail = epic(null);
     renderRun({ search: "step=1" });
     await loaded();
-    expect(tabNames()).toEqual(["Transcript", "Attempts1"]);
+    expect(tabNames()).toEqual(["Transcript", "Story", "Attempts1"]);
   });
 
   it("doesn't show on a review run's steps", async () => {

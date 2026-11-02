@@ -700,6 +700,15 @@ describe("the routes line", () => {
 });
 
 describe("the tabs", () => {
+  /** The Stories list's rows (not the lists inside their content). */
+  const storyRows = (panel: HTMLElement) =>
+    Array.from(panel.querySelector("ol.or-story-list")!.children) as HTMLElement[];
+  /** A story's row, without its content's disclosure. */
+  const storyRow = (story: HTMLElement) => {
+    const row = story.cloneNode(true) as HTMLElement;
+    row.querySelector("details")?.remove();
+    return row;
+  };
   const tabsDetail = () =>
     detailOf(workItemRow(), {
       stories: [
@@ -709,6 +718,7 @@ describe("the tabs", () => {
           state: { category: "todo", name: "Todo" },
           url: "https://linear.app/acme/issue/SOC-430",
           manual: false,
+          content: "As a user, I want **an export** endpoint.",
         },
         {
           identifier: "SOC-431",
@@ -716,6 +726,7 @@ describe("the tabs", () => {
           state: { category: "backlog", name: "Backlog" },
           url: "https://linear.app/acme/issue/SOC-431",
           manual: true,
+          content: "  \n",
         },
       ],
       activity: [
@@ -801,8 +812,8 @@ describe("the tabs", () => {
     renderBacklog({ search: "tab=stories" });
     await loaded();
     const panel = screen.getByRole("tabpanel", { name: "Stories, 2" });
-    const stories = within(panel).getAllByRole("listitem");
-    expect(stories.map(words)).toEqual([
+    const stories = storyRows(panel);
+    expect(stories.map((story) => words(storyRow(story)))).toEqual([
       "SOC-430 (opens in a new tab) Export endpoint Todo",
       "SOC-431 (opens in a new tab) Configure the bucket Backlog manual",
     ]);
@@ -811,16 +822,42 @@ describe("the tabs", () => {
     );
   });
 
-  it("lists PRD stories without identifiers", async () => {
+  it("shows each story's content as Markdown behind a collapsed Details, none when empty", async () => {
+    details["linear-issue-412"] = tabsDetail();
+    renderBacklog({ search: "tab=stories" });
+    await loaded();
+    const [first, second] = storyRows(screen.getByRole("tabpanel", { name: "Stories, 2" }));
+    const disclosure = first!.querySelector("details")!;
+    expect(disclosure.open).toBe(false);
+    expect(disclosure.querySelector("summary")!.textContent).toBe("Details");
+    expect(disclosure.querySelector("strong")!.textContent).toBe("an export");
+    await userEvent.click(within(disclosure).getByText("Details"));
+    expect(disclosure.open).toBe(true);
+    // Only whitespace: no disclosure.
+    expect(second!.querySelector("details")).toBeNull();
+  });
+
+  it("lists PRD stories without identifiers, with their acceptance criteria", async () => {
     details["linear-issue-412"] = detailOf(workItemRow(), {
       stories: [
-        { identifier: null, title: "US-001: Export", state: null, url: null, manual: false },
+        {
+          identifier: null,
+          title: "US-001: Export",
+          state: null,
+          url: null,
+          manual: false,
+          content: "As a user, I want a CSV.\n\n## Acceptance Criteria\n\n- [ ] Headers come first",
+        },
       ],
     });
     renderBacklog({ search: "tab=stories" });
     await loaded();
-    const panel = screen.getByRole("tabpanel", { name: "Stories, 1" });
-    expect(words(within(panel).getByRole("listitem"))).toBe("US-001: Export");
+    const [story] = storyRows(screen.getByRole("tabpanel", { name: "Stories, 1" }));
+    expect(words(storyRow(story!))).toBe("US-001: Export");
+    const disclosure = story!.querySelector("details")!;
+    expect(within(disclosure).getByText("As a user, I want a CSV.")).toBeTruthy();
+    expect(within(disclosure).getByRole("heading", { name: "Acceptance Criteria" })).toBeTruthy();
+    expect(within(disclosure).getByText("Headers come first")).toBeTruthy();
   });
 
   it("shows Activity through ActivityList, newest first with the date column", async () => {

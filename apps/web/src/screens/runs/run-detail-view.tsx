@@ -43,6 +43,7 @@ import { RunSession } from "@/components/runs/run-session";
 import { epicAuditTabs } from "@/components/runs/epic-audit";
 import { reviewFindingsTabs } from "@/components/runs/review-findings";
 import { StepPanel } from "@/components/runs/step-panel";
+import { storyContentTabs } from "@/components/runs/story-content";
 import { storyDiffTabs } from "@/components/runs/story-diff";
 import { useRunRetry, useRunRetryPending, useRunStop } from "@/components/runs/use-run-actions";
 import { useRunDetail } from "@/components/runs/use-run-detail";
@@ -284,6 +285,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
                   stepHref={runInListHref(run.id, NO_RUN_FILTERS, { step: step.id })}
                   tabs={[
                     ...epicAuditTabs(run, step),
+                    ...storyContentTabs(run, step),
                     ...storyDiffTabs(run, step),
                     ...reviewFindingsTabs(run, step),
                   ]}

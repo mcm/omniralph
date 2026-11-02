@@ -8,6 +8,7 @@ import { useRunDetail } from "@/components/runs/use-run-detail";
 import { useRunTriage } from "@/components/runs/use-run-triage";
 import type { RunRow } from "@/lib/api/runs";
 import { PrdView, type PrdViewProps } from "./prd-view";
+import { StoryList } from "./story-list";
 import { useWorkItemDetail } from "./use-work-item-detail";
 import "./view-prd-sheet.css";
 
@@ -35,17 +36,20 @@ export interface ViewPrdSheetProps {
  * `PrdView`, read-only while the run is queued, running or waiting, editable otherwise.
  * Both the run and the work item are live queries (the ones the detail already holds), so
  * the mode follows the run's status and the PRD follows the tracker while it's open. A
- * triage run that needs answers shows the form to answer its open questions above the PRD.
+ * triage run that needs answers shows the form to answer its open questions above the PRD,
+ * and the work item's stories (with their content) follow it.
  */
 export function ViewPrdSheet({ runId, workItem }: ViewPrdSheetProps) {
   const overlay = useRunDetailOverlay();
   const questionsId = useId();
+  const storiesId = useId();
   const run = useRunDetail(runId);
   const item = useWorkItemDetail(workItem.id);
   // Until the run is known, assume Om is working: never offer an edit it would refuse.
   const mode = run.data ? prdModeForRun(run.data.status) : "read-only";
   const triage = useRunTriage(runId, { enabled: run.data?.kind === "triage" });
   const questions = triage.data?.answerQuestions ? triage.data.openQuestions : [];
+  const stories = item.data?.stories ?? [];
 
   return (
     <Sheet
@@ -65,6 +69,14 @@ export function ViewPrdSheet({ runId, workItem }: ViewPrdSheetProps) {
         </section>
       ) : null}
       <PrdView workItemId={workItem.id} mode={mode} />
+      {item.data && stories.length > 0 ? (
+        <section className="or-prd-sheet__stories" aria-labelledby={storiesId}>
+          <h3 id={storiesId} className="or-prd-sheet__subtitle">
+            Stories · {stories.length}
+          </h3>
+          <StoryList tracker={item.data.tracker} stories={stories} />
+        </section>
+      ) : null}
     </Sheet>
   );
 }

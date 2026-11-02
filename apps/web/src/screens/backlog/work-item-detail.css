@@ -75,30 +75,6 @@
   padding-top: 16px;
 }
 
-.or-backlog-detail__stories {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.or-backlog-detail__story {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--or-line);
-  font-size: 13px;
-}
-
-.or-backlog-detail__story-title {
-  flex: 1 1 200px;
-  min-width: 0;
-  color: var(--or-text);
-}
-
 @media (max-width: 768px) {
   .or-backlog-detail {
     padding: 12px 16px 24px;

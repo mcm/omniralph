@@ -84,6 +84,25 @@ export function stateCategoryOf(type: string): WorkItemStateCategory {
   return Object.hasOwn(CATEGORIES, type) ? CATEGORIES[type]! : "backlog";
 }
 
+/**
+ * A PRD story's content: its description, then a `## Acceptance Criteria` checklist when it
+ * has criteria.
+ */
+export function prdStoryContent(story: {
+  description: string;
+  acceptanceCriteria: string[];
+}): string {
+  const parts = [story.description.trim()];
+  if (story.acceptanceCriteria.length > 0) {
+    parts.push(
+      ["## Acceptance Criteria", "", ...story.acceptanceCriteria.map((c) => `- [ ] ${c}`)].join(
+        "\n",
+      ),
+    );
+  }
+  return parts.filter(Boolean).join("\n\n");
+}
+
 const CLOSED_TYPES = new Set(["completed", "canceled"]);
 
 // The tracker's routing fields are the gateway's, so the router reads either.
@@ -487,6 +506,7 @@ export class GatewayWorkItemTracker implements WorkItemTracker {
         state: null,
         url: null,
         manual: story.manual === true,
+        content: prdStoryContent(story),
       }));
     }
     const manualLabels = await this.manualLabels();
@@ -507,6 +527,7 @@ export class GatewayWorkItemTracker implements WorkItemTracker {
         },
         url: child.url,
         manual: isManualIssue(child, manualLabels.length ? manualLabels : DEFAULT_MANUAL_LABELS),
+        content: child.description,
       }));
   }
 

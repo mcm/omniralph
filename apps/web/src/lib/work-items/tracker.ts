@@ -135,6 +135,11 @@ export interface WorkItemStory {
   url: string | null;
   /** A step for a person: the sub-issue carries a manual label, or the PRD story says so. */
   manual: boolean;
+  /**
+   * Markdown, possibly empty: what the story asks for. A sub-issue's description, or a PRD
+   * story's description followed by its acceptance criteria as a checklist.
+   */
+  content: string;
 }
 
 /** A comment on a work item. */

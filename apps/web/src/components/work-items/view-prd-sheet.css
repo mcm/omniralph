@@ -14,3 +14,13 @@
   font-size: 13px;
   font-weight: 600;
 }
+
+/* The work item's stories, after the PRD. */
+.or-prd-sheet__stories {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--or-line);
+}

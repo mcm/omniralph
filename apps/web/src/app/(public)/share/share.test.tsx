@@ -94,6 +94,7 @@ describe.skipIf(!databaseAvailable)("/share/{token}", () => {
     });
     acme.add({
       title: "Store sessions",
+      description: "As a user, I want **my session** kept.",
       identifier: `ENG-${Math.floor(Math.random() * 9000) + 1000}`,
       parentId: epic.id,
       stateType: "unstarted",
@@ -157,12 +158,46 @@ describe.skipIf(!databaseAvailable)("/share/{token}", () => {
     expect(html).toContain("Grant SSO access");
     expect(html).toContain("In Progress");
     expect(html).toContain("manual");
+    // Each story's content as Markdown, behind a collapsed Details; none when it has none.
+    expect(html.match(/<details class="or-more-info share-story-details">/g)).toHaveLength(1);
+    expect(html).not.toMatch(/<details[^>]* open/);
+    expect(html).toContain("<strong>my session</strong>");
     expect(html).toMatch(/Shared by Steve McMaster · expires [A-Z][a-z]{2} \d{1,2}/);
     expect(html).not.toContain('type="password"');
 
     // It links nowhere into the app: only the PRD's own external links.
     const hrefs = [...html.matchAll(/href="([^"]*)"/g)].map((m) => m[1]);
     expect(hrefs).toEqual(["https://example.com/spec"]);
+  });
+
+  it("shows a PRD-listed story's description and acceptance criteria", async () => {
+    const item = acme.add({
+      title: "Exports",
+      description: [
+        "# PRD: Exports",
+        "",
+        "## User Stories",
+        "",
+        "### US-001: Export as CSV",
+        "**Description:** As a user, I want a CSV.",
+        "",
+        "**Acceptance Criteria:**",
+        "- [ ] Headers come first",
+      ].join("\n"),
+    });
+    const created = await createShareLink(
+      db,
+      { key: { organizationId: orgId, tracker: "linear", externalId: item.id } },
+      { userId: "share-steve", name: "Steve McMaster" },
+      { password: "", baseUrl: "https://omniralph.example.com" },
+    );
+    state.cookies.clear();
+    const html = await render(created.url.split("/share/")[1]!);
+    expect(html).toContain("Stories · 1");
+    const details = html.slice(html.indexOf('<details class="or-more-info share-story-details">'));
+    expect(details).toContain("As a user, I want a CSV.");
+    expect(details).toContain("Acceptance Criteria");
+    expect(details).toContain("Headers come first");
   });
 
   it("reads the item live: a PRD edited in the tracker shows on the next visit", async () => {

@@ -380,6 +380,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
         title: "Store it",
         parentId: epic.id,
         identifier: "ENG-501",
+        description: "As a user, I want **it stored**.",
         stateType: "unstarted",
         stateName: "Todo",
         subIssueSortOrder: 1,
@@ -468,6 +469,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
           state: { category: "todo", name: "Todo" },
           url: "https://linear.app/acme/issue/ENG-501",
           manual: false,
+          content: "As a user, I want **it stored**.",
         },
         {
           identifier: "ENG-502",
@@ -475,6 +477,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/work-items/{id}", () => {
           state: { category: "in_progress", name: "In Progress" },
           url: "https://linear.app/acme/issue/ENG-502",
           manual: true,
+          content: "",
         },
       ]);
       expect(view.activity.map((entry) => entry.text)).toEqual([
