@@ -13,7 +13,11 @@ import {
   testUser,
   type SeenRequest,
 } from "@/components/query-test-utils";
-import { STORY_CONTENT_EMPTY, STORY_CONTENT_FAILED } from "@/components/runs/story-content";
+import {
+  STORY_CONTENT_EMPTY,
+  STORY_CONTENT_FAILED,
+  storyContentTabs,
+} from "@/components/runs/story-content";
 import {
   attempt,
   epicRunDetail,
@@ -169,6 +173,26 @@ describe("the step panel's Story tab", () => {
     renderRun("");
     await loaded();
     expect(tabNames()).not.toContain("Story");
+  });
+
+  it("doesn't show on an epic run's steps that aren't stories", () => {
+    const run = epic();
+    const steps: RunDetail["steps"] = [
+      { kind: "attempt", id: "t1", label: "Planned it", status: "completed", durationMs: 1000 },
+      {
+        kind: "audit",
+        id: "audit-1",
+        round: 1,
+        status: "passed",
+        requirements: [],
+        summary: null,
+        error: null,
+        filed: [],
+        durationMs: MINUTE,
+      },
+    ];
+    for (const step of steps) expect(storyContentTabs(run, step)).toEqual([]);
+    expect(storyContentTabs(run, run.steps[0]!).map((tab) => tab.value)).toEqual(["story"]);
   });
 
   it("loads the work item only when opened, and puts the tab in the URL", async () => {
