@@ -21,7 +21,8 @@ export function formatDuration(ms: number): string {
 }
 
 /**
- * A step's state on the progress card (the epic's mapping): completed → done, manual or
+ * A step's state on the progress card (the epic's mapping): completed (or an audit that
+ * passed, or found gaps) → done, manual or
  * waiting → waiting, running or queued → running, failed or exhausted → failed, blocked (a
  * pending story with open blockers) → blocked, canceled or skipped → canceled, anything
  * else → pending.
@@ -29,6 +30,8 @@ export function formatDuration(ms: number): string {
 export function stepState(status: RunStep["status"] | "waiting"): StepState {
   switch (status) {
     case "completed":
+    case "passed":
+    case "gaps":
       return "done";
     case "manual":
     case "waiting":
@@ -60,7 +63,21 @@ export function stepLabel(step: RunStep): string {
     case "correlation":
     case "attempt":
       return step.label;
+    case "audit":
+      return auditLabel(step);
   }
+}
+
+/** An epic audit's step name: "Epic audit", with its round from the second one on. */
+export function auditLabel(step: Pick<Extract<RunStep, { kind: "audit" }>, "round">): string {
+  return step.round > 1 ? `Epic audit, round ${step.round}` : "Epic audit";
+}
+
+/** "{n} gaps" an audit step found; null for a step that isn't an audit with gaps. */
+function gapsMeta(step: RunStep): string | null {
+  if (step.kind !== "audit") return null;
+  const gaps = step.requirements.filter((r) => r.status === "gap").length;
+  return gaps > 0 ? `${gaps} ${gaps === 1 ? "gap" : "gaps"}` : null;
 }
 
 export interface RunProgressSteps {
@@ -78,11 +95,14 @@ export function stepsToProgress(steps: readonly RunStep[]): RunProgressSteps {
   const progress = steps.map((step): ProgressStep => {
     const duration = step.durationMs ?? 0;
     total += duration;
+    const meta = [gapsMeta(step), duration > 0 ? formatDuration(duration) : null]
+      .filter(Boolean)
+      .join(" · ");
     return {
       id: step.id,
       label: stepLabel(step),
       state: stepState(step.status),
-      ...(duration > 0 ? { meta: formatDuration(duration) } : {}),
+      ...(meta ? { meta } : {}),
     };
   });
   return { steps: progress, summarySuffix: total > 0 ? formatDuration(total) : undefined };

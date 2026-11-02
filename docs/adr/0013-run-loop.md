@@ -108,6 +108,18 @@ with a note. This replaces the "Validate functional requirements" sub-issue: tri
 methodology no longer plan one, and an epic that still has one runs it as a task and is audited
 as well.
 
+### Run pages show what each verifier decided
+
+The run detail (`GET /api/ui/runs/{id}`) carries every verdict, and its live `run` changes
+refresh the page as they land. A story attempt's `verification` is the task verifier's latest
+check of it (from `ralph_stories.verifications`): its status and a verdict per acceptance
+criterion, shown on the attempt in the Attempts tab and above its transcript. Each entry of
+`ralph_runs.audits` is an `audit` step after the epic's stories (`audit-{n}`, labelled "Epic
+audit", with its round from the second on); its Requirements tab, open by default, lists each
+requirement's evidence or gap and links the tasks it filed, and the audit job's attempt belongs
+to it. A looped run's `iterations` show in an Iterations card: each one's state, the verifier's
+summary, metric and findings, then how the loop ended.
+
 ## Consequences
 
 - Reviews and triage don't change until they register an adapter: this ADR adds the driver they

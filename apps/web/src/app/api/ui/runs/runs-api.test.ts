@@ -1015,6 +1015,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       error: null,
       step: built!.id,
       transcriptEvents: 2,
+      verification: null,
     });
     expect(view.attempts.find((a) => a.id === firstTry.id)).toMatchObject({
       label: "Couldn't build ENG-42",
@@ -1107,6 +1108,140 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     state.user = member;
     state.orgId = orgId;
     expect((await detailPage(run.id)).details.actions.stop).toBe(true);
+  });
+
+  it("shows each story attempt's verifier verdict and each epic audit as a step", async () => {
+    const run = await newRun();
+    const [story] = await upsertStories(db, run.id, [
+      { trackerIssueId: "v-1", identifier: "ENG-61", title: "Export" },
+    ]);
+    const sentBack = await attempt(
+      { type: "ralph.story", ralphRunId: run.id, ralphStoryId: story!.id },
+      { status: "completed", createdAt: at(9) },
+    );
+    const firstCheck = await attempt(
+      { type: "ralph.verify-task", ralphRunId: run.id, ralphStoryId: story!.id },
+      { status: "completed", createdAt: at(9, 10) },
+    );
+    const done = await attempt(
+      { type: "ralph.story", ralphRunId: run.id, ralphStoryId: story!.id },
+      { status: "completed", createdAt: at(10) },
+    );
+    const secondCheck = await attempt(
+      { type: "ralph.verify-task", ralphRunId: run.id, ralphStoryId: story!.id },
+      { status: "running", createdAt: at(10, 10) },
+    );
+    const audit = await attempt(
+      { type: "ralph.audit-epic", ralphRunId: run.id },
+      { status: "completed", createdAt: at(11) },
+    );
+    const check = (jobId: string, storyJobId: string, attemptNumber: number) => ({
+      jobId,
+      storyJobId,
+      attempt: attemptNumber,
+      commitSha: null,
+      error: null,
+      startedAt: at(9).toISOString(),
+      finishedAt: null,
+    });
+    await updateStory(db, story!.id, {
+      status: "running",
+      attempts: 1,
+      verifications: [
+        {
+          ...check(firstCheck.id, sentBack.id, 1),
+          status: "rejected",
+          criteria: [
+            { criterion: "Writes a CSV", accepted: true, reason: "export.ts" },
+            { criterion: "Has a header", accepted: false, reason: "No header." },
+          ],
+          summary: "One is missing.",
+        },
+        {
+          ...check(secondCheck.id, done.id, 2),
+          status: "running",
+          criteria: [],
+          summary: null,
+          pending: { summary: "Done.", followUps: [], wroteProgress: false },
+        },
+      ],
+    });
+    const audited = {
+      storyIssueIds: ["v-1"],
+      commitSha: null,
+      error: null,
+      startedAt: at(11).toISOString(),
+    };
+    await updateRun(db, run.id, {
+      audits: [
+        {
+          ...audited,
+          round: 1,
+          jobId: audit.id,
+          status: "gaps",
+          requirements: [
+            { id: "FR-1", text: "Exports", status: "met", evidence: "export.ts", missing: "" },
+            { id: "FR-2", text: "Emails", status: "gap", evidence: "mail.ts", missing: "Sending" },
+          ],
+          summary: "One gap.",
+          filed: ["ENG-62"],
+          finishedAt: at(11, 3).toISOString(),
+        },
+        {
+          ...audited,
+          round: 1,
+          jobId: null,
+          status: "skipped",
+          requirements: [],
+          summary: null,
+          filed: [],
+          finishedAt: null,
+        },
+      ],
+    });
+
+    const view = await detailPage(run.id);
+    const verification = (id: string) => view.attempts.find((a) => a.id === id)!.verification;
+    expect(verification(sentBack.id)).toEqual({
+      status: "rejected",
+      criteria: [
+        { criterion: "Writes a CSV", accepted: true, reason: "export.ts" },
+        { criterion: "Has a header", accepted: false, reason: "No header." },
+      ],
+      summary: "One is missing.",
+      error: null,
+      verifierAttemptId: firstCheck.id,
+    });
+    expect(verification(done.id)).toMatchObject({
+      status: "running",
+      verifierAttemptId: secondCheck.id,
+    });
+    // The verifier's own attempts, and the audit's, have none.
+    expect([firstCheck, secondCheck, audit].map((j) => verification(j.id))).toEqual([
+      null,
+      null,
+      null,
+    ]);
+
+    // The audits follow the stories, in order; the audit's attempt is its step's.
+    expect(view.steps.map((step) => step.id)).toEqual([story!.id, "audit-1", "audit-2"]);
+    expect(view.steps[1]).toEqual({
+      kind: "audit",
+      id: "audit-1",
+      round: 1,
+      status: "gaps",
+      requirements: [
+        { id: "FR-1", text: "Exports", status: "met", evidence: "export.ts", missing: "" },
+        { id: "FR-2", text: "Emails", status: "gap", evidence: "mail.ts", missing: "Sending" },
+      ],
+      summary: "One gap.",
+      error: null,
+      filed: [{ tracker: "linear", identifier: "ENG-62", url: expect.any(String) }],
+      durationMs: 3 * 60_000,
+    });
+    expect(view.steps[2]).toMatchObject({ status: "skipped", durationMs: null });
+    expect(view.attempts.find((a) => a.id === audit.id)!.step).toBe("audit-1");
+    expect(view.attempts.find((a) => a.id === secondCheck.id)!.step).toBe(story!.id);
   });
 
   it("prices each attempt, and the run when every token-bearing attempt is priced", async () => {

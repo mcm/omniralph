@@ -1,0 +1,99 @@
+/*
+ * What a run's verifiers decided: a story attempt's verdict per criterion, an epic audit's
+ * requirements and a looped run's iterations. Only `--or-` tokens.
+ */
+.or-verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-sm);
+  background: var(--or-raised);
+}
+
+.or-verdict__headline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--or-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.or-verdict__items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-verdict__item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.or-verdict__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.or-verdict__name {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.or-verdict__state {
+  margin-left: 8px;
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+.or-verdict__text {
+  max-width: 68ch;
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.or-verdict__label {
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+.or-verdict__findings {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  white-space: normal;
+}
+
+.or-verdict__filed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.or-iterations .or-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.or-iterations__ending {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 13px;
+}

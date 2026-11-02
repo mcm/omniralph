@@ -15,6 +15,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { RunAttempt, RunDetail, RunStep } from "@/lib/api/runs";
 import { AttemptList } from "./attempt-list";
 import { AttemptOutcome } from "./attempt-outcome";
+import { AttemptVerdict } from "./attempt-verdict";
 import {
   isFailedAttempt,
   isLiveAttempt,
@@ -39,6 +40,8 @@ export interface StepPanelTab {
   label: string;
   count?: number;
   content: ReactNode;
+  /** Shown before Transcript, and open by default (an epic audit's Requirements). */
+  first?: boolean;
 }
 
 /** What the step panel shows, as its URL says it (`?tab=&attempt=`). */
@@ -173,8 +176,9 @@ function AttemptTranscriptView({ runId, attempt }: { runId: string; attempt: Run
  * The selected step's panel, inside the progress card under the step (Design board Runs):
  * a toolbar with the step's retry ("Retry story", "Re-run story" or "Retry attempt", from its
  * state and the run's `actions`) and a ⋯ menu (Copy link, Copy commit), then tabs:
- * Transcript (the shown attempt's, `?attempt=` or the latest; a failed attempt's outcome and
- * a story's last feedback above it), the `tabs` other screens add, and "Attempts {n}". The
+ * Transcript (the shown attempt's, `?attempt=` or the latest; a failed attempt's outcome, the
+ * task verifier's verdict on it and a story's last feedback above it), the `tabs` other
+ * screens add (a `first` one before Transcript, and open by default), and "Attempts {n}". The
  * tab lives in the URL (`?tab=`).
  */
 export function StepPanel({
@@ -191,14 +195,17 @@ export function StepPanel({
   const retry = useRunRetry(run.id);
   const retrying = useRunRetryPending(run.id);
 
+  const tabItem = ({ value, label, count }: StepPanelTab) => ({ value, label, count });
   const panelTabs = [
+    ...tabs.filter((extra) => extra.first).map(tabItem),
     { value: STEP_PANEL_TRANSCRIPT, label: "Transcript" },
-    ...tabs.map(({ value, label, count }) => ({ value, label, count })),
+    ...tabs.filter((extra) => !extra.first).map(tabItem),
     { value: STEP_PANEL_ATTEMPTS, label: "Attempts", count: attempts.length },
   ];
   const current = selectedTab(
     panelTabs.map((item) => item.value),
     tab,
+    panelTabs[0]!.value,
   );
 
   const retryItem = stepRetry(run, step, attempt);
@@ -261,6 +268,7 @@ export function StepPanel({
                   attempt={{ ...attempt, error: null }}
                 />
               ) : null}
+              {attempt.verification ? <AttemptVerdict verification={attempt.verification} /> : null}
               <AttemptTranscriptView key={attempt.id} runId={run.id} attempt={attempt} />
             </>
           ) : (

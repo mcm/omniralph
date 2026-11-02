@@ -37,9 +37,13 @@ export function selectedAttempt(
   return attempts.find((attempt) => attempt.id === attemptId) ?? attempts[0];
 }
 
-/** The tab the URL names (`?tab=`) when the panel has it, else Transcript. */
-export function selectedTab(tabs: readonly string[], tab: string | null | undefined): string {
-  return tab && tabs.includes(tab) ? tab : STEP_PANEL_TRANSCRIPT;
+/** The tab the URL names (`?tab=`) when the panel has it, else `fallback` (Transcript). */
+export function selectedTab(
+  tabs: readonly string[],
+  tab: string | null | undefined,
+  fallback: string = STEP_PANEL_TRANSCRIPT,
+): string {
+  return tab && tabs.includes(tab) ? tab : fallback;
 }
 
 /**

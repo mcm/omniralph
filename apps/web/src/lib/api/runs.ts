@@ -151,6 +151,33 @@ const tokens = z.object({ in: z.number(), out: z.number() });
  */
 const costUsd = z.number().nonnegative().nullable();
 
+/** How the task verifier checked a story attempt (`RalphTaskVerification` in `@omniralph/db`). */
+export const VERIFICATION_STATUSES = ["running", "accepted", "rejected", "failed"] as const;
+
+/**
+ * The task verifier's check of a story attempt: `running` until it answers, then `accepted`
+ * (the story is done), `rejected` (the attempt failed, with the reasons as feedback) or
+ * `failed` (it couldn't check; the story counts as done).
+ */
+export const attemptVerificationSchema = z.object({
+  status: z.enum(VERIFICATION_STATUSES),
+  /** A verdict per acceptance criterion; empty until it answers, or when it failed. */
+  criteria: z.array(
+    z.object({
+      criterion: z.string(),
+      accepted: z.boolean(),
+      /** The evidence it was accepted on, or why it was sent back. */
+      reason: z.string(),
+    }),
+  ),
+  summary: z.string().nullable(),
+  /** Why it couldn't check (`failed`). */
+  error: z.string().nullable(),
+  /** The verifier's own attempt (`attempts[].id`). */
+  verifierAttemptId: z.string(),
+});
+export type AttemptVerification = z.infer<typeof attemptVerificationSchema>;
+
 /** One attempt (job) of a run. `type` is the raw job type, for filtering only. */
 export const runAttemptSchema = z.object({
   id: z.string(),
@@ -174,6 +201,8 @@ export const runAttemptSchema = z.object({
   step: z.string().nullable(),
   /** Its transcript's length (`GET …/attempts/{id}/transcript`). */
   transcriptEvents: z.number(),
+  /** A story attempt's check by the task verifier; null for any other attempt, or before it. */
+  verification: attemptVerificationSchema.nullable(),
 });
 export type RunAttempt = z.infer<typeof runAttemptSchema>;
 
@@ -258,11 +287,47 @@ export const attemptStepSchema = z.object({
   durationMs: z.number().nullable(),
 });
 
+/** Where an epic audit is (`RalphEpicAudit` in `@omniralph/db`). */
+export const AUDIT_STATUSES = ["running", "passed", "gaps", "failed", "skipped"] as const;
+
+/**
+ * An epic's audit round against its requirements, before its PR/MR opens: `running`, then
+ * `passed` (every requirement met), `gaps` (each gap filed as a task, or listed in the PR/MR
+ * on the last round), `failed` (it couldn't audit) or `skipped` (the epic lists none).
+ */
+export const auditStepSchema = z.object({
+  kind: z.literal("audit"),
+  /** `audit-{n}`: the run's n-th audit. */
+  id: z.string(),
+  /** The audit round (rounds that judged the epic count). */
+  round: z.number(),
+  status: z.enum(AUDIT_STATUSES),
+  /** What it found per requirement; empty until it finishes, or when it failed. */
+  requirements: z.array(
+    z.object({
+      id: z.string(),
+      text: z.string(),
+      status: z.enum(["met", "gap"]),
+      /** The file or test that shows it's met, or where the audit looked. */
+      evidence: z.string(),
+      /** For a gap: what is missing. */
+      missing: z.string(),
+    }),
+  ),
+  summary: z.string().nullable(),
+  /** Why it couldn't audit (`failed`). */
+  error: z.string().nullable(),
+  /** The tasks it filed for its gaps. */
+  filed: z.array(workItemRefSchema),
+  durationMs: z.number().nullable(),
+});
+
 export const runStepSchema = z.discriminatedUnion("kind", [
   storyStepSchema,
   reviewPassStepSchema,
   correlationStepSchema,
   attemptStepSchema,
+  auditStepSchema,
 ]);
 export type RunStep = z.infer<typeof runStepSchema>;
 

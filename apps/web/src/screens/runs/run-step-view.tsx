@@ -4,6 +4,7 @@ import { Button, EmptyState, StatusLine, TextLink } from "@omniralph/ui";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRef } from "react";
 import { stepStatusLine } from "@/components/runs/progress";
+import { epicAuditTabs } from "@/components/runs/epic-audit";
 import { reviewFindingsTabs } from "@/components/runs/review-findings";
 import { StepPanel } from "@/components/runs/step-panel";
 import { storyDiffTabs } from "@/components/runs/story-diff";
@@ -80,7 +81,11 @@ function RunStepContent({ run, stepId }: { run: RunDetail; stepId: string }) {
           )
         }
         stepHref={runInListHref(run.id, NO_RUN_FILTERS, { step: step.id })}
-        tabs={[...storyDiffTabs(run, step), ...reviewFindingsTabs(run, step)]}
+        tabs={[
+          ...epicAuditTabs(run, step),
+          ...storyDiffTabs(run, step),
+          ...reviewFindingsTabs(run, step),
+        ]}
       />
     </article>
   );
