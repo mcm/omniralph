@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseDiff } from "./diff.js";
-import { BUDGET_FILL_RATIO, createPathFilter, isTestPath, planChecks, planReview } from "./plan.js";
+import {
+  BUDGET_FILL_RATIO,
+  createPathFilter,
+  isTestPath,
+  planChecks,
+  planReview,
+  splitBudget,
+} from "./plan.js";
 import { estimateTokens } from "./tokens.js";
 
 const fixture = (name: string) =>
@@ -17,7 +24,10 @@ const budgetFiles = fixture("budget");
 
 describe("planReview", () => {
   it("returns a single task with every included file and the full budget", () => {
-    const plan = planReview(fixture("basic"), { maxTokensPerReview: 50_000, maxFiles: 25 });
+    const plan = planReview(fixture("basic"), {
+      maxTokensPerReview: 50_000,
+      maxFiles: 25,
+    });
     expect(plan.tasks).toHaveLength(1);
     expect(plan.tasks[0]?.id).toBe("task-1");
     expect(plan.tasks[0]?.budget).toBe(50_000);
@@ -53,7 +63,10 @@ describe("planReview", () => {
       "vendor/lib/x.go",
       "yarn.lock",
     ]);
-    expect(plan.skipped).toContainEqual({ path: "src/gen/api.generated.ts", reason: "generated" });
+    expect(plan.skipped).toContainEqual({
+      path: "src/gen/api.generated.ts",
+      reason: "generated",
+    });
     expect(plan.tasks[0]?.files.map((f) => f.path).sort()).toEqual([
       ".github/workflows/ci.yml",
       "docs/guide.md",
@@ -103,8 +116,14 @@ describe("planReview", () => {
       ".github/workflows/ci.yml",
       "src/index.ts",
     ]);
-    expect(plan.skipped).toContainEqual({ path: "docs/guide.md", reason: "excluded" });
-    expect(plan.skipped).toContainEqual({ path: "src/gen/api.generated.ts", reason: "excluded" });
+    expect(plan.skipped).toContainEqual({
+      path: "docs/guide.md",
+      reason: "excluded",
+    });
+    expect(plan.skipped).toContainEqual({
+      path: "src/gen/api.generated.ts",
+      reason: "excluded",
+    });
   });
 
   it("skips binary files and files without hunks", () => {
@@ -139,7 +158,10 @@ describe("planReview", () => {
 
   it("drops files lowest risk weight first, then largest first, until the plan fits", () => {
     // Limit 7000: notes (w1) → 11914, e2e (w1) → 11527, big-table (w2, larger) → 6057.
-    const plan = planReview(budgetFiles, { maxTokensPerReview: 10_000, maxFiles: 10 });
+    const plan = planReview(budgetFiles, {
+      maxTokensPerReview: 10_000,
+      maxFiles: 10,
+    });
     expect(plan.skipped).toEqual([
       { path: "docs/notes.md", reason: "budget" },
       { path: "test/e2e.ts", reason: "budget" },
@@ -157,7 +179,10 @@ describe("planReview", () => {
   });
 
   it("trims files beyond maxFiles in the same risk order", () => {
-    const plan = planReview(budgetFiles, { maxTokensPerReview: 1_000_000, maxFiles: 3 });
+    const plan = planReview(budgetFiles, {
+      maxTokensPerReview: 1_000_000,
+      maxFiles: 3,
+    });
     expect(plan.skipped).toEqual([
       { path: "docs/notes.md", reason: "max_files" },
       { path: "test/e2e.ts", reason: "max_files" },
@@ -173,7 +198,10 @@ describe("planReview", () => {
 
   it("applies maxFiles before the token budget", () => {
     // maxFiles drops notes and e2e; limit 4200 then drops big-table, format, order, users.
-    const plan = planReview(budgetFiles, { maxTokensPerReview: 6_000, maxFiles: 5 });
+    const plan = planReview(budgetFiles, {
+      maxTokensPerReview: 6_000,
+      maxFiles: 5,
+    });
     expect(plan.skipped).toEqual([
       { path: "docs/notes.md", reason: "max_files" },
       { path: "test/e2e.ts", reason: "max_files" },
@@ -187,7 +215,10 @@ describe("planReview", () => {
   });
 
   it("returns an empty task when nothing fits", () => {
-    const plan = planReview(budgetFiles, { maxTokensPerReview: 100, maxFiles: 10 });
+    const plan = planReview(budgetFiles, {
+      maxTokensPerReview: 100,
+      maxFiles: 10,
+    });
     expect(plan.tasks).toEqual([{ id: "task-1", files: [], budget: 100 }]);
     expect(plan.skipped).toHaveLength(7);
     expect(plan.estimatedInputTokens).toBe(0);
@@ -302,7 +333,9 @@ describe("planChecks", () => {
   });
 
   it("gives each check type its finding categories", () => {
-    const plan = planChecks(diffOf("src/a.ts"), ROOMY, { maintainability: true });
+    const plan = planChecks(diffOf("src/a.ts"), ROOMY, {
+      maintainability: true,
+    });
     expect(Object.fromEntries(plan.checks.map((c) => [c.type, c.categories]))).toEqual({
       security: ["security"],
       stability: ["correctness", "concurrency", "resources", "error-handling"],
@@ -335,12 +368,13 @@ describe("planChecks", () => {
     expect(expectFullCoverage(checks)).toEqual(new Set(pathsOf(review.tasks[0]!.files)));
   });
 
-  it("keeps a check type in one group up to 20 files", () => {
+  it("keeps every check type in one group up to 20 files", () => {
     const paths = Array.from({ length: 20 }, (_, i) => `src/m${i}/f.ts`);
     const plan = planChecks(diffOf(...paths), ROOMY);
+    expect(plan.groups).toHaveLength(1);
     for (const check of plan.checks) {
       expect(check.groups).toEqual([
-        { id: `${check.type}-1`, files: check.files, budget: ROOMY.maxTokensPerReview },
+        { id: `${check.type}-1`, files: check.files, budget: check.budget },
       ]);
     }
   });
@@ -352,15 +386,114 @@ describe("planChecks", () => {
       ...Array.from({ length: 25 }, (_, i) => `lib/big/f${i}.ts`),
     ];
     const plan = planChecks(diffOf(...paths), ROOMY);
-    const security = plan.checks.find((c) => c.type === "security")!;
-    expect(security.groups.map((g) => g.id)).toEqual(["security-1", "security-2", "security-3"]);
-    const dirs = security.groups.map((g) => [
-      ...new Set(g.files.map((f) => f.path.slice(0, f.path.lastIndexOf("/")))),
+    const dirs = plan.groups.map((g) => [
+      ...new Set(g.map((f) => f.path.slice(0, f.path.lastIndexOf("/")))),
     ]);
     // lib/big's 25 files split at 20; its last 5 share a group with src/api's 12.
     expect(dirs).toEqual([["lib/big"], ["lib/big", "src/api"], ["src/auth"]]);
-    expect(security.groups.map((g) => g.files.length)).toEqual([20, 17, 12]);
-    expect(security.groups.flatMap((g) => pathsOf(g.files)).sort()).toEqual([...paths].sort());
+    expect(plan.groups.map((g) => g.length)).toEqual([20, 17, 12]);
+    expect(plan.checks.map((c) => c.type)).toEqual([
+      "security",
+      "stability",
+      "performance",
+      "compatibility",
+    ]);
+    for (const check of plan.checks) {
+      expect(check.groups.map((g) => g.id)).toEqual([1, 2, 3].map((n) => `${check.type}-${n}`));
+      expect(check.groups.map((g) => g.files)).toEqual(plan.groups);
+    }
+    expect(expectFullCoverage(plan)).toEqual(new Set(paths));
+  });
+
+  it("gives every check type the same groups, filtered to its files", () => {
+    // 21 files: performance covers only the 19 outside test paths, which alone
+    // would fit in one group, but it still reads the plan's shared groups.
+    const paths = [
+      ...Array.from({ length: 11 }, (_, i) => `src/a/f${i}.ts`),
+      ...Array.from({ length: 8 }, (_, i) => `src/b/f${i}.ts`),
+      "src/b/f0.test.ts",
+      "src/b/f1.test.ts",
+    ];
+    const plan = planChecks(diffOf(...paths), ROOMY);
+    expect(plan.groups.map((g) => g.length)).toEqual([11, 10]);
+    const byType = Object.fromEntries(
+      plan.checks.map((c) => [c.type, c.groups.map((g) => [g.id, g.files.length])]),
+    );
+    expect(byType).toEqual({
+      security: [
+        ["security-1", 11],
+        ["security-2", 10],
+      ],
+      stability: [
+        ["stability-1", 11],
+        ["stability-2", 10],
+      ],
+      performance: [
+        ["performance-1", 11],
+        ["performance-2", 8],
+      ],
+      compatibility: [
+        ["compatibility-1", 11],
+        ["compatibility-2", 10],
+      ],
+    });
+    for (const check of plan.checks) {
+      check.groups.forEach((group, index) => {
+        expect(plan.groups[index]).toEqual(expect.arrayContaining(group.files));
+      });
+    }
+    expect(expectFullCoverage(plan)).toEqual(new Set(paths));
+  });
+
+  it("skips a shared group that has none of a check type's files", () => {
+    const paths = [
+      ...Array.from({ length: 15 }, (_, i) => `docs/p${i}.md`),
+      ...Array.from({ length: 10 }, (_, i) => `src/f${i}.ts`),
+    ];
+    const plan = planChecks(diffOf(...paths), ROOMY);
+    expect(plan.groups.map((g) => g.length)).toEqual([15, 10]);
+    const security = plan.checks.find((c) => c.type === "security")!;
+    expect(security.groups.map((g) => g.id)).toEqual(["security-2"]);
+    const stability = plan.checks.find((c) => c.type === "stability")!;
+    expect(stability.groups.map((g) => g.id)).toEqual(["stability-1", "stability-2"]);
+    expect(expectFullCoverage(plan)).toEqual(new Set(paths));
+  });
+
+  it("splits the remaining budget evenly across check types and by size across groups", () => {
+    // Two groups: 20 small files in a/ and one large file in b/ (21 files in total).
+    const small = Array.from({ length: 20 }, (_, i) => `a/f${i}.ts`);
+    const files = diffOf(...small, "b/big.ts");
+    const estimateFileTokens = (file: { path: string }) => (file.path === "b/big.ts" ? 60 : 1);
+    const plan = planChecks(files, ROOMY, {
+      estimateFileTokens,
+      remainingTokens: 8_000,
+    });
+    expect(plan.checks.map((c) => c.budget)).toEqual([2_000, 2_000, 2_000, 2_000]);
+    for (const check of plan.checks) {
+      // 20 tokens vs 60 tokens: a quarter and three quarters of the type's share.
+      expect(check.groups.map((g) => [g.id, g.budget])).toEqual([
+        [`${check.type}-1`, 500],
+        [`${check.type}-2`, 1_500],
+      ]);
+    }
+  });
+
+  it("defaults the remaining budget to the profile's token cap", () => {
+    const plan = planChecks(diffOf("README.md", "src/a.ts"), {
+      maxTokensPerReview: 1_000,
+      maxFiles: 10,
+    });
+    expect(plan.checks.map((c) => c.budget)).toEqual([250, 250, 250, 250]);
+    expect(plan.checks.reduce((sum, c) => sum + c.budget, 0)).toBe(1_000);
+  });
+});
+
+describe("splitBudget", () => {
+  it("splits in proportion to the weights, in whole tokens summing to the total", () => {
+    expect(splitBudget(100, [1, 3])).toEqual([25, 75]);
+    expect(splitBudget(10, [1, 1, 1])).toEqual([4, 3, 3]);
+    expect(splitBudget(10, [0, 0])).toEqual([5, 5]);
+    expect(splitBudget(10, [])).toEqual([]);
   });
 });
 
