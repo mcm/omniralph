@@ -150,6 +150,10 @@ const formOptions: PlaybookFormOptions = {
     { id: "builtin:verify-task", name: "Verify a task", builtin: true },
     { id: "builtin:verify-task-strict", name: "Strict verifier", builtin: true },
   ],
+  reviewVerifierPlaybooks: [
+    { id: "builtin:verify-findings", name: "Verify findings", builtin: true },
+    { id: "builtin:verify-findings-strict", name: "Strict findings", builtin: true },
+  ],
   auditPlaybooks: [
     { id: "builtin:audit-epic", name: "Audit an epic", builtin: true },
     { id: "builtin:audit-epic-strict", name: "Strict audit", builtin: true },
@@ -277,6 +281,10 @@ function describedError(control: HTMLElement): string | undefined {
 
 function optionLabels(select: HTMLElement): string[] {
   return Array.from((select as HTMLSelectElement).options).map((option) => option.textContent!);
+}
+
+function optionValues(select: HTMLElement): string[] {
+  return Array.from((select as HTMLSelectElement).options).map((option) => option.value);
 }
 
 async function openMenu() {
@@ -531,14 +539,34 @@ describe("creating a playbook", () => {
     // No verifier by default: a run is one session until one is chosen.
     expect((field("Verifier") as HTMLSelectElement).value).toBe("");
     expect(within(loop).getByText(/With no verifier, a run is one session/)).toBeTruthy();
-    await userEvent.selectOptions(field("Verifier"), "builtin:verify-task-strict");
+    // A review loop offers the finding verifiers only, not the story's task verifiers.
+    expect(optionValues(field("Verifier"))).toEqual([
+      "",
+      "builtin:verify-findings",
+      "builtin:verify-findings-strict",
+    ]);
+    await userEvent.selectOptions(field("Verifier"), "builtin:verify-findings-strict");
     await userEvent.clear(field("Most iterations"));
     await userEvent.type(field("Most iterations"), "8");
     await userEvent.click(screen.getByRole("button", { name: "Create playbook" }));
     await waitFor(() => expect(writes()).toHaveLength(1));
     expect(writes()[0]!.body).toMatchObject({
-      loop: { verifierPlaybookId: "builtin:verify-task-strict", maxIterations: 8, stallRounds: 2 },
+      loop: {
+        verifierPlaybookId: "builtin:verify-findings-strict",
+        maxIterations: 8,
+        stallRounds: 2,
+      },
     });
+  });
+
+  it("offers a story playbook's task verifier picker the task verifiers only", async () => {
+    renderAt(`${PLAYBOOKS_PATH}/new`);
+    expect(await pageTitle("New playbook")).toBeTruthy();
+    await userEvent.selectOptions(field("Role"), "story");
+    expect(optionValues(field("Task verifier"))).toEqual([
+      "builtin:verify-task",
+      "builtin:verify-task-strict",
+    ]);
   });
 
   it("checks the loop settings before sending anything", async () => {

@@ -141,13 +141,22 @@ describe("validatePlaybookAgainst", () => {
     });
   });
 
-  it("accepts a review playbook whose loop names a verifier, and refuses one that isn't a verifier", () => {
+  it("accepts a review playbook whose loop names a finding verifier, and refuses any other", () => {
     const review = (verifierPlaybookId: string) =>
       validatePlaybookAgainst(
         clone("builtin:review-pr", { loop: { verifierPlaybookId, maxIterations: 3 } }),
         BUILTIN_PLAYBOOKS,
       );
-    expect(review("builtin:verify-task")).toMatchObject({ ok: true });
+    expect(review("builtin:verify-findings")).toMatchObject({ ok: true });
+    // A task verifier's { criteria, summary } isn't what a review loop reads.
+    expect(review("builtin:verify-task")).toMatchObject({
+      ok: false,
+      fieldErrors: {
+        "loop.verifierPlaybookId": expect.stringContaining(
+          "doesn't output the { verdicts, unreached, summary } of a finding verifier",
+        ),
+      },
+    });
     expect(review("builtin:describe-pr")).toMatchObject({
       ok: false,
       fieldErrors: { "loop.verifierPlaybookId": "builtin:describe-pr isn't a verifier playbook." },

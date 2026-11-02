@@ -16,6 +16,7 @@ import {
 import { z } from "zod";
 import { allSinks, type Sink } from "@/lib/sinks";
 import { listPlaybooks } from "./index";
+import { reviewLoopVerifierProblem } from "./verifiers";
 
 /**
  * Save-time validation of an organization's playbooks: the `Playbook` schema,
@@ -79,7 +80,9 @@ function zodFieldErrors(error: z.ZodError): Record<string, string> {
  *   playbooks among `playbooks`);
  * - `coding.verifierPlaybookId`: a playbook that isn't a `verifier` playbook.
  * - `coding.auditPlaybookId`: a playbook that isn't an `audit` playbook.
- * - `loop.verifierPlaybookId`: a playbook that doesn't exist or isn't a `verifier` playbook.
+ * - `loop.verifierPlaybookId`: a playbook that doesn't exist or isn't a `verifier` playbook,
+ *   or on a review playbook, one whose output isn't a finding verifier's
+ *   (`reviewLoopVerifierProblem`).
  */
 export function validatePlaybookAgainst(
   input: unknown,
@@ -130,6 +133,9 @@ export function validatePlaybookAgainst(
     if (!verifier) add("loop.verifierPlaybookId", `There is no playbook ${loopVerifierId}.`);
     else if (verifier.role !== "verifier") {
       add("loop.verifierPlaybookId", `${loopVerifierId} isn't a verifier playbook.`);
+    } else if (playbook.role === "review") {
+      const problem = reviewLoopVerifierProblem(verifier);
+      if (problem) add("loop.verifierPlaybookId", problem);
     }
   }
   const auditId = playbook.coding?.auditPlaybookId;

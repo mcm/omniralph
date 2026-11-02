@@ -110,8 +110,12 @@ export const playbookFormOptionsSchema = z.object({
   prDescriptionPlaybooks: z.array(
     z.object({ id: z.string(), name: z.string(), builtin: z.boolean() }),
   ),
-  /** The `verifier` playbooks a story playbook can check its tasks with. */
+  /** The `verifier` playbooks a story playbook can check its tasks with (task verifiers). */
   verifierPlaybooks: z.array(z.object({ id: z.string(), name: z.string(), builtin: z.boolean() })),
+  /** The `verifier` playbooks a review playbook's loop can check its findings with. */
+  reviewVerifierPlaybooks: z.array(
+    z.object({ id: z.string(), name: z.string(), builtin: z.boolean() }),
+  ),
   /** The `audit` playbooks a story playbook can audit its epics with. */
   auditPlaybooks: z.array(z.object({ id: z.string(), name: z.string(), builtin: z.boolean() })),
   /**
