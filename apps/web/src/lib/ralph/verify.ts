@@ -51,15 +51,40 @@ export type VerifierStart =
   /** No verifier runs: the story is done as the session reported, `problem` saying why (null: it has none to run). */
   | { started: false; problem: string | null };
 
+/** What the verifier checks a story against (the `story` fields of its payload). */
+interface StoryUnderCheck {
+  description: string;
+  acceptanceCriteria: string[];
+  task: boolean;
+  kind: RalphStoryPayload["story"]["kind"];
+}
+
+/** Whether the story job worked a three-paragraph task (older servers: it had an approach). */
+function isTask(story: RalphStoryPayload["story"]): boolean {
+  return story.task ?? story.approach.trim() !== "";
+}
+
 /**
- * The story's description and acceptance criteria as the tracker has them now (the story
- * job's payload when the tracker can't be read).
+ * What the verifier checks the story against. A three-paragraph task: paragraph 1 and
+ * paragraph 3's criteria, from the story job's payload alone (never re-read from the
+ * tracker, so paragraph 2, which the payload keeps apart, can't reach the verifier). A
+ * legacy story: its description and acceptance criteria as the tracker has them now (the
+ * story job's payload when the tracker can't be read).
  */
-async function storyCriteria(
+async function storyUnderCheck(
   ctx: OutcomeContext,
   story: RalphStory,
   payload: RalphStoryPayload,
-): Promise<{ description: string; acceptanceCriteria: string[] }> {
+): Promise<StoryUnderCheck> {
+  const { kind } = payload.story;
+  if (isTask(payload.story)) {
+    return {
+      description: payload.story.description.slice(0, MAX_DESCRIPTION_LENGTH),
+      acceptanceCriteria: fitCriteria(payload.story.acceptanceCriteria ?? []),
+      task: true,
+      kind,
+    };
+  }
   const issue = await ctx.tracker.getIssue(story.trackerIssueId).catch((error: unknown) => {
     console.warn(`${story.identifier}: could not read its acceptance criteria`, error);
     return null;
@@ -74,11 +99,18 @@ async function storyCriteria(
       : storyIssueBody(issue ? issue.description : payload.story.description);
   return {
     description: body.description.slice(0, MAX_DESCRIPTION_LENGTH),
-    acceptanceCriteria: body.acceptanceCriteria
-      .map((criterion) => criterion.trim().slice(0, MAX_CRITERION_LENGTH))
-      .filter(Boolean)
-      .slice(0, MAX_VERIFIED_CRITERIA),
+    acceptanceCriteria: fitCriteria(body.acceptanceCriteria),
+    task: false,
+    kind,
   };
+}
+
+/** The criteria within the payload's limits. */
+function fitCriteria(criteria: readonly string[]): string[] {
+  return criteria
+    .map((criterion) => criterion.trim().slice(0, MAX_CRITERION_LENGTH))
+    .filter(Boolean)
+    .slice(0, MAX_VERIFIED_CRITERIA);
 }
 
 /**
@@ -106,7 +138,7 @@ export async function startTaskVerifier(
   }
   const attempt = parsed.data;
   const commitSha = result.commitSha ?? result.hiddenRef?.sha ?? null;
-  const criteria = await storyCriteria(ctx, story, attempt);
+  const criteria = await storyUnderCheck(ctx, story, attempt);
   const parsedPayload = RalphVerifyTaskPayload.safeParse({
     runId: run.id,
     repositoryId: attempt.repositoryId,

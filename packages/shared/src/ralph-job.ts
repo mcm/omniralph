@@ -389,7 +389,8 @@ export type RalphDescribePrResult = z.infer<typeof RalphDescribePrResult>;
 /**
  * What a `ralph.verify-task` query run checks: one story attempt its session reported
  * complete (and whose checks passed), against the story's acceptance criteria. The
- * verifier never sees the session's own summary: it judges the change itself.
+ * verifier never sees the session's own summary, nor a task's paragraph 2: it judges the
+ * change itself.
  */
 export const RalphVerifyTaskPayload = RalphJobBase.extend({
   /** The `ralph_stories` row. */
@@ -401,11 +402,20 @@ export const RalphVerifyTaskPayload = RalphJobBase.extend({
     prd: z.string().max(MAX_DOCUMENT_LENGTH),
   }),
   story: RalphIssue.extend({
-    /** The story's description without its acceptance criteria. */
+    /**
+     * What the story was meant to deliver: a three-paragraph task's paragraph 1, else the
+     * legacy story's description without its acceptance criteria. Never a task's paragraph
+     * 2 (how to build it), which the verifier doesn't get.
+     */
     description: z.string().max(MAX_DOCUMENT_LENGTH),
+    /** The done criteria: a task's paragraph 3 (one per list item or sentence), else the story's. */
     acceptanceCriteria: z
       .array(z.string().min(1).max(MAX_CRITERION_LENGTH))
       .max(MAX_VERIFIED_CRITERIA),
+    /** The story is a three-paragraph task (absent: a legacy story). */
+    task: z.boolean().optional(),
+    /** `fix` when the work item has one of the tracker's fix labels (absent: `story`). */
+    kind: z.enum(RALPH_STORY_KINDS).optional(),
   }),
   /** The attempt's commit (checked out); null when it committed nothing. */
   commitSha: CommitSha.nullable(),

@@ -1041,9 +1041,13 @@ export interface VerifyTaskPromptContext {
   story: {
     identifier: string;
     title: string;
-    /** Its description without the acceptance criteria. */
+    /** What it was meant to deliver: a task's paragraph 1, else its description without the acceptance criteria. */
     description: string;
+    /** A task's paragraph 3 as criteria, else the story's acceptance criteria. */
     acceptanceCriteria: readonly string[];
+    /** A three-paragraph task (else a legacy story, verified as before). */
+    task?: boolean;
+    kind?: Story["kind"];
   };
   /** The attempt's commit; null when it committed nothing. */
   commitSha: string | null;
@@ -1066,6 +1070,10 @@ export interface VerifyTaskTemplateContext {
     title: string;
     description: string | null;
     acceptanceCriteria: TemplateList<string>;
+    /** A three-paragraph task: its paragraphs 1 and 3 render under their own headings, with the diff. */
+    task: boolean;
+    /** A Fix (paragraph 1 is what is broken). */
+    fix: boolean;
   };
   /** The full SHA of the attempt's commit; null when it committed nothing. */
   commit: string | null;
@@ -1088,6 +1096,8 @@ export function verifyTaskTemplateContext(ctx: VerifyTaskPromptContext): VerifyT
       title: oneLine(ctx.story.title),
       description: ctx.story.description.trim() || null,
       acceptanceCriteria: templateList(ctx.story.acceptanceCriteria),
+      task: ctx.story.task === true,
+      fix: ctx.story.kind === "fix",
     },
     commit: ctx.commitSha,
     qualityGates: commandList(uniqueCommands(ctx.qualityGates)),
