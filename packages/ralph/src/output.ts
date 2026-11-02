@@ -5,6 +5,7 @@
 import {
   type LintCode,
   type WorkItemFormat,
+  type WorkItemKind,
   lintWorkItem,
   VALIDATION_AUDIT_TITLE,
   workItemFormat,
@@ -348,6 +349,9 @@ const TrackerPriority = z
   .literal([1, 2, 3, 4])
   .describe("Priority: 1 Urgent, 2 High, 3 Medium, 4 Low.");
 
+/** The kind of a triaged task: a Fix is created with the integration's fix (bug) label. */
+export const TRIAGE_TASK_KINDS = ["story", "fix"] as const satisfies readonly WorkItemKind[];
+
 /** The structured result a triage session ends with (the shared `TriageOutcome` plus a summary). */
 export const TriageAgentOutput = z.object({
   outcome: z
@@ -356,6 +360,12 @@ export const TriageAgentOutput = z.object({
       "prd: the issue (with no sub-issues) is rewritten as an epic, a story or a fix. reformat: an issue already planned with sub-issues is put into the epic format, sub-issues included. unchanged: it already is in the formats.",
     ),
   title: z.string().describe("The issue's title: descriptive but concise."),
+  kind: z
+    .enum(TRIAGE_TASK_KINDS)
+    .default("story")
+    .describe(
+      "fix when the description is a single task fixing a bug (Omniralph adds the bug label), else story. Always story for an epic.",
+    ),
   description: z
     .string()
     .describe(
@@ -376,6 +386,10 @@ export const TriageAgentOutput = z.object({
           .describe(
             'The task in three paragraphs: "I want you to …", "Build it by …" and "Don\'t stop until …". No IDs or metadata.',
           ),
+        kind: z
+          .enum(TRIAGE_TASK_KINDS)
+          .default("story")
+          .describe("fix for a task fixing a bug (created with the bug label), else story."),
         priority: TrackerPriority,
         dependsOn: z
           .array(z.number())
@@ -559,7 +573,14 @@ export function validateTriageOutput(
           .filter((d): d is number => d !== undefined && d !== i),
       ),
     ];
-    stories.push({ title: storyTitle, body, priority: s.priority, dependsOn, manual: s.manual });
+    stories.push({
+      title: storyTitle,
+      body,
+      kind: s.kind,
+      priority: s.priority,
+      dependsOn,
+      manual: s.manual,
+    });
   }
 
   const subIssueUpdates: TriageAgentOutput["subIssueUpdates"] = [];
@@ -591,6 +612,8 @@ export function validateTriageOutput(
     result: {
       outcome: data.outcome,
       title,
+      // Only a single task is a Fix: an epic's kind comes from its tasks.
+      kind: workItemFormat(description) === "task" ? data.kind : "story",
       description,
       size: data.size,
       openQuestions,

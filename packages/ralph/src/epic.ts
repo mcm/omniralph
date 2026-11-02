@@ -394,6 +394,8 @@ export interface PlannedStoryIssue {
   completed: boolean;
   /** A step for a person: create it with the manual label. */
   manual: boolean;
+  /** A Fix: create it with the integration's fix (bug) label. */
+  fix?: boolean;
 }
 
 export interface MaterializationPlan {

@@ -1,7 +1,8 @@
 /**
  * Applies a finished `triage.run` job to the tracker (agents hold no tracker token):
  * the issue's title and description become the PRD (with its open questions
- * at the end), a new epic gets its story sub-issues, a reformatted epic's
+ * at the end), a Fix (a single task, or a new epic's task, for a bug) gets the integration's
+ * fix label, a new epic gets its story sub-issues, a reformatted epic's
  * Backlog/Todo sub-issues are rewritten (with their missing relations), and the issue moves through the tracker's readiness state
  * mapping: to its first Ready-to-start state when nothing is left to answer, else to its
  * first Needs-refining state. Triage never starts the epic itself. The outcome is
@@ -14,6 +15,7 @@
  */
 import {
   failCompletedJob,
+  getIntegration,
   finishTriageRunJob,
   getTriageRun,
   setTriageRunStatus,
@@ -40,7 +42,12 @@ import {
 import { z } from "zod";
 import { getTrackerGateway } from "@/lib/tracker/client";
 import { TrackerNotFoundError, type IssueSummary, type TrackerGateway } from "@omniralph/tracker";
-import { dependencyViolations, workItemFormat } from "@omniralph/planning";
+import {
+  DEFAULT_FIX_LABELS,
+  dependencyViolations,
+  workItemFormat,
+  workItemKind,
+} from "@omniralph/planning";
 import { PlannedItems } from "@/lib/ralph/relations";
 import { createPlannedSubIssues, runManualLabels } from "@/lib/ralph/epic-loader";
 import { errorMessage, postActivity, quietly } from "@/lib/ralph/notify";
@@ -194,6 +201,7 @@ export function storyPlan(stories: TriageAgentOutput["stories"]): Materializatio
       subIssueSortOrder: i,
       completed: false,
       manual: s.manual,
+      fix: s.kind === "fix",
     })),
     relations: stories.flatMap((s, i) =>
       [...new Set(s.dependsOn)]
@@ -254,6 +262,25 @@ export function openQuestionsComment(
   const who = issue.creator?.url ?? (issue.creator ? `@${issue.creator.name}` : null);
   const intro = `${who ? `${who} ` : ""}triage left ${questions.length === 1 ? "an open question" : `${questions.length} open questions`} on this issue. It needs refining until ${questions.length === 1 ? "it is" : "they are"} answered (reply in the triage session, or edit the description and triage again):`;
   return [intro, "", ...questions.map((q, i) => `${i + 1}. ${q}`)].join("\n");
+}
+
+/**
+ * Gives `issue` the first of the integration's `fixLabels` (created for its team when missing),
+ * so the loop builds it as a Fix. Returns the label added; null when the issue already carries
+ * a fix label or there is none to add.
+ */
+export async function addFixLabel(
+  tracker: TrackerGateway,
+  issue: IssueSummary,
+  fixLabels: readonly string[],
+): Promise<string | null> {
+  const [name] = fixLabels.map((label) => label.trim()).filter(Boolean);
+  if (!name || workItemKind(issue.labels, fixLabels) === "fix") return null;
+  const label =
+    (await tracker.findLabel(issue.teamId, name)) ??
+    (await tracker.createLabel(issue.teamId, name));
+  await tracker.addIssueLabels(issue.id, [label.id]);
+  return label.name;
 }
 
 /** What `reformatSubIssues` changed. */
@@ -453,14 +480,26 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
       }
     }
 
+    const fixLabels = async () =>
+      (await getIntegration(db, run.organizationId, run.trackerProvider))?.fixLabels ??
+      DEFAULT_FIX_LABELS;
+
+    if (triage.kind === "fix") {
+      const added = await addFixLabel(gateway, issue, await fixLabels());
+      if (added) notes.push(`**Label added:** ${added} (a Fix)`);
+    }
+
     if (triage.outcome === "prd" && EPIC_SIZES.has(triage.size) && triage.stories.length > 0) {
       if (children.length === 0) {
         const [manualLabel] = await runManualLabels(db, { organizationId: job.organizationId });
+        const [fixLabel] = triage.stories.some((s) => s.kind === "fix") ? await fixLabels() : [];
         created = await createPlannedSubIssues(
           gateway,
           issue,
           storyPlan(triage.stories),
           manualLabel ?? "manual",
+          [],
+          fixLabel,
         );
       } else {
         notes.push(

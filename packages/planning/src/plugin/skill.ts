@@ -101,9 +101,9 @@ and fold it into your understanding before you start asking questions.
 ## How to run
 
 1. **Read \`references/common.md\`.** It holds the planning rules every mode
-   follows (the epic, story and fix formats and their templates, requirement
-   wording, checkable criteria, sizing, splitting, the epic audit and the
-   dependency rules), how to ask clarifying questions, how the plan is written
+   follows (the epic format, the three-paragraph task format of every story
+   and fix, their templates, requirement wording, checkable criteria, sizing,
+   splitting, the epic audit and the dependency rules), how to ask clarifying questions, how the plan is written
    to Linear, and a worked example. Every mode depends on it.
 2. **Read the mode file** for the selected mode and follow its steps:
    - \`new\` → \`references/mode-new.md\`
@@ -133,8 +133,12 @@ and fold it into your understanding before you start asking questions.
   anything genuinely optional instead of silently deferring it.
 - Split tasks by feature, not by phase (no separate scaffolding, tests or
   polish tasks).
-- Acceptance criteria are evidence to check, not tests to write, and never
-  outcomes or metrics measured after merge.
+- Every task, story or fix, is three paragraphs: "I want you to …", "Build it
+  by …" and "Don't stop until …". No \`Covers:\` line, no story sentence, no
+  current/expected/unchanged sections. A fix carries the bug label.
+- Done criteria are evidence to check, not tests to write, and never outcomes
+  or metrics measured after merge. Every constraint that must hold goes in
+  "Don't stop until".
 - Never write commands for every task to run into a description: the repo
   decides which checks run.
 - Get explicit user confirmation before creating or modifying anything in

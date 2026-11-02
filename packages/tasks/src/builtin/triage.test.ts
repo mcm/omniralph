@@ -108,7 +108,9 @@ describe("builtin:triage", () => {
 
   it("names Linear and its LINEAR.md on a Linear run", () => {
     const prompt = render(FIXTURES["routed-with-checkout"]!);
-    expect(prompt).toContain("Triage the Linear issue ENG-42 into an epic, a story or a fix");
+    expect(prompt).toContain(
+      "Triage the Linear issue ENG-42 into an epic or a task (a Story or a Fix)",
+    );
     expect(prompt).toContain("Omniralph reads tasks from Linear's own fields");
     expect(prompt).toContain("the repo (`LINEAR.md` first)");
   });

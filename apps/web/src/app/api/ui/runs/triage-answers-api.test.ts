@@ -88,6 +88,7 @@ const outcome = (openQuestions: string[]): TriageOutcome => ({
   outcome: "prd",
   size: "S",
   title: "Billing export",
+  kind: "story",
   description: "## Introduction\n\nExport invoices.",
   openQuestions,
   stories: [],

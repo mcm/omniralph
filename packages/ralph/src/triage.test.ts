@@ -54,6 +54,7 @@ Don't stop until tasks have a priority column.`;
 const single: TriageAgentOutput = {
   outcome: "prd",
   title: "Task priorities",
+  kind: "story",
   description: SINGLE,
   size: "S",
   openQuestions: [],
@@ -62,7 +63,12 @@ const single: TriageAgentOutput = {
   summary: "Sized S: one column and a badge.",
 };
 
-const fix: TriageAgentOutput = { ...single, title: "Keep task priorities", description: FIX };
+const fix: TriageAgentOutput = {
+  ...single,
+  title: "Keep task priorities",
+  kind: "fix",
+  description: FIX,
+};
 
 const epic: TriageAgentOutput = {
   ...single,
@@ -72,6 +78,7 @@ const epic: TriageAgentOutput = {
     {
       title: "Add the priority column",
       body: STORY_BODY,
+      kind: "story",
       priority: 2,
       dependsOn: [],
       manual: false,
@@ -79,6 +86,7 @@ const epic: TriageAgentOutput = {
     {
       title: "Show the priority",
       body: STORY_BODY.replace("a priority column.", "a visible priority."),
+      kind: "story",
       priority: 2,
       dependsOn: [0],
       manual: false,
@@ -358,6 +366,27 @@ describe("validateTriageOutput", () => {
     expect(problemOf({ ...single, subIssueUpdates: [update] })).toMatch(/subIssueUpdates/);
   });
 
+  it("keeps the kind of a single task and of each story, story by default", () => {
+    const result = (value: unknown) => {
+      const r = validateTriageOutput(value);
+      if (!("result" in r)) throw new Error(r.problem);
+      return r.result;
+    };
+    expect(result(fix).kind).toBe("fix");
+    const { kind: _, ...withoutKind } = fix;
+    expect(result(withoutKind).kind).toBe("story");
+    const fixStory = { ...epic.stories[1]!, kind: "fix" };
+    const { kind: __, ...storyWithoutKind } = epic.stories[0]!;
+    expect(
+      result({ ...epic, stories: [storyWithoutKind, fixStory] }).stories.map((s) => s.kind),
+    ).toEqual(["story", "fix"]);
+  });
+
+  it("makes an epic a story whatever kind it reports", () => {
+    const r = validateTriageOutput({ ...epic, kind: "fix" });
+    expect("result" in r && r.result.kind).toBe("story");
+  });
+
   it("rejects empty fields", () => {
     expect(problemOf({ ...single, title: "  " })).toMatch(/title/);
     expect(problemOf({ ...single, summary: "" })).toMatch(/summary/);
@@ -368,12 +397,14 @@ describe("validateTriageOutput", () => {
 function renderOutcome(output: TriageAgentOutput): string {
   const r = validateTriageOutput(output);
   if (!("result" in r)) throw new Error(r.problem);
-  const { title, description, openQuestions, stories } = r.result;
+  const { title, kind, description, openQuestions, stories } = r.result;
+  const heading = (k: string) => (k === "fix" ? "Fix" : "Story");
+  const format = workItemFormat(description) === "epic" ? "Epic" : heading(kind);
   return [
-    `# ${title}`,
+    `# ${format}: ${title}`,
     description,
     renderOpenQuestions(openQuestions),
-    ...stories.map((story) => `---\n\n# Task: ${story.title}\n\n${story.body}`),
+    ...stories.map((story) => `---\n\n# ${heading(story.kind)}: ${story.title}\n\n${story.body}`),
   ]
     .filter(Boolean)
     .join("\n\n")
@@ -382,7 +413,21 @@ function renderOutcome(output: TriageAgentOutput): string {
 
 describe("triage outcomes", () => {
   const outcomes = {
-    epic: { ...epic, openQuestions: ["Who can set a priority?"] },
+    epic: {
+      ...epic,
+      openQuestions: ["Who can set a priority?"],
+      stories: [
+        ...epic.stories,
+        {
+          title: "Keep the priority on save",
+          body: FIX,
+          kind: "fix",
+          priority: 2,
+          dependsOn: [0],
+          manual: false,
+        },
+      ],
+    } satisfies TriageAgentOutput,
     story: single,
     fix,
   };
@@ -391,7 +436,13 @@ describe("triage outcomes", () => {
     const output = outcomes[name as keyof typeof outcomes];
     const text = renderOutcome(output);
     expect(workItemFormat(output.description)).toBe(name === "epic" ? "epic" : "task");
+    for (const story of output.stories) expect(workItemFormat(story.body)).toBe("task");
     expect(text).not.toMatch(/success metrics|quality gates/i);
+    // The three paragraphs only: no Covers line, story sentence or fix sections.
+    expect(text).not.toMatch(/^Covers:/m);
+    expect(text).not.toMatch(/\bAs an? [^,]+, I want\b/);
+    expect(text).not.toMatch(/^## (Current|Expected|Unchanged) behavior/im);
+    expect(text).not.toMatch(/^## Acceptance Criteria/im);
     await expect(text).toMatchFileSnapshot(`__snapshots__/triage-outcome.${name}.md`);
   });
 });
@@ -401,6 +452,7 @@ describe("TRIAGE_OUTPUT_SCHEMA", () => {
     expect(TRIAGE_OUTPUT_SCHEMA.required).toEqual([
       "outcome",
       "title",
+      "kind",
       "description",
       "size",
       "openQuestions",

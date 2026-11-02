@@ -86,6 +86,7 @@ type Story = TriageAgentOutput["stories"][number];
 const story = (title: string, overrides: Partial<Story> = {}): Story => ({
   title,
   body: `I want you to ${title.toLowerCase()}.\n\nBuild it by following the existing code.\n\nDon't stop until ${title} works.`,
+  kind: "story",
   priority: 2,
   dependsOn: [],
   manual: false,
@@ -96,6 +97,7 @@ const outcome = (overrides: Partial<TriageOutcome> = {}): TriageOutcome => ({
   outcome: "prd",
   size: "S",
   title: "Export widgets as CSV",
+  kind: "story",
   description: overrides.size === "L" || overrides.size === "XL" ? EPIC : PRD,
   openQuestions: [],
   stories: [],
@@ -374,6 +376,66 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     expect(body).toContain(
       `epic with 3 new sub-issues: ${children.map((c) => c.identifier).join(", ")}`,
     );
+  });
+
+  it("labels a single Fix with the integration's first fix label, once", async () => {
+    await db.delete(integrations);
+    const integration = await saveIntegration(
+      db,
+      {
+        organizationId: orgId,
+        provider: "linear",
+        externalId: "workspace-1",
+        name: "Acme",
+        credentials: { accessToken: "t" },
+        installedByUserId: null,
+      },
+      Buffer.alloc(32, 7),
+    );
+    if (integration === "other_organization") throw new Error("unexpected");
+    await db
+      .update(integrations)
+      .set({ fixLabels: ["Defect", "Bug"] })
+      .where(eq(integrations.id, integration.id));
+    try {
+      const bug = addIssue({ labels: ["frontend"] });
+      const first = await completedJob(bug, result({ kind: "fix" }));
+      expect(await applyTriageJob(deps(), first.job)).toMatchObject({ status: "applied" });
+      expect((await linear.getIssue(bug.id)).labels).toEqual(["frontend", "Defect"]);
+      expect(JSON.stringify(responses(first.sessionId))).toContain("Label added:** Defect");
+
+      // Already a Fix by one of the fix labels: nothing is added.
+      const labelled = addIssue({ labels: ["bug"] });
+      const second = await completedJob(labelled, result({ kind: "fix" }));
+      await applyTriageJob(deps(), second.job);
+      expect((await linear.getIssue(labelled.id)).labels).toEqual(["bug"]);
+    } finally {
+      await db.delete(integrations);
+    }
+  });
+
+  it("leaves a Story's labels alone, and labels an epic's Fix tasks only", async () => {
+    const plain = addIssue();
+    const single = await completedJob(plain, result());
+    await applyTriageJob(deps(), single.job);
+    expect((await linear.getIssue(plain.id)).labels).toEqual([]);
+
+    const issue = addIssue();
+    const stories = [
+      story("Add the export endpoint"),
+      story("Keep commas in exported names", { kind: "fix", dependsOn: [0] }),
+      story("Check the export by hand", { kind: "fix", manual: true }),
+    ];
+    // An epic reporting itself a Fix is still a Story: only its tasks carry the label.
+    const { job } = await completedJob(issue, result({ size: "L", kind: "fix", stories }));
+    expect(await applyTriageJob(deps(), job)).toMatchObject({ status: "applied" });
+    expect((await linear.getIssue(issue.id)).labels).toEqual([]);
+    const children = await linear.getChildren(issue.id);
+    expect(children.map((c) => [c.title, c.labels])).toEqual([
+      ["Add the export endpoint", []],
+      ["Keep commas in exported names", ["Bug"]],
+      ["Check the export by hand", ["manual", "Bug"]],
+    ]);
   });
 
   it("leaves a triaged epic that ralph loads as-is, without materializing it again", async () => {

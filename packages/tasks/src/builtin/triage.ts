@@ -13,7 +13,7 @@ import type { PlaybookInput, PlaybookPersona } from "../playbooks.js";
 
 /** Plans work: reads the tracker and a read-only checkout, and writes epics, stories and fixes. */
 export const PLANNER_PERSONA = {
-  systemPrompt: `You are "Omniralph", a product manager triaging an issue into an epic, a story or a fix, unattended.`,
+  systemPrompt: `You are "Omniralph", a product manager triaging an issue into an epic or a task (a Story or a Fix), unattended.`,
   tools: {
     builtin: ["Read", "Grep", "Glob"],
     agent: [],
@@ -44,7 +44,7 @@ const TRIAGE_METHODOLOGY = renderTriageMethodology({
 
 // Tracker text is quoted between tags by the renderer (the catalog's `quote`); without a checkout
 // (no repository, or its default branch doesn't exist yet) the prompt says there's no repository.
-const TRIAGE_TEMPLATE = `Triage the {{tracker.name}} issue {{issue.identifier}} into an epic, a story or a fix that Omniralph can build.
+const TRIAGE_TEMPLATE = `Triage the {{tracker.name}} issue {{issue.identifier}} into an epic or a task (a Story or a Fix) that Omniralph can build.
 
 ## The issue
 - Identifier: {{issue.identifier}}{{#issue.url}} ({{issue.url}}){{/issue.url}}
@@ -140,9 +140,9 @@ ${TRIAGE_METHODOLOGY}
 
 ## Triage this issue
 1. Study the issue, its comments and sub-issues, and the repo (\`{{tracker.conventionsFile}}\` first).
-2. Decide the outcome and the kind (a Story or a Fix), size the work, write or reformat the epic, story or fix, and write the tasks or sub-issue updates the structure needs.
+2. Decide the outcome and the kind (a Story or a Fix), size the work, write or reformat the epic or the task in its three paragraphs, and write the tasks or sub-issue updates the structure needs.
 3. Turn every remaining ambiguity into an open question.
-4. Report the result in your structured output: \`outcome\`, \`title\`, \`description\`, \`size\`, \`openQuestions\`, \`stories\`, \`subIssueUpdates\` and \`summary\`.`;
+4. Report the result in your structured output: \`outcome\`, \`title\`, \`kind\`, \`description\`, \`size\`, \`openQuestions\`, \`stories\`, \`subIssueUpdates\` and \`summary\`.`;
 
 /** The structured result: the shared `TriageOutcome` plus a summary (`TRIAGE_OUTPUT_SCHEMA` of `@omniralph/ralph`). */
 const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
@@ -157,6 +157,13 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
     title: {
       type: "string",
       description: "The issue's title: descriptive but concise.",
+    },
+    kind: {
+      default: "story",
+      description:
+        "fix when the description is a single task fixing a bug (Omniralph adds the bug label), else story. Always story for an epic.",
+      type: "string",
+      enum: ["story", "fix"],
     },
     description: {
       type: "string",
@@ -191,6 +198,12 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
             description:
               'The task in three paragraphs: "I want you to …", "Build it by …" and "Don\'t stop until …". No IDs or metadata.',
           },
+          kind: {
+            default: "story",
+            description: "fix for a task fixing a bug (created with the bug label), else story.",
+            type: "string",
+            enum: ["story", "fix"],
+          },
           priority: {
             type: "number",
             enum: [1, 2, 3, 4],
@@ -208,7 +221,7 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
             description: "True for a step only a person can do.",
           },
         },
-        required: ["title", "body", "priority", "dependsOn", "manual"],
+        required: ["title", "body", "kind", "priority", "dependsOn", "manual"],
         additionalProperties: false,
       },
       description:
@@ -261,6 +274,7 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
   required: [
     "outcome",
     "title",
+    "kind",
     "description",
     "size",
     "openQuestions",

@@ -209,6 +209,7 @@ function storyPayload(repo: JobRepository, runId: string, branch: string): Ralph
       trackerIssueId: "issue-91",
       url: null,
       description: "Run it.",
+      approach: "",
       kind: "story",
     },
     stories: [],
