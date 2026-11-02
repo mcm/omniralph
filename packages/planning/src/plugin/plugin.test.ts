@@ -159,17 +159,20 @@ describe("the plugin's methodology", () => {
     }
   });
 
-  it("gives a worked example that parses as an epic, a story and a fix and lints clean", () => {
+  it("gives a worked example that parses as an epic and two tasks and lints clean", () => {
     const epic = parseWorkItem(EXAMPLE_EPIC);
     expect(epic?.format).toBe("epic");
     expect(lintWorkItem(EXAMPLE_EPIC)).toEqual([]);
-
-    const epicRequirements = (epic?.requirements ?? []).map((requirement) => requirement.id);
-    expect(epicRequirements).toEqual(["FR-1", "FR-2", "FR-3", "FR-4"]);
-    expect(parseWorkItem(EXAMPLE_STORY)?.format).toBe("story");
-    expect(lintWorkItem(EXAMPLE_STORY, { epicRequirements })).toEqual([]);
-    expect(parseWorkItem(EXAMPLE_FIX)?.format).toBe("fix");
-    expect(lintWorkItem(EXAMPLE_FIX, { epicRequirements })).toEqual([]);
+    expect(epic?.requirements.map((requirement) => requirement.id)).toEqual([
+      "FR-1",
+      "FR-2",
+      "FR-3",
+      "FR-4",
+    ]);
+    for (const task of [EXAMPLE_STORY, EXAMPLE_FIX]) {
+      expect(parseWorkItem(task)?.format).toBe("task");
+      expect(lintWorkItem(task)).toEqual([]);
+    }
   });
 
   it("matches the SKILL.md snapshot", async () => {

@@ -357,7 +357,21 @@ Reviews arrive late.
 - FR-1: The system must comment on each flagged line.
 - FR-2: WHEN a review finishes, the system must post a summary.`;
 
-const NEW_STORY = `As a reviewer, I want inline comments so that feedback sits where it applies.
+const NEW_STORY = `I want you to add inline comments, so that feedback sits where it applies.
+
+Build it by extending the review pipeline in \`packages/engine\`.
+
+Don't stop until:
+- [ ] A flagged line has a comment`;
+
+const NEW_FIX = `I want you to fix the summary posted twice when a review is retried.
+
+Build it by checking the retry path, which likely posts again.
+
+Don't stop until a retried review leaves one summary. New reviews still post a summary.`;
+
+/** The interim story format, which is no longer a task: it reads as a legacy body. */
+const INTERIM_STORY = `As a reviewer, I want inline comments so that feedback sits where it applies.
 
 Covers: FR-1
 
@@ -365,27 +379,11 @@ Covers: FR-1
 
 - [ ] A flagged line has a comment`;
 
-const NEW_FIX = `## Current behavior
-
-The summary is posted twice.
-
-## Expected behavior
-
-One summary.
-
-## Unchanged behavior
-
-New reviews still post a summary.
-
-## Acceptance Criteria
-
-- [ ] A retried review leaves one summary`;
-
 describe("planning-format work items", () => {
   it("reads a new-format epic's stories and fixes into the story model, with no PRD gates", () => {
     const epic = childrenEpic(issue({ title: "Reviews", description: NEW_EPIC }), [
       child({ description: NEW_STORY }),
-      child({ description: NEW_FIX }),
+      child({ description: NEW_FIX, labels: ["Bug"] }),
     ]);
     expect(epic).toMatchObject({
       kind: "children",
@@ -401,16 +399,33 @@ describe("planning-format work items", () => {
     expect(epic).not.toHaveProperty("repositoryQualityGates");
     expect(epic.stories[0]).toMatchObject({
       kind: "story",
-      covers: ["FR-1"],
-      description: "As a reviewer, I want inline comments so that feedback sits where it applies.",
+      description: "I want you to add inline comments, so that feedback sits where it applies.",
+      approach: "Build it by extending the review pipeline in `packages/engine`.",
       acceptanceCriteria: ["A flagged line has a comment"],
+      sourceText: NEW_STORY,
     });
     expect(epic.stories[1]).toMatchObject({
       kind: "fix",
-      acceptanceCriteria: ["A retried review leaves one summary"],
+      description: "I want you to fix the summary posted twice when a review is retried.",
+      approach: "Build it by checking the retry path, which likely posts again.",
+      acceptanceCriteria: [
+        "A retried review leaves one summary.",
+        "New reviews still post a summary.",
+      ],
     });
-    expect(epic.stories[1]?.description).toContain("## Expected behavior\n\nOne summary.");
     expect(epic.stories[1]).not.toHaveProperty("covers");
+  });
+
+  it("reads a task's kind from the tracker's fix labels", () => {
+    const epic = childrenEpic(
+      issue({ description: NEW_EPIC }),
+      [
+        child({ description: NEW_FIX, labels: ["Bug"] }),
+        child({ description: NEW_FIX, labels: ["Defect"] }),
+      ],
+      { fixLabels: ["defect"] },
+    );
+    expect(epic.stories.map((s) => s.kind)).toEqual(["story", "fix"]);
   });
 
   it("never reads Quality Gates from a new-format epic", () => {
@@ -426,29 +441,36 @@ describe("planning-format work items", () => {
       child({ description: LEGACY_BODY("US-001", 2) }),
       child({ description: "Add the button\n\n## Acceptance Criteria\n- [ ] It shows" }),
       child({ description: NEW_STORY }),
+      child({ description: INTERIM_STORY }),
     ]);
     expect(epic.qualityGates).toEqual([]);
     expect(
-      epic.stories.map((s) => [s.description, s.acceptanceCriteria, s.kind, s.covers]),
+      epic.stories.map((s) => [s.description, s.acceptanceCriteria, s.kind, s.approach]),
     ).toEqual([
       ["Do US-001", ["US-001 works"], undefined, undefined],
       ["Add the button", ["It shows"], undefined, undefined],
       [
-        "As a reviewer, I want inline comments so that feedback sits where it applies.",
+        "I want you to add inline comments, so that feedback sits where it applies.",
         ["A flagged line has a comment"],
         "story",
-        ["FR-1"],
+        "Build it by extending the review pipeline in `packages/engine`.",
+      ],
+      [
+        "As a reviewer, I want inline comments so that feedback sits where it applies.\n\nCovers: FR-1",
+        ["A flagged line has a comment"],
+        undefined,
+        undefined,
       ],
     ]);
     expect(epic.stories[0]?.priority).toBe(2);
   });
 
   it("reads a standalone fix as a single-issue epic framed as a fix", () => {
-    const epic = singleIssueEpic(issue({ description: NEW_FIX }));
+    const epic = singleIssueEpic(issue({ description: NEW_FIX, labels: ["bug"] }));
     expect(epic.qualityGates).toEqual([]);
     expect(epic.stories[0]).toMatchObject({
       kind: "fix",
-      acceptanceCriteria: ["A retried review leaves one summary"],
+      approach: "Build it by checking the retry path, which likely posts again.",
     });
   });
 

@@ -1,17 +1,7 @@
 # Keep task priorities
 
-## Current behavior
+I want you to fix saving a task with a priority, which drops the priority today: the priority should be kept.
 
-Saving a task with a priority drops it.
+Build it by checking the save handler, which likely ignores the field.
 
-## Expected behavior
-
-The priority is kept.
-
-## Unchanged behavior
-
-Tasks without a priority save as before.
-
-## Acceptance Criteria
-
-- [ ] Saving a task keeps its priority
+Don't stop until saving a task keeps its priority. Tasks without a priority save as before.

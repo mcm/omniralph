@@ -203,7 +203,7 @@ export function storyPlan(stories: TriageAgentOutput["stories"]): Materializatio
   };
 }
 
-const FORMAT_ARTICLES = { epic: "an epic", story: "a story", fix: "a fix" } as const;
+const FORMAT_ARTICLES = { epic: "an epic", task: "a task" } as const;
 
 /** The final response in the session: what triage decided and what it changed. */
 export function appliedMessage(
@@ -222,11 +222,9 @@ export function appliedMessage(
         ? `epic with ${created.length} new sub-issue${plural(created.length)}: ${created.map((c) => c.identifier).join(", ")}`
         : EPIC_SIZES.has(triage.size)
           ? "epic (its existing sub-issues kept)"
-          : workItemFormat(triage.description) === "fix"
-            ? "single fix"
-            : "single story";
+          : "single task";
   const lines = [
-    `Triaged **${issue.identifier}** (${triage.outcome === "prd" ? `rewritten as ${FORMAT_ARTICLES[workItemFormat(triage.description) ?? "story"]}` : triage.outcome === "reformat" ? "reformatted as an epic" : "already in the planning formats"}).`,
+    `Triaged **${issue.identifier}** (${triage.outcome === "prd" ? `rewritten as ${FORMAT_ARTICLES[workItemFormat(triage.description) ?? "task"]}` : triage.outcome === "reformat" ? "reformatted as an epic" : "already in the planning formats"}).`,
     "",
     triage.summary,
     "",

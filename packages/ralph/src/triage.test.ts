@@ -32,35 +32,24 @@ Tasks have no priority, so nobody can tell what matters.
 - FR-1: The system must store a priority (high, medium, low) on every task
 - FR-2: The system must show each task's priority in the task list`;
 
-const SINGLE = `As a user, I want a priority on tasks so that I know what matters.
+const SINGLE = `I want you to add a priority to tasks, so that people know what matters.
 
-## Acceptance Criteria
+Build it by adding a priority column to the tasks table.
 
+Don't stop until:
 - [ ] Tasks have a priority column`;
 
-const FIX = `## Current behavior
+const FIX = `I want you to fix saving a task with a priority, which drops the priority today: the priority should be kept.
 
-Saving a task with a priority drops it.
+Build it by checking the save handler, which likely ignores the field.
 
-## Expected behavior
+Don't stop until saving a task keeps its priority. Tasks without a priority save as before.`;
 
-The priority is kept.
+const STORY_BODY = `I want you to add a priority to tasks, so that people know what matters.
 
-## Unchanged behavior
+Build it by adding a priority column to the tasks table.
 
-Tasks without a priority save as before.
-
-## Acceptance Criteria
-
-- [ ] Saving a task keeps its priority`;
-
-const STORY_BODY = `As a user, I want a priority on tasks so that I know what matters.
-
-Covers: FR-1
-
-## Acceptance Criteria
-
-- [ ] Tasks have a priority column`;
+Don't stop until tasks have a priority column.`;
 
 const single: TriageAgentOutput = {
   outcome: "prd",
@@ -89,7 +78,7 @@ const epic: TriageAgentOutput = {
     },
     {
       title: "Show the priority",
-      body: STORY_BODY.replace("FR-1", "FR-2"),
+      body: STORY_BODY.replace("a priority column.", "a visible priority."),
       priority: 2,
       dependsOn: [0],
       manual: false,
@@ -238,8 +227,8 @@ describe("validateTriageOutput", () => {
 
   it("keeps each output in its format, and single tasks ralph won't split", () => {
     for (const [output, format] of [
-      [single, "story"],
-      [fix, "fix"],
+      [single, "task"],
+      [fix, "task"],
       [epic, "epic"],
     ] as const) {
       const r = validateTriageOutput(output);
@@ -250,8 +239,8 @@ describe("validateTriageOutput", () => {
     const r = validateTriageOutput(epic);
     if (!("result" in r)) throw new Error(r.problem);
     expect(r.result.stories.slice(0, 2).map((s) => workItemFormat(s.body))).toEqual([
-      "story",
-      "story",
+      "task",
+      "task",
     ]);
   });
 
@@ -259,16 +248,9 @@ describe("validateTriageOutput", () => {
     for (const heading of ["## Success Metrics", "## Quality Gates"]) {
       const section = `${heading}\n\n- \`pnpm test\` - Tests`;
       expect(problemOf({ ...epic, description: `${EPIC}\n\n${section}` })).toContain(heading);
-      expect(
-        problemOf({
-          ...single,
-          description: SINGLE.replace("## Acceptance", `${section}\n\n## Acceptance`),
-        }),
-      ).toContain(heading);
+      expect(problemOf({ ...single, description: `${SINGLE}\n\n${section}` })).toContain(heading);
       const stories = epic.stories.map((s, i) =>
-        i === 0
-          ? { ...s, body: s.body.replace("## Acceptance", `${section}\n\n## Acceptance`) }
-          : s,
+        i === 0 ? { ...s, body: `${s.body}\n\n${section}` } : s,
       );
       expect(problemOf({ ...epic, stories })).toMatch(new RegExp(`story 0 .*${heading}`));
     }
@@ -280,7 +262,7 @@ describe("validateTriageOutput", () => {
       /description: it isn't in the epic format/,
     );
     expect(problemOf({ ...single, description: EPIC })).toMatch(
-      /description: it isn't in the story format .* or the fix format/,
+      /description: it isn't in the task format \(three paragraphs/,
     );
     const legacy =
       "## Introduction\n\nPriorities.\n\n## Functional Requirements\n\n- FR-1: Store it";
@@ -295,15 +277,14 @@ describe("validateTriageOutput", () => {
     expect(problemOf({ ...epic, description: noScope })).toMatch(/Scope section is missing/);
   });
 
-  it("rejects a task that isn't a story or a fix, or covers an unknown requirement", () => {
-    const plain = epic.stories.map((s, i) =>
-      i === 0 ? { ...s, body: "Add the column.\n\n## Acceptance Criteria\n\n- [ ] Done" } : s,
-    );
-    expect(problemOf({ ...epic, stories: plain })).toMatch(/story 0 .*isn't in the story format/);
-    const unknown = epic.stories.map((s, i) =>
-      i === 1 ? { ...s, body: STORY_BODY.replace("FR-1", "FR-9") } : s,
-    );
-    expect(problemOf({ ...epic, stories: unknown })).toMatch(/story 1 .*names FR-9/);
+  it("rejects a task that isn't in the three paragraphs, including the interim story format", () => {
+    for (const body of [
+      "Add the column.\n\n## Acceptance Criteria\n\n- [ ] Done",
+      "As a user, I want a priority so that I know what matters.\n\nCovers: FR-1\n\n## Acceptance Criteria\n\n- [ ] Done",
+    ]) {
+      const stories = epic.stories.map((s, i) => (i === 0 ? { ...s, body } : s));
+      expect(problemOf({ ...epic, stories })).toMatch(/story 0 .*isn't in the task format/);
+    }
     const fixTask = epic.stories.map((s, i) => (i === 1 ? { ...s, body: FIX } : s));
     expect(validateTriageOutput({ ...epic, stories: fixTask })).toHaveProperty("result");
   });
@@ -321,14 +302,13 @@ describe("validateTriageOutput", () => {
     }
   });
 
-  it("rejects a single issue that doesn't end with its acceptance criteria", () => {
-    const after = `${SINGLE}\n\n## Notes\n\nLater.`;
-    expect(problemOf({ ...single, description: after })).toMatch(/end with its `## Acceptance/);
-    // Epics keep their criteria in the stories, and the rule is only for new descriptions.
-    expect(validateTriageOutput(epic)).toHaveProperty("result");
-    expect(
-      validateTriageOutput({ ...single, outcome: "unchanged", description: after }),
-    ).toHaveProperty("result");
+  it("rejects a single task missing a paragraph or its done criteria", () => {
+    const noApproach = SINGLE.replace(/\nBuild it by .*\n/, "");
+    expect(problemOf({ ...single, description: noApproach })).toMatch(
+      /description: The task has no paragraph 2 \("Build it by …"\)/,
+    );
+    const noCriteria = SINGLE.replace(/Don't stop until:[\s\S]*/, "Don't stop until:");
+    expect(problemOf({ ...single, description: noCriteria })).toMatch(/holds no done criterion/);
   });
 
   it("rejects a single-issue description ralph would split into stories", () => {
@@ -347,29 +327,14 @@ describe("validateTriageOutput", () => {
     );
   });
 
-  it("rejects a story body without Acceptance Criteria", () => {
+  it("rejects a story body without its done criteria", () => {
     const stories = epic.stories.map((s, i) =>
-      i === 1 ? { ...s, body: "As a user, I want it.\n\n- [ ] Done" } : s,
+      i === 1 ? { ...s, body: "I want you to add it.\n\nBuild it by editing `tasks.ts`." } : s,
     );
-    expect(problemOf({ ...epic, stories })).toMatch(/story 1 .*Acceptance Criteria/);
-    const colon = epic.stories.map((s) => ({
-      ...s,
-      body: STORY_BODY.replace("Criteria", "Criteria:"),
-    }));
-    expect(problemOf({ ...epic, stories: colon })).toMatch(/Acceptance Criteria/);
-    expect(
-      problemOf({
-        ...epic,
-        outcome: "reformat",
-        stories: [],
-        subIssueUpdates: [
-          { id: "child-1", title: "Add it", body: "Do it", priority: 3, blockedBy: [] },
-        ],
-      }),
-    ).toMatch(/sub-issue child-1 .*Acceptance Criteria/);
+    expect(problemOf({ ...epic, stories })).toMatch(/story 1 .*no paragraph 3/);
   });
 
-  it("rejects a reformatted sub-issue that isn't a story or a fix", () => {
+  it("rejects a reformatted sub-issue that isn't a task, except a validation task", () => {
     const update = {
       id: "child-1",
       title: "Add it",
@@ -377,9 +342,13 @@ describe("validateTriageOutput", () => {
       priority: 3,
       blockedBy: [],
     };
+    const reformat = { ...epic, outcome: "reformat", stories: [] };
+    expect(problemOf({ ...reformat, subIssueUpdates: [update] })).toMatch(
+      /sub-issue child-1: it isn't in the task format/,
+    );
     expect(
-      problemOf({ ...epic, outcome: "reformat", stories: [], subIssueUpdates: [update] }),
-    ).toMatch(/sub-issue child-1: it isn't in the story format/);
+      validateTriageOutput({ ...reformat, subIssueUpdates: [{ ...update, title: "Validate it" }] }),
+    ).toHaveProperty("result");
   });
 
   it("rejects stories or updates that don't fit the outcome", () => {
@@ -421,7 +390,7 @@ describe("triage outcomes", () => {
   it.each(Object.keys(outcomes))("writes the %s format", async (name) => {
     const output = outcomes[name as keyof typeof outcomes];
     const text = renderOutcome(output);
-    expect(workItemFormat(output.description)).toBe(name);
+    expect(workItemFormat(output.description)).toBe(name === "epic" ? "epic" : "task");
     expect(text).not.toMatch(/success metrics|quality gates/i);
     await expect(text).toMatchFileSnapshot(`__snapshots__/triage-outcome.${name}.md`);
   });

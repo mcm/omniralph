@@ -1,29 +1,30 @@
 /**
- * What a draft epic, story or fix is missing before the loop can build
- * against it: the required sections, checkable acceptance criteria, `Covers:`
- * entries the epic defines, and no questions left open.
+ * What a draft epic or task is missing before the loop can build against it:
+ * an epic's required sections, a task's three paragraphs with checkable done
+ * criteria, and no questions left open.
  */
+import { EPIC_SECTIONS, SCOPE_PARTS, TASK_PARAGRAPHS } from "../methodology/templates.js";
 import {
-  ACCEPTANCE_CRITERIA_SECTION,
-  COVERS_LABEL,
-  EPIC_SECTIONS,
-  FIX_SECTIONS,
-  SCOPE_PARTS,
-} from "../methodology/templates.js";
-import { findSection, parseWorkItem, workItemFormat, type WorkItemFormat } from "./parse.js";
+  TASK_PARAGRAPH_NAMES,
+  findSection,
+  parseWorkItem,
+  workItemFormat,
+  type TaskParagraphName,
+  type WorkItemFormat,
+} from "./parse.js";
 
 /** The heading of the questions a draft still has to answer. */
 export const OPEN_QUESTIONS_SECTION = "Open Questions";
 
 export type LintCode =
-  /** A required `##` section (or an epic's `### In` / `### Out`) is missing or empty. */
+  /** A required `##` section of an epic (or its `### In` / `### Out`) is missing or empty. */
   | "missing-section"
-  /** `## Acceptance Criteria` is there but lists no criterion. */
-  | "empty-acceptance-criteria"
+  /** A task paragraph is missing, or holds only its opening words. */
+  | "missing-paragraph"
+  /** A task's paragraph 3 ("Don't stop until …") holds no done criterion. */
+  | "empty-done-criteria"
   /** A criterion describes an outcome after merge or a metric, not evidence to check. */
   | "outcome-criterion"
-  /** A `Covers:` entry names a requirement the epic doesn't define. */
-  | "unknown-requirement"
   /** `## Open Questions` still lists questions. */
   | "open-questions";
 
@@ -34,30 +35,27 @@ export interface LintProblem {
   message: string;
   /** The section the problem is in, when it is about one. */
   section?: string;
-  /** The criterion or `Covers:` entry at fault, when the problem is about one. */
+  /** The task paragraph the problem is in, when it is about one. */
+  paragraph?: TaskParagraphName;
+  /** The criterion at fault, when the problem is about one. */
   item?: string;
 }
 
 export interface LintOptions {
-  /** Read the text as this format (default: the format it is detected as, else a story). */
+  /** Read the text as this format (default: the format it is detected as, else a task). */
   format?: WorkItemFormat;
-  /**
-   * The identifiers of the requirements of the task's epic (`FR-1`, …). When
-   * given, every `Covers:` entry must be one of them.
-   */
-  epicRequirements?: readonly string[];
 }
 
-const REQUIRED_SECTIONS: Record<WorkItemFormat, readonly string[]> = {
-  epic: [EPIC_SECTIONS.problem, EPIC_SECTIONS.scope, EPIC_SECTIONS.requirements],
-  story: [ACCEPTANCE_CRITERIA_SECTION],
-  fix: [
-    FIX_SECTIONS.current,
-    FIX_SECTIONS.expected,
-    FIX_SECTIONS.unchanged,
-    ACCEPTANCE_CRITERIA_SECTION,
-  ],
-};
+const REQUIRED_EPIC_SECTIONS = [
+  EPIC_SECTIONS.problem,
+  EPIC_SECTIONS.scope,
+  EPIC_SECTIONS.requirements,
+] as const;
+
+/** A paragraph as a problem names it: its number and its opening words. */
+function paragraphLabel(name: TaskParagraphName): string {
+  return `paragraph ${TASK_PARAGRAPH_NAMES.indexOf(name) + 1} ("${TASK_PARAGRAPHS[name].opening} …")`;
+}
 
 /**
  * Phrases of a criterion that can only be checked after merge: how people
@@ -90,32 +88,25 @@ function noQuestions(body: string): boolean {
 }
 
 /**
- * Every problem of a draft epic, story or fix, in document order of the checks:
- * missing sections, an empty criteria list, outcome criteria, unknown `Covers:`
- * entries and open questions. Empty when the draft is ready.
+ * Every problem of a draft epic or task, in document order of the checks: an
+ * epic's missing sections, a task's missing paragraphs and empty done
+ * criteria, outcome criteria and open questions. Empty when the draft is ready.
  */
 export function lintWorkItem(text: string, options: LintOptions = {}): LintProblem[] {
-  const item = parseWorkItem(text, options.format ?? workItemFormat(text) ?? "story");
+  const item = parseWorkItem(text, { format: options.format ?? workItemFormat(text) ?? "task" });
   const problems: LintProblem[] = [];
 
-  for (const name of REQUIRED_SECTIONS[item.format]) {
-    const section = findSection(item.sections, name);
-    if (!section) {
-      problems.push({
-        code: "missing-section",
-        section: name,
-        message: `The ${name} section is missing.`,
-      });
-    } else if (section.body === "" && name !== ACCEPTANCE_CRITERIA_SECTION) {
-      problems.push({
-        code: "missing-section",
-        section: name,
-        message: `The ${name} section is empty.`,
-      });
-    }
-  }
-
   if (item.format === "epic") {
+    for (const name of REQUIRED_EPIC_SECTIONS) {
+      const section = findSection(item.sections, name);
+      if (!section || section.body === "") {
+        problems.push({
+          code: "missing-section",
+          section: name,
+          message: `The ${name} section is ${section ? "empty" : "missing"}.`,
+        });
+      }
+    }
     const scope = findSection(item.sections, EPIC_SECTIONS.scope);
     if (scope?.body) {
       for (const part of [SCOPE_PARTS.in, SCOPE_PARTS.out]) {
@@ -136,35 +127,37 @@ export function lintWorkItem(text: string, options: LintOptions = {}): LintProbl
         message: `The ${EPIC_SECTIONS.requirements} section lists no requirement (FR-1: …).`,
       });
     }
-  }
-
-  const criteria = findSection(item.sections, ACCEPTANCE_CRITERIA_SECTION);
-  if (criteria && item.acceptanceCriteria.length === 0) {
-    problems.push({
-      code: "empty-acceptance-criteria",
-      section: ACCEPTANCE_CRITERIA_SECTION,
-      message: `The ${ACCEPTANCE_CRITERIA_SECTION} section lists no criterion.`,
-    });
-  }
-  for (const criterion of item.acceptanceCriteria) {
-    if (isOutcomeCriterion(criterion)) {
+  } else {
+    for (const name of TASK_PARAGRAPH_NAMES) {
+      const paragraph = item.paragraphs[name];
+      if (paragraph === undefined) {
+        problems.push({
+          code: "missing-paragraph",
+          paragraph: name,
+          message: `The task has no ${paragraphLabel(name)}.`,
+        });
+      } else if (name !== "done" && !hasContent(paragraph, name)) {
+        problems.push({
+          code: "missing-paragraph",
+          paragraph: name,
+          message: `The task's ${paragraphLabel(name)} is empty.`,
+        });
+      }
+    }
+    if (item.paragraphs.done !== undefined && item.acceptanceCriteria.length === 0) {
       problems.push({
-        code: "outcome-criterion",
-        section: ACCEPTANCE_CRITERIA_SECTION,
-        item: criterion,
-        message: `"${criterion}" is an outcome after merge or a metric, not evidence to check on the branch.`,
+        code: "empty-done-criteria",
+        paragraph: "done",
+        message: `The task's ${paragraphLabel("done")} holds no done criterion.`,
       });
     }
-  }
-
-  if (options.epicRequirements) {
-    const known = new Set(options.epicRequirements.map((id) => id.trim().toUpperCase()));
-    for (const entry of item.covers) {
-      if (!known.has(entry.toUpperCase())) {
+    for (const criterion of item.acceptanceCriteria) {
+      if (isOutcomeCriterion(criterion)) {
         problems.push({
-          code: "unknown-requirement",
-          item: entry,
-          message: `${COVERS_LABEL}: names ${entry}, which the epic's requirements don't define.`,
+          code: "outcome-criterion",
+          paragraph: "done",
+          item: criterion,
+          message: `"${criterion}" is an outcome after merge or a metric, not evidence to check on the branch.`,
         });
       }
     }
@@ -180,4 +173,10 @@ export function lintWorkItem(text: string, options: LintOptions = {}): LintProbl
   }
 
   return problems;
+}
+
+/** Whether a paragraph says anything after its opening words. */
+function hasContent(paragraph: string, name: TaskParagraphName): boolean {
+  const opening = TASK_PARAGRAPHS[name].opening.length;
+  return /[\p{L}\p{N}]/u.test(paragraph.replace(/^[\s*_]*/, "").slice(opening));
 }

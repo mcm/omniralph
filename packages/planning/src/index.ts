@@ -69,19 +69,24 @@ export {
 export type { FixDescription } from "./methodology/task-prompt.js";
 
 export {
+  TASK_PARAGRAPH_NAMES,
   findSection,
   isPlanningFormat,
   parseCriteria,
+  parseDoneCriteria,
   parseRequirements,
   parseWorkItem,
   requirementId,
   sectionKey,
   splitSections,
+  splitSentences,
   workItemFormat,
 } from "./work-item/parse.js";
 export type {
+  ParseWorkItemOptions,
   ParsedWorkItem,
   Requirement,
+  TaskParagraphName,
   WorkItemFormat,
   WorkItemSection,
 } from "./work-item/parse.js";

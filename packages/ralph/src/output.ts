@@ -3,9 +3,9 @@
  * Agent SDK as `outputFormat`, and readers that validate and normalise a session's result.
  */
 import {
+  type LintCode,
   type WorkItemFormat,
   lintWorkItem,
-  parseWorkItem,
   VALIDATION_AUDIT_TITLE,
   workItemFormat,
 } from "@omniralph/planning";
@@ -359,7 +359,7 @@ export const TriageAgentOutput = z.object({
   description: z
     .string()
     .describe(
-      "The issue's new description in markdown: an epic (L or larger), else a story or a fix, without a `## Open Questions` section.",
+      "The issue's new description in markdown: an epic (L or larger), else a task of three paragraphs, without a `## Open Questions` section.",
     ),
   size: z
     .enum(TRIAGE_OUTPUT_SIZES)
@@ -374,7 +374,7 @@ export const TriageAgentOutput = z.object({
         body: z
           .string()
           .describe(
-            "The task in the story format (or the fix format for a bug), ending with a `## Acceptance Criteria` checklist. No IDs or metadata.",
+            'The task in three paragraphs: "I want you to …", "Build it by …" and "Don\'t stop until …". No IDs or metadata.',
           ),
         priority: TrackerPriority,
         dependsOn: z
@@ -394,7 +394,7 @@ export const TriageAgentOutput = z.object({
         body: z
           .string()
           .describe(
-            "The task in the story or fix format, ending with a `## Acceptance Criteria` checklist.",
+            'The task in three paragraphs: "I want you to …", "Build it by …" and "Don\'t stop until …".',
           ),
         priority: TrackerPriority,
         blockedBy: z
@@ -405,7 +405,7 @@ export const TriageAgentOutput = z.object({
       }),
     )
     .describe(
-      "outcome reformat only: Backlog/Todo sub-issues rewritten in the story or fix format. Empty otherwise.",
+      "outcome reformat only: Backlog/Todo sub-issues rewritten as three-paragraph tasks. Empty otherwise.",
     ),
   summary: z
     .string()
@@ -425,13 +425,11 @@ function oneLine(title: string): string {
   return title.replace(/\s+/g, " ").trim().slice(0, MAX_TRIAGE_TITLE).trim();
 }
 
-const ACCEPTANCE_CRITERIA_HEADING = /^##[ \t]+Acceptance Criteria[ \t]*$/im;
-const SECTION_HEADING = /^##[ \t]+(.+?)[ \t]*$/gm;
 /** Sections only legacy PRDs have: the repo decides the checks, and outcomes stay in planning documents. */
 const LEGACY_ONLY_SECTION = /^##[ \t]+(Success Metrics|Quality Gates)[ \t]*$/im;
 /**
  * The title of a validation task, such as a legacy epic's \`Validate functional requirements\`
- * sub-issue: a reformat may rewrite one without putting it in the story format.
+ * sub-issue: a reformat may rewrite one without putting it in the task format.
  */
 const VALIDATION_TITLE = /^validate\b/i;
 
@@ -443,12 +441,6 @@ function isLegacyValidationTask(title: string): boolean {
   return title.toLowerCase() === VALIDATION_AUDIT_TITLE.toLowerCase();
 }
 
-/** Whether `## Acceptance Criteria` is the description's last section. */
-function endsWithAcceptanceCriteria(description: string): boolean {
-  const last = [...description.matchAll(SECTION_HEADING)].at(-1);
-  return last !== undefined && /^Acceptance Criteria$/i.test(last[1]!);
-}
-
 /** The `## Success Metrics` or `## Quality Gates` heading `text` has, if any. */
 function legacyOnlySection(text: string): string | null {
   const match = LEGACY_ONLY_SECTION.exec(text);
@@ -457,27 +449,26 @@ function legacyOnlySection(text: string): string | null {
 
 const FORMAT_NAMES: Record<WorkItemFormat, string> = {
   epic: "the epic format (`## Problem`, `## Scope`, `## Requirements`)",
-  story: 'the story format ("As a … I want … so that …", then `## Acceptance Criteria`)',
-  fix: "the fix format (`## Current behavior`, `## Expected behavior`, `## Unchanged behavior`, `## Acceptance Criteria`)",
+  task: 'the task format (three paragraphs: "I want you to …", "Build it by …", "Don\'t stop until …")',
 };
 
+/** The lint problems that keep a work item from being built against. */
+const FORMAT_LINT_CODES: ReadonlySet<LintCode> = new Set([
+  "missing-section",
+  "missing-paragraph",
+  "empty-done-criteria",
+]);
+
 /**
- * What keeps `text` from being a work item in one of `formats` (an epic, or a story or a fix):
- * not detected as one of them, or missing a required section (`lintWorkItem`), or a `Covers:`
- * entry naming a requirement the epic doesn't have. Null when it is fine.
+ * What keeps `text` from being a work item in one of `formats` (an epic, or a task): not
+ * detected as one of them, or missing a required section or paragraph, or a task's paragraph 3
+ * without a done criterion (`lintWorkItem`). Null when it is fine.
  */
-function formatProblem(
-  text: string,
-  formats: readonly WorkItemFormat[],
-  epicRequirements?: readonly string[],
-): string | null {
+function formatProblem(text: string, formats: readonly WorkItemFormat[]): string | null {
   const detected = workItemFormat(text);
   const format = detected && formats.includes(detected) ? detected : null;
-  const problems = lintWorkItem(text, {
-    format: format ?? formats[0],
-    ...(epicRequirements && { epicRequirements }),
-  }).filter((p) =>
-    ["missing-section", "empty-acceptance-criteria", "unknown-requirement"].includes(p.code),
+  const problems = lintWorkItem(text, { format: format ?? formats[0] }).filter((p) =>
+    FORMAT_LINT_CODES.has(p.code),
   );
   if (format && problems.length === 0) return null;
   const expected = formats.map((f) => FORMAT_NAMES[f]).join(" or ");
@@ -490,10 +481,9 @@ function formatProblem(
  * validation task dropped from the stories, dependency indexes limited to the other stories kept), or
  * the problem with it: a result that doesn't match the schema, a description with
  * `## Success Metrics`, `## Quality Gates` or `## Open Questions`, a description not in the format
- * its outcome and size call for (an epic for L or larger, else a story or a fix), an epic without
- * stories, a smaller issue with stories, a description ralph would split into stories, a story or
- * sub-issue update that isn't a story or a fix (or covers a requirement the epic doesn't have), or
- * stories/updates that don't fit the outcome.
+ * its outcome and size call for (an epic for L or larger, else a task), an epic without stories, a
+ * smaller issue with stories, a description ralph would split into stories, a story or sub-issue
+ * update that isn't a three-paragraph task, or stories/updates that don't fit the outcome.
  */
 export function validateTriageOutput(
   structured: unknown,
@@ -527,19 +517,12 @@ export function validateTriageOutput(
     data.outcome === "reformat" || (data.outcome === "prd" && epic)
       ? ["epic"]
       : data.outcome === "prd"
-        ? ["story", "fix"]
-        : ["epic", "story", "fix"];
+        ? ["task"]
+        : ["epic", "task"];
   const descriptionProblem = formatProblem(description, formats);
   if (descriptionProblem) return { problem: `the description: ${descriptionProblem}` };
-  const requirementIds =
-    workItemFormat(description) === "epic"
-      ? parseWorkItem(description, "epic").requirements.map((r) => r.id)
-      : [];
   if (!epic && data.stories.length > 0) {
     return { problem: `size ${data.size} is a single issue but there are \`stories\`` };
-  }
-  if (data.outcome === "prd" && !epic && !endsWithAcceptanceCriteria(description)) {
-    return { problem: "a single issue must end with its `## Acceptance Criteria` section" };
   }
   if (data.outcome !== "prd" && data.stories.length > 0) {
     return { problem: `outcome ${data.outcome} can't create \`stories\`` };
@@ -562,14 +545,11 @@ export function validateTriageOutput(
     const storyTitle = oneLine(s.title);
     const body = s.body.trim();
     if (!storyTitle) return { problem: `story ${from} has no title` };
-    if (!ACCEPTANCE_CRITERIA_HEADING.test(body)) {
-      return { problem: `story ${from} ("${storyTitle}") has no \`## Acceptance Criteria\`` };
-    }
     const storyLegacy = legacyOnlySection(body);
     if (storyLegacy) {
       return { problem: `story ${from} ("${storyTitle}") has a \`${storyLegacy}\` section` };
     }
-    const storyProblem = formatProblem(body, ["story", "fix"], requirementIds);
+    const storyProblem = formatProblem(body, ["task"]);
     if (storyProblem) return { problem: `story ${from} ("${storyTitle}"): ${storyProblem}` };
     const dependsOn = [
       ...new Set(
@@ -589,15 +569,12 @@ export function validateTriageOutput(
     const body = u.body.trim();
     if (!id || subIssueUpdates.some((x) => x.id === id)) continue;
     if (!updateTitle) return { problem: `the update of sub-issue ${id} has no title` };
-    if (!ACCEPTANCE_CRITERIA_HEADING.test(body)) {
-      return { problem: `the update of sub-issue ${id} has no \`## Acceptance Criteria\`` };
-    }
     const updateLegacy = legacyOnlySection(body);
     if (updateLegacy) {
       return { problem: `the update of sub-issue ${id} has a \`${updateLegacy}\` section` };
     }
     if (!VALIDATION_TITLE.test(updateTitle)) {
-      const updateProblem = formatProblem(body, ["story", "fix"], requirementIds);
+      const updateProblem = formatProblem(body, ["task"]);
       if (updateProblem) return { problem: `the update of sub-issue ${id}: ${updateProblem}` };
     }
     const blockedBy = [...new Set(u.blockedBy.map((b) => b.trim()).filter((b) => b && b !== id))];

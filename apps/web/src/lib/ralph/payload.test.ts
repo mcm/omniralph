@@ -130,10 +130,13 @@ describe("story quality gates", () => {
       stateType: "unstarted",
       labels: [],
     });
-    const fix = issueOf(
-      "issue-2",
-      "## Current behavior\n\nCrashes.\n\n## Expected behavior\n\nNo crash.\n\n## Unchanged behavior\n\nThe rest.\n\n## Acceptance Criteria\n\n- [ ] No crash",
-    );
+    const fix = {
+      ...issueOf(
+        "issue-2",
+        "I want you to fix the crash on save.\n\nBuild it by checking the save handler.\n\nDon't stop until saving no longer crashes.",
+      ),
+      labels: ["Bug"],
+    };
     const payloadOf = (description: string) => {
       const built = childrenEpic(issueOf("issue-1", description), [{ issue: fix, blockers: [] }]);
       const fixStory = built.stories[0]!;
@@ -155,7 +158,7 @@ describe("story quality gates", () => {
     );
     expect(fresh.qualityGates).toEqual(["pnpm check"]);
     expect(fresh.prdQualityGates).toEqual([]);
-    // A fix-format body is a fix even without a fix label.
+    // A task with a fix label is a Fix.
     expect(fresh.story.kind).toBe("fix");
 
     const legacy = payloadOf("Build it.\n\n## Quality Gates\n\n- `pnpm lint`");
@@ -403,6 +406,44 @@ describe("the story's acceptance criteria", () => {
       "The export button downloads a CSV",
       "The CSV has one row per record",
     ]);
+  });
+
+  it("are carried apart from a three-paragraph task's description and approach", () => {
+    const task = {
+      ...issueOf(
+        "issue-2",
+        [
+          "I want you to export widgets as CSV, so that admins can share them.",
+          "Build it by adding `src/export.ts` with papaparse.",
+          "Don't stop until:\n- The export button downloads `widgets.csv`\n- The CSV has a header row",
+        ].join("\n\n"),
+      ),
+      labels: ["Defect"],
+    };
+    const built = childrenEpic(issueOf("issue-1", "Build the thing."), [
+      { issue: task, blockers: [] },
+    ]);
+    const payloadWith = (fixLabels?: readonly string[]) =>
+      buildStoryPayload({
+        coding: coding(),
+        run: run("children"),
+        lane,
+        repository: repository(),
+        connection,
+        epic: built,
+        stories: built.stories,
+        story: built.stories[0]!,
+        row: row as RalphStory,
+        ...(fixLabels && { fixLabels }),
+      });
+    expect(payloadWith().story).toMatchObject({
+      description: "I want you to export widgets as CSV, so that admins can share them.",
+      approach: "Build it by adding `src/export.ts` with papaparse.",
+      acceptanceCriteria: ["The export button downloads `widgets.csv`", "The CSV has a header row"],
+      kind: "story",
+    });
+    // The kind comes from the integration's fix labels.
+    expect(payloadWith(["defect"]).story.kind).toBe("fix");
   });
 
   it("are an empty list for a story without any", () => {

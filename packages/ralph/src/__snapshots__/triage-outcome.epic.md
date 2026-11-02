@@ -27,22 +27,18 @@ Tasks have no priority, so nobody can tell what matters.
 
 # Task: Add the priority column
 
-As a user, I want a priority on tasks so that I know what matters.
+I want you to add a priority to tasks, so that people know what matters.
 
-Covers: FR-1
+Build it by adding a priority column to the tasks table.
 
-## Acceptance Criteria
-
-- [ ] Tasks have a priority column
+Don't stop until tasks have a priority column.
 
 ---
 
 # Task: Show the priority
 
-As a user, I want a priority on tasks so that I know what matters.
+I want you to add a priority to tasks, so that people know what matters.
 
-Covers: FR-2
+Build it by adding a priority column to the tasks table.
 
-## Acceptance Criteria
-
-- [ ] Tasks have a priority column
+Don't stop until tasks have a visible priority.

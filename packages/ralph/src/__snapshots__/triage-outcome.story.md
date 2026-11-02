@@ -1,7 +1,8 @@
 # Task priorities
 
-As a user, I want a priority on tasks so that I know what matters.
+I want you to add a priority to tasks, so that people know what matters.
 
-## Acceptance Criteria
+Build it by adding a priority column to the tasks table.
 
+Don't stop until:
 - [ ] Tasks have a priority column

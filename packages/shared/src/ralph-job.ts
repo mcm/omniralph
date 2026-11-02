@@ -213,12 +213,23 @@ export const RalphStoryPayload = RalphJobBase.extend({
     /** The work item's ID in the tracker. */
     trackerIssueId: z.string().min(1).max(64),
     url: z.url().nullable().default(null),
+    /**
+     * What to build: a three-paragraph task's paragraph 1 ("I want you to …"), else the
+     * legacy story's description.
+     */
     description: z.string().max(MAX_DOCUMENT_LENGTH),
+    /**
+     * How to build it: a three-paragraph task's paragraph 2 ("Build it by …"), apart from
+     * `description` so a step (the verifier) can leave it out. Empty for a legacy story and
+     * absent from older servers' payloads.
+     */
+    approach: z.string().max(MAX_DOCUMENT_LENGTH).default(""),
     /** `fix` when the work item has one of the tracker's fix labels, else `story`. */
     kind: z.enum(RALPH_STORY_KINDS).default("story"),
     /**
-     * The work item's acceptance criteria, which `description` doesn't carry. Absent from
-     * older servers' payloads: the agent then parses them from `description`.
+     * The work item's acceptance criteria (a three-paragraph task's paragraph 3, one per list
+     * item or sentence), which `description` doesn't carry. Absent from older servers'
+     * payloads: the agent then parses them from `description`.
      */
     acceptanceCriteria: z
       .array(z.string().min(1).max(MAX_CRITERION_LENGTH))
