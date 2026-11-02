@@ -1,0 +1,39 @@
+/* A triage's open questions, each with its answer, then Send answers. Only `--or-` tokens. */
+.or-open-questions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 68ch;
+}
+
+.or-open-questions__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--or-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.or-open-questions__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.or-open-questions__question {
+  color: var(--or-text);
+}
+
+.or-open-questions__error {
+  margin: 0;
+  color: var(--or-fail);
+  font-size: 13px;
+}
+
+.or-open-questions__actions {
+  display: flex;
+  gap: 8px;
+}

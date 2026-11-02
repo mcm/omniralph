@@ -14,6 +14,7 @@ import {
 import { IconFileText, IconListCheck } from "@tabler/icons-react";
 import { useId } from "react";
 import type { RunTriageSummary, TriageSummaryOutcome } from "@/lib/api/runs";
+import { OpenQuestionsForm } from "./open-questions-form";
 import { useRunTriage } from "./use-run-triage";
 import "./triage-summary.css";
 
@@ -48,8 +49,9 @@ export interface TriageSummaryProps {
 /**
  * A triage run's card in its detail: the outcome (still triaging, Ready to start, Needs
  * answers, failed or stopped) with what triage did (a new PRD, a reformatted epic or none),
- * the size and planned stories; Om's summary or why it failed; the open questions it left;
- * and, collapsed, the issue as it read before triage. View PRD opens the PRD in a sheet.
+ * the size and planned stories; Om's summary or why it failed; the open questions it left
+ * (a form to answer them when the run needs answers and the user may answer); and,
+ * collapsed, the issue as it read before triage. View PRD opens the PRD in a sheet.
  * Nothing while it loads or when it can't be loaded (the run's Activity still shows it).
  */
 export function TriageSummary({ runId, onViewPrd, headingLevel = 3 }: TriageSummaryProps) {
@@ -92,11 +94,15 @@ export function TriageSummary({ runId, onViewPrd, headingLevel = 3 }: TriageSumm
           <SubHeading id={questionsId} className="or-triage-summary__subtitle">
             Open questions
           </SubHeading>
-          <ol className="or-triage-summary__list">
-            {summary.openQuestions.map((question, index) => (
-              <li key={index}>{question}</li>
-            ))}
-          </ol>
+          {summary.answerQuestions ? (
+            <OpenQuestionsForm runId={runId} questions={summary.openQuestions} />
+          ) : (
+            <ol className="or-triage-summary__list">
+              {summary.openQuestions.map((question, index) => (
+                <li key={index}>{question}</li>
+              ))}
+            </ol>
+          )}
         </section>
       ) : null}
       {summary.originalIssue ? (

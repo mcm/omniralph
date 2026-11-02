@@ -25,7 +25,8 @@ import {
   storyStep,
 } from "@/components/runs/test-fixtures";
 import type { InboxItem } from "@/lib/api/inbox";
-import type { RunDetail } from "@/lib/api/runs";
+import { OPEN_QUESTIONS_FORM, SEND_ANSWERS } from "@/components/runs/open-questions-form";
+import type { RunDetail, RunTriageSummary } from "@/lib/api/runs";
 import { RUN_LOAD_FAILED } from "./inbox-item-cards";
 import { InboxView } from "./inbox-view";
 import {
@@ -66,6 +67,8 @@ const JOB_ID = "55555555-5555-4555-8555-555555555555";
 
 let feeds: Record<string, InboxItem[]>;
 let runs: Record<string, RunDetail>;
+/** Triage summaries (`GET /api/ui/runs/{id}/triage`) by run. */
+let triages: Record<string, RunTriageSummary>;
 let runRoute: ((request: SeenRequest) => Response | Promise<Response>) | null;
 let seen: SeenRequest[];
 
@@ -86,6 +89,9 @@ function serve() {
         }),
       ),
   };
+  for (const [id, summary] of Object.entries(triages)) {
+    routes[`GET /api/ui/runs/${id}/triage`] = () => jsonResponse(summary);
+  }
   for (const id of [...Object.keys(runs), RUN_ID, "run-1", "run-2", "run-3"]) {
     routes[`GET /api/ui/runs/${id}`] = (request) =>
       runRoute
@@ -145,6 +151,7 @@ beforeEach(() => {
   nav.router.replace.mockReset();
   feeds = { "needs-you": [], problems: [], running: [] };
   runs = {};
+  triages = {};
   runRoute = null;
 });
 afterEach(() => {
@@ -460,6 +467,66 @@ describe("a ready PRD", () => {
     expect(within(rowItem).getByRole("img", { name: "Size XL" })).toBeTruthy();
     const header = detail().querySelector("header")!;
     expect(within(header).getByRole("img", { name: "Size XL" })).toBeTruthy();
+  });
+
+  /** A triage of TOOL-42 that left two open questions. */
+  function needsAnswers(answerQuestions: boolean) {
+    feeds["needs-you"] = [
+      inboxItem({
+        key: "prd_ready:t1:j1",
+        kind: "prd_ready",
+        title: "Billing export",
+        run: { id: "run-1", kind: "triage", status: "completed" },
+        actions: ["done", "snooze"],
+        openQuestions: 2,
+      }),
+    ];
+    runs["run-1"] = runDetail(null, { kind: "triage", status: "completed" });
+    triages["run-1"] = {
+      outcome: "needs_answers",
+      summary: "Wrote a PRD.",
+      error: null,
+      change: "prd",
+      size: "M",
+      storyCount: 2,
+      openQuestions: ["Which currency do invoices use?", "Who can export?"],
+      answerQuestions,
+      originalIssue: null,
+    };
+    serve();
+    renderInbox("");
+  }
+
+  it("offers the answer form as the call to action of a triage that needs answers", async () => {
+    needsAnswers(true);
+    const form = await within(detail()).findByRole("form", { name: OPEN_QUESTIONS_FORM });
+    expect(
+      within(form).getByRole("textbox", { name: "Which currency do invoices use?" }),
+    ).toBeTruthy();
+    expect(within(form).getByRole("textbox", { name: "Who can export?" })).toBeTruthy();
+    // Send answers leads the item's other calls to action, as the only primary.
+    const decisions = within(form).getByRole("group", { name: "Decisions" });
+    expect(
+      within(decisions)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual([SEND_ANSWERS, "Review PRD", "Dismiss", "Snooze"]);
+    expect(decisions.querySelectorAll(".or-btn--primary")).toHaveLength(1);
+    expect(within(decisions).getByRole("button", { name: SEND_ANSWERS }).className).toContain(
+      "or-btn--primary",
+    );
+  });
+
+  it("offers only the decisions when the user may not answer", async () => {
+    needsAnswers(false);
+    const decisions = await within(detail()).findByRole("group", { name: "Decisions" });
+    await waitFor(() =>
+      expect(seen.some((r) => r.path === "/api/ui/runs/run-1/triage")).toBe(true),
+    );
+    expect(within(detail()).queryByRole("form", { name: OPEN_QUESTIONS_FORM })).toBeNull();
+    expect(within(decisions).getByRole("button", { name: "Review PRD" }).className).toContain(
+      "or-btn--primary",
+    );
   });
 
   it("shows no size badge without a size", async () => {

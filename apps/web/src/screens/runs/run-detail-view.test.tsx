@@ -23,6 +23,7 @@ import {
   serveAskRepositories,
   WithAskNewChat,
 } from "@/components/ask/ask-context-test-utils";
+import { OPEN_QUESTIONS_FORM, SEND_ANSWERS } from "@/components/runs/open-questions-form";
 import { useRunDetailOverlay } from "@/components/runs/run-detail-overlay";
 import {
   attempt,
@@ -468,6 +469,50 @@ describe("a triage run", () => {
     expect(original.open).toBe(false);
     expect(original.querySelector("summary")!.textContent).toBe("Original issue");
     expect(within(original).getByText("export invoices pls")).toBeTruthy();
+  });
+
+  it("offers the answer form in place of the list when the user may answer", async () => {
+    detail = triageRun("completed");
+    triage = triageSummary({ answerQuestions: true });
+    renderRun();
+    await loaded();
+    const questions = within(await waitFor(card)).getByRole("region", { name: "Open questions" });
+    const form = within(questions).getByRole("form", { name: OPEN_QUESTIONS_FORM });
+    expect(
+      within(form).getByRole("textbox", { name: "Which currency do invoices use?" }),
+    ).toBeTruthy();
+    expect(within(form).getByRole("textbox", { name: "Who can export?" })).toBeTruthy();
+    expect(within(form).getByRole("button", { name: SEND_ANSWERS })).toBeTruthy();
+  });
+
+  it("shows the questions read-only, without a form, when the user may not answer", async () => {
+    detail = triageRun("completed");
+    renderRun();
+    await loaded();
+    const questions = within(await waitFor(card)).getByRole("region", { name: "Open questions" });
+    expect(within(questions).queryByRole("form")).toBeNull();
+    expect(within(questions).queryByRole("textbox")).toBeNull();
+  });
+
+  it("offers the answer form in View PRD when the triage needs answers", async () => {
+    detail = triageRun("completed");
+    triage = triageSummary({ answerQuestions: true });
+    renderRun();
+    await loaded();
+    await userEvent.click(within(await waitFor(card)).getByRole("button", { name: "View PRD" }));
+    const sheet = await screen.findByRole("dialog", { name: "PRD of TOOL-42" });
+    const form = await within(sheet).findByRole("form", { name: OPEN_QUESTIONS_FORM });
+    expect(within(form).getByRole("textbox", { name: "Who can export?" })).toBeTruthy();
+  });
+
+  it("has no answer form in View PRD when the triage doesn't need answers", async () => {
+    detail = triageRun("completed");
+    triage = triageSummary({ outcome: "ready", openQuestions: [], answerQuestions: false });
+    renderRun();
+    await loaded();
+    await userEvent.click(within(await waitFor(card)).getByRole("button", { name: "View PRD" }));
+    const sheet = await screen.findByRole("dialog", { name: "PRD of TOOL-42" });
+    expect(within(sheet).queryByRole("form", { name: OPEN_QUESTIONS_FORM })).toBeNull();
   });
 
   it("says why it failed in place of the summary", async () => {

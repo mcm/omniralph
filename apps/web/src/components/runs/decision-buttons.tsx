@@ -59,7 +59,8 @@ type PostedAction = Exclude<InboxItemAction, "snooze" | "restore">;
  * Dismiss and Snooze, quiet. Snooze opens a menu of 1 hour, Tomorrow and Next week. A
  * decision posts and the item leaves its feed at once; while it is pending, the item's
  * decisions are disabled. View PRD opens the PRD in a sheet, without leaving the Inbox. A
- * question's Send answer is the `answer` slot (the question form's submit).
+ * question's Send answer is the `answer` slot (the question form's submit); an item without
+ * that slot (a triage's open questions) shows `answer` first, as its only primary.
  *
  * `steps="primary"` (the phone's inline row) keeps only the lead step of the links and PRD.
  * With `bindShortcuts` (the Inbox detail pane only), each shown decision's key performs it
@@ -78,13 +79,26 @@ export function DecisionButtons({
   bindShortcuts?: boolean;
   steps?: "all" | "primary";
 }) {
-  const ctas = inboxCtas(item).filter(
+  let ctas = inboxCtas(item).filter(
     (cta) => steps === "all" || cta.type === "decision" || cta.variant === "primary",
   );
-  if (ctas.length === 0) return null;
+  // An answer form of an item without an `answer` slot (a triage's open questions): its
+  // submit leads, and is the only primary.
+  const leadAnswer =
+    answer != null && !ctas.some((cta) => cta.type === "decision" && cta.action === "answer");
+  if (leadAnswer) {
+    ctas = ctas.map((cta) => (cta.variant === "primary" ? { ...cta, variant: "outline" } : cta));
+  }
+  if (ctas.length === 0 && !leadAnswer) return null;
   return (
     <RunDetailOverlayProvider>
-      <Ctas item={item} ctas={ctas} answer={answer} bindShortcuts={bindShortcuts} />
+      <Ctas
+        item={item}
+        ctas={ctas}
+        answer={answer}
+        leadAnswer={leadAnswer}
+        bindShortcuts={bindShortcuts}
+      />
     </RunDetailOverlayProvider>
   );
 }
@@ -93,11 +107,14 @@ function Ctas({
   item,
   ctas,
   answer,
+  leadAnswer,
   bindShortcuts,
 }: {
   item: InboxItem;
   ctas: InboxCta[];
   answer?: ReactNode;
+  /** Shows `answer` first, outside the item's slots. */
+  leadAnswer: boolean;
   bindShortcuts: boolean;
 }) {
   const decide = useInboxDecision(item);
@@ -107,6 +124,7 @@ function Ctas({
 
   return (
     <div className="or-decisions" role="group" aria-label="Decisions">
+      {leadAnswer ? answer : null}
       {ctas.map((cta) => {
         if (cta.type === "prd") {
           const shortcut = (bindShortcuts && STEP_SHORTCUTS.prd) || null;
