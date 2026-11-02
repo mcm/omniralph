@@ -576,6 +576,114 @@ export async function fileFollowUps(
   }
 }
 
+/** A gap an epic audit found, to file as a task of the epic (`fileAuditGaps`). */
+export interface AuditGap {
+  /** The requirement (`FR-2`) and its text. */
+  id: string;
+  text: string;
+  /** What is missing, and the title of the task that closes it (may be blank). */
+  missing: string;
+  title: string;
+}
+
+/** The title of the task that closes an audit gap: the audit's, else one from the requirement. */
+export function auditGapTitle(gap: Pick<AuditGap, "id" | "text" | "title">): string {
+  const title = gap.title.replace(/\s+/g, " ").trim();
+  if (title) return title.slice(0, 200);
+  const text = gap.text.replace(/\s+/g, " ").trim();
+  return `Meet ${gap.id}: ${text.length > 150 ? `${text.slice(0, 149)}…` : text}`;
+}
+
+/** The description of the task that closes an audit gap: the requirement it covers, what's missing and its criterion. */
+function auditGapDescription(run: RalphRun, gap: AuditGap, round: number): string {
+  return [
+    `Covers: ${gap.id}`,
+    "",
+    `The audit of ${run.trackerIdentifier} against its requirements (round ${round}) found this requirement isn't met yet:`,
+    "",
+    quote(`${gap.id}: ${gap.text}`),
+    "",
+    gap.missing.trim() ? `What is missing: ${gap.missing.trim()}` : "",
+    "",
+    "## Acceptance Criteria",
+    "",
+    `- [ ] ${gap.id} holds: ${gap.text.replace(/\s+/g, " ").trim()}`,
+    "",
+    `_${FOLLOW_UP_MARK} the audit of ${run.trackerIdentifier}._`,
+  ]
+    .filter((line, i, lines) => line !== "" || lines[i - 1] !== "")
+    .join("\n");
+}
+
+/**
+ * Files the gaps an epic audit found as new tasks (sub-issues) of the epic, with the
+ * epic's team, project, the tracker's extras (e.g. a milestone and cycle) and priority,
+ * so the run works them before its PR/MR opens. A gap whose task title matches an open
+ * sub-issue reuses it, so an audit that reports the same gap again doesn't file it twice.
+ * Returns the identifiers of the tasks filed (or reused) and the titles it couldn't file.
+ */
+export async function fileAuditGaps(
+  ctx: OutcomeContext,
+  gaps: readonly AuditGap[],
+  round: number,
+): Promise<{ filed: string[]; failed: string[] }> {
+  const { tracker, run } = ctx;
+  const filed: string[] = [];
+  const failed: string[] = [];
+  if (gaps.length === 0 || !isTrackerRun(run)) return { filed, failed };
+  let parent;
+  let siblings;
+  try {
+    parent = await tracker.getIssue(run.trackerIssueId);
+    siblings = await tracker.getChildren(parent.id);
+  } catch (error) {
+    console.warn(`${run.trackerIdentifier}: could not read the epic to file its audit gaps`, error);
+    return { filed, failed: gaps.map(auditGapTitle) };
+  }
+  const open = new Map(
+    siblings.filter((s) => !isDoneStateType(s.stateType)).map((s) => [s.title.toLowerCase(), s]),
+  );
+  const placement = await readIssuePlacement(tracker, parent.id).catch((error: unknown) => {
+    console.warn(`${run.trackerIdentifier}: could not read the epic's fields`, error);
+    return null;
+  });
+  const target: FollowUpTarget = {
+    teamId: placement?.teamId ?? parent.teamId,
+    ...((placement?.projectId ?? parent.projectId) && {
+      projectId: placement?.projectId ?? parent.projectId,
+    }),
+    ...((placement?.projectName ?? parent.projectName) && {
+      projectName: placement?.projectName ?? parent.projectName,
+    }),
+    extras: placement?.extras ?? {},
+    priority: placement?.priority ?? parent.priority ?? 0,
+    labels: [],
+    manualLabel: "manual",
+  };
+  for (const gap of gaps) {
+    const title = auditGapTitle(gap);
+    try {
+      const issue =
+        open.get(title.toLowerCase()) ??
+        (await createFollowUp(ctx, target, {
+          teamId: target.teamId,
+          parentId: parent.id,
+          title,
+          description: auditGapDescription(run, gap, round),
+          priority: target.priority,
+          ...(target.projectId && { projectId: target.projectId }),
+          ...(target.projectName && { projectName: target.projectName }),
+        }));
+      open.set(title.toLowerCase(), issue);
+      if (!filed.includes(issue.identifier)) filed.push(issue.identifier);
+    } catch (error) {
+      console.warn(`${run.trackerIdentifier}: could not file audit gap "${title}"`, error);
+      failed.push(title);
+    }
+  }
+  return { filed, failed };
+}
+
 /**
  * Files the follow-ups that can only happen once the epic ships as standalone
  * tasks: in the epic's team and project (none of the story's milestone or

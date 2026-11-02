@@ -1989,6 +1989,48 @@ export interface RalphPreparationRequest {
 }
 
 /** Preparation of a run's manual stories (cyralph's `preparation*` session fields). */
+/** What an epic audit found for one requirement. */
+export interface RalphRequirementFindingRecord {
+  /** The requirement's identifier (`FR-2`) and text. */
+  id: string;
+  text: string;
+  status: "met" | "gap";
+  /** The file or test that shows it's met, or where the audit looked. */
+  evidence: string;
+  /** For a gap: what is missing (else empty). */
+  missing: string;
+}
+
+/**
+ * One audit of a finished epic against its requirements (`ralph_runs.audits`, oldest
+ * first), run by the story playbook's audit before the PR/MR opens: `running` until it
+ * finishes, then `passed` (every requirement met), `gaps` (each gap filed as a task of
+ * the epic, or, on the last round, listed in the PR/MR description) or `failed` (it
+ * couldn't audit; the PR/MR opens and the thread says so). `skipped`: the epic lists no
+ * requirements.
+ */
+export interface RalphEpicAudit {
+  /** The audit round (1-based; rounds that judged the epic count). */
+  round: number;
+  /** The `ralph.audit-epic` job; null when skipped. */
+  jobId: string | null;
+  status: "running" | "passed" | "gaps" | "failed" | "skipped";
+  /** The tracker IDs of the epic's tasks when it ran: new tasks since need a new audit. */
+  storyIssueIds: string[];
+  /** The commit audited; null for the branch as checked out. */
+  commitSha: string | null;
+  /** A finding per requirement (empty until it finishes, or when it failed). */
+  requirements: RalphRequirementFindingRecord[];
+  summary: string | null;
+  /** Why it couldn't audit (`failed`). */
+  error: string | null;
+  /** Identifiers of the tasks filed for its gaps. */
+  filed: string[];
+  /** ISO timestamps. */
+  startedAt: string;
+  finishedAt: string | null;
+}
+
 export interface RalphPreparation {
   request: RalphPreparationRequest | null;
   /** Story issue ID -> how its preparation was settled; such stories aren't asked about again. */
@@ -2096,6 +2138,8 @@ export const ralphRuns = pgTable(
     pendingElicitation: jsonb("pending_elicitation").$type<RalphPendingElicitation>(),
     /** The `cyralph-prepare` question, approvals and answers of the run's manual stories. */
     preparation: jsonb("preparation").$type<RalphPreparation>(),
+    /** The audits of the finished epic against its requirements, oldest first. */
+    audits: jsonb("audits").$type<RalphEpicAudit[]>().notNull().default([]),
     /** The latest tool call a live session asked a person to approve, and the answer. */
     permission: jsonb("permission").$type<RalphPermissionQuestion>(),
     /** Attachment ID -> tracker upload, for every attachment listed in the run's job payloads. */

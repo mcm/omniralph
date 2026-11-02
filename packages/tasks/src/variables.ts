@@ -438,7 +438,30 @@ export const VARIABLES: readonly VariableDefinition[] = [
       [
         "commit",
         ["run.invoked"],
-        "Full SHA of the story attempt a task verifier checks (null when it committed nothing).",
+        "Full SHA checked out: the story attempt a task verifier checks (null when it committed nothing), or the head an epic audit checks (null: the branch as checked out).",
+      ],
+      [
+        "requirements.items.id",
+        ["run.invoked"],
+        "Identifier of an epic requirement an audit checks (e.g. `FR-2`).",
+      ],
+      [
+        "tasks.items.identifier",
+        ["run.invoked"],
+        "Tracker identifier of a done task of the epic an audit checks.",
+      ],
+      ["tasks.items.title", ["run.invoked"], "Title of the task, on one line."],
+      [
+        "tasks.items.repository",
+        ["run.invoked"],
+        "Repo the task was worked in, when it isn't the audited one (else null).",
+      ],
+      ["audit.round", ["run.invoked"], "This epic audit round (1 on the first)."],
+      ["audit.maxRounds", ["run.invoked"], "Most audit rounds the epic gets (`maxAuditRounds`)."],
+      [
+        "audit.last",
+        ["run.invoked"],
+        "True on the last audit round: its gaps are listed in the PR description rather than filed.",
       ],
       [
         "story.kind",
@@ -536,6 +559,22 @@ export const VARIABLES: readonly VariableDefinition[] = [
     triggers: STORY_RUN_TRIGGERS,
     description:
       "An acceptance criterion of the story (`story.acceptanceCriteria` is null without any).",
+  },
+  {
+    name: "requirements.items.text",
+    source: "trigger",
+    trust: "untrusted",
+    triggers: ["run.invoked"],
+    description:
+      "Text of the epic requirement (its `## Requirements` or `## Functional Requirements` line).",
+  },
+  {
+    name: "tasks.items.acceptanceCriteria.items",
+    source: "trigger",
+    trust: "untrusted",
+    triggers: ["run.invoked"],
+    description:
+      "An acceptance criterion of the task (`tasks.items.acceptanceCriteria` is null without any).",
   },
   {
     name: "story.notes",

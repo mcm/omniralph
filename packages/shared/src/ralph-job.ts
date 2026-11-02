@@ -12,6 +12,8 @@
  * - `ralph.push`: a coding run with no session that pushes a lane's branch.
  * - `ralph.verify-task`: a query run of the story playbook's verifier that checks a
  *   completed story attempt against the story's acceptance criteria.
+ * - `ralph.audit-epic`: a query run of the story playbook's audit that checks a
+ *   finished epic against its requirements before its PR/MR opens.
  *
  * The agent's ralph capability still runs two legacy jobs (`RALPH_JOB_TYPES`):
  *
@@ -47,6 +49,11 @@ export const RALPH_PUSH_JOB_TYPE = "ralph.push";
  * attempt its session reported complete against the story's acceptance criteria.
  */
 export const RALPH_VERIFY_TASK_JOB_TYPE = "ralph.verify-task";
+/**
+ * A query run of the story playbook's audit (`auditTaskId`) that checks an epic whose
+ * tasks are all done against its requirements, before its PR/MR opens.
+ */
+export const RALPH_AUDIT_EPIC_JOB_TYPE = "ralph.audit-epic";
 /** The legacy job types the agent's ralph capability runs. */
 export const RALPH_JOB_TYPES = [RALPH_PREPARE_JOB_TYPE, RALPH_CLEANUP_JOB_TYPE] as const;
 
@@ -735,3 +742,81 @@ export const RalphActivity = z.object({
   ephemeral: z.boolean().default(false),
 });
 export type RalphActivity = z.infer<typeof RalphActivity>;
+
+/** Most requirements an epic audit checks. */
+export const MAX_AUDITED_REQUIREMENTS = 100;
+/** Most tasks an epic audit lists. */
+const MAX_AUDITED_TASKS = 200;
+/** Longest requirement text, piece of evidence or gap kept. */
+const MAX_REQUIREMENT_LENGTH = 4000;
+
+/** An epic requirement as an audit checks it. */
+const RalphRequirement = z.object({
+  /** Its identifier, e.g. `FR-2`. */
+  id: z.string().trim().min(1).max(64),
+  text: z.string().trim().min(1).max(MAX_REQUIREMENT_LENGTH),
+});
+
+/**
+ * What a `ralph.audit-epic` query run checks: an epic whose tasks are all done, on a
+ * checkout of its lane's branch, against each of its requirements.
+ */
+export const RalphAuditEpicPayload = RalphJobBase.extend({
+  epic: RalphIssue.extend({
+    /** The epic's PRD (its description), for context. */
+    prd: z.string().max(MAX_DOCUMENT_LENGTH),
+  }),
+  requirements: z.array(RalphRequirement).min(1).max(MAX_AUDITED_REQUIREMENTS),
+  /** The epic's done tasks, with the criteria each one was checked against. */
+  tasks: z
+    .array(
+      RalphIssue.extend({
+        /** The repo it was worked in when that isn't the audited one. */
+        repository: z.string().max(500).nullable(),
+        acceptanceCriteria: z
+          .array(z.string().min(1).max(MAX_CRITERION_LENGTH))
+          .max(MAX_VERIFIED_CRITERIA),
+      }),
+    )
+    .max(MAX_AUDITED_TASKS),
+  /** The commit audited (checked out); null to audit the branch as it is. */
+  commitSha: CommitSha.nullable(),
+  /** This audit round (1 on the epic's first) and the most it gets. */
+  round: z.int().min(1),
+  maxRounds: z.int().min(1),
+});
+export type RalphAuditEpicPayload = z.infer<typeof RalphAuditEpicPayload>;
+
+/**
+ * The `run.invoked` trigger context of an epic audit (a query run of the story
+ * playbook's `auditTaskId`): the invoking ralph run, the `ralph.audit-epic` payload as
+ * `payload`, and the values the playbook's template renders (`auditEpicTemplateContext`
+ * in `@omniralph/ralph`).
+ */
+export const RalphAuditEpicTriggerContext = z.looseObject({
+  invoker: RalphRunInvoker,
+  payload: RalphAuditEpicPayload,
+});
+export type RalphAuditEpicTriggerContext = z.infer<typeof RalphAuditEpicTriggerContext>;
+
+/** What an epic audit found for one requirement. */
+export const RalphRequirementFinding = z.object({
+  id: z.string().trim().min(1).max(64),
+  /** `met`: the code does it (`evidence` names the file or test); `gap`: it doesn't (`missing`). */
+  status: z.enum(["met", "gap"]),
+  evidence: z.string().trim().max(MAX_REQUIREMENT_LENGTH),
+  missing: z.string().trim().max(MAX_REQUIREMENT_LENGTH),
+  /** For a gap: the title of the task that closes it (else empty). */
+  title: z.string().trim().max(200).default(""),
+});
+export type RalphRequirementFinding = z.infer<typeof RalphRequirementFinding>;
+
+/**
+ * An epic audit's output (`builtin:audit-epic`'s fixed output schema): a finding per
+ * requirement and a summary. The epic passes when no requirement is a gap.
+ */
+export const RalphEpicAuditResult = z.object({
+  requirements: z.array(RalphRequirementFinding).max(MAX_AUDITED_REQUIREMENTS),
+  summary: z.string().trim().max(10_000),
+});
+export type RalphEpicAuditResult = z.infer<typeof RalphEpicAuditResult>;

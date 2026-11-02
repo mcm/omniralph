@@ -62,6 +62,7 @@ import {
   type RalphPushResult,
   RalphStoryPayload,
   RalphVerifyTaskTriggerContext,
+  RalphAuditEpicTriggerContext,
   RunSpecJobPayload,
   WorktreeCleanupPayload,
   type WorktreeCleanupResult,
@@ -1562,6 +1563,292 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       );
       await verify(run.id);
       expect(await storyStates(run.id)).toEqual([["ENG-641", "completed", 1]]);
+    });
+  });
+
+  describe("the epic audit", () => {
+    const REQUIREMENTS_EPIC = `## Problem
+
+Tasks have no priority.
+
+## Scope
+
+- A priority on every task
+
+## Requirements
+
+- FR-1: The system must store a priority on every task.
+- FR-2: The system must show each task's priority as a badge.
+`;
+    const prioritiesEpic = (description = REQUIREMENTS_EPIC) => {
+      const epic = tracker.add({ identifier: "ENG-700", title: "Priorities", description });
+      const story = tracker.add({
+        identifier: "ENG-701",
+        title: "Store priorities",
+        parentId: epic.id,
+        description:
+          "Covers: FR-1, FR-2\n\nStore them.\n\n## Acceptance Criteria\n\n- [ ] Tasks have a priority",
+      });
+      return { epic, story };
+    };
+
+    /** What the audit says per requirement: met, or a gap (with the task title it suggests). */
+    type AuditOutcome = Record<string, "met" | { gap: string }> | { jobError: string };
+
+    /** The run's queued `ralph.audit-epic` job's payload (in its trigger context). */
+    const auditPayload = (job: Job) =>
+      RalphAuditEpicTriggerContext.parse(RunSpecJobPayload.parse(job.payload).trigger.context)
+        .payload;
+
+    /**
+     * Plays the agent's part for the run's queued epic audit: a `ralph.audit-epic` query
+     * run whose `run-result` sink hands its findings to the ralph run. Returns the job.
+     */
+    async function audit(runId: string, outcome: AuditOutcome): Promise<Job> {
+      const job = await activeJob(runId);
+      expect(job.type).toBe("ralph.audit-epic");
+      const agentId = job.targetAgentId ?? agentA;
+      const { claim } = await claimJob(db, {
+        organizationId: orgId,
+        agentId,
+        acceptedTaskTypes: ["query", "coding"],
+        pools: ["short", "long"],
+        agentVersion: "99.0.0",
+        maxDeliveries: MAX_JOB_DELIVERIES,
+      });
+      expect(claim?.job.id).toBe(job.id);
+      const sink = await taskSink(job, organizationPlaybooks(db, job.organizationId));
+      expect(sink?.kind).toBe("run-result");
+      expect(await sink!.onStarted!(db, job, agentId)).toEqual({ skip: false });
+      if ("jobError" in outcome) {
+        await failJob(db, {
+          jobId: job.id,
+          agentId,
+          retryable: false,
+          error: outcome.jobError as string,
+          maxDeliveries: MAX_JOB_DELIVERIES,
+        });
+      } else {
+        const requirements = auditPayload(job).requirements.map(({ id }) => {
+          const finding = (outcome as Record<string, "met" | { gap: string }>)[id] ?? "met";
+          return finding === "met"
+            ? { id, status: "met", evidence: `src/${id}.ts does it.`, missing: "", title: "" }
+            : {
+                id,
+                status: "gap",
+                evidence: "Looked in src/.",
+                missing: `Nothing does ${id} yet.`,
+                title: finding.gap,
+              };
+        });
+        await completeJob(db, {
+          jobId: job.id,
+          agentId,
+          result: {
+            outcome: "answered",
+            answer: null,
+            structured: { requirements, summary: "Audited each one." },
+            references: [],
+            usage: { inputTokens: 5, outputTokens: 5 },
+            durationMs: 1000,
+          },
+        });
+      }
+      await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+      return job;
+    }
+
+    const children = (parentId: string) =>
+      [...tracker.issues.values()].filter((issue) => issue.parentId === parentId);
+    const thoughts = (run: TrackerRun) =>
+      tracker.bodies(run.trackerSessionId, "thought").join("\n");
+
+    it("audits a finished epic against its requirements before its PR opens, and posts the evidence", async () => {
+      const { epic, story } = prioritiesEpic();
+      const run = await delegate(epic.id);
+      await work(run.id, { commitSha: sha(700) });
+
+      // Every task is done: the audit runs before the PR is described.
+      const job = await activeJob(run.id);
+      expect(job).toMatchObject({
+        type: "ralph.audit-epic",
+        taskType: "query",
+        // Its own playbook (and model), not the story's.
+        taskId: "builtin:audit-epic",
+        ralphRunId: run.id,
+        dedupeKey: runDedupeKey(run.id),
+        targetAgentId: agentA,
+      });
+      const spec = RunSpecJobPayload.parse(job.payload);
+      // A checkout of the lane's branch (it's pushed after each story).
+      const lane = (await getMainLane(db, run))!;
+      expect(spec).toMatchObject({ ref: lane.branch, requireCheckout: true });
+      expect(spec.trigger.context).toMatchObject({
+        invoker: { kind: "ralph-run", id: run.id },
+        requirements: {
+          items: [
+            { id: "FR-1", text: "The system must store a priority on every task." },
+            { id: "FR-2", text: "The system must show each task's priority as a badge." },
+          ],
+        },
+        tasks: {
+          items: [
+            {
+              identifier: "ENG-701",
+              title: "Store priorities",
+              repository: null,
+              acceptanceCriteria: { items: ["Tasks have a priority"] },
+            },
+          ],
+        },
+        audit: { round: 1, maxRounds: 2, last: false },
+      });
+      expect(auditPayload(job)).toMatchObject({ round: 1, maxRounds: 2, commitSha: null });
+      expect(thoughts(run)).toContain(
+        "Auditing **ENG-700** against its 2 requirements before the pull request opens (round 1/2).",
+      );
+
+      await audit(run.id, {});
+      expect((await getRun(db, run.id))?.audits).toEqual([
+        expect.objectContaining({
+          round: 1,
+          jobId: job.id,
+          status: "passed",
+          storyIssueIds: [story.id],
+          requirements: [
+            expect.objectContaining({
+              id: "FR-1",
+              status: "met",
+              evidence: "src/FR-1.ts does it.",
+            }),
+            expect.objectContaining({
+              id: "FR-2",
+              status: "met",
+              evidence: "src/FR-2.ts does it.",
+            }),
+          ],
+          summary: "Audited each one.",
+          filed: [],
+          finishedAt: expect.any(String),
+        }),
+      ]);
+      expect(thoughts(run)).toContain(
+        "🧾 Audit of **ENG-700** (round 1/2): 2/2 requirements met.\n\n- ✅ **FR-1**: src/FR-1.ts does it.\n- ✅ **FR-2**: src/FR-2.ts does it.",
+      );
+      // Then the PR opens, without gaps to list.
+      await describePr(run.id);
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+      expect(scm.changeRequests[0]?.body).not.toContain("Remaining gaps");
+      expect(children(epic.id)).toHaveLength(1);
+    });
+
+    it("files a gap as a task of the epic, works it, and audits again before the PR opens", async () => {
+      const { epic } = prioritiesEpic();
+      const run = await delegate(epic.id);
+      await work(run.id, { commitSha: sha(710) });
+      await audit(run.id, { "FR-2": { gap: "Show the priority badge" } });
+
+      // The gap is a new task of the epic, which the run works next.
+      const gap = children(epic.id).find((c) => c.title === "Show the priority badge");
+      expect(gap).toBeDefined();
+      expect(gap!.description).toContain("Covers: FR-2");
+      expect(gap!.description).toContain("What is missing: Nothing does FR-2 yet.");
+      expect(gap!.description).toContain(
+        "- [ ] FR-2 holds: The system must show each task's priority as a badge.",
+      );
+      expect((await getRun(db, run.id))?.audits[0]).toMatchObject({
+        status: "gaps",
+        filed: [gap!.identifier],
+      });
+      const posted = thoughts(run);
+      expect(posted).toContain("1/2 requirements met.");
+      expect(posted).toContain("- ❌ **FR-2**: Nothing does FR-2 yet. (Looked in src/.)");
+      expect(posted).toContain(
+        `Filed **${gap!.identifier}** as a new task of **ENG-700**; I'll audit it again once it's done.`,
+      );
+      const next = await work(run.id, { commitSha: sha(711) });
+      expect(next.story.identifier).toBe(gap!.identifier);
+
+      // Its task done, the epic is audited again (round 2), and passes: the PR opens.
+      const second = await activeJob(run.id);
+      expect(auditPayload(second)).toMatchObject({ round: 2, maxRounds: 2 });
+      expect(auditPayload(second).tasks.map((t) => t.identifier)).toEqual([
+        "ENG-701",
+        gap!.identifier,
+      ]);
+      await audit(run.id, {});
+      expect((await getRun(db, run.id))?.audits.map((a) => a.status)).toEqual(["gaps", "passed"]);
+      await describePr(run.id);
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+      expect(scm.changeRequests[0]?.body).not.toContain("Remaining gaps");
+    });
+
+    it("opens the PR anyway after maxAuditRounds rounds with gaps, listing them in its description", async () => {
+      const { epic } = prioritiesEpic();
+      const run = await delegate(epic.id);
+      await work(run.id, { commitSha: sha(720) });
+      await audit(run.id, { "FR-2": { gap: "Show the priority badge" } });
+      await work(run.id, { commitSha: sha(721) });
+
+      // The last round still finds the gap: nothing more is filed, and the PR opens.
+      await audit(run.id, { "FR-2": { gap: "Show the priority badge for real" } });
+      expect(children(epic.id).map((c) => c.title)).toEqual([
+        "Store priorities",
+        "Show the priority badge",
+      ]);
+      expect(thoughts(run)).toContain(
+        "That was the last audit round, so the pull request opens anyway and its description lists the gaps left.",
+      );
+      expect((await activeJob(run.id)).type).toBe("ralph.describe-pr");
+      await describePr(run.id);
+      const body = scm.changeRequests[0]!.body;
+      expect(body).toContain("Builds it.");
+      expect(body).toContain("## Remaining gaps");
+      expect(body).toContain(
+        "- **FR-2**: The system must show each task's priority as a badge. Missing: Nothing does FR-2 yet.",
+      );
+      expect(body).not.toContain("**FR-1**");
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+    });
+
+    it("skips the audit of an epic without requirements, with a thread note", async () => {
+      const { epic } = prioritiesEpic(EPIC_DESCRIPTION);
+      const run = await delegate(epic.id);
+      await work(run.id, { commitSha: sha(730) });
+
+      expect((await activeJob(run.id)).type).toBe("ralph.describe-pr");
+      expect(thoughts(run)).toContain(
+        "**ENG-700** lists no requirements (no `## Requirements` or `## Functional Requirements`), so I'm not auditing it before the pull request opens.",
+      );
+      expect((await getRun(db, run.id))?.audits).toEqual([
+        expect.objectContaining({ status: "skipped", jobId: null }),
+      ]);
+      await describePr(run.id);
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+      // Noted once.
+      expect(thoughts(run).split("lists no requirements")).toHaveLength(2);
+    });
+
+    it("reads a legacy PRD's functional requirements, and opens the PR when the audit fails", async () => {
+      const { epic } = prioritiesEpic(
+        `${EPIC_DESCRIPTION}\n## Functional Requirements\n\n* FR-1: Must build the thing\n`,
+      );
+      const run = await delegate(epic.id);
+      await work(run.id, { commitSha: sha(740) });
+      const job = await activeJob(run.id);
+      expect(auditPayload(job).requirements).toEqual([
+        { id: "FR-1", text: "Must build the thing" },
+      ]);
+
+      await audit(run.id, { jobError: "agent crashed" });
+      expect(thoughts(run)).toContain(
+        "⚠️ I couldn't audit **ENG-700** against its requirements (agent crashed), so the pull request opens without it.",
+      );
+      expect((await getRun(db, run.id))?.audits).toEqual([
+        expect.objectContaining({ status: "failed", error: "agent crashed" }),
+      ]);
+      await describePr(run.id);
+      expect((await getRun(db, run.id))?.status).toBe("completed");
     });
   });
 

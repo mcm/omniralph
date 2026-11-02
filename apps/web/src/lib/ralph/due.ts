@@ -96,6 +96,7 @@ export function runDueAt(result: AdvanceResult, now = Date.now()): number | null
     case "busy":
     case "enqueued":
     case "pushing":
+    case "auditing":
     case "describing":
     case "preparing":
     case "requesting":

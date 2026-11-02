@@ -3,6 +3,7 @@ import {
   type EpicIssue,
   type StoryIssue,
   childrenEpic,
+  epicRequirements,
   materializationPlan,
   openRootBlockers,
   parseLegacyPrd,
@@ -465,5 +466,42 @@ describe("planning-format work items", () => {
     );
     expect(body).toMatchObject({ kind: "story", legacyRalphPriority: 1 });
     expect(body.description).not.toContain("Ralph");
+  });
+});
+
+describe("epicRequirements", () => {
+  it("reads a planning-format epic's ## Requirements", () => {
+    const epic = [
+      "## Problem",
+      "Tasks have no priority.",
+      "## Scope",
+      "- A priority on every task",
+      "## Requirements",
+      "- FR-1: The system must store a priority.",
+      "- FR-2: The system must show it as a badge.",
+    ].join("\n");
+    expect(epicRequirements(epic)).toEqual([
+      { id: "FR-1", text: "The system must store a priority." },
+      { id: "FR-2", text: "The system must show it as a badge." },
+    ]);
+  });
+
+  it("reads a legacy PRD's ## Functional Requirements, numbering items without an ID", () => {
+    const prd = (requirements: string) =>
+      `## Introduction\nSomething.\n\n## Functional Requirements\n\n${requirements}\n\n## Non-Goals\n\n* Not this`;
+    expect(epicRequirements(prd("* FR-1: Must A\n* FR-2: Must B"))).toEqual([
+      { id: "FR-1", text: "Must A" },
+      { id: "FR-2", text: "Must B" },
+    ]);
+    expect(epicRequirements(prd("- Must A\n- Must B"))).toEqual([
+      { id: "FR-1", text: "Must A" },
+      { id: "FR-2", text: "Must B" },
+    ]);
+  });
+
+  it("finds none in a story, an epic without the section or a blank description", () => {
+    expect(epicRequirements("## Introduction\nNo requirements here.")).toEqual([]);
+    expect(epicRequirements("As a user, I want X.\n\n## Acceptance Criteria\n- [ ] X")).toEqual([]);
+    expect(epicRequirements(null)).toEqual([]);
   });
 });

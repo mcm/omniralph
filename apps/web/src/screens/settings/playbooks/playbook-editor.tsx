@@ -431,10 +431,13 @@ function LoopCard({
   errors: Errors;
 }) {
   if (roleTaskType(draft.role) === "coding") {
-    const { verifierPlaybookId } = draft.coding;
+    const { verifierPlaybookId, auditPlaybookId } = draft.coding;
     const verifiers = options.verifierPlaybooks.some((p) => p.id === verifierPlaybookId)
       ? options.verifierPlaybooks
       : [...options.verifierPlaybooks, { id: verifierPlaybookId, name: verifierPlaybookId }];
+    const audits = options.auditPlaybooks.some((p) => p.id === auditPlaybookId)
+      ? options.auditPlaybooks
+      : [...options.auditPlaybooks, { id: auditPlaybookId, name: auditPlaybookId }];
     return (
       <Card title="Loop" headingLevel={3}>
         <Field
@@ -473,6 +476,29 @@ function LoopCard({
           value={draft.coding.stallRounds}
           error={errorAt(errors, "coding.stallRounds")}
           onChange={(stallRounds) => setCoding({ stallRounds })}
+        />
+        <Field
+          label="Epic audit"
+          description="When every task of an epic is done, this playbook checks each of the epic's requirements against the code before the PR opens. Each gap it finds becomes a new task in the epic."
+        >
+          <Select
+            value={auditPlaybookId}
+            onChange={(event) => setCoding({ auditPlaybookId: event.target.value })}
+            errorMessage={errorAt(errors, "coding.auditPlaybookId")}
+          >
+            {audits.map((playbook) => (
+              <option key={playbook.id} value={playbook.id}>
+                {playbook.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <LoopNumberField
+          label="Audit rounds"
+          description="How many times Om audits an epic, working the gaps in between. After the last round, the PR opens anyway and lists the gaps left."
+          value={draft.coding.maxAuditRounds}
+          error={errorAt(errors, "coding.maxAuditRounds")}
+          onChange={(maxAuditRounds) => setCoding({ maxAuditRounds })}
         />
       </Card>
     );

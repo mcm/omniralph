@@ -15,7 +15,12 @@
  * A description in one of the planning formats (an epic, story or fix, see `@omniralph/planning`)
  * is read with `parseWorkItem`; any other is read as before, as a legacy PRD or story body.
  */
-import { parseWorkItem, workItemFormat } from "@omniralph/planning";
+import {
+  parseCriteria,
+  parseRequirements,
+  parseWorkItem,
+  workItemFormat,
+} from "@omniralph/planning";
 import { type ParsedPrd, parseBranchLine, parsePrd, prdQualityGates } from "./prd.js";
 import {
   buildStoryIssueBody,
@@ -126,6 +131,32 @@ export function parsePrepareBlocks(text: string): string[] {
  */
 export function parseLegacyPrd(text: string | undefined | null): ParsedPrd | null {
   return workItemFormat(text) ? null : parsePrd(text);
+}
+
+/** An epic requirement an audit checks (`FR-1` and its text). */
+export interface EpicRequirement {
+  id: string;
+  text: string;
+}
+
+const FUNCTIONAL_REQUIREMENTS = /^##\s+Functional Requirements\s*$([\s\S]*?)(?=^##\s|(?![\s\S]))/im;
+
+/**
+ * The requirements an epic's description lists: a planning-format epic's `## Requirements`,
+ * else a legacy PRD's `## Functional Requirements` (its `FR-n:` lines, or each list item
+ * numbered `FR-1`, `FR-2`... when none has an identifier). Empty when it has neither.
+ */
+export function epicRequirements(text: string | undefined | null): EpicRequirement[] {
+  const item = parseWorkItem(text);
+  if (item?.format === "epic") return item.requirements;
+  if (item) return [];
+  const source = (text ?? "").replace(/\r\n/g, "\n");
+  const body = /\[PRD\]([\s\S]*?)\[\/PRD\]/.exec(source)?.[1] ?? source;
+  const section = FUNCTIONAL_REQUIREMENTS.exec(body)?.[1]?.trim();
+  if (!section) return [];
+  const listed = parseRequirements(section);
+  if (listed.length > 0) return listed;
+  return parseCriteria(section).map((text, i) => ({ id: `FR-${i + 1}`, text }));
 }
 
 /** What a story's work item body says: a story or fix in the planning formats, else a legacy body. */

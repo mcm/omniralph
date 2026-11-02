@@ -4,6 +4,9 @@ import {
   CORRELATION_OUTPUT_SCHEMA,
   DEFAULT_PR_DESCRIPTION_TASK_ID,
   DEFAULT_VERIFIER_TASK_ID,
+  DEFAULT_AUDIT_TASK_ID,
+  DEFAULT_MAX_AUDIT_ROUNDS,
+  MAX_AUDIT_ROUNDS,
   HostToolName,
   InstallablePackageName,
   LOOP_DEFAULTS,
@@ -52,6 +55,9 @@ export interface CodingDraft {
   prDescriptionPlaybookId: string;
   /** A story playbook's task verifier. */
   verifierPlaybookId: string;
+  /** A story playbook's epic audit, and its rounds as typed. */
+  auditPlaybookId: string;
+  maxAuditRounds: string;
   /** A story playbook's loop settings, as typed. */
   maxAttemptsPerStory: string;
   maxRoundsPerStory: string;
@@ -135,6 +141,8 @@ function codingDraft(coding: Playbook["coding"]): CodingDraft {
     ),
     prDescriptionPlaybookId: set.prDescriptionPlaybookId ?? DEFAULT_PR_DESCRIPTION_TASK_ID,
     verifierPlaybookId: set.verifierPlaybookId ?? DEFAULT_VERIFIER_TASK_ID,
+    auditPlaybookId: set.auditPlaybookId ?? DEFAULT_AUDIT_TASK_ID,
+    maxAuditRounds: String(set.maxAuditRounds ?? DEFAULT_MAX_AUDIT_ROUNDS),
     maxAttemptsPerStory: String(set.maxAttemptsPerStory ?? CODING_DEFAULTS.maxAttemptsPerStory),
     maxRoundsPerStory: String(set.maxRoundsPerStory ?? CODING_DEFAULTS.maxRoundsPerStory),
     stallRounds: String(set.stallRounds ?? CODING_DEFAULTS.stallRounds),
@@ -226,6 +234,7 @@ const STORY_LOOP_FIELDS = [
   ["maxAttemptsPerStory", 20],
   ["maxRoundsPerStory", 100],
   ["stallRounds", 100],
+  ["maxAuditRounds", MAX_AUDIT_ROUNDS],
 ] as const;
 
 /** Errors the editor finds before sending anything, by the same field paths as the server's. */
@@ -260,8 +269,8 @@ export function draftErrors(draft: PlaybookDraft): Record<string, string> {
 /**
  * The playbook `draft` saves: the fields it started from with the edited ones over them.
  * Review roles set no model or budget of their own only when the editor hides those; a
- * coding playbook's unedited coding settings stay as they were (but a task verifier, which
- * only a story playbook has). Only a looped non-coding role keeps a loop block.
+ * coding playbook's unedited coding settings stay as they were (but a task verifier and an
+ * epic audit, which only a story playbook has). Only a looped non-coding role keeps a loop block.
  */
 export function draftToInput(draft: PlaybookDraft): Record<string, unknown> {
   const {
@@ -309,7 +318,12 @@ export function draftToInput(draft: PlaybookDraft): Record<string, unknown> {
   if (schema !== undefined) input.outputSchema = schema;
   if (isCodingRole(draft.role)) {
     const { coding } = draft;
-    const { verifierPlaybookId: _verifier, ...keptCoding } = baseCoding ?? {};
+    const {
+      verifierPlaybookId: _verifier,
+      auditPlaybookId: _audit,
+      maxAuditRounds: _auditRounds,
+      ...keptCoding
+    } = baseCoding ?? {};
     input.coding = {
       ...keptCoding,
       worktreeSetupCommand: coding.worktreeSetupCommand.trim() || null,
@@ -325,6 +339,8 @@ export function draftToInput(draft: PlaybookDraft): Record<string, unknown> {
             maxRoundsPerStory: Number(coding.maxRoundsPerStory),
             stallRounds: Number(coding.stallRounds),
             verifierPlaybookId: coding.verifierPlaybookId,
+            auditPlaybookId: coding.auditPlaybookId,
+            maxAuditRounds: Number(coding.maxAuditRounds),
           }
         : {}),
     };
@@ -398,6 +414,8 @@ export function shownFields(role: PlaybookRole): string[] {
                 "coding.maxRoundsPerStory",
                 "coding.stallRounds",
                 "coding.verifierPlaybookId",
+                "coding.auditPlaybookId",
+                "coding.maxAuditRounds",
               ]
             : []),
         ]

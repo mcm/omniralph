@@ -93,6 +93,50 @@ export function taskVerifierProblem(task: PrDescriptionTaskFields): string | nul
   );
 }
 
+/**
+ * The output a story run reads from its epic audit: per requirement, whether it is `met`
+ * (with the `evidence`, a file or test) or a `gap` (with what is `missing`), and a summary.
+ */
+export const EPIC_AUDIT_OUTPUT_SCHEMA: JsonSchema = {
+  type: "object",
+  properties: {
+    requirements: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          status: { type: "string", enum: ["met", "gap"] },
+          evidence: { type: "string" },
+          missing: { type: "string" },
+        },
+        required: ["id", "status", "evidence", "missing"],
+      },
+    },
+    summary: { type: "string" },
+  },
+  required: ["requirements", "summary"],
+};
+
+/**
+ * Why a story run can't invoke `task` as its epic audit, or null when it can: it must be
+ * a query task accepting `run.invoked` whose output schema guarantees the findings of
+ * `EPIC_AUDIT_OUTPUT_SCHEMA`.
+ */
+export function epicAuditProblem(task: PrDescriptionTaskFields): string | null {
+  if (task.taskType !== "query" || !task.triggers.includes("run.invoked")) {
+    return `${task.id} isn't a query task started by run.invoked.`;
+  }
+  if (task.outputSchema === undefined) {
+    return `${task.id} has no output schema: an epic audit outputs { requirements, summary }.`;
+  }
+  const problem = outputSchemaProblem(task.outputSchema, EPIC_AUDIT_OUTPUT_SCHEMA);
+  return (
+    problem &&
+    `${task.id} doesn't output the { requirements, summary } of an epic audit: ${problem}`
+  );
+}
+
 type CodingTaskFields = Pick<
   TaskDefinition,
   | "taskType"
@@ -102,6 +146,7 @@ type CodingTaskFields = Pick<
   | "draftPullRequest"
   | "prDescriptionTaskId"
   | "verifierTaskId"
+  | "auditTaskId"
 >;
 
 /**
@@ -109,7 +154,8 @@ type CodingTaskFields = Pick<
  * task isn't a coding task): pushing only at the end with an early draft PR
  * (the draft would have nothing to show), a `prDescriptionTaskId` a coding
  * run can't invoke (`prDescriptionProblem`), a `verifierTaskId` it can't invoke as its
- * task verifier (`taskVerifierProblem`) (`getTask` finds tasks by ID), and on a
+ * task verifier (`taskVerifierProblem`), an `auditTaskId` it can't invoke as its epic
+ * audit (`epicAuditProblem`) (`getTask` finds tasks by ID), and on a
  * task that accepts a request trigger, a template that renders `epic.prd` or
  * `story` (or any `story.*` path) outside an optional section.
  */
@@ -136,6 +182,11 @@ export function validateCodingTask(
       ? taskVerifierProblem(verifier)
       : `There is no task ${task.verifierTaskId}.`;
     if (problem) errors.verifierTaskId = problem;
+  }
+  if (task.auditTaskId !== undefined) {
+    const audit = getTask(task.auditTaskId);
+    const problem = audit ? epicAuditProblem(audit) : `There is no task ${task.auditTaskId}.`;
+    if (problem) errors.auditTaskId = problem;
   }
   const requests = task.triggers.filter((t) => (REQUEST_TRIGGERS as readonly string[]).includes(t));
   if (requests.length > 0) {
