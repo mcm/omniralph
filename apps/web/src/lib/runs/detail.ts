@@ -9,12 +9,14 @@ import {
   getRunChatThread,
   getReviewRunDetailFacts,
   listRunAttempts,
+  listRunIterations,
   loadRunListEntries,
   type Database,
   type RalphRunDetailFacts,
   type ReviewRunDetailFacts,
   type RunAttemptEntry,
   type RunIndexEntry,
+  type RunIteration,
   type RunLaneEntry,
 } from "@omniralph/db";
 import type {
@@ -22,6 +24,7 @@ import type {
   RunChat,
   RunDetail,
   RunDetails,
+  RunIterationView,
   RunLane,
   RunRow,
   RunStep,
@@ -42,6 +45,27 @@ import {
   waitingReasonFacts,
   type RunReasonFacts,
 } from "./reason";
+
+/** A looped run's iteration as the run detail shows it. */
+export function iterationView(iteration: RunIteration): RunIterationView {
+  return {
+    id: iteration.id,
+    number: iteration.number,
+    status: iteration.status,
+    verdict: iteration.verdict,
+    summary: iteration.summary,
+    findings: iteration.findings,
+    metric: iteration.metric,
+    error: iteration.error,
+    outcome: iteration.outcome,
+    maxIterations: iteration.maxIterations,
+    workerAttemptId: iteration.workerJobId,
+    verifierAttemptId: iteration.verifierJobId,
+    createdAt: iteration.createdAt.toISOString(),
+    verifyingAt: iteration.verifyingAt?.toISOString() ?? null,
+    finishedAt: iteration.finishedAt?.toISOString() ?? null,
+  };
+}
 
 const ms = (from: Date | null, to: Date | null) =>
   from && to ? Math.max(0, to.getTime() - from.getTime()) : null;
@@ -391,10 +415,13 @@ export async function loadRunDetail(
   organization: ScopedOrganization,
   viewerId: string,
 ): Promise<RunDetail | null> {
-  const [[entry], attempts, chat] = await Promise.all([
+  const [[entry], attempts, chat, iterations] = await Promise.all([
     loadRunListEntries(db, [run]),
     listRunAttempts(db, run),
     loadRunChat(db, run, viewerId),
+    run.kind === "review" || run.kind === "triage"
+      ? listRunIterations(db, { kind: run.kind, id: run.id })
+      : [],
   ]);
   if (!entry) return null;
   const row = runRow(entry, organization);
@@ -458,6 +485,7 @@ export async function loadRunDetail(
     reasonLink: reasonFacts && runReasonLink(reasonFacts),
     steps: facts.steps,
     attempts: attemptViews,
+    iterations: iterations.map(iterationView),
     details: {
       ...details,
       repository: row.repository,

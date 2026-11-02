@@ -2527,6 +2527,103 @@ export const triageRuns = pgTable(
   ],
 );
 
+// ── Run loop ─────────────────────────────────────────────────────────────────
+
+/** The kinds of run the loop driver iterates (`run_iterations.run_kind`): the run's own table. */
+export const LOOP_RUN_KINDS = ["review", "triage"] as const;
+export type LoopRunKind = (typeof LOOP_RUN_KINDS)[number];
+
+/**
+ * Where an iteration is: its worker runs (`working`), its verifier checks the
+ * worker's output (`verifying`), it got the verifier's verdict (`done`), or its
+ * worker or verifier failed (`failed`).
+ */
+export const RUN_ITERATION_STATUSES = ["working", "verifying", "done", "failed"] as const;
+export type RunIterationStatus = (typeof RUN_ITERATION_STATUSES)[number];
+
+/** The verifier's verdict on an iteration: the run converged, or it needs another pass. */
+export const RUN_ITERATION_VERDICTS = ["converged", "continue"] as const;
+export type RunIterationVerdict = (typeof RUN_ITERATION_VERDICTS)[number];
+
+/**
+ * Why a looped run stopped, on its last iteration: the verifier reported
+ * convergence, the run used `maxIterations`, its metric stalled for
+ * `stallRounds`, or a worker or verifier failed.
+ */
+export const RUN_LOOP_OUTCOMES = ["converged", "max-iterations", "stalled", "failed"] as const;
+export type RunLoopOutcome = (typeof RUN_LOOP_OUTCOMES)[number];
+
+/** The progress metric a loop's verifier reported for an iteration (e.g. open findings). */
+export interface RunIterationMetric {
+  name: string;
+  value: number;
+  /** Whether a higher or a lower value is better. */
+  direction: "higher" | "lower";
+  target?: number;
+}
+
+/**
+ * The iterations of a looped query or review run (`lib/runs/loop.ts`): each a
+ * worker session then a verifier session, the verifier's findings feeding the
+ * next iteration's worker. `run_kind` names the run's table (`review_runs`,
+ * `triage_runs`) and `run_id` its row; the run's loop limits are copied onto
+ * each iteration when it starts, so a playbook edit doesn't change a running loop.
+ */
+export const runIterations = pgTable(
+  "run_iterations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    runKind: text("run_kind").$type<LoopRunKind>().notNull(),
+    runId: uuid("run_id").notNull(),
+    /** 1 for the first iteration. */
+    number: integer("number").notNull(),
+    status: text("status").$type<RunIterationStatus>().notNull().default("working"),
+    /** The previous verifier's findings, the worker's input; null for the first iteration. */
+    feedback: text("feedback"),
+    workerJobId: uuid("worker_job_id").references(() => jobs.id, { onDelete: "set null" }),
+    verifierJobId: uuid("verifier_job_id").references(() => jobs.id, { onDelete: "set null" }),
+    /** Null until the verifier answered (and for a failed iteration). */
+    verdict: text("verdict").$type<RunIterationVerdict>(),
+    metric: jsonb("metric").$type<RunIterationMetric>(),
+    /** The verifier's summary of the iteration. */
+    summary: text("summary"),
+    /** What the verifier sent back for the next iteration. */
+    findings: jsonb("findings").$type<string[]>().notNull().default([]),
+    /** Why the worker or verifier failed (`failed`). */
+    error: text("error"),
+    /** Set on the run's last iteration: why the loop stopped. */
+    outcome: text("outcome").$type<RunLoopOutcome>(),
+    maxIterations: integer("max_iterations").notNull(),
+    stallRounds: integer("stall_rounds").notNull(),
+    createdAt: createdAt(),
+    /** When the worker finished and the verifier started. */
+    verifyingAt: timestamp("verifying_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("run_iterations_run_number_uq").on(t.runKind, t.runId, t.number),
+    index("run_iterations_worker_job_id_idx").on(t.workerJobId),
+    index("run_iterations_verifier_job_id_idx").on(t.verifierJobId),
+    check("run_iterations_run_kind_valid", sql`${t.runKind} in ('review', 'triage')`),
+    check(
+      "run_iterations_status_valid",
+      sql`${t.status} in ('working', 'verifying', 'done', 'failed')`,
+    ),
+    check(
+      "run_iterations_verdict_valid",
+      sql`${t.verdict} is null or ${t.verdict} in ('converged', 'continue')`,
+    ),
+    check(
+      "run_iterations_outcome_valid",
+      sql`${t.outcome} is null or ${t.outcome} in ('converged', 'max-iterations', 'stalled', 'failed')`,
+    ),
+    check("run_iterations_number_positive", sql`${t.number} >= 1`),
+  ],
+);
+
 // ── Webhooks ─────────────────────────────────────────────────────────────────
 
 /**

@@ -102,6 +102,7 @@ export function runDetail(question: RunQuestion | null, overrides: Partial<RunDe
     reasonLink: null,
     steps: [],
     attempts: [],
+    iterations: [],
     details: {
       repository: null,
       branch: null,
