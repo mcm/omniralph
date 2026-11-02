@@ -146,8 +146,14 @@ const formOptions: PlaybookFormOptions = {
   tools: { builtin: [...CLAUDE_CODE_TOOLS], agent: [...AGENT_TOOLS], tracker: [...TRACKER_TOOLS] },
   mcpServers: ["@omniralph/code-graph:graph"],
   prDescriptionPlaybooks: [{ id: "builtin:describe-pr", name: "Describe a PR", builtin: true }],
-  verifierPlaybooks: [{ id: "builtin:verify-task", name: "Verify a task", builtin: true }],
-  auditPlaybooks: [{ id: "builtin:audit-epic", name: "Audit an epic", builtin: true }],
+  verifierPlaybooks: [
+    { id: "builtin:verify-task", name: "Verify a task", builtin: true },
+    { id: "builtin:verify-task-strict", name: "Strict verifier", builtin: true },
+  ],
+  auditPlaybooks: [
+    { id: "builtin:audit-epic", name: "Audit an epic", builtin: true },
+    { id: "builtin:audit-epic-strict", name: "Strict audit", builtin: true },
+  ],
   hostTools: ["gh", "opengrep"],
 };
 
@@ -396,6 +402,11 @@ describe("creating a playbook", () => {
     // Its epics are audited by the built-in audit, two rounds unless it says otherwise.
     expect((field("Epic audit") as HTMLSelectElement).value).toBe("builtin:audit-epic");
     expect((field("Audit rounds") as HTMLInputElement).value).toBe("2");
+    expect(within(loop).getByText(/checks each of the epic's requirements/)).toBeTruthy();
+    expect(within(loop).getByText(/the PR opens anyway and lists the gaps left/)).toBeTruthy();
+    // An admin picks other verifier and audit playbooks.
+    await userEvent.selectOptions(field("Task verifier"), "builtin:verify-task-strict");
+    await userEvent.selectOptions(field("Epic audit"), "builtin:audit-epic-strict");
     await userEvent.clear(field("Audit rounds"));
     await userEvent.type(field("Audit rounds"), "3");
 
@@ -459,8 +470,8 @@ describe("creating a playbook", () => {
         maxAttemptsPerStory: 5,
         maxRoundsPerStory: 8,
         stallRounds: 3,
-        verifierPlaybookId: "builtin:verify-task",
-        auditPlaybookId: "builtin:audit-epic",
+        verifierPlaybookId: "builtin:verify-task-strict",
+        auditPlaybookId: "builtin:audit-epic-strict",
         maxAuditRounds: 3,
       },
     });

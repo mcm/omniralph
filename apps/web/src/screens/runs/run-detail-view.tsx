@@ -37,8 +37,10 @@ import {
   type RunDetailOverlay,
 } from "@/components/runs/run-detail-overlay";
 import { RunFactBadges, RunLanes } from "@/components/runs/run-details";
+import { RunIterations } from "@/components/runs/run-iterations";
 import { RunProgress } from "@/components/runs/run-progress";
 import { RunSession } from "@/components/runs/run-session";
+import { epicAuditTabs } from "@/components/runs/epic-audit";
 import { reviewFindingsTabs } from "@/components/runs/review-findings";
 import { StepPanel } from "@/components/runs/step-panel";
 import { storyDiffTabs } from "@/components/runs/story-diff";
@@ -280,12 +282,17 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
                     )
                   }
                   stepHref={runInListHref(run.id, NO_RUN_FILTERS, { step: step.id })}
-                  tabs={[...storyDiffTabs(run, step), ...reviewFindingsTabs(run, step)]}
+                  tabs={[
+                    ...epicAuditTabs(run, step),
+                    ...storyDiffTabs(run, step),
+                    ...reviewFindingsTabs(run, step),
+                  ]}
                 />
               ) : undefined
             }
           />
         ) : null}
+        <RunIterations run={run} headingLevel={3} />
         <RunSession run={run} />
         <RunActivity run={run} reason={reason} headingLevel={3} />
       </div>
@@ -307,7 +314,8 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
  * (Design rule 5, with View PRD for a run with a work item), its status line, title, a
  * multi-repo epic's lanes and, for a waiting, stopped or failed run, why;
  * an open question's form; the progress card with the selected step (`?step=`, else
- * `defaultStep`) and its `StepPanel`; a triage run's summary; an epic's or request's collapsed
+ * `defaultStep`) and its `StepPanel`; a triage run's summary; a looped run's iterations; an
+ * epic's or request's collapsed
  * Session; and the run's Activity. A live query: the run's
  * change events refetch it. `menuItems` adds entries to the ⋯ menu, which may open an
  * element over the detail (`useRunDetailOverlay`).

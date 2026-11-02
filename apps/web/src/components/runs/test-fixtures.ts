@@ -168,6 +168,7 @@ export function attempt(id: string, overrides: Partial<Attempt> = {}): Attempt {
     error: null,
     step: null,
     transcriptEvents: 0,
+    verification: null,
     ...overrides,
   };
 }

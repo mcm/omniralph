@@ -12,7 +12,9 @@ import {
   listRunIterations,
   loadRunListEntries,
   type Database,
+  type RalphEpicAudit,
   type RalphRunDetailFacts,
+  type RalphTaskVerification,
   type ReviewRunDetailFacts,
   type RunAttemptEntry,
   type RunIndexEntry,
@@ -20,6 +22,7 @@ import {
   type RunLaneEntry,
 } from "@omniralph/db";
 import type {
+  AttemptVerification,
   RunAttempt,
   RunChat,
   RunDetail,
@@ -107,6 +110,8 @@ interface KindFacts {
   };
   /** An epic's manual stories, for its reason. */
   manualStories?: { identifier: string; elsewhere: boolean }[];
+  /** A story attempt's check by the task verifier. */
+  verificationOf?: (attempt: RunAttemptEntry) => AttemptVerification | null;
   /** Stories as `runActions` sees them. */
   stories?: {
     id: string;
@@ -126,6 +131,57 @@ function attemptSteps(
     label: label(attempt),
     status: attempt.status,
     durationMs: ms(attempt.startedAt, attempt.finishedAt),
+  }));
+}
+
+/** A story attempt's latest check by the task verifier, by the attempt's job ID. */
+function verificationsByAttempt(
+  stories: readonly { verifications: readonly RalphTaskVerification[] }[],
+): Map<string, AttemptVerification> {
+  const byAttempt = new Map<string, AttemptVerification>();
+  for (const story of stories) {
+    // Oldest first: a later check of the same attempt replaces an earlier one.
+    for (const v of story.verifications) {
+      byAttempt.set(v.storyJobId, {
+        status: v.status,
+        criteria: v.criteria.map(({ criterion, accepted, reason }) => ({
+          criterion,
+          accepted,
+          reason,
+        })),
+        summary: v.summary,
+        error: v.error,
+        verifierAttemptId: v.jobId,
+      });
+    }
+  }
+  return byAttempt;
+}
+
+/** The run's `index`-th audit's step ID (1-based, so a skipped audit without a job has one). */
+export const auditStepId = (index: number) => `audit-${index}`;
+
+/** An epic's audits as steps after its stories, before the PR/MR. */
+function auditSteps(
+  audits: readonly RalphEpicAudit[],
+  workItem: (identifier: string) => Extract<RunStep, { kind: "audit" }>["filed"][number],
+): Extract<RunStep, { kind: "audit" }>[] {
+  return audits.map((audit, index) => ({
+    kind: "audit",
+    id: auditStepId(index + 1),
+    round: audit.round,
+    status: audit.status,
+    requirements: audit.requirements.map(({ id, text, status, evidence, missing }) => ({
+      id,
+      text,
+      status,
+      evidence,
+      missing,
+    })),
+    summary: audit.summary,
+    error: audit.error,
+    filed: audit.filed.map(workItem),
+    durationMs: ms(new Date(audit.startedAt), audit.finishedAt ? new Date(audit.finishedAt) : null),
   }));
 }
 
@@ -183,39 +239,54 @@ function ralphKindFacts(
     const pr = laneId ? laneById.get(laneId)?.pullRequest : main?.pullRequest;
     return pr ? { merged: pr.merged, closed: pr.closed } : null;
   };
+  const workItemRef = (identifier: string) => ({
+    tracker: facts.trackerProvider,
+    identifier,
+    url: siblingIssueUrl(facts.trackerProvider, facts.trackerIssueUrl, identifier),
+  });
+  const audits = auditSteps(facts.audits, workItemRef);
+  const auditStepByJob = new Map(
+    facts.audits.flatMap((audit, index) =>
+      audit.jobId ? [[audit.jobId, auditStepId(index + 1)] as const] : [],
+    ),
+  );
+  const verifications = verificationsByAttempt(facts.stories);
+  const storySteps: RunStep[] = facts.stories.map((story) => {
+    const lane = story.laneId ? laneById.get(story.laneId) : null;
+    return {
+      kind: "story",
+      id: story.id,
+      workItem: {
+        tracker: facts.trackerProvider,
+        identifier: story.identifier,
+        url: siblingIssueUrl(facts.trackerProvider, facts.trackerIssueUrl, story.identifier),
+      },
+      title: story.title,
+      status: story.status,
+      attempts: story.attempts,
+      durationMs: story.durationMs,
+      commit: story.commitSha,
+      lastFeedback: story.lastFeedback,
+      lane: lane
+        ? {
+            id: lane.id,
+            repository: {
+              id: lane.repository.id,
+              provider: lane.repository.provider,
+              fullPath: lane.repository.fullPath,
+            },
+            branch: lane.branch,
+          }
+        : null,
+    };
+  });
   return {
-    steps: facts.stories.map((story) => {
-      const lane = story.laneId ? laneById.get(story.laneId) : null;
-      return {
-        kind: "story",
-        id: story.id,
-        workItem: {
-          tracker: facts.trackerProvider,
-          identifier: story.identifier,
-          url: siblingIssueUrl(facts.trackerProvider, facts.trackerIssueUrl, story.identifier),
-        },
-        title: story.title,
-        status: story.status,
-        attempts: story.attempts,
-        durationMs: story.durationMs,
-        commit: story.commitSha,
-        lastFeedback: story.lastFeedback,
-        lane: lane
-          ? {
-              id: lane.id,
-              repository: {
-                id: lane.repository.id,
-                provider: lane.repository.provider,
-                fullPath: lane.repository.fullPath,
-              },
-              branch: lane.branch,
-            }
-          : null,
-      };
-    }),
+    steps: [...storySteps, ...audits],
     stepOf: (attempt) =>
-      attempt.storyId && storyById.has(attempt.storyId) ? attempt.storyId : null,
+      auditStepByJob.get(attempt.id) ??
+      (attempt.storyId && storyById.has(attempt.storyId) ? attempt.storyId : null),
     labelContext,
+    verificationOf: (attempt) => verifications.get(attempt.id) ?? null,
     details,
     manualStories: facts.stories
       .filter((s) => s.status === "manual")
@@ -475,6 +546,7 @@ export async function loadRunDetail(
     error: attempt.error,
     step: facts.stepOf(attempt),
     transcriptEvents: attempt.transcriptEvents,
+    verification: facts.verificationOf?.(attempt) ?? null,
   }));
 
   const { pullRequest, ...details } = facts.details;

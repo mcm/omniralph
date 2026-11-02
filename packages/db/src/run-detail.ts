@@ -7,7 +7,12 @@ import { sql, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { RunIndexEntry } from "./run-index.js";
 import type { IntegrationProvider } from "./integrations.js";
-import type { JobWaitingReason, RalphWaitingOn } from "./schema.js";
+import type {
+  JobWaitingReason,
+  RalphEpicAudit,
+  RalphTaskVerification,
+  RalphWaitingOn,
+} from "./schema.js";
 
 type Queryable = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
@@ -180,6 +185,8 @@ export interface RunStoryEntry {
   laneId: string | null;
   /** Why it is manual although it isn't labelled so (it routes elsewhere). */
   elsewhere: string | null;
+  /** The task verifier's checks of its attempts, oldest first. */
+  verifications: RalphTaskVerification[];
 }
 
 /** What only a ralph run's detail shows. */
@@ -196,6 +203,8 @@ export interface RalphRunDetailFacts {
    */
   stories: RunStoryEntry[];
   lanes: RunLaneEntry[];
+  /** The epic's audits against its requirements, oldest first. */
+  audits: RalphEpicAudit[];
 }
 
 export async function getRalphRunDetailFacts(
@@ -209,7 +218,9 @@ export async function getRalphRunDetailFacts(
       waiting_on: RalphWaitingOn | null;
       tracker_provider: IntegrationProvider;
       tracker_url: string | null;
-    }>(sql`select r.routed_by, r.error, r.waiting_on, r.tracker_provider, r.tracker_url from ralph_runs r
+      audits: RalphEpicAudit[] | null;
+    }>(sql`select r.routed_by, r.error, r.waiting_on, r.tracker_provider, r.tracker_url, r.audits
+      from ralph_runs r
       where r.id = ${runId}::uuid`),
     db.execute<{
       id: string;
@@ -222,9 +233,10 @@ export async function getRalphRunDetailFacts(
       last_feedback: string | null;
       lane_id: string | null;
       elsewhere: string | null;
+      verifications: RalphTaskVerification[] | null;
     }>(sql`
       select s.id, s.identifier, s.title, s.status, s.attempts, s.commit_sha, s.last_feedback,
-        s.lane_id, s.elsewhere,
+        s.lane_id, s.elsewhere, s.verifications,
         (select coalesce(sum(extract(epoch from (j.finished_at - j.started_at)) * 1000), 0)
           from jobs j where j.ralph_story_id = s.id
             and j.started_at is not null and j.finished_at is not null)::bigint::text as duration_ms
@@ -266,6 +278,7 @@ export async function getRalphRunDetailFacts(
     waitingOn: run.waiting_on,
     trackerProvider: run.tracker_provider,
     trackerIssueUrl: run.tracker_url,
+    audits: run.audits ?? [],
     stories: stories.rows.map((s) => ({
       id: s.id,
       identifier: s.identifier,
@@ -277,6 +290,7 @@ export async function getRalphRunDetailFacts(
       lastFeedback: s.last_feedback,
       laneId: s.lane_id,
       elsewhere: s.elsewhere,
+      verifications: s.verifications ?? [],
     })),
     lanes: lanes.rows.map((l) => ({
       id: l.id,
