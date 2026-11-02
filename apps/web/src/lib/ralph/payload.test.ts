@@ -367,3 +367,45 @@ describe("the story's kind", () => {
     expect(kindOf("single", ["Bug"], ["Defect"])).toBe("story");
   });
 });
+
+describe("the story's acceptance criteria", () => {
+  const issueOf = (id: string, description: string): EpicIssue => ({
+    id,
+    identifier: id.toUpperCase(),
+    title: id,
+    description,
+    branchName: "feat/epic",
+    stateType: "unstarted",
+    labels: [],
+  });
+
+  it("are carried beside the description, which leaves the work item's checklist out", () => {
+    const task = issueOf(
+      "issue-2",
+      "## Story\n\nAs a user I want to export my data.\n\n## Acceptance Criteria\n\n- [ ] The export button downloads a CSV\n- [ ]   \n- [ ] The CSV has one row per record",
+    );
+    const built = childrenEpic(issueOf("issue-1", "Build the thing."), [
+      { issue: task, blockers: [] },
+    ]);
+    const payload = buildStoryPayload({
+      coding: coding(),
+      run: run("children"),
+      lane,
+      repository: repository(),
+      connection,
+      epic: built,
+      stories: built.stories,
+      story: built.stories[0]!,
+      row: row as RalphStory,
+    });
+    expect(payload.story.description).not.toContain("export button");
+    expect(payload.story.acceptanceCriteria).toEqual([
+      "The export button downloads a CSV",
+      "The CSV has one row per record",
+    ]);
+  });
+
+  it("are an empty list for a story without any", () => {
+    expect(payloadFor("children", {}).story.acceptanceCriteria).toEqual([]);
+  });
+});

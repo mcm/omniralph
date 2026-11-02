@@ -1446,6 +1446,31 @@ describe.skipIf(!databaseAvailable)("driving the ralph loop from story results",
       expect((await getRun(db, run.id))?.status).toBe("completed");
     });
 
+    it("checks the story job's criteria when the tracker can't be read", async () => {
+      const { epic, story } = widgetsStory();
+      const run = await delegate(epic.id);
+      const storyJob = await activeJob(run.id);
+      // The story session got the criteria, which its description leaves out.
+      expect(RalphStoryPayload.parse(ralphJobPayload(storyJob)).story).toMatchObject({
+        description: "Show the widgets.",
+        acceptanceCriteria: CRITERIA,
+      });
+      const getIssue = tracker.getIssue.bind(tracker);
+      const spy = vi.spyOn(tracker, "getIssue").mockImplementation(async (id) => {
+        if (id === story.id) throw new Error("tracker down");
+        return getIssue(id);
+      });
+      try {
+        await work(run.id, { commitSha: sha(605) }, agentA, "pending");
+      } finally {
+        spy.mockRestore();
+      }
+      expect(verifyPayload(await activeJob(run.id)).story).toMatchObject({
+        description: "Show the widgets.",
+        acceptanceCriteria: CRITERIA,
+      });
+    });
+
     it("fails the attempt with the verifier's reason as feedback when it sends a criterion back", async () => {
       const { epic } = widgetsStory();
       const run = await delegate(epic.id);

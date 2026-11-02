@@ -102,7 +102,8 @@ export function promptEpic(payload: RalphStoryPayload): { epic: Epic; story: Sto
     ...(payload.story.url && { url: payload.story.url }),
     title: payload.story.title,
     description: body.description,
-    acceptanceCriteria: body.acceptanceCriteria,
+    // Older servers send no criteria field: they're then in the description, if anywhere.
+    acceptanceCriteria: payload.story.acceptanceCriteria ?? body.acceptanceCriteria,
     priority: 0,
     dependsOn: listed?.dependsOn ?? [],
     status: "in_progress",
