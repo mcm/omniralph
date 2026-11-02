@@ -1,8 +1,9 @@
 /**
- * `pnpm eval [--profile quick|standard|deep|all] [--case <id>]… [--max-total-tokens <n>] [--update-baseline]`
+ * `pnpm eval [--strategy single|looped] [--profile quick|standard|deep|all] [--case <id>]… [--max-total-tokens <n>] [--update-baseline]`
  *
- * Runs the real review (`runReview` + `ClaudeAgentProvider`, the host's Claude
- * login) over `evals/cases` and writes `evals/reports/<timestamp>-<profile>.{json,md}`.
+ * Runs the real review (`runReview`, or `runLoopedReview` for `--strategy looped`,
+ * with `ClaudeAgentProvider`, the host's Claude login) over `evals/cases` and
+ * writes `evals/reports/<timestamp>-<strategy>-<profile>.{json,md}`.
  * Spends real tokens: never part of `pnpm test` or CI.
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -20,22 +21,25 @@ import {
   renderMarkdown,
   updatedBaseline,
 } from "./report.js";
-import { runEval } from "./run.js";
+import { EVAL_STRATEGIES, runEval, type EvalStrategy } from "./run.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 const USAGE = `Usage: pnpm eval [options]
 
+  --strategy <single|looped>           Single-pass reviews, or looped check-type passes
+                                       with verified findings (default: single)
   --profile <quick|standard|deep|all>  Profiles to run (default: all)
   --case <id>                          Only this case; repeat for more
   --max-total-tokens <n>               Stop before the run spends more than n tokens
-  --update-baseline                    Overwrite evals/baseline.json with this run's metrics
+  --update-baseline                    Overwrite this strategy's entries in evals/baseline.json
   --evals-dir <dir>                    Default: <repo>/evals
   -h, --help`;
 
 class UsageError extends Error {}
 
 export interface EvalArgs {
+  strategy: EvalStrategy;
   profile: string;
   cases: string[];
   maxTotalTokens: number | undefined;
@@ -50,6 +54,7 @@ export function parseEvalArgs(argv: readonly string[]): EvalArgs {
     ({ values } = parseArgs({
       args: [...argv],
       options: {
+        strategy: { type: "string", default: "single" },
         profile: { type: "string", default: "all" },
         case: { type: "string", multiple: true, default: [] },
         "max-total-tokens": { type: "string" },
@@ -62,6 +67,10 @@ export function parseEvalArgs(argv: readonly string[]): EvalArgs {
     }));
   } catch (error) {
     throw new UsageError((error as Error).message);
+  }
+  const strategy = values.strategy;
+  if (!(EVAL_STRATEGIES as readonly string[]).includes(strategy)) {
+    throw new UsageError(`--strategy must be ${EVAL_STRATEGIES.join(" or ")}, got "${strategy}"`);
   }
   let maxTotalTokens: number | undefined;
   const rawMax = values["max-total-tokens"];
@@ -79,6 +88,7 @@ export function parseEvalArgs(argv: readonly string[]): EvalArgs {
     throw new UsageError("--update-baseline needs the full case set; drop --case");
   }
   return {
+    strategy: strategy as EvalStrategy,
     profile: values.profile,
     cases,
     maxTotalTokens,
@@ -124,12 +134,13 @@ async function main(argv: readonly string[]): Promise<number> {
   });
 
   console.error(
-    `Running ${cases.length} case(s) × ${profiles.map((p) => p.id).join(", ")}` +
+    `Running ${cases.length} case(s) × ${profiles.map((p) => p.id).join(", ")} (${args.strategy})` +
       (args.maxTotalTokens !== undefined ? ` (max ${args.maxTotalTokens} tokens)` : ""),
   );
   const run = await runEval({
     cases,
     profiles,
+    strategy: args.strategy,
     provider: new ClaudeAgentProvider({ logger: stderrLogger }),
     maxTotalTokens: args.maxTotalTokens,
     logger: stderrLogger,
@@ -144,7 +155,10 @@ async function main(argv: readonly string[]): Promise<number> {
   const report = buildReport(run, baseline, args.profile);
   const reportsDir = join(args.evalsDir, "reports");
   await mkdir(reportsDir, { recursive: true });
-  const stem = join(reportsDir, `${reportTimestamp(run.startedAt)}-${args.profile}`);
+  const stem = join(
+    reportsDir,
+    `${reportTimestamp(run.startedAt)}-${args.strategy}-${args.profile}`,
+  );
   await writeFile(`${stem}.json`, `${JSON.stringify(report, null, 2)}\n`);
   const markdown = renderMarkdown(report);
   await writeFile(`${stem}.md`, markdown);

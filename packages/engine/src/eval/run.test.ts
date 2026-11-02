@@ -199,12 +199,22 @@ describe("reports", { timeout: 30_000 }, () => {
       inputTokens: { mean: 1000, p50: 900, max: 1500 },
       caseIds: ["sql-bad"],
     };
-    const baseline: Baseline = {
+    // A version 1 baseline (from before strategies) reads as single-pass entries.
+    const { strategy: _strategy, looped: _looped, ...v1Entry } = previous;
+    const baseline = Baseline.parse({
       version: 1,
       updatedAt: "2026-10-01T00:00:00.000Z",
-      profiles: { quick: previous, deep: { ...previous, profileId: "deep" } },
+      profiles: { quick: v1Entry, deep: { ...v1Entry, profileId: "deep" } },
+    });
+    expect(baseline.strategies.single.quick).toEqual(previous);
+    // A looped entry for standard is never compared with a single-pass run.
+    baseline.strategies.looped.standard = {
+      ...previous,
+      profileId: "standard",
+      strategy: "looped",
     };
     const report = buildReport(run, baseline, "all");
+    expect(report.strategy).toBe("single");
 
     const [quickReport, standardReport] = report.profiles;
     expect(quickReport?.comparison.deltas).toMatchObject({
@@ -217,25 +227,29 @@ describe("reports", { timeout: 30_000 }, () => {
     });
     expect(quickReport?.comparison.caseSetChanged).toBe(true);
     expect(standardReport?.comparison.baseline).toBeNull();
+    expect(standardReport?.comparison.singlePassBaseline).toBeNull();
     expect(standardReport?.comparison.deltas.precision).toBeNull();
 
     const markdown = renderMarkdown(report);
-    expect(markdown).toContain("# Review eval: all");
+    expect(markdown).toContain("# Review eval: all (single)");
     expect(markdown).toContain("## quick (claude-haiku-5-5)");
     expect(markdown).toContain("| Precision | 50.0% | 75.0% | −25.0 pp |");
     expect(markdown).toContain("| Input tokens / case (mean) | 800 | 1,000 | −200 |");
     expect(markdown).toContain("| False positives on clean cases | 0 | 0 | ±0 |");
     expect(markdown).toContain("different set of cases");
-    expect(markdown).toContain("_No baseline for this profile");
+    expect(markdown).toContain("_No single-pass baseline for this profile");
+    expect(markdown).not.toContain("Findings dropped by verification");
     expect(markdown).toContain("| sql-bad | bad | completed | 1 | 1 | 0 | 1,000 | 200 |");
     expect(markdown).toContain("- FP (unmatched): `src/users.ts:4-4` low/performance: SELECT *");
     expect(markdown).not.toContain("Aborted");
 
     // --update-baseline replaces the profiles that ran and keeps the others.
-    const next = Baseline.parse(updatedBaseline(baseline, report));
-    expect(Object.keys(next.profiles).sort()).toEqual(["deep", "quick", "standard"]);
-    expect(next.profiles.quick?.precision).toBe(0.5);
-    expect(next.profiles.deep).toEqual(baseline.profiles.deep);
+    const next = Baseline.parse(JSON.parse(JSON.stringify(updatedBaseline(baseline, report))));
+    expect(next.version).toBe(2);
+    expect(Object.keys(next.strategies.single).sort()).toEqual(["deep", "quick", "standard"]);
+    expect(next.strategies.single.quick?.precision).toBe(0.5);
+    expect(next.strategies.single.deep).toEqual(baseline.strategies.single.deep);
+    expect(next.strategies.looped).toEqual(baseline.strategies.looped);
     expect(next.updatedAt).toBe(report.finishedAt);
 
     // A JSON round trip (the report file) keeps the report intact.
@@ -263,13 +277,15 @@ describe("reports", { timeout: 30_000 }, () => {
   });
 
   it("commits a valid baseline", () => {
-    expect(() => Baseline.parse(JSON.parse(readFileSync(BASELINE, "utf8")))).not.toThrow();
+    const baseline = Baseline.parse(JSON.parse(readFileSync(BASELINE, "utf8")));
+    expect(Object.keys(baseline.strategies.single).length).toBeGreaterThan(0);
   });
 });
 
 describe("eval CLI arguments", () => {
   it("defaults to every profile and case with no token cap", () => {
     expect(parseEvalArgs([])).toMatchObject({
+      strategy: "single",
       profile: "all",
       cases: [],
       maxTotalTokens: undefined,
@@ -291,6 +307,7 @@ describe("eval CLI arguments", () => {
         "2_000_000",
       ]),
     ).toMatchObject({ profile: "quick", cases: ["a", "b", "c"], maxTotalTokens: 2_000_000 });
+    expect(parseEvalArgs(["--strategy", "looped"]).strategy).toBe("looped");
     expect(() => selectProfiles("turbo")).toThrow(/Unknown profile "turbo"/);
   });
 
@@ -298,6 +315,7 @@ describe("eval CLI arguments", () => {
     expect(() => parseEvalArgs(["--max-total-tokens", "lots"])).toThrow(/positive integer/);
     expect(() => parseEvalArgs(["--max-total-tokens", "0"])).toThrow(/positive integer/);
     expect(() => parseEvalArgs(["--nope"])).toThrow();
+    expect(() => parseEvalArgs(["--strategy", "twice"])).toThrow(/single or looped/);
     expect(() => parseEvalArgs(["--update-baseline", "--case", "a"])).toThrow(/full case set/);
   });
 

@@ -13,12 +13,14 @@ import { normalizeReplyAnswer, REPLY_SYSTEM_PROMPT } from "../reply.js";
 import {
   extractPartialFindings,
   filterToDiff,
+  jsonCandidate,
   parseFindingsOutput,
   type ParsedOutput,
   validFindings,
 } from "./findings-output.js";
 import {
   consoleLogger,
+  type FindingVerifier,
   type LearnRuleOutcome,
   type LearnRuleRequest,
   type QuestionAnswerer,
@@ -31,6 +33,8 @@ import {
   type TaskReviewResult,
   type ReviewStopReason,
   type TokenUsage,
+  type VerifyFindingsOutcome,
+  type VerifyFindingsRequest,
 } from "./types.js";
 
 /** Read-only exploration tools, confined to the job's worktree. */
@@ -318,7 +322,9 @@ function classifyFailure(
  * uses on the host: the logged-in `claude`, or `ANTHROPIC_API_KEY` /
  * `CLAUDE_CODE_OAUTH_TOKEN` from the environment.
  */
-export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, QuestionAnswerer {
+export class ClaudeAgentProvider
+  implements ReviewProvider, RuleLearner, QuestionAnswerer, FindingVerifier
+{
   private readonly query: QueryFn;
   private readonly logger: ReviewLogger;
 
@@ -530,6 +536,50 @@ export class ClaudeAgentProvider implements ReviewProvider, RuleLearner, Questio
       return { status: "error", answer: null, usage: usage.total, error: "The answer was empty." };
     }
     return { status: "answered", answer, usage: usage.total };
+  }
+
+  /**
+   * Checks a review pass's findings in a fresh session: the read-only tools
+   * (Read/Grep/Glob, confined to `cwd`), capped at `maxTokens` (input +
+   * output). The answer's JSON object comes back unchecked; an answer
+   * without one is an `error`.
+   */
+  async verifyFindings(request: VerifyFindingsRequest): Promise<VerifyFindingsOutcome> {
+    const usage = new UsageTracker();
+    const outcome = await this.run(
+      {
+        taskId: "verify-findings",
+        cwd: request.cwd,
+        model: request.model,
+        signal: request.signal,
+        systemPrompt: request.systemPrompt,
+      },
+      request.prompt,
+      usage,
+      request.maxTokens,
+      { allowExploration: true, maxTurns: this.options.maxTurns ?? 50 },
+    );
+    if (outcome.stop !== "completed") {
+      return {
+        status: outcome.stop,
+        output: null,
+        usage: usage.total,
+        ...(outcome.error !== undefined ? { error: outcome.error } : {}),
+        ...(outcome.retryAfterMs !== undefined ? { retryAfterMs: outcome.retryAfterMs } : {}),
+      };
+    }
+    const candidate = jsonCandidate(outcome.text);
+    try {
+      if (candidate === null) throw new Error("The answer contains no JSON.");
+      return { status: "answered", output: JSON.parse(candidate), usage: usage.total };
+    } catch (err) {
+      return {
+        status: "error",
+        output: null,
+        usage: usage.total,
+        error: `The verifier's answer is not JSON: ${(err as Error).message}`,
+      };
+    }
   }
 
   /** Keeps valid items (or salvageable objects) and logs the dropped ones. */
