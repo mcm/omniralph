@@ -18,6 +18,7 @@ import {
   PLAYBOOK_ROLES,
   playbookLoopSettings,
   type Playbook,
+  type PlaybookLoopLimits,
   type PlaybookLoopSettings,
   type SinkKind,
 } from "@omniralph/tasks";
@@ -26,8 +27,10 @@ import { addRoundMetric, isStalled } from "@/lib/ralph/rounds";
 
 /**
  * The loop driver of looped query and review runs (ADR 0013): each iteration
- * runs a worker session, then a verifier session that hasn't seen the
- * worker's reasoning. The worker never decides it is done; the verifier does.
+ * runs a worker session, then a verifier session (a run of the playbook's
+ * `loop.verifierPlaybookId`) that hasn't seen the worker's reasoning; a
+ * playbook that names no verifier runs one session. The worker never decides
+ * it is done; the verifier does.
  * Its findings become the next iteration's input until it reports
  * convergence, the run used its `maxIterations`, or the metric it reports
  * hasn't beaten its best for `stallRounds` iterations (the coding rounds'
@@ -75,7 +78,11 @@ export interface LoopAdapter {
    * dedupe key on the iteration's ID).
    */
   startWorker(db: LoopExecutor, run: LoopRunRef, iteration: RunIteration): Promise<string>;
-  /** Starts the verifier job of `iteration`, which checks `worker`'s output, and returns its ID. */
+  /**
+   * Starts the verifier job of `iteration`, a run of its `verifierPlaybookId`
+   * (the run's playbook's `loop.verifierPlaybookId`) that checks `worker`'s
+   * output, and returns its ID.
+   */
   startVerifier(
     db: LoopExecutor,
     run: LoopRunRef,
@@ -116,10 +123,10 @@ export function sinkMayLoop(sink: SinkKind): boolean {
 
 /**
  * Starts the loop of a run of `playbook`: its first iteration and worker
- * job, with the playbook's loop limits (`playbookLoopSettings`). Null for a
- * playbook whose role doesn't loop through the driver (the single-session
- * roles, and coding roles): its run is one session. A run whose loop already
- * started gets its first iteration back.
+ * job, with the playbook's verifier and loop limits (`playbookLoopSettings`).
+ * Null for a playbook whose role doesn't loop through the driver (the
+ * single-session roles, and coding roles) or that names no verifier: its run
+ * is one session. A run whose loop already started gets its first iteration back.
  */
 export async function startLoop(
   db: Database,
@@ -128,13 +135,16 @@ export async function startLoop(
 ): Promise<RunIteration | null> {
   const settings = playbookLoopSettings(playbook);
   if (!settings) return null;
+  const { verifierPlaybookId, ...limits } = settings;
+  if (verifierPlaybookId === null) return null;
   const adapter = adapterFor(run.kind);
   return db.transaction(async (tx) => {
     const iteration = await insertRunIteration(tx, {
       run,
       number: 1,
       feedback: null,
-      ...settings,
+      verifierPlaybookId,
+      ...limits,
     });
     if (!iteration) return (await listRunIterations(tx, run))[0]!;
     const workerJobId = await adapter.startWorker(tx, run, iteration);
@@ -316,8 +326,15 @@ async function recordVerdict(
   await updateRunIteration(tx, next.id, { workerJobId });
 }
 
-function settingsOf(iteration: RunIteration): PlaybookLoopSettings {
-  return { maxIterations: iteration.maxIterations, stallRounds: iteration.stallRounds };
+/** The loop a run's next iteration keeps: its verifier and limits. */
+function settingsOf(
+  iteration: RunIteration,
+): PlaybookLoopSettings & { verifierPlaybookId: string } {
+  return {
+    verifierPlaybookId: iteration.verifierPlaybookId,
+    maxIterations: iteration.maxIterations,
+    stallRounds: iteration.stallRounds,
+  };
 }
 
 /**
@@ -331,7 +348,7 @@ export function loopOutcome(
     RunIteration,
     "number" | "verdict" | "metric" | "createdAt" | "finishedAt"
   >[],
-  settings: PlaybookLoopSettings,
+  settings: PlaybookLoopLimits,
 ): Exclude<RunLoopOutcome, "failed"> | null {
   const last = iterations.at(-1);
   if (!last) return null;

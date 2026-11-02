@@ -29,8 +29,10 @@ stored in `run_iterations` and published live.**
 
 - `startLoop(db, run, playbook)` reads `playbookLoopSettings(playbook)`. A single-session role
   (and a coding role, which loops by its story attempts and rounds) gets null: its run is one
-  session, as before. A looped role gets its first iteration, with the limits copied onto it so a
-  playbook edit doesn't change a running loop, and its worker job.
+  session, as before. So does a looped playbook that names no verifier (`loop.verifierPlaybookId`):
+  without a verifier there is nothing to iterate on. A looped playbook with a verifier gets its
+  first iteration, with the verifier and limits copied onto it so a playbook edit doesn't change a
+  running loop, and its worker job.
 - `advanceLoop(db, job, finish)` advances the loop a finished job belongs to, in a transaction
   that locks the iteration: a completed worker starts its verifier; a verifier's verdict ends the
   loop or starts the next iteration with the verifier's summary and findings as the worker's
@@ -45,7 +47,9 @@ stored in `run_iterations` and published live.**
 
 A verifier is a query run whose structured output is a `LoopVerdict`: `converged` (boolean), a
 `summary`, the `findings` the next iteration should address, and optionally a `metric` (`name`,
-`value`, `direction`, `target`, as a story reports). Verifier playbooks use the `run-result` sink.
+`value`, `direction`, `target`, as a story reports). Verifier playbooks use the `run-result` sink,
+and a looped playbook names its own in `loop.verifierPlaybookId` (validated to be a `verifier`
+playbook); the adapter's `startVerifier` runs the one stored on the iteration.
 Nothing in the loop relies on a provider-specific feature: a verifier is a playbook with its own
 model, so it can run on a different model or provider than the worker.
 

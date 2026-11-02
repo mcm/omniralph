@@ -34,6 +34,8 @@ export interface NewRunIterationInput {
   run: LoopRunRef;
   number: number;
   feedback: string | null;
+  /** The `verifier` playbook that checks the iteration's work. */
+  verifierPlaybookId: string;
   maxIterations: number;
   stallRounds: number;
 }
@@ -54,6 +56,7 @@ export async function insertRunIteration(
       runId: input.run.id,
       number: input.number,
       feedback: input.feedback,
+      verifierPlaybookId: input.verifierPlaybookId,
       maxIterations: input.maxIterations,
       stallRounds: input.stallRounds,
     })

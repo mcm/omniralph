@@ -61,6 +61,9 @@ const iteration = (
   finishedAt: new Date(2026, 0, number),
 });
 
+/** A loop block naming its verifier playbook. */
+const checked = { verifierPlaybookId: "builtin:check-findings" };
+
 const lowerIsBetter = (value: number) => ({
   name: "open findings",
   value,
@@ -150,7 +153,7 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
         return newJob(run, "worker");
       },
       async startVerifier(_tx, run, it, worker) {
-        calls.get(run.id)!.push(`verifier ${it.number} of ${worker.type}`);
+        calls.get(run.id)!.push(`${it.verifierPlaybookId} ${it.number} of ${worker.type}`);
         return newJob(run, "verifier");
       },
       async finish(_tx, run, end) {
@@ -201,7 +204,7 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
     for (const role of Object.keys(PLAYBOOK_ROLES) as PlaybookRole[]) {
       const { loop, taskType } = PLAYBOOK_ROLES[role];
       const run = newRun();
-      const started = await startLoop(db, run, { role });
+      const started = await startLoop(db, run, { role, loop: checked });
       if (loop === "none" || taskType === "coding") {
         expect(started, role).toBeNull();
         expect(await listRunIterations(db, run), role).toEqual([]);
@@ -211,10 +214,27 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
     }
   });
 
+  it("runs one session for a looped playbook that names no verifier", async () => {
+    const run = newRun();
+    expect(await startLoop(db, run, { role: "review", loop: { maxIterations: 4 } })).toBeNull();
+    expect(await startLoop(db, run, { role: "triage" })).toBeNull();
+    expect(await listRunIterations(db, run)).toEqual([]);
+    expect(calls.get(run.id)).toEqual([]);
+  });
+
   it("feeds the verifier's findings to the next worker and stops on convergence", async () => {
     const run = newRun();
-    const first = (await startLoop(db, run, { role: "review", loop: { maxIterations: 4 } }))!;
-    expect(first).toMatchObject({ number: 1, maxIterations: 4, stallRounds: 2, feedback: null });
+    const first = (await startLoop(db, run, {
+      role: "review",
+      loop: { ...checked, maxIterations: 4 },
+    }))!;
+    expect(first).toMatchObject({
+      number: 1,
+      verifierPlaybookId: "builtin:check-findings",
+      maxIterations: 4,
+      stallRounds: 2,
+      feedback: null,
+    });
     expect(first.workerJobId).not.toBeNull();
 
     await iterate(run, verdict(false, { findings: ["a.ts:3 isn't a bug"] }));
@@ -241,16 +261,16 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
     expect(iterations.every((it) => it.verifyingAt && it.finishedAt)).toBe(true);
     expect(calls.get(run.id)).toEqual([
       "worker 1",
-      "verifier 1 of loop.worker",
+      "builtin:check-findings 1 of loop.worker",
       "worker 2: Two findings are off.\n\n- a.ts:3 isn't a bug",
-      "verifier 2 of loop.worker",
+      "builtin:check-findings 2 of loop.worker",
     ]);
     expect(ends.get(run.id)).toBe("converged after 2");
   });
 
   it("stops at maxIterations", async () => {
     const run = newRun();
-    await startLoop(db, run, { role: "triage", loop: { maxIterations: 2 } });
+    await startLoop(db, run, { role: "triage", loop: { ...checked, maxIterations: 2 } });
     await iterate(run, verdict(false));
     await iterate(run, verdict(false));
     expect((await listRunIterations(db, run)).map((it) => it.outcome)).toEqual([
@@ -262,7 +282,10 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
 
   it("stops when the verifier's metric stalls, recording each iteration's metric", async () => {
     const run = newRun();
-    await startLoop(db, run, { role: "review", loop: { maxIterations: 10, stallRounds: 2 } });
+    await startLoop(db, run, {
+      role: "review",
+      loop: { ...checked, maxIterations: 10, stallRounds: 2 },
+    });
     for (const value of [4, 2, 3, 2]) {
       await iterate(run, verdict(false, { metric: { name: "open findings", value } }));
     }
@@ -274,7 +297,7 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
 
   it("fails the loop when the worker fails, without starting a verifier", async () => {
     const run = newRun();
-    const first = (await startLoop(db, run, { role: "review" }))!;
+    const first = (await startLoop(db, run, { role: "review", loop: checked }))!;
     const failed = await finishJob(first.workerJobId!, null);
     expect(await advanceLoop(db, failed, { status: "failed", error: "boom" })).toBe(true);
     expect(await lastIteration(run)).toMatchObject({
@@ -288,7 +311,7 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
 
   it("fails the loop when the verifier doesn't answer with a verdict", async () => {
     const run = newRun();
-    await startLoop(db, run, { role: "review" });
+    await startLoop(db, run, { role: "review", loop: checked });
     await iterate(run, answered({ looksGood: true }));
     expect(await lastIteration(run)).toMatchObject({ status: "failed", outcome: "failed" });
     expect(ends.get(run.id)).toBe("failed after 1");
@@ -296,13 +319,13 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
 
   it("ignores a replayed outcome and jobs outside any loop", async () => {
     const run = newRun();
-    const first = (await startLoop(db, run, { role: "review" }))!;
+    const first = (await startLoop(db, run, { role: "review", loop: checked }))!;
     const worker = await finishJob(first.workerJobId!, answered(null));
     await advanceLoop(db, worker, { status: "completed" });
     await advanceLoop(db, worker, { status: "completed" });
-    expect(calls.get(run.id)).toEqual(["worker 1", "verifier 1 of loop.worker"]);
+    expect(calls.get(run.id)).toEqual(["worker 1", "builtin:check-findings 1 of loop.worker"]);
     // A second start of the same run's loop returns its first iteration.
-    expect((await startLoop(db, run, { role: "review" }))!.id).toBe(first.id);
+    expect((await startLoop(db, run, { role: "review", loop: checked }))!.id).toBe(first.id);
 
     const { job } = await insertJob(db, {
       organizationId: orgId,
@@ -314,7 +337,7 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
 
   it("hands a verifier's result to the driver instead of its run-result sink", async () => {
     const run = newRun();
-    await startLoop(db, run, { role: "review", loop: { maxIterations: 3 } });
+    await startLoop(db, run, { role: "review", loop: { ...checked, maxIterations: 3 } });
     const first = await lastIteration(run);
     const worker = await finishJob(first.workerJobId!, answered(null));
     await advanceLoop(db, worker, { status: "completed" });

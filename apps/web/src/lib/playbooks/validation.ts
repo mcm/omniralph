@@ -79,6 +79,7 @@ function zodFieldErrors(error: z.ZodError): Record<string, string> {
  *   playbooks among `playbooks`);
  * - `coding.verifierPlaybookId`: a playbook that isn't a `verifier` playbook.
  * - `coding.auditPlaybookId`: a playbook that isn't an `audit` playbook.
+ * - `loop.verifierPlaybookId`: a playbook that doesn't exist or isn't a `verifier` playbook.
  */
 export function validatePlaybookAgainst(
   input: unknown,
@@ -121,6 +122,14 @@ export function validatePlaybookAgainst(
     const verifier = playbooks.find((other) => other.id === verifierId);
     if (verifier && verifier.role !== "verifier") {
       add("coding.verifierPlaybookId", `${verifierId} isn't a verifier playbook.`);
+    }
+  }
+  const loopVerifierId = playbook.loop?.verifierPlaybookId;
+  if (loopVerifierId !== undefined) {
+    const verifier = playbooks.find((other) => other.id === loopVerifierId);
+    if (!verifier) add("loop.verifierPlaybookId", `There is no playbook ${loopVerifierId}.`);
+    else if (verifier.role !== "verifier") {
+      add("loop.verifierPlaybookId", `${loopVerifierId} isn't a verifier playbook.`);
     }
   }
   const auditId = playbook.coding?.auditPlaybookId;

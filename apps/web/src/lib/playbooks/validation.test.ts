@@ -141,6 +141,23 @@ describe("validatePlaybookAgainst", () => {
     });
   });
 
+  it("accepts a review playbook whose loop names a verifier, and refuses one that isn't a verifier", () => {
+    const review = (verifierPlaybookId: string) =>
+      validatePlaybookAgainst(
+        clone("builtin:review-pr", { loop: { verifierPlaybookId, maxIterations: 3 } }),
+        BUILTIN_PLAYBOOKS,
+      );
+    expect(review("builtin:verify-task")).toMatchObject({ ok: true });
+    expect(review("builtin:describe-pr")).toMatchObject({
+      ok: false,
+      fieldErrors: { "loop.verifierPlaybookId": "builtin:describe-pr isn't a verifier playbook." },
+    });
+    expect(review("builtin:missing")).toMatchObject({
+      ok: false,
+      fieldErrors: { "loop.verifierPlaybookId": "There is no playbook builtin:missing." },
+    });
+  });
+
   it("refuses a verifier on a request playbook", () => {
     expect(
       validatePlaybookAgainst(

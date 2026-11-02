@@ -305,19 +305,24 @@ describe("Playbook", () => {
     });
   });
 
-  it("keeps a looped playbook's loop limits and fills the unset ones", () => {
+  it("keeps a looped playbook's verifier and loop limits and fills the unset ones", () => {
     const review = Playbook.parse({
       ...chat,
       role: "review",
       promptTemplate: "{{pr.title}}",
-      loop: { maxIterations: 8 },
+      loop: { verifierPlaybookId: "builtin:check-findings", maxIterations: 8 },
     });
-    expect(review.loop).toEqual({ maxIterations: 8 });
+    expect(review.loop).toEqual({ verifierPlaybookId: "builtin:check-findings", maxIterations: 8 });
     expect(playbookLoopSettings(review)).toEqual({
+      verifierPlaybookId: "builtin:check-findings",
       maxIterations: 8,
       stallRounds: LOOP_DEFAULTS.stallRounds,
     });
-    expect(playbookLoopSettings({ role: "triage" })).toEqual(LOOP_DEFAULTS);
+    // Without a verifier, its runs are one session.
+    expect(playbookLoopSettings({ role: "triage" })).toEqual({
+      verifierPlaybookId: null,
+      ...LOOP_DEFAULTS,
+    });
     expect(playbookLoopSettings(Playbook.parse(chat))).toBeNull();
     expect(playbookLoopSettings({ role: "story" })).toBeNull();
   });
