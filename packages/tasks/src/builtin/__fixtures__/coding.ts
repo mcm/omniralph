@@ -1,7 +1,8 @@
 /**
  * Inputs of today's coding prompt builders (`@omniralph/ralph`) for the
- * built-in coding task tests: a PRD epic, a planning-format epic's story and
- * fix, and a single issue (story runs),
+ * built-in coding task tests: a PRD epic's legacy story, a planning-format
+ * epic's three-paragraph Story and Fix, a three-paragraph Story of a legacy PRD
+ * epic, and a single issue's legacy Fix (story runs),
  * tracker (Linear) and chat requests, `/ship` with stashes, `historyRewrite: never` and `always`,
  * and PR descriptions.
  */
@@ -81,9 +82,13 @@ const PLANNING_STORY = story({
   title: "Export widgets as CSV",
   url: "https://linear.app/acme/issue/ENG-22",
   description:
-    "As an admin, I want a CSV export so that I can share widgets.\n\nFiles: `src/export.ts`.",
-  covers: ["FR-1", "FR-3", "FR-9"],
-  acceptanceCriteria: ["The export button downloads `widgets.csv` with a header row"],
+    "I want you to build a CSV export of the widgets table, so that admins can share widgets outside the app.",
+  approach:
+    "Build it by adding an `exportCsv` function in `src/export.ts`, following the JSON export next to it, and a button on the widgets page that calls it.",
+  acceptanceCriteria: [
+    "The export button downloads `widgets.csv` with a header row",
+    "The JSON export works as before",
+  ],
   dependsOn: ["issue-21"],
   status: "in_progress",
   kind: "story",
@@ -94,19 +99,14 @@ const PLANNING_FIX = story({
   storyId: "ENG-23",
   title: "Keep commas inside quoted cells",
   url: "https://linear.app/acme/issue/ENG-23",
-  description: `## Current behavior
-
-A cell holding \`a, b\` splits into two columns.
-
-## Expected behavior
-
-The cell is quoted and stays one column.
-
-## Unchanged behavior
-
-Cells without commas export unquoted.`,
-  covers: ["FR-2"],
-  acceptanceCriteria: ["Exporting a widget named `a, b` yields one quoted cell"],
+  description:
+    "I want you to fix the CSV export splitting a cell that holds a comma: a widget named `a, b` exports as two columns, and it should be one quoted cell.",
+  approach:
+    "Build it by quoting cells in `exportCsv` (`src/export.ts`): it likely joins values with commas without escaping them.",
+  acceptanceCriteria: [
+    "Exporting a widget named `a, b` yields one quoted cell",
+    "Cells without commas still export unquoted",
+  ],
   status: "open",
   kind: "fix",
 });
@@ -222,6 +222,25 @@ export const STORY_FIXTURES: Record<string, PromptContext> = {
     maxAttempts: 3,
     followUps: true,
     checks: ["pnpm test"],
+    now: NOW,
+  },
+  "prd-epic-task": {
+    trackerName: "Linear",
+    epic: PRD_EPIC,
+    story: {
+      ...CURRENT,
+      description:
+        "I want you to build a CSV export of the widgets table, so that admins can share widgets.",
+      // A task without paragraph 2.
+      approach: "",
+      acceptanceCriteria: ["The export button downloads `widgets.csv`"],
+    },
+    progressFile: "/tmp/omniralph-progress-x/progress.md",
+    progress: PROGRESS,
+    attempt: 1,
+    maxAttempts: 3,
+    followUps: true,
+    checks: [],
     now: NOW,
   },
   "single-issue": {

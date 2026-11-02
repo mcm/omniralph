@@ -516,17 +516,13 @@ export const VARIABLES: readonly VariableDefinition[] = [
       [
         "epic.planning",
         STORY_TRIGGERS,
-        "True when the epic is in the planning format (`## Problem`, `## Scope`, `## Requirements`): its description is background for the story, not a PRD.",
+        "True when the epic's description is background for the story, not a PRD: the epic is in the planning format (`## Problem`, `## Scope`, `## Requirements`) or the story is a three-paragraph task.",
       ],
+      ["story.fix", STORY_TRIGGERS, "True when the story is a Fix (its kind is `Fix`)."],
       [
-        "story.fix",
+        "story.task",
         STORY_TRIGGERS,
-        "A Fix's behavior sections (`current`, `expected`, `unchanged`); null for a Story.",
-      ],
-      [
-        "story.covers.items.id",
-        STORY_TRIGGERS,
-        "Identifier of an epic requirement the story owns, from its `Covers:` line (e.g. `FR-2`); `story.covers` is null without any.",
+        "True when the story is a three-paragraph task (`story.description`, `story.approach` and its criteria are its paragraphs); false for a legacy story.",
       ],
       [
         "story.repository",
@@ -573,29 +569,16 @@ export const VARIABLES: readonly VariableDefinition[] = [
     fence: "markdown",
     triggers: STORY_RUN_TRIGGERS,
     description:
-      "Description of the story, without its acceptance criteria, `Covers:` line or a Fix's behavior sections (null when blank).",
+      "What to build: a three-paragraph task's paragraph 1 (\"I want you to …\"), else the legacy story's description without its acceptance criteria (null when blank).",
   },
-  ...(
-    [
-      ["story.fix.current", "## Current behavior"],
-      ["story.fix.expected", "## Expected behavior"],
-      ["story.fix.unchanged", "## Unchanged behavior"],
-    ] as const
-  ).map(([name, section]): VariableDefinition => ({
-    name,
+  {
+    name: "story.approach",
     source: "trigger",
     trust: "untrusted",
     fence: "markdown",
     triggers: STORY_TRIGGERS,
-    description: `A Fix's \`${section}\` section (null when it has none, or for a Story).`,
-  })),
-  {
-    name: "story.covers.items.text",
-    source: "trigger",
-    trust: "untrusted",
-    triggers: STORY_TRIGGERS,
     description:
-      "Text of the requirement in the epic's `## Requirements` (null when the epic doesn't have it).",
+      'How to build it: a three-paragraph task\'s paragraph 2 ("Build it by …"), guidance the agent may depart from (null when blank, or for a legacy story).',
   },
   {
     name: "story.acceptanceCriteria.items",
@@ -603,7 +586,7 @@ export const VARIABLES: readonly VariableDefinition[] = [
     trust: "untrusted",
     triggers: STORY_RUN_TRIGGERS,
     description:
-      "An acceptance criterion of the story (`story.acceptanceCriteria` is null without any).",
+      "An acceptance criterion of the story: for a three-paragraph task, one of paragraph 3's (\"Don't stop until …\") done criteria (`story.acceptanceCriteria` is null without any).",
   },
   {
     name: "requirements.items.text",

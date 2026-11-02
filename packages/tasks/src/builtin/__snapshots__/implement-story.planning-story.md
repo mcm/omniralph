@@ -39,27 +39,24 @@ Admins can't share widgets outside the app.
 Linear issue: ENG-22 (https://linear.app/acme/issue/ENG-22)
 Kind: Story
 
-### Description
+### What to Build
 ```markdown
-As an admin, I want a CSV export so that I can share widgets.
-
-Files: `src/export.ts`.
+I want you to build a CSV export of the widgets table, so that admins can share widgets outside the app.
 ```
 
-### Requirements This Task Covers
-The epic requirements this task owns, as the epic words them. The acceptance criteria below show what delivering them takes in this task.
-- FR-1: ```
-The system must export widgets as CSV.
+### How to Build It (guidance)
+This is guidance on how to build it, not part of what is checked: follow it where it fits, and depart from it when the code shows a better way.
+```markdown
+Build it by adding an `exportCsv` function in `src/export.ts`, following the JSON export next to it, and a button on the widgets page that calls it.
 ```
-- FR-3: ```
-WHEN an export is empty, the system must still write the header row.
-```
-- FR-9: (not among the epic's requirements)
 
-### Acceptance Criteria
-Your task is done when every criterion below holds. A criterion is evidence to check, not a test to write: confirm it in the code, the output of a command or the behavior of the running software. Write tests where the repo's conventions call for them on new behavior, never just to prove a criterion. A test that only asserts a file exists or what a config contains doesn't satisfy a criterion.
+### Don't Stop Until
+This is your stop condition: keep working until every criterion below holds, and every constraint in it is respected. A criterion is evidence to check, not a test to write: confirm it in the code, the output of a command or the behavior of the running software. Write tests where the repo's conventions call for them on new behavior, never just to prove a criterion. A test that only asserts a file exists or what a config contains doesn't satisfy a criterion.
 - [ ] ```
 The export button downloads `widgets.csv` with a header row
+```
+- [ ] ```
+The JSON export works as before
 ```
 
 ### Checked by the Orchestrator
@@ -76,7 +73,7 @@ The orchestrator runs these itself after you report the story complete and sends
 ## Workflow
 1. Read the epic context above for background, then build only what this task asks for.
 2. Read the progress log at `/tmp/omniralph-progress-p/progress.md` for status, learnings and gotchas.
-3. Implement ONLY this story (ENG-22), satisfying every acceptance criterion. Do not start other stories. Implement it end to end: no TODOs, stubs or placeholders for anything its acceptance criteria cover. The tests and error handling its new code needs are part of this story, not later work.
+3. Implement ONLY this story (ENG-22), and keep working until everything under "Don't Stop Until" holds. Do not start other stories. Implement it end to end: no TODOs, stubs or placeholders for anything its acceptance criteria cover. The tests and error handling its new code needs are part of this story, not later work.
 4. Run the quality gates and fix any failures.
 5. Do NOT create git commits or push. The orchestrator commits after verifying the story.
 6. Document learnings (see below).

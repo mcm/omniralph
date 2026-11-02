@@ -382,6 +382,34 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     );
     expect(fix).toContain("\nKind: Fix\n");
     expect(fix).not.toContain("Kind: Story");
+    // A three-paragraph task's paragraphs reach the prompt under their own headings; a legacy
+    // story keeps its description and criteria.
+    const taskPrompt = (story: Partial<RalphStoryPayload["story"]>) =>
+      storyRunPrompt(
+        run,
+        { ...delegated, story: { ...delegated.story, ...story } },
+        { offered: [], progressFile },
+        now,
+      );
+    const task = taskPrompt({
+      description: "I want you to run a story.",
+      approach: "Build it by calling `run`.",
+      acceptanceCriteria: ["It runs."],
+      task: true,
+    });
+    expect(task).toContain("### What to Build\n```markdown\nI want you to run a story.\n```");
+    expect(task).toContain("### How to Build It (guidance)\n");
+    expect(task).toContain("Build it by calling `run`.");
+    expect(task).toContain("### Don't Stop Until\n");
+    expect(task).not.toContain("### Acceptance Criteria");
+    // A task without paragraph 2 is still a task; an older server's payload without `task`
+    // is one when it has an approach.
+    const bare = taskPrompt({ description: "I want you to run it.", task: true });
+    expect(bare).toContain("### What to Build\n");
+    expect(bare).not.toContain("(guidance)");
+    expect(taskPrompt({ approach: "Build it by calling `run`." })).toContain("### What to Build");
+    expect(call!.prompt).toContain("### Description\n");
+    expect(call!.prompt).not.toContain("### What to Build");
     // The system prompt is the agent's, not ralph's story system prompt.
     expect(call!.options.systemPrompt).toMatchObject({
       type: "preset",

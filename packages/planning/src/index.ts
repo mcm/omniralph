@@ -17,7 +17,6 @@ export {
   COVERS_LABEL,
   EPIC_SECTIONS,
   EPIC_TEMPLATE,
-  FIX_SECTIONS,
   OPTIONAL_EPIC_SECTIONS,
   REQUIREMENT_PREFIX,
   SCOPE_PARTS,
@@ -57,16 +56,15 @@ export {
 } from "./methodology/triage.js";
 
 export {
-  COVERED_REQUIREMENTS_HEADING,
-  COVERED_REQUIREMENTS_NOTE,
   CRITERIA_AS_EVIDENCE_NOTE,
   EPIC_CONTEXT_HEADING,
   EPIC_CONTEXT_NOTE,
   FIX_TASK_NOTE,
-  UNKNOWN_REQUIREMENT_TEXT,
-  splitFixDescription,
+  FIX_TASK_PROMPT_NOTE,
+  TASK_APPROACH_NOTE,
+  TASK_DONE_NOTE,
+  TASK_PROMPT_HEADINGS,
 } from "./methodology/task-prompt.js";
-export type { FixDescription } from "./methodology/task-prompt.js";
 
 export {
   TASK_PARAGRAPH_NAMES,

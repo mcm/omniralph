@@ -39,33 +39,26 @@ Admins can't share widgets outside the app.
 Linear issue: ENG-23 (https://linear.app/acme/issue/ENG-23)
 Kind: Fix
 
-This task is a Fix: make the current behavior become the expected behavior, and keep the unchanged behavior working exactly as it is. Add a regression test only where the affected code already has tests.
+This task is a Fix: "What Is Broken" below is the bug and what should happen instead. Make that happen, and keep every behavior named under "Don't Stop Until" working as it does now. Add a regression test only where the affected code already has tests.
 
-### Current behavior
+### What Is Broken
 ```markdown
-A cell holding `a, b` splits into two columns.
+I want you to fix the CSV export splitting a cell that holds a comma: a widget named `a, b` exports as two columns, and it should be one quoted cell.
 ```
 
-### Expected behavior
+### Likely Cause and How to Fix It (guidance)
+This is guidance on how to build it, not part of what is checked: follow it where it fits, and depart from it when the code shows a better way.
 ```markdown
-The cell is quoted and stays one column.
+Build it by quoting cells in `exportCsv` (`src/export.ts`): it likely joins values with commas without escaping them.
 ```
 
-### Unchanged behavior
-```markdown
-Cells without commas export unquoted.
-```
-
-### Requirements This Task Covers
-The epic requirements this task owns, as the epic words them. The acceptance criteria below show what delivering them takes in this task.
-- FR-2: ```
-The system must quote cells that hold a comma.
-```
-
-### Acceptance Criteria
-Your task is done when every criterion below holds. A criterion is evidence to check, not a test to write: confirm it in the code, the output of a command or the behavior of the running software. Write tests where the repo's conventions call for them on new behavior, never just to prove a criterion. A test that only asserts a file exists or what a config contains doesn't satisfy a criterion.
+### Don't Stop Until
+This is your stop condition: keep working until every criterion below holds, and every constraint in it is respected. A criterion is evidence to check, not a test to write: confirm it in the code, the output of a command or the behavior of the running software. Write tests where the repo's conventions call for them on new behavior, never just to prove a criterion. A test that only asserts a file exists or what a config contains doesn't satisfy a criterion.
 - [ ] ```
 Exporting a widget named `a, b` yields one quoted cell
+```
+- [ ] ```
+Cells without commas still export unquoted
 ```
 
 ### Checked by the Orchestrator
@@ -82,7 +75,7 @@ The orchestrator runs these itself after you report the story complete and sends
 ## Workflow
 1. Read the epic context above for background, then build only what this task asks for.
 2. Read the progress log at `/tmp/omniralph-progress-p/progress.md` for status, learnings and gotchas.
-3. Implement ONLY this story (ENG-23), satisfying every acceptance criterion. Do not start other stories. Implement it end to end: no TODOs, stubs or placeholders for anything its acceptance criteria cover. The tests and error handling its new code needs are part of this story, not later work.
+3. Implement ONLY this story (ENG-23), and keep working until everything under "Don't Stop Until" holds. Do not start other stories. Implement it end to end: no TODOs, stubs or placeholders for anything its acceptance criteria cover. The tests and error handling its new code needs are part of this story, not later work.
 4. Run the quality gates and fix any failures.
 5. Do NOT create git commits or push. The orchestrator commits after verifying the story.
 6. Document learnings (see below).
