@@ -9,8 +9,27 @@ import type {
 } from "../providers/types.js";
 import { runReview } from "../runReview.js";
 import { isCleanCase, type EvalCase, type ExpectedFinding } from "./case.js";
-import { buildCaseRepo } from "./repo.js";
+import { runLoopedReview, type LoopedCheckResult, type LoopedEvalProvider } from "./looped.js";
+import { buildCaseRepo, type CaseRepo } from "./repo.js";
 import { scoreCase, type FalsePositiveReason } from "./score.js";
+
+/**
+ * How a case is reviewed: `single` is one review task over the whole diff
+ * and rubric (`runReview`); `looped` runs the check-type passes, the finding
+ * verifier and the merge (`runLoopedReview`) with the depth's pass caps.
+ */
+export const EVAL_STRATEGIES = ["single", "looped"] as const;
+export type EvalStrategy = (typeof EVAL_STRATEGIES)[number];
+
+/** What a looped review did with a case. */
+export interface LoopedCaseDetail {
+  /** Every check type of `LOOPED_REVIEW_CHECK_TYPES`, in order (those after a cap-aborted one are missing). */
+  checks: LoopedCheckResult[];
+  /** Findings verification dropped (rejected or unanswered): never reported. */
+  dropped: number;
+  /** Findings dropped in the merge as repeats of another check type's. */
+  merged: number;
+}
 
 /** The finding fields a report keeps. */
 export interface ReportedFinding {
@@ -44,6 +63,8 @@ export interface CaseResult {
   missed: ExpectedFinding[];
   /** Files the plan left out (e.g. over the budget). */
   skipped: SkippedFile[];
+  /** Set for a looped review that ran (not for a case that failed before it). */
+  looped?: LoopedCaseDetail;
 }
 
 export interface ProfileRun {
@@ -54,6 +75,7 @@ export interface ProfileRun {
 }
 
 export interface EvalRun {
+  strategy: EvalStrategy;
   startedAt: string;
   finishedAt: string;
   /** `--max-total-tokens`, if any. */
@@ -67,8 +89,13 @@ export interface EvalRun {
 export interface RunEvalOptions {
   cases: readonly EvalCase[];
   profiles: readonly ReviewProfileConfig[];
-  /** The real runs use `ClaudeAgentProvider`; tests pass a recorded one. */
-  provider: ReviewProvider;
+  /** Default `single`. */
+  strategy?: EvalStrategy;
+  /**
+   * The real runs use `ClaudeAgentProvider`; tests pass a recorded one. A
+   * looped run also verifies findings with it.
+   */
+  provider: ReviewProvider & Partial<Pick<LoopedEvalProvider, "verifyFindings">>;
   /** Stop before the run's input + output tokens would go past this. */
   maxTotalTokens?: number;
   logger?: ReviewLogger;
@@ -102,8 +129,14 @@ const reported = (f: Finding): ReportedFinding => ({
 export async function runEval(options: RunEvalOptions): Promise<EvalRun> {
   const now = options.now ?? (() => new Date());
   const logger = options.logger ?? quietLogger;
+  const strategy = options.strategy ?? "single";
+  const provider = options.provider;
+  if (strategy === "looped" && !provider.verifyFindings) {
+    throw new Error("A looped eval needs a provider that verifies findings");
+  }
   const startedAt = now().toISOString();
   const run: EvalRun = {
+    strategy,
     startedAt,
     finishedAt: startedAt,
     maxTotalTokens: options.maxTotalTokens ?? null,
@@ -136,22 +169,32 @@ export async function runEval(options: RunEvalOptions): Promise<EvalRun> {
         };
         break outer;
       }
-      const budget = Math.min(profile.maxTokensPerReview, remaining);
-      const result = await runCase(
-        evalCase,
-        { ...profile, maxTokensPerReview: budget },
-        {
-          provider: options.provider,
-          logger,
-          signal: options.signal,
-        },
-      );
+      const deps = { logger, signal: options.signal };
+      let result: CaseResult;
+      let cutByCap: boolean;
+      if (strategy === "looped") {
+        // Each pass may spend the depth's cap; the run's cap limits the whole case.
+        const looped = await runLoopedCase(evalCase, profile, {
+          ...deps,
+          provider: provider as LoopedEvalProvider,
+          ...(remaining !== Infinity && { maxTotalTokens: remaining }),
+        });
+        result = looped.result;
+        cutByCap = looped.capped;
+      } else {
+        const budget = Math.min(profile.maxTokensPerReview, remaining);
+        result = await runCase(
+          evalCase,
+          { ...profile, maxTokensPerReview: budget },
+          { ...deps, provider },
+        );
+        // A capped budget shows as a budget stop, or as files the plan dropped to fit it.
+        cutByCap =
+          budget < profile.maxTokensPerReview &&
+          (result.stopReason === "budget_exhausted" ||
+            result.skipped.some((s) => s.reason === "budget"));
+      }
       run.totalTokens += total(result.usage);
-      // A capped budget shows as a budget stop, or as files the plan dropped to fit it.
-      const cutByCap =
-        budget < profile.maxTokensPerReview &&
-        (result.stopReason === "budget_exhausted" ||
-          result.skipped.some((s) => s.reason === "budget"));
       if (cutByCap) result.stopReason = "aborted";
       profileRun.cases.push(result);
       options.onCase?.(profile.id, result);
@@ -167,67 +210,139 @@ export async function runEval(options: RunEvalOptions): Promise<EvalRun> {
   return run;
 }
 
+/** A case's findings scored, as a result. */
+function scoredResult(
+  evalCase: EvalCase,
+  review: {
+    findings: Finding[];
+    stopReason: ReviewStopReason;
+    error?: string;
+    usage: TokenUsage;
+    skipped: SkippedFile[];
+  },
+  durationMs: number,
+): CaseResult {
+  const score = scoreCase(review.findings, evalCase);
+  const verdicts = new Map<Finding, CaseResult["findings"][number]>();
+  for (const tp of score.truePositives) {
+    verdicts.set(tp.finding, { ...reported(tp.finding), verdict: "true_positive" });
+  }
+  for (const fp of score.falsePositives) {
+    verdicts.set(fp.finding, {
+      ...reported(fp.finding),
+      verdict: fp.reason,
+      ...(fp.mustNotFlag ? { mustNotFlagNote: fp.mustNotFlag.note } : {}),
+    });
+  }
+  return {
+    id: evalCase.id,
+    clean: isCleanCase(evalCase),
+    stopReason: review.stopReason,
+    ...(review.error !== undefined ? { error: review.error } : {}),
+    usage: review.usage,
+    durationMs,
+    truePositives: score.truePositives.length,
+    falsePositives: score.falsePositives.length,
+    falseNegatives: score.falseNegatives.length,
+    findings: review.findings.flatMap((f) => verdicts.get(f) ?? []),
+    missed: score.falseNegatives,
+    skipped: review.skipped,
+  };
+}
+
+/** A case whose review threw: reported, never scored. */
+function failedResult(evalCase: EvalCase, error: unknown, durationMs: number): CaseResult {
+  return {
+    id: evalCase.id,
+    clean: isCleanCase(evalCase),
+    stopReason: "error",
+    error: error instanceof Error ? error.message : String(error),
+    usage: { inputTokens: 0, outputTokens: 0 },
+    durationMs,
+    truePositives: 0,
+    falsePositives: 0,
+    falseNegatives: 0,
+    findings: [],
+    missed: [],
+    skipped: [],
+  };
+}
+
+/** Runs `review` in a fresh repo of the case, scoring what it returns. */
+async function inCaseRepo<T>(
+  evalCase: EvalCase,
+  logger: ReviewLogger,
+  review: (repo: CaseRepo) => Promise<T>,
+  toResult: (value: T, durationMs: number) => CaseResult,
+): Promise<{ result: CaseResult; value: T | undefined }> {
+  const started = performance.now();
+  const elapsed = () => Math.round(performance.now() - started);
+  const repo = await buildCaseRepo(evalCase);
+  try {
+    const value = await review(repo);
+    return { result: toResult(value, elapsed()), value };
+  } catch (error) {
+    logger.warn({ caseId: evalCase.id, err: String(error) }, "Eval case failed");
+    return { result: failedResult(evalCase, error, elapsed()), value: undefined };
+  } finally {
+    await repo.cleanup();
+  }
+}
+
 async function runCase(
   evalCase: EvalCase,
   profile: ReviewProfileConfig,
   deps: { provider: ReviewProvider; logger: ReviewLogger; signal?: AbortSignal },
 ): Promise<CaseResult> {
-  const started = performance.now();
-  const repo = await buildCaseRepo(evalCase);
-  try {
-    const review = await runReview(
-      {
-        cwd: repo.dir,
-        baseSha: repo.baseSha,
-        headSha: repo.headSha,
-        reviewConfig: { profile, rules: [], pathExcludes: [] },
-        changeRequest: { title: evalCase.pr.title, description: evalCase.pr.description ?? null },
-      },
-      deps,
-    );
-    const score = scoreCase(review.findings, evalCase);
-    const verdicts = new Map<Finding, CaseResult["findings"][number]>();
-    for (const tp of score.truePositives) {
-      verdicts.set(tp.finding, { ...reported(tp.finding), verdict: "true_positive" });
-    }
-    for (const fp of score.falsePositives) {
-      verdicts.set(fp.finding, {
-        ...reported(fp.finding),
-        verdict: fp.reason,
-        ...(fp.mustNotFlag ? { mustNotFlagNote: fp.mustNotFlag.note } : {}),
-      });
-    }
-    return {
-      id: evalCase.id,
-      clean: isCleanCase(evalCase),
-      stopReason: review.stopReason,
-      ...(review.error !== undefined ? { error: review.error } : {}),
-      usage: review.usage,
-      durationMs: Math.round(performance.now() - started),
-      truePositives: score.truePositives.length,
-      falsePositives: score.falsePositives.length,
-      falseNegatives: score.falseNegatives.length,
-      findings: review.findings.flatMap((f) => verdicts.get(f) ?? []),
-      missed: score.falseNegatives,
-      skipped: review.skipped,
-    };
-  } catch (error) {
-    deps.logger.warn({ caseId: evalCase.id, err: String(error) }, "Eval case failed");
-    return {
-      id: evalCase.id,
-      clean: isCleanCase(evalCase),
-      stopReason: "error",
-      error: error instanceof Error ? error.message : String(error),
-      usage: { inputTokens: 0, outputTokens: 0 },
-      durationMs: Math.round(performance.now() - started),
-      truePositives: 0,
-      falsePositives: 0,
-      falseNegatives: 0,
-      findings: [],
-      missed: [],
-      skipped: [],
-    };
-  } finally {
-    await repo.cleanup();
-  }
+  const { result } = await inCaseRepo(
+    evalCase,
+    deps.logger,
+    (repo) =>
+      runReview(
+        {
+          cwd: repo.dir,
+          baseSha: repo.baseSha,
+          headSha: repo.headSha,
+          reviewConfig: { profile, rules: [], pathExcludes: [] },
+          changeRequest: { title: evalCase.pr.title, description: evalCase.pr.description ?? null },
+        },
+        deps,
+      ),
+    (review, durationMs) => scoredResult(evalCase, review, durationMs),
+  );
+  return result;
+}
+
+/** A case reviewed by a looped review; `capped` when `maxTotalTokens` cut it short. */
+async function runLoopedCase(
+  evalCase: EvalCase,
+  profile: ReviewProfileConfig,
+  deps: {
+    provider: LoopedEvalProvider;
+    logger: ReviewLogger;
+    signal?: AbortSignal;
+    maxTotalTokens?: number;
+  },
+): Promise<{ result: CaseResult; capped: boolean }> {
+  const { result, value } = await inCaseRepo(
+    evalCase,
+    deps.logger,
+    (repo) =>
+      runLoopedReview(
+        {
+          cwd: repo.dir,
+          baseSha: repo.baseSha,
+          headSha: repo.headSha,
+          repository: `evals/${evalCase.id}`,
+          reviewConfig: { profile, rules: [], pathExcludes: [] },
+          changeRequest: { title: evalCase.pr.title, description: evalCase.pr.description ?? null },
+        },
+        deps,
+      ),
+    (review, durationMs) => ({
+      ...scoredResult(evalCase, review, durationMs),
+      looped: { checks: review.checks, dropped: review.dropped, merged: review.merged },
+    }),
+  );
+  return { result, capped: value?.capped ?? false };
 }

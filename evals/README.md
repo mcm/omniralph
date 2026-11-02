@@ -1,9 +1,23 @@
 # Review evals
 
 `pnpm eval` measures how well reviews find real problems and how much they
-cost. It runs the real review (`runReview` with `ClaudeAgentProvider`, the same
-pipeline and prompt as the `builtin:review-pr` review task) over a corpus of small known-bad and known-clean changes
-and reports, per profile:
+cost. It runs the real review over a corpus of small known-bad and
+known-clean changes, with one of two strategies (`--strategy`):
+
+- **`single`** (the default): one review task over the whole diff and rubric
+  (`runReview` with `ClaudeAgentProvider`, the same pipeline and prompt as a
+  single-pass `builtin:review-pr` review task).
+- **`looped`**: a looped review in process (`runLoopedReview`), as a review run
+  does it: `planChecks` picks the check types (security, stability,
+  performance, compatibility) and their files, each check type runs its passes
+  with its own rubric sections (one session per group of files), a fresh
+  `builtin:verify-findings` session confirms or rejects each pass's findings
+  and names the areas it didn't reach, and the next pass covers those, until a
+  pass adds no new confirmed finding or the depth's pass cap is reached
+  (security runs at least two passes at Deep). The check types' confirmed
+  findings are then merged.
+
+It reports, per profile:
 
 - **precision**: how many reported findings were real (TP / (TP + FP)),
 - **recall**: how many known problems were found (TP / (TP + FN)),
@@ -12,12 +26,13 @@ and reports, per profile:
 
 each compared against the committed baseline (`evals/baseline.json`). Use it
 whenever you change the rubric, the prompts, the provider or a profile, to tell
-whether reviews got better or only cheaper. It measures one review task on its
-own: other review tasks and a review run's correlation of their findings aren't
-part of it.
+whether reviews got better or only cheaper, and to tune the review depths'
+pass caps by comparing looped reviews with single-pass ones. It measures one
+review task on its own: other review tasks and a review run's correlation of
+their findings aren't part of it.
 
 > `pnpm eval` spends real Claude tokens (a full run is 27 cases × 3 profiles,
-> Deep on Opus). It is not part of `pnpm test` or CI. The offline tests
+> Deep on Opus; a looped run is several sessions per case and check type). It is not part of `pnpm test` or CI. The offline tests
 > (`packages/engine/src/eval/*.test.ts`) check the eval runner and the corpus with
 > a recorded fake provider.
 
@@ -29,7 +44,8 @@ machine, the same as an agent host: a `claude` login, or `ANTHROPIC_API_KEY` /
 [docs/claude-auth.md](../docs/claude-auth.md)).
 
 ```bash
-pnpm eval                                   # every profile, every case
+pnpm eval                                   # every profile, every case, single-pass
+pnpm eval --strategy looped                 # the same with looped reviews
 pnpm eval --profile quick                   # one profile: quick | standard | deep | all
 pnpm eval --case bad-sql-concat --case clean-docs
 pnpm eval --max-total-tokens 2000000        # hard cap for the whole run
@@ -40,38 +56,68 @@ pnpm eval --profile standard --update-baseline
 where a shell guard blocks commands containing the word `eval`, such as an AI
 agent session isolated in a worktree.
 
-| Option                   | Default        | Meaning                                                                                                                                                                                   |
-| ------------------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--profile`              | `all`          | Profiles to run. They use the built-in defaults from `packages/engine/src/eval/profiles.ts` (the same as the seed migration), not a database's edited copies.                             |
-| `--case <id>`            | every case     | Run only these cases (repeat the flag, or separate IDs with commas).                                                                                                                      |
-| `--max-total-tokens <n>` | no cap         | Each case's budget is capped at what's left of `n`. When the cap cuts a case short, or nothing is left, the run stops, writes the report for what ran and exits with code 2.              |
-| `--update-baseline`      | off            | Overwrite this run's profiles in `evals/baseline.json` (other profiles keep their entries). Refused with `--case` and skipped when the run aborted, so the baseline is always a full run. |
-| `--evals-dir <dir>`      | `<repo>/evals` | Another corpus.                                                                                                                                                                           |
+| Option                   | Default        | Meaning                                                                                                                                                                                                                                 |
+| ------------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--strategy`             | `single`       | `single` (one review task over the whole diff) or `looped` (check-type passes, verified findings, the depth's pass caps). Reports and baseline entries are per strategy.                                                                |
+| `--profile`              | `all`          | Profiles to run. They use the built-in defaults from `packages/engine/src/eval/profiles.ts` (the same as the seed migration), not a database's edited copies.                                                                           |
+| `--case <id>`            | every case     | Run only these cases (repeat the flag, or separate IDs with commas).                                                                                                                                                                    |
+| `--max-total-tokens <n>` | no cap         | Each case's budget is capped at what's left of `n`. When the cap cuts a case short, or nothing is left, the run stops, writes the report for what ran and exits with code 2.                                                            |
+| `--update-baseline`      | off            | Overwrite this run's profiles of this run's strategy in `evals/baseline.json` (other profiles and the other strategy keep their entries). Refused with `--case` and skipped when the run aborted, so the baseline is always a full run. |
+| `--evals-dir <dir>`      | `<repo>/evals` | Another corpus.                                                                                                                                                                                                                         |
 
 Each case is reviewed like a fresh pull request: the full diff, no previous
-review, no custom instructions or repository rules. Progress goes to stderr;
-the Markdown report goes to stdout. Ctrl-C cancels the current case, stops the run and
-still writes the report.
+review, no custom instructions or repository rules.
+
+### Looped runs
+
+A looped run uses each depth's pass settings from
+`packages/shared/src/review-depth.ts` (`maxPasses`, `verifyFindings`,
+`securityMinPasses`): each pass of a check type may spend the depth's token
+cap, split between its groups of files, and each verification runs on the
+`builtin:verify-findings` playbook's model and token cap. `--max-total-tokens`
+caps the whole case: each session gets at most what's left of it. Two
+differences from a review run, both because an eval runs on your machine
+without a sandbox:
+
+- The verifier gets the read-only tools of a review (`Read`, `Grep`, `Glob`)
+  and no shell, so the diff of the pass's files is quoted in its prompt
+  instead of it running `git diff`.
+- The merge is deterministic: a finding repeating another check type's (same
+  path and category, overlapping lines) is dropped, where a review run asks
+  its correlation task to merge them. Progress goes to stderr;
+  the Markdown report goes to stdout. Ctrl-C cancels the current case, stops the run and
+  still writes the report.
 
 ## Reading the report
 
-Every run writes `evals/reports/<timestamp>-<profile>.json` and `.md`
-(gitignored; `<profile>` is the `--profile` argument). The Markdown has, per
-profile:
+Every run writes `evals/reports/<timestamp>-<strategy>-<profile>.json` and
+`.md` (gitignored; `<strategy>` and `<profile>` are the `--strategy` and
+`--profile` arguments). The Markdown has, per profile:
 
 1. A line with the scored cases, TP/FP/FN, clean cases flagged, total tokens and time.
 2. A metrics table: **Current**, **Baseline** and **Δ** (current − baseline).
+   The baseline is the entry of the same strategy and profile: a looped run is
+   never compared with a single-pass baseline, or the other way round.
    Precision and recall deltas are in percentage points. Higher precision and
    recall are better; fewer false positives and tokens are better. If the
    baseline was measured over a different case set, the report says so and the
-   deltas are only indicative.
-3. A per-case table: stop reason, TP, FP, FN, tokens in/out and duration.
-4. **Misses and false positives**: every false positive (with why it counted:
+   deltas are only indicative. A looped run adds **Findings dropped by
+   verification** (rejected or unanswered by the verifier, never reported).
+3. Looped runs only: the profile's single-pass baseline (precision, recall,
+   false positives and tokens) for reference, and a table of passes per check
+   type: the cases it ran on, its passes in total, per case and at most, the
+   findings it kept and those verification dropped.
+4. A per-case table: stop reason, TP, FP, FN, tokens in/out and duration; for
+   a looped run also the passes per check type and the findings verification
+   dropped.
+5. **Misses and false positives**: every false positive (with why it counted:
    `unmatched`, `duplicate` or `must_not_flag`) and every missed expected
    finding, so you can open the case and see what happened.
 
 The JSON has the same data plus every finding (path, lines, severity,
-category, title, confidence and verdict) for scripting and diffing two runs.
+category, title, confidence and verdict) and, for a looped run, every pass of
+every check type (files, findings reported, confirmed, new and dropped,
+verification, unreached areas) for scripting and diffing two runs.
 
 How findings are scored (`scoreCase` in `packages/engine/src/eval/score.ts`):
 
@@ -98,7 +144,15 @@ noise; look for consistent movement, and rerun the affected cases
 After a change you mean to keep, run the full corpus for the profiles you
 changed with `--update-baseline` and commit `evals/baseline.json` along with
 the change, so the next comparison starts from it. Mention the deltas in the
-pull request.
+pull request. The baseline keeps the two strategies apart
+(`strategies.single`, `strategies.looped`), and `--update-baseline` only
+replaces entries of the run's strategy. A baseline from before strategies
+(`"version": 1` with `profiles`) reads as single-pass entries, and the next
+`--update-baseline` rewrites it in the current format.
+
+When you change a depth's pass settings, run both strategies for that profile
+and compare the looped run's precision, recall and tokens with the single-pass
+baseline shown beside it.
 
 ## Cases
 

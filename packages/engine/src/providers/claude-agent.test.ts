@@ -773,6 +773,53 @@ describe("ClaudeAgentProvider.learnRule", () => {
   });
 });
 
+describe("ClaudeAgentProvider.verifyFindings", () => {
+  const verify = (provider: ClaudeAgentProvider, maxTokens = 5000) =>
+    provider.verifyFindings({
+      prompt: "Verify these findings…",
+      systemPrompt: "You verify findings.",
+      cwd: "/tmp/worktree",
+      model: "claude-sonnet-5-5",
+      maxTokens,
+    });
+
+  const verdicts = { verdicts: [], unreached: [], summary: "Nothing to check." };
+
+  it("explores read-only with the verifier's system prompt and returns its JSON answer", async () => {
+    const text = `Checked.\n\n\`\`\`json\n${JSON.stringify(verdicts)}\n\`\`\``;
+    const fake = fakeQuery([
+      assistant(text, { input_tokens: 700, output_tokens: 40 }),
+      result(text),
+    ]);
+    const provider = new ClaudeAgentProvider({ query: fake.query, logger: silentLogger() });
+    expect(await verify(provider)).toEqual({
+      status: "answered",
+      output: verdicts,
+      usage: { inputTokens: 700, outputTokens: 40 },
+    });
+    const options = fake.calls[0]!.options;
+    expect(options.systemPrompt).toBe("You verify findings.");
+    expect(options.tools).toEqual(["Read", "Grep", "Glob"]);
+    expect(options.disallowedTools).toEqual(DISALLOWED_TOOLS);
+    expect(options.cwd).toBe("/tmp/worktree");
+  });
+
+  it("fails an answer without JSON, and stops at the token cap", async () => {
+    const prose = fakeQuery([result("All findings look right to me.")]);
+    expect(
+      await verify(new ClaudeAgentProvider({ query: prose.query, logger: silentLogger() })),
+    ).toMatchObject({ status: "error", output: null, error: expect.stringContaining("not JSON") });
+
+    const capped = fakeQuery([
+      assistant("{", { input_tokens: 4990, output_tokens: 20 }),
+      result(JSON.stringify(verdicts)),
+    ]);
+    expect(
+      await verify(new ClaudeAgentProvider({ query: capped.query, logger: silentLogger() })),
+    ).toMatchObject({ status: "budget_exhausted", output: null });
+  });
+});
+
 describe("ClaudeAgentProvider.answer", () => {
   const ask = (provider: ClaudeAgentProvider, allowExploration = true, maxTokens = 20_000) =>
     provider.answer({ prompt: "question…", cwd: "/tmp/wt", allowExploration, maxTokens });

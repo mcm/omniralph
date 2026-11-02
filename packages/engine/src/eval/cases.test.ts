@@ -93,8 +93,9 @@ describe("eval corpus", { timeout: 120_000 }, () => {
     expect(problems).toEqual([]);
   });
 
-  it("scores perfectly when a recorded review reports exactly the expected findings", async () => {
-    const recordings: Record<string, Recording> = Object.fromEntries(
+  /** A recorded review of every case that reports exactly its expected findings. */
+  function perfectRecordings(): Record<string, Recording> {
+    return Object.fromEntries(
       cases.map((c) => [
         c.id,
         {
@@ -112,12 +113,38 @@ describe("eval corpus", { timeout: 120_000 }, () => {
         },
       ]),
     );
+  }
+
+  describe("eval corpus reviews", { timeout: 300_000 }, () => {
+    it("scores perfectly when a recorded review reports exactly the expected findings", async () => {
+      const run = await runEval({
+        cases,
+        profiles: selectProfiles("quick"),
+        provider: new RecordedProvider(perfectRecordings()),
+      });
+      expect(summarizeProfile(run.profiles[0]!)).toMatchObject({
+        cases: cases.length,
+        unscored: 0,
+        precision: 1,
+        recall: 1,
+        falsePositives: 0,
+        falseNegatives: 0,
+        cleanFalsePositives: 0,
+      });
+    });
+  });
+
+  it("scores perfectly with a looped review whose verifier confirms the expected findings", async () => {
+    const provider = new RecordedProvider(perfectRecordings());
     const run = await runEval({
       cases,
-      profiles: selectProfiles("quick"),
-      provider: new RecordedProvider(recordings),
+      profiles: selectProfiles("standard"),
+      provider,
+      strategy: "looped",
     });
-    expect(summarizeProfile(run.profiles[0]!)).toMatchObject({
+    const summary = summarizeProfile(run.profiles[0]!, "looped");
+    expect(summary).toMatchObject({
+      strategy: "looped",
       cases: cases.length,
       unscored: 0,
       precision: 1,
@@ -125,6 +152,17 @@ describe("eval corpus", { timeout: 120_000 }, () => {
       falsePositives: 0,
       falseNegatives: 0,
       cleanFalsePositives: 0,
+      looped: { droppedFindings: 0 },
     });
+    // Every case was planned into check types, and every finding was verified.
+    for (const result of run.profiles[0]!.cases) {
+      expect(
+        result.looped?.checks.some((check) => check.passes.length > 0),
+        result.id,
+      ).toBe(true);
+    }
+    expect(new Set(provider.verifications.map((v) => v.caseId))).toEqual(
+      new Set(cases.filter((c) => !isCleanCase(c)).map((c) => c.id)),
+    );
   });
 });

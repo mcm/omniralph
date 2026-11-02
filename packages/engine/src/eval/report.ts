@@ -1,5 +1,37 @@
 import { z } from "zod";
-import type { CaseResult, EvalRun, ProfileRun } from "./run.js";
+import {
+  EVAL_STRATEGIES,
+  type CaseResult,
+  type EvalRun,
+  type EvalStrategy,
+  type ProfileRun,
+} from "./run.js";
+
+export const EvalStrategySchema = z.enum(EVAL_STRATEGIES);
+
+/** One check type of a looped profile, over its scored cases. */
+export const LoopedCheckSummary = z.object({
+  /** Cases where it ran at least one pass. */
+  cases: z.int(),
+  /** Passes over those cases. */
+  passes: z.int(),
+  /** Most passes on one case. */
+  maxPasses: z.int(),
+  /** Findings it kept (before the merge across check types). */
+  findings: z.int(),
+  /** Findings verification dropped. */
+  dropped: z.int(),
+});
+export type LoopedCheckSummary = z.infer<typeof LoopedCheckSummary>;
+
+/** A looped profile's passes and verification. */
+export const LoopedSummary = z.object({
+  /** Findings verification dropped (rejected or unanswered) over the scored cases. */
+  droppedFindings: z.int(),
+  /** Per check type, in `LOOPED_REVIEW_CHECK_TYPES` order. */
+  checks: z.record(z.string(), LoopedCheckSummary),
+});
+export type LoopedSummary = z.infer<typeof LoopedSummary>;
 
 export const TokenStats = z.object({
   mean: z.number(),
@@ -11,6 +43,8 @@ export type TokenStats = z.infer<typeof TokenStats>;
 /** One profile's metrics; also what `evals/baseline.json` stores per profile. */
 export const ProfileSummary = z.object({
   profileId: z.string(),
+  /** Baseline entries from before strategies were recorded are single-pass. */
+  strategy: EvalStrategySchema.default("single"),
   model: z.string().nullable(),
   /** Scored cases (errors, rate limits and aborted cases are left out). */
   cases: z.int(),
@@ -33,17 +67,40 @@ export const ProfileSummary = z.object({
   outputTokens: TokenStats,
   totalTokens: z.int(),
   durationMs: z.object({ mean: z.number(), total: z.number() }),
+  /** Looped runs only. */
+  looped: LoopedSummary.nullable().default(null),
 });
 export type ProfileSummary = z.infer<typeof ProfileSummary>;
 
-export const Baseline = z.object({
-  version: z.literal(1),
-  updatedAt: z.string().nullable(),
-  profiles: z.record(z.string(), ProfileSummary),
-});
-export type Baseline = z.infer<typeof Baseline>;
+const BaselineProfiles = z.record(z.string(), ProfileSummary);
 
-export const EMPTY_BASELINE: Baseline = { version: 1, updatedAt: null, profiles: {} };
+const BaselineV2 = z.object({
+  version: z.literal(2),
+  updatedAt: z.string().nullable(),
+  /** Per strategy, per profile: a run is only compared with its own strategy's entries. */
+  strategies: z.object({
+    single: BaselineProfiles.default({}),
+    looped: BaselineProfiles.default({}),
+  }),
+});
+
+/** A version 1 baseline (single-pass only, `profiles`) reads as version 2's `strategies.single`. */
+function upgradeBaseline(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value;
+  const v1 = value as { version?: unknown; updatedAt?: unknown; profiles?: unknown };
+  if (v1.version !== 1) return value;
+  return { version: 2, updatedAt: v1.updatedAt, strategies: { single: v1.profiles } };
+}
+
+/** `evals/baseline.json`. */
+export const Baseline = z.preprocess(upgradeBaseline, BaselineV2);
+export type Baseline = z.output<typeof BaselineV2>;
+
+export const EMPTY_BASELINE: Baseline = {
+  version: 2,
+  updatedAt: null,
+  strategies: { single: {}, looped: {} },
+};
 
 /** Metrics compared against the baseline (current − baseline). */
 export const DELTA_METRICS = [
@@ -59,6 +116,7 @@ export const DELTA_METRICS = [
   "outputTokensP50",
   "outputTokensMax",
   "durationMsMean",
+  "droppedFindings",
 ] as const;
 export type DeltaMetric = (typeof DELTA_METRICS)[number];
 
@@ -68,6 +126,11 @@ export interface ProfileComparison {
   deltas: Record<DeltaMetric, number | null>;
   /** The baseline was measured over a different set of cases. */
   caseSetChanged: boolean;
+  /**
+   * A looped run's single-pass baseline for the same profile, shown beside it
+   * for reference (deltas are only against the same strategy's baseline).
+   */
+  singlePassBaseline: ProfileSummary | null;
 }
 
 export interface ProfileReport {
@@ -77,6 +140,7 @@ export interface ProfileReport {
 }
 
 export interface EvalReport {
+  strategy: EvalStrategy;
   startedAt: string;
   finishedAt: string;
   /** The `--profile` argument. */
@@ -112,7 +176,33 @@ export function tokenStats(values: readonly number[]): TokenStats {
 
 const ratio = (part: number, whole: number) => (whole === 0 ? null : part / whole);
 
-export function summarizeProfile(run: ProfileRun): ProfileSummary {
+function summarizeLooped(scored: readonly CaseResult[]): LoopedSummary {
+  const checks: Record<string, LoopedCheckSummary> = {};
+  let droppedFindings = 0;
+  for (const result of scored) {
+    droppedFindings += result.looped?.dropped ?? 0;
+    for (const check of result.looped?.checks ?? []) {
+      const summary = (checks[check.checkType] ??= {
+        cases: 0,
+        passes: 0,
+        maxPasses: 0,
+        findings: 0,
+        dropped: 0,
+      });
+      if (check.passes.length > 0) summary.cases++;
+      summary.passes += check.passes.length;
+      summary.maxPasses = Math.max(summary.maxPasses, check.passes.length);
+      summary.findings += check.findings;
+      summary.dropped += check.dropped;
+    }
+  }
+  return { droppedFindings, checks };
+}
+
+export function summarizeProfile(
+  run: ProfileRun,
+  strategy: EvalStrategy = "single",
+): ProfileSummary {
   const scored = run.cases.filter(isScored);
   const sum = (pick: (c: CaseResult) => number) => scored.reduce((a, c) => a + pick(c), 0);
   const tp = sum((c) => c.truePositives);
@@ -122,6 +212,7 @@ export function summarizeProfile(run: ProfileRun): ProfileSummary {
   const durationTotal = sum((c) => c.durationMs);
   return {
     profileId: run.profile.id,
+    strategy,
     model: run.profile.model,
     cases: scored.length,
     caseIds: scored.map((c) => c.id),
@@ -141,6 +232,7 @@ export function summarizeProfile(run: ProfileRun): ProfileSummary {
       mean: scored.length === 0 ? 0 : Math.round(durationTotal / scored.length),
       total: durationTotal,
     },
+    looped: strategy === "looped" ? summarizeLooped(scored) : null,
   };
 }
 
@@ -170,12 +262,15 @@ function metric(summary: ProfileSummary, name: DeltaMetric): number | null {
       return summary.outputTokens.max;
     case "durationMsMean":
       return summary.durationMs.mean;
+    case "droppedFindings":
+      return summary.looped?.droppedFindings ?? null;
   }
 }
 
 export function compareToBaseline(
   summary: ProfileSummary,
   baseline: ProfileSummary | undefined,
+  singlePassBaseline: ProfileSummary | null = null,
 ): ProfileComparison {
   const deltas = Object.fromEntries(
     DELTA_METRICS.map((name) => {
@@ -187,11 +282,18 @@ export function compareToBaseline(
   const caseSetChanged =
     baseline !== undefined &&
     [...baseline.caseIds].sort().join("\n") !== [...summary.caseIds].sort().join("\n");
-  return { baseline: baseline ?? null, deltas, caseSetChanged };
+  return { baseline: baseline ?? null, deltas, caseSetChanged, singlePassBaseline };
 }
 
+/**
+ * The run's metrics per profile, each compared with the baseline entry of the
+ * same strategy and profile; a looped run also carries the single-pass
+ * baseline beside it.
+ */
 export function buildReport(run: EvalRun, baseline: Baseline, selection: string): EvalReport {
+  const sameStrategy = baseline.strategies[run.strategy];
   return {
+    strategy: run.strategy,
     startedAt: run.startedAt,
     finishedAt: run.finishedAt,
     selection,
@@ -199,10 +301,16 @@ export function buildReport(run: EvalRun, baseline: Baseline, selection: string)
     totalTokens: run.totalTokens,
     aborted: run.aborted,
     profiles: run.profiles.map((profileRun) => {
-      const summary = summarizeProfile(profileRun);
+      const summary = summarizeProfile(profileRun, run.strategy);
       return {
         summary,
-        comparison: compareToBaseline(summary, baseline.profiles[summary.profileId]),
+        comparison: compareToBaseline(
+          summary,
+          sameStrategy[summary.profileId],
+          run.strategy === "looped"
+            ? (baseline.strategies.single[summary.profileId] ?? null)
+            : null,
+        ),
         cases: profileRun.cases,
       };
     }),
@@ -211,12 +319,17 @@ export function buildReport(run: EvalRun, baseline: Baseline, selection: string)
 
 /**
  * The baseline after `--update-baseline`: the profiles in the report replace
- * their entries; profiles that weren't run keep theirs.
+ * their entries of the report's strategy; other profiles and the other
+ * strategy keep theirs.
  */
 export function updatedBaseline(baseline: Baseline, report: EvalReport): Baseline {
-  const profiles = { ...baseline.profiles };
+  const profiles = { ...baseline.strategies[report.strategy] };
   for (const profile of report.profiles) profiles[profile.summary.profileId] = profile.summary;
-  return { version: 1, updatedAt: report.finishedAt, profiles };
+  return {
+    version: 2,
+    updatedAt: report.finishedAt,
+    strategies: { ...baseline.strategies, [report.strategy]: profiles },
+  };
 }
 
 const pct = (value: number | null) => (value === null ? "–" : `${(value * 100).toFixed(1)}%`);
@@ -244,7 +357,13 @@ const METRIC_LABELS: Record<DeltaMetric, string> = {
   outputTokensP50: "Output tokens / case (p50)",
   outputTokensMax: "Output tokens / case (max)",
   durationMsMean: "Duration / case (mean, ms)",
+  droppedFindings: "Findings dropped by verification",
 };
+
+const STRATEGY_LABELS: Record<EvalStrategy, string> = { single: "single-pass", looped: "looped" };
+
+/** Metrics only a looped run has. */
+const LOOPED_METRICS = new Set<DeltaMetric>(["droppedFindings"]);
 
 /** Markdown cell text: no pipes or newlines. */
 const cell = (text: string) => text.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
@@ -252,6 +371,7 @@ const cell = (text: string) => text.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, "
 function renderProfile(profile: ProfileReport): string {
   const { summary, comparison } = profile;
   const lines: string[] = [];
+  const looped = summary.strategy === "looped";
   lines.push(`## ${summary.profileId} (${summary.model ?? "default model"})`);
   lines.push("");
   lines.push(
@@ -262,7 +382,9 @@ function renderProfile(profile: ProfileReport): string {
   );
   lines.push("");
   if (!comparison.baseline) {
-    lines.push("_No baseline for this profile; run with `--update-baseline` to record one._");
+    lines.push(
+      `_No ${STRATEGY_LABELS[summary.strategy]} baseline for this profile; run with \`--update-baseline\` to record one._`,
+    );
     lines.push("");
   } else if (comparison.caseSetChanged) {
     lines.push("_The baseline was measured over a different set of cases; deltas are indicative._");
@@ -271,6 +393,7 @@ function renderProfile(profile: ProfileReport): string {
   lines.push("| Metric | Current | Baseline | Δ |");
   lines.push("| --- | ---: | ---: | ---: |");
   for (const name of DELTA_METRICS) {
+    if (LOOPED_METRICS.has(name) && !looped) continue;
     const isRate = RATE_METRICS.has(name);
     const format = isRate ? pct : num;
     const current = metric(summary, name);
@@ -282,12 +405,18 @@ function renderProfile(profile: ProfileReport): string {
       )} |`,
     );
   }
+  if (looped) lines.push("", ...renderLooped(summary, comparison));
   lines.push("");
-  lines.push("| Case | Kind | Stop | TP | FP | FN | Tokens in | Tokens out | ms |");
-  lines.push("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |");
+  lines.push(
+    `| Case | Kind | Stop | TP | FP | FN | Tokens in | Tokens out | ms |${looped ? " Passes | Dropped |" : ""}`,
+  );
+  lines.push(
+    `| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |${looped ? " --- | ---: |" : ""}`,
+  );
   for (const c of profile.cases) {
+    const passes = looped ? ` ${passesCell(c)} | ${c.looped ? c.looped.dropped : "–"} |` : "";
     lines.push(
-      `| ${c.id} | ${c.clean ? "clean" : "bad"} | ${c.stopReason} | ${c.truePositives} | ${c.falsePositives} | ${c.falseNegatives} | ${num(c.usage.inputTokens)} | ${num(c.usage.outputTokens)} | ${num(c.durationMs)} |`,
+      `| ${c.id} | ${c.clean ? "clean" : "bad"} | ${c.stopReason} | ${c.truePositives} | ${c.falsePositives} | ${c.falseNegatives} | ${num(c.usage.inputTokens)} | ${num(c.usage.outputTokens)} | ${num(c.durationMs)} |${passes}`,
     );
   }
   const problems = profile.cases.filter(
@@ -316,9 +445,43 @@ function renderProfile(profile: ProfileReport): string {
   return lines.join("\n");
 }
 
+/** A looped case's passes per check type that ran, e.g. `security 2, stability 1`. */
+function passesCell(result: CaseResult): string {
+  const ran = (result.looped?.checks ?? []).filter((check) => check.passes.length > 0);
+  return ran.length === 0
+    ? "–"
+    : ran.map((check) => `${check.checkType} ${check.passes.length}`).join(", ");
+}
+
+/** A looped profile's passes per check type, and the single-pass baseline beside it. */
+function renderLooped(summary: ProfileSummary, comparison: ProfileComparison): string[] {
+  const lines: string[] = [];
+  const single = comparison.singlePassBaseline;
+  lines.push(
+    single
+      ? `Single-pass baseline: precision ${pct(single.precision)} · recall ${pct(single.recall)} · ` +
+          `FP ${single.falsePositives} · FN ${single.falseNegatives} · ` +
+          `clean cases flagged ${single.cleanCasesFlagged}/${single.cleanCases} · ` +
+          `input tokens / case ${num(single.inputTokens.mean)} (mean)`
+      : "_No single-pass baseline to show beside it._",
+  );
+  lines.push("");
+  lines.push(
+    "| Check type | Cases | Passes | Passes / case | Most | Findings kept | Dropped by verification |",
+  );
+  lines.push("| --- | ---: | ---: | ---: | ---: | ---: | ---: |");
+  for (const [checkType, check] of Object.entries(summary.looped?.checks ?? {})) {
+    const perCase = check.cases === 0 ? "–" : (check.passes / check.cases).toFixed(1);
+    lines.push(
+      `| ${checkType} | ${check.cases} | ${check.passes} | ${perCase} | ${check.maxPasses} | ${check.findings} | ${check.dropped} |`,
+    );
+  }
+  return lines;
+}
+
 export function renderMarkdown(report: EvalReport): string {
   const header = [
-    `# Review eval: ${report.selection}`,
+    `# Review eval: ${report.selection} (${report.strategy})`,
     "",
     `Started ${report.startedAt}, finished ${report.finishedAt} · ${num(report.totalTokens)} tokens` +
       (report.maxTotalTokens !== null ? ` (cap ${num(report.maxTotalTokens)})` : ""),

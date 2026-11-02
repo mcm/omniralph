@@ -5,3 +5,5 @@ export * from "./profiles.js";
 export * from "./run.js";
 export * from "./report.js";
 export * from "./recorded.js";
+export * from "./looped.js";
+export * from "./verify.js";

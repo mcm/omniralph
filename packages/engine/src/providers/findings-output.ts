@@ -8,7 +8,7 @@ export type ParsedOutput =
   | { ok: false; error: string; items?: unknown[]; fixedPrevious?: number[] };
 
 /** The last fenced code block, else the text from the first `[`/`{` to the last `]`/`}`. */
-function jsonCandidate(text: string): string | null {
+export function jsonCandidate(text: string): string | null {
   const fences = [...text.matchAll(/```(?:json)?[^\S\n]*\n([\s\S]*?)```/g)];
   const fenced = fences.at(-1)?.[1];
   if (fenced !== undefined) return fenced.trim();

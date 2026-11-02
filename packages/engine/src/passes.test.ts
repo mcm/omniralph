@@ -7,7 +7,7 @@ import {
   settlePasses,
   unreachedText,
   type PassInput,
-} from "./passes";
+} from "./passes.js";
 
 const finding = (overrides: Partial<Finding> = {}): Finding => ({
   path: "src/app.ts",

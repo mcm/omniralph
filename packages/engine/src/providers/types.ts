@@ -50,6 +50,37 @@ export interface ReviewProvider {
   review(request: ReviewRequest): Promise<TaskReviewResult>;
 }
 
+/** A fresh session that checks a review pass's findings (see `@omniralph/shared`'s finding verification). */
+export interface VerifyFindingsRequest {
+  /** The assembled verification prompt, with the pass's findings quoted as data. */
+  prompt: string;
+  /** The verifier's system prompt (its persona and the untrusted-data notice). */
+  systemPrompt: string;
+  /** Checkout of the change's head; the read-only tools are confined to it. */
+  cwd: string;
+  model?: string;
+  /** Token cap (input + output). */
+  maxTokens: number;
+  signal?: AbortSignal;
+}
+
+export interface VerifyFindingsOutcome {
+  /**
+   * `answered`: `output` is the answer's JSON object, unchecked (read it with
+   * `applyFindingVerification`, which keeps the findings unverified when it
+   * isn't a `FindingVerificationOutput`).
+   */
+  status: "answered" | "budget_exhausted" | "rate_limited" | "error";
+  output: unknown;
+  usage: TokenUsage;
+  error?: string;
+  retryAfterMs?: number;
+}
+
+export interface FindingVerifier {
+  verifyFindings(request: VerifyFindingsRequest): Promise<VerifyFindingsOutcome>;
+}
+
 /** pino-compatible subset. */
 export interface ReviewLogger {
   info(data: Record<string, unknown>, message: string): void;
