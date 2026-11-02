@@ -7,6 +7,7 @@ import { sql, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { RunIndexEntry } from "./run-index.js";
 import type { IntegrationProvider } from "./integrations.js";
+import type { ReviewPassRecord } from "@omniralph/shared";
 import type {
   JobWaitingReason,
   RalphEpicAudit,
@@ -339,6 +340,17 @@ export interface ReviewPassEntry {
   durationMs: number | null;
   openFindings: FindingSeverityCounts;
   error: string | null;
+  /** The check type of a looped review's task run; null for a single pass. */
+  checkType: string | null;
+  /** A looped review's passes its verifier settled so far, first first (empty for a single pass). */
+  passes: ReviewPassRecord[];
+  /** Findings of its passes verification dropped (never posted). */
+  droppedFindings: number;
+  /**
+   * A looped review's newest loop iteration (its newest pass): its number and whether its
+   * review or its verifier is running, or it's done; null without one.
+   */
+  iteration: { number: number; status: "working" | "verifying" | "done" | "failed" } | null;
 }
 
 /** What only a review run's detail shows. */
@@ -385,6 +397,11 @@ export async function getReviewRunDetailFacts(
       tokens_out: number;
       duration_ms: number | null;
       error: string | null;
+      check_type: string | null;
+      passes: ReviewPassRecord[] | null;
+      dropped_findings: number;
+      iteration_number: number | null;
+      iteration_status: NonNullable<ReviewPassEntry["iteration"]>["status"] | null;
       critical: string;
       high: string;
       medium: string;
@@ -392,6 +409,8 @@ export async function getReviewRunDetailFacts(
       info: string;
     }>(sql`
       select rv.id, rv.task_id, rv.status, rv.tokens_in, rv.tokens_out, rv.duration_ms, rv.error,
+        rv.check_type, rv.passes, rv.dropped_findings,
+        it.number as iteration_number, it.status as iteration_status,
         count(f.id) filter (where f.severity = 'critical')::text as critical,
         count(f.id) filter (where f.severity = 'high')::text as high,
         count(f.id) filter (where f.severity = 'medium')::text as medium,
@@ -399,8 +418,13 @@ export async function getReviewRunDetailFacts(
         count(f.id) filter (where f.severity = 'info')::text as info
       from reviews rv
       left join findings f on f.review_id = rv.id and f.status = 'open'
+      left join lateral (
+        select ri.number, ri.status from run_iterations ri
+        where ri.run_kind = 'review' and ri.run_id = rv.id
+        order by ri.number desc limit 1
+      ) it on true
       where rv.review_run_id = ${runId}::uuid
-      group by rv.id
+      group by rv.id, it.number, it.status
       order by rv.created_at, rv.id`),
   ]);
   const run = runs.rows[0];
@@ -422,6 +446,13 @@ export async function getReviewRunDetailFacts(
       tokens: { in: Number(p.tokens_in), out: Number(p.tokens_out) },
       durationMs: p.duration_ms === null ? null : Number(p.duration_ms),
       error: p.error,
+      checkType: p.check_type,
+      passes: p.passes ?? [],
+      droppedFindings: Number(p.dropped_findings),
+      iteration:
+        p.iteration_number === null || p.iteration_status === null
+          ? null
+          : { number: Number(p.iteration_number), status: p.iteration_status },
       openFindings: {
         critical: Number(p.critical),
         high: Number(p.high),

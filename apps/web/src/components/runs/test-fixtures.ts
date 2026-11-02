@@ -207,6 +207,7 @@ export function reviewRunDetail(overrides: Partial<RunDetail> = {}): RunDetail {
         tokens: { in: 0, out: 0 },
         durationMs: 45_000,
         openFindings: counts,
+        check: null,
       },
       {
         kind: "review_pass",
@@ -216,6 +217,7 @@ export function reviewRunDetail(overrides: Partial<RunDetail> = {}): RunDetail {
         tokens: { in: 0, out: 0 },
         durationMs: null,
         openFindings: counts,
+        check: null,
       },
       {
         kind: "correlation",

@@ -7,6 +7,7 @@
 import { and, asc, eq, or } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
+import { recordReviewChanges } from "./reviews.js";
 import {
   runIterations,
   type LoopRunKind,
@@ -62,7 +63,7 @@ export async function insertRunIteration(
     })
     .onConflictDoNothing()
     .returning();
-  if (row) recordIterationChange(db, row);
+  if (row) await recordIterationChange(db, row);
   return row ?? null;
 }
 
@@ -101,7 +102,7 @@ export async function updateRunIteration(
         : and(eq(runIterations.id, id), eq(runIterations.status, fromStatus)),
     )
     .returning();
-  if (row) recordIterationChange(db, row);
+  if (row) await recordIterationChange(db, row);
   return row ?? null;
 }
 
@@ -136,7 +137,15 @@ export async function getRunIterationByJob(
   return row ?? null;
 }
 
-function recordIterationChange(db: Executor, row: RunIteration): void {
+/**
+ * A `review` iteration's run is a `reviews` row (one check type of a looped
+ * review): its change goes to the review run its page shows.
+ */
+async function recordIterationChange(db: Executor, row: RunIteration): Promise<void> {
+  if (row.runKind === "review") {
+    await recordReviewChanges(db as Database, [row.runId]);
+    return;
+  }
   recordChange(db, {
     resource: "run",
     ids: [row.runId],

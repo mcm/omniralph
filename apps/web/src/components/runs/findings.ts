@@ -59,3 +59,10 @@ export function noFindingsText(
       return "This pass produced no findings.";
   }
 }
+
+/** A looped check type's note on the findings its verification dropped (never posted). */
+export function droppedText(dropped: number): string {
+  return dropped === 1
+    ? "Verification dropped 1 finding, so it isn't shown or posted."
+    : `Verification dropped ${dropped} findings, so they aren't shown or posted.`;
+}

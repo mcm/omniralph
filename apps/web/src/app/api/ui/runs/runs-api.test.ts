@@ -27,6 +27,8 @@ import {
   getMainLane,
   getRun,
   insertJob,
+  insertRunIteration,
+  updateRunIteration,
   insertMessage,
   integrations,
   jobs,
@@ -48,6 +50,7 @@ import {
   type TrackerRun,
   type NewTrackerRalphRunInput,
 } from "@omniralph/db";
+import { captureChanges } from "@omniralph/db/changes";
 import {
   createTestDatabase,
   testDatabaseAvailable,
@@ -1503,6 +1506,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         tokens: { in: 50, out: 5 },
         durationMs: 4000,
         openFindings: { critical: 0, high: 2, medium: 0, low: 1, info: 0 },
+        check: null,
       },
       {
         kind: "review_pass",
@@ -1512,6 +1516,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
         tokens: { in: 51, out: 5 },
         durationMs: null,
         openFindings: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
+        check: null,
       },
       {
         kind: "correlation",
@@ -1554,6 +1559,90 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
       run: true,
       storyIds: [],
       attemptIds: [passJobs[1]!.id],
+    });
+  });
+
+  it("shows a looped review's check types: passes, dropped findings and the pass in progress", async () => {
+    const { reviewRun } = await runOfEachKind();
+    const [security, stability] = await db
+      .select()
+      .from(reviews)
+      .where(eq(reviews.reviewRunId, reviewRun.id))
+      .orderBy(reviews.createdAt, reviews.id);
+    const record = (number: number, files: string[], counts: [number, number, number]) => ({
+      number,
+      files,
+      reported: counts[1] + counts[2],
+      confirmed: counts[1],
+      new: counts[0],
+      dropped: counts[2],
+      verification: "verified" as const,
+      unreached: 0,
+      summary: null,
+    });
+    await db
+      .update(reviews)
+      .set({
+        checkType: "security",
+        status: "running",
+        droppedFindings: 3,
+        passes: [
+          record(1, ["src/a.ts", "src/b.ts"], [2, 2, 1]),
+          record(2, ["src/b.ts"], [1, 3, 2]),
+        ],
+      })
+      .where(eq(reviews.id, security!.id));
+    await db
+      .update(reviews)
+      .set({ checkType: "stability", status: "failed", error: "The review pass failed" })
+      .where(eq(reviews.id, stability!.id));
+    const iteration = (number: number) =>
+      insertRunIteration(db, {
+        run: { kind: "review", id: security!.id, organizationId: orgId },
+        number,
+        feedback: null,
+        verifierPlaybookId: "builtin:verify-findings",
+        maxIterations: 3,
+        stallRounds: 0,
+      });
+    await iteration(1);
+    await iteration(2);
+    const third = await iteration(3);
+    // The iteration's pass moving on updates the review run's page live.
+    const { changes } = await captureChanges(() =>
+      updateRunIteration(db, third!.id, { status: "verifying" }),
+    );
+    expect(changes).toEqual([
+      expect.objectContaining({ resource: "run", ids: [reviewRun.id], runId: reviewRun.id }),
+    ]);
+
+    const view = await detailPage(reviewRun.id);
+    const [securityStep, stabilityStep] = view.steps;
+    expect(securityStep).toMatchObject({
+      kind: "review_pass",
+      check: {
+        type: "security",
+        files: ["src/a.ts", "src/b.ts"],
+        passes: [
+          { number: 1, files: ["src/a.ts", "src/b.ts"], new: 2, confirmed: 2, dropped: 1 },
+          { number: 2, files: ["src/b.ts"], new: 1, confirmed: 3, dropped: 2 },
+        ],
+        droppedFindings: 3,
+        current: { number: 3, phase: "verifying" },
+        error: null,
+      },
+    });
+    expect(stabilityStep).toMatchObject({
+      kind: "review_pass",
+      status: "failed",
+      check: {
+        type: "stability",
+        files: [],
+        passes: [],
+        droppedFindings: 0,
+        current: null,
+        error: "The review pass failed",
+      },
     });
   });
 

@@ -16,6 +16,7 @@ import {
   FINDING_STATUS_LABELS,
   confidenceText,
   lineRange,
+  droppedText,
   noFindingsText,
   openFindingsTotal,
 } from "./findings";
@@ -153,7 +154,8 @@ function SkippedFiles({ files }: { files: ReviewPassFindings["skippedFiles"] }) 
  * A review pass's findings, read-only: grouped by file (files in the order of their first
  * finding, findings by line), each with its severity, lines, category and confidence, the
  * suggested change, a link to the finding that superseded it and its dismissals; then the
- * files the pass skipped. Loaded once per run (every pass's findings), refetched by the
+ * files the pass skipped. A looped review's check type first says how many findings its
+ * verification dropped. Loaded once per run (every pass's findings), refetched by the
  * run's change events.
  */
 export function ReviewFindingsView({ runId, step }: { runId: string; step: ReviewPassStep }) {
@@ -183,8 +185,10 @@ export function ReviewFindingsView({ runId, step }: { runId: string; step: Revie
   }
   const pass = findings.data.passes.find((p) => p.id === step.id);
   const files = pass?.files ?? [];
+  const dropped = step.check?.droppedFindings ?? 0;
   return (
     <div className="or-findings">
+      {dropped > 0 ? <p className="or-step-panel__empty">{droppedText(dropped)}</p> : null}
       {files.length === 0 ? (
         <p className="or-step-panel__empty">{noFindingsText(pass?.status ?? step.status)}</p>
       ) : (

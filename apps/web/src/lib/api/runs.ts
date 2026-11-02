@@ -8,7 +8,7 @@ import type {
   RunOrigin,
   RunStatus,
 } from "@omniralph/db";
-import { FEEDBACK_REASONS } from "@omniralph/shared";
+import { FEEDBACK_REASONS, REVIEW_CHECK_TYPES } from "@omniralph/shared";
 import { z } from "zod";
 import { isoDate } from "./schemas";
 import { WORK_ITEM_TRACKERS } from "./work-item-matches";
@@ -256,7 +256,50 @@ export const findingCountsSchema = z.object({
   info: z.number(),
 });
 
-/** A review run's pass: one review task. */
+/** One pass of a looped review's check type, as its verifier settled it. */
+export const reviewCheckPassSchema = z.object({
+  /** 1 for the first pass. */
+  number: z.number(),
+  /** The files it reviewed (the first pass: all the check type's files). */
+  files: z.array(z.string()),
+  /** Findings it reported. */
+  reported: z.number(),
+  /** Findings verification confirmed (all of `reported` when unverified). */
+  confirmed: z.number(),
+  /** Confirmed findings no earlier pass had confirmed. */
+  new: z.number(),
+  /** Findings verification rejected or didn't answer: never posted. */
+  dropped: z.number(),
+  /** `unverified`: the verifier failed, so its findings were kept as reported. */
+  verification: z.enum(["verified", "unverified"]),
+  /** Areas the verifier said it didn't reach (the next pass's). */
+  unreached: z.number(),
+  summary: z.string().nullable(),
+});
+export type ReviewCheckPass = z.infer<typeof reviewCheckPassSchema>;
+
+/**
+ * A looped review's check type (its pass step's): the files it reviews, its passes so far, the
+ * findings verification dropped, the pass in progress and why it failed.
+ */
+export const reviewCheckSchema = z.object({
+  type: z.enum(REVIEW_CHECK_TYPES),
+  /** Its files, as its first pass planned them; empty until that pass finishes. */
+  files: z.array(z.string()),
+  passes: z.array(reviewCheckPassSchema),
+  /** Findings of its passes verification dropped. */
+  droppedFindings: z.number(),
+  /** The pass running now: its review, or its verifier; null when none is. */
+  current: z.object({ number: z.number(), phase: z.enum(["reviewing", "verifying"]) }).nullable(),
+  /** Why it failed or was skipped. */
+  error: z.string().nullable(),
+});
+export type ReviewCheck = z.infer<typeof reviewCheckSchema>;
+
+/**
+ * A review run's pass: one review task, or one check type of a looped review's task (`check`;
+ * null for a single pass).
+ */
 export const reviewPassStepSchema = z.object({
   kind: z.literal("review_pass"),
   id: z.string(),
@@ -266,6 +309,7 @@ export const reviewPassStepSchema = z.object({
   durationMs: z.number().nullable(),
   /** Its findings still open, by severity. */
   openFindings: findingCountsSchema,
+  check: reviewCheckSchema.nullable(),
 });
 
 /** A review run's correlation: merging its passes' results (its attempt's ID). */
