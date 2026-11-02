@@ -1,5 +1,17 @@
 # @omniralph/agent
 
+## 2.3.0
+
+### Minor Changes
+
+- [#121](https://github.com/mcm/omniralph/pull/121) [`214e880`](https://github.com/mcm/omniralph/commit/214e880903c22e54aa19ed28d7ddc524c4353b0e) Thanks [@omniralph](https://github.com/apps/omniralph)! - Story results can mark a follow-up `after: "epic"` (with a `reason`) when the work depends on the epic being merged; such follow-ups are filed as standalone tasks blocked by the epic instead of blocking the story.
+
+- [#121](https://github.com/mcm/omniralph/pull/121) [`79db746`](https://github.com/mcm/omniralph/commit/79db74612930162396aee11c7aa637cedd341440) Thanks [@omniralph](https://github.com/apps/omniralph)! - Epics, stories and fixes written in the new planning formats are read beside legacy PRDs: a story's `Covers:` requirements and a fix's kind come from its body, and a new-format epic carries no PRD quality gates, so its stories run only the repo's checks.
+
+- [#121](https://github.com/mcm/omniralph/pull/121) [`0b83876`](https://github.com/mcm/omniralph/commit/0b83876ac4604262d1e186bc847b92654d89f698) Thanks [@omniralph](https://github.com/apps/omniralph)! - Story prompts show a new-format epic's description as background for the task, list the requirements a story's `Covers:` line names with their text from the epic, frame a Fix by its current, expected and unchanged behavior, and say acceptance criteria are evidence to check, not tests to write.
+
+- [#121](https://github.com/mcm/omniralph/pull/121) [`e662709`](https://github.com/mcm/omniralph/commit/e66270976f5431955a02eb604ab0731dfc0d049e) Thanks [@omniralph](https://github.com/apps/omniralph)! - Triage writes epics, stories and fixes in the new planning formats, with its methodology assembled from `@omniralph/planning`: no Success Metrics or Quality Gates sections, a fix for a bug, and a validation audit listing the epic's requirements.
+
 ## 2.2.0
 
 ### Minor Changes
