@@ -5,6 +5,7 @@ import { SINK_KINDS, type SinkKind, type TaskType } from "@omniralph/tasks";
 import type { z } from "zod";
 import { jobOutcomeHandler, type JobOutcomeHandler } from "@/lib/jobs/handlers";
 import { getPlaybookTask, type PlaybookSource } from "@/lib/playbooks";
+import { advanceLoop, loopJobRole, sinkMayLoop, type LoopJobFinish } from "@/lib/runs/loop";
 import { chatThreadSink } from "./chat-thread";
 import { findingThreadSink } from "./finding-thread";
 import { learnedRuleSink } from "./learned-rule";
@@ -133,20 +134,57 @@ function sinkResult(sink: Sink, result: unknown): unknown {
   return sink.parseResult ? sink.parseResult(result) : parseSinkResult(sink, result);
 }
 
-/** A sink as lifecycle hooks: results are validated with `sinkResult` and applied on completion. */
+/**
+ * A sink as lifecycle hooks: results are validated with `sinkResult` and
+ * applied on completion. For a sink whose runs may be loop jobs
+ * (`sinkMayLoop`), a finished job that belongs to a looped run's iteration
+ * also advances its loop (`advanceLoop`): a worker's after the sink applied
+ * it, a verifier's instead of the sink (the driver reads its verdict).
+ */
 function sinkHooks(sink: Sink): JobHooks {
+  const loops = sinkMayLoop(sink.kind);
+  /** Runs the sink's hook unless the job is a loop's verifier, then advances its loop. */
+  async function withLoop(
+    db: Database,
+    job: Job,
+    finish: LoopJobFinish,
+    apply: (() => Promise<unknown>) | undefined,
+  ): Promise<unknown> {
+    const role = loops ? await loopJobRole(db, job.id) : null;
+    if (role === "verifier") return advanceLoop(db, job, finish);
+    const applied = await apply?.();
+    if (role === "worker") await advanceLoop(db, job, finish);
+    return applied;
+  }
   return {
     ...(sink.onStarted && { onStarted: sink.onStarted.bind(sink) }),
     isValidResult: (result) => sinkResult(sink, result) !== null,
-    async onCompleted(db, job) {
-      const result = sinkResult(sink, job.result);
-      if (result === null)
-        throw new Error(`Job ${job.id} completed with a result its ${sink.kind} sink rejects`);
-      return sink.apply(db, job, result as SinkResult<unknown>);
-    },
-    ...(sink.onFailed && { onFailed: sink.onFailed.bind(sink) }),
+    onCompleted: (db, job) =>
+      withLoop(db, job, { status: "completed" }, () => {
+        const result = sinkResult(sink, job.result);
+        if (result === null)
+          throw new Error(`Job ${job.id} completed with a result its ${sink.kind} sink rejects`);
+        return sink.apply(db, job, result as SinkResult<unknown>);
+      }),
+    ...((sink.onFailed || loops) && {
+      onFailed: (db: Database, job: Job, error: string | null) =>
+        withLoop(
+          db,
+          job,
+          { status: "failed", error },
+          sink.onFailed && (() => sink.onFailed!(db, job, error)),
+        ),
+    }),
     ...(sink.onRetry && { onRetry: sink.onRetry.bind(sink) }),
-    ...(sink.onCanceled && { onCanceled: sink.onCanceled.bind(sink) }),
+    ...((sink.onCanceled || loops) && {
+      onCanceled: (db: Database, job: Job) =>
+        withLoop(
+          db,
+          job,
+          { status: "canceled" },
+          sink.onCanceled && (() => sink.onCanceled!(db, job)),
+        ),
+    }),
   };
 }
 

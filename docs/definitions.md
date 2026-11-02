@@ -136,6 +136,18 @@ shows a **Loop** card for every looped role (the story's attempts, rounds and st
 another role's iterations and stall rounds, each with what it does) and none for the rest; a
 playbook's page shows the same settings read-only.
 
+The control panel's loop driver (`apps/web/src/lib/runs/loop.ts`, [ADR 0013](adr/0013-run-loop.md))
+runs these loops. `startLoop` copies the playbook's limits onto the run's first iteration (a
+playbook edit doesn't change a running loop) and starts its worker; once the worker finishes, a
+verifier session checks its output and answers with a verdict (`converged`, a `summary`, the
+`findings` the next iteration should address, and optionally a progress `metric`). The run stops
+when the verifier reports convergence, after `maxIterations`, or when the metric hasn't beaten its
+best for `stallRounds` iterations; otherwise the findings become the next worker's input. A failed
+worker or verifier, or a verifier answer that isn't a verdict, stops the loop as failed. Every
+iteration is stored in `run_iterations` (its number, status, verdict, summary, findings, metric,
+worker and verifier jobs, timestamps, and on the last one why the loop stopped) and listed in the
+run detail's `iterations` as it changes.
+
 ### Coding settings
 
 A story or request playbook's `coding` holds everything about how its runs work, apart from the

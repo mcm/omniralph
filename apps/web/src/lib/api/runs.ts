@@ -1,4 +1,13 @@
-import type { ChatPlatform, InboxQuestionKind, RunKind, RunOrigin, RunStatus } from "@omniralph/db";
+import type {
+  ChatPlatform,
+  InboxQuestionKind,
+  RunIterationStatus,
+  RunIterationVerdict,
+  RunKind,
+  RunLoopOutcome,
+  RunOrigin,
+  RunStatus,
+} from "@omniralph/db";
 import { FEEDBACK_REASONS } from "@omniralph/shared";
 import { z } from "zod";
 import { isoDate } from "./schemas";
@@ -388,6 +397,54 @@ export const reasonLinkSchema = z.object({ label: z.string(), href: z.string() }
 export type ReasonLink = z.infer<typeof reasonLinkSchema>;
 
 /**
+ * One iteration of a looped run (`run_iterations`): a worker session then a verifier
+ * session. `verdict` is null until the verifier answered (and for a failed iteration);
+ * `outcome` is set on the run's last iteration, saying why its loop stopped.
+ */
+export const runIterationSchema = z.object({
+  id: z.string(),
+  number: z.number(),
+  status: z.enum([
+    "working",
+    "verifying",
+    "done",
+    "failed",
+  ] as const satisfies readonly RunIterationStatus[]),
+  verdict: z
+    .enum(["converged", "continue"] as const satisfies readonly RunIterationVerdict[])
+    .nullable(),
+  /** The verifier's summary of the iteration. */
+  summary: z.string().nullable(),
+  /** What the verifier sent back for the next iteration. */
+  findings: z.array(z.string()),
+  metric: z
+    .object({
+      name: z.string(),
+      value: z.number(),
+      direction: z.enum(["higher", "lower"]),
+      target: z.number().optional(),
+    })
+    .nullable(),
+  error: z.string().nullable(),
+  outcome: z
+    .enum([
+      "converged",
+      "max-iterations",
+      "stalled",
+      "failed",
+    ] as const satisfies readonly RunLoopOutcome[])
+    .nullable(),
+  maxIterations: z.number(),
+  /** The iteration's worker and verifier attempts (`attempts[].id`); null before each started. */
+  workerAttemptId: z.string().nullable(),
+  verifierAttemptId: z.string().nullable(),
+  createdAt: isoDate,
+  verifyingAt: isoDate.nullable(),
+  finishedAt: isoDate.nullable(),
+});
+export type RunIterationView = z.infer<typeof runIterationSchema>;
+
+/**
  * `GET /api/ui/runs/{id}`: a run of any kind, as its list row plus its reason, steps (in
  * order), attempts (newest first) and details.
  */
@@ -401,6 +458,8 @@ export const runDetailSchema = runRowSchema.extend({
   reasonLink: reasonLinkSchema.nullable(),
   steps: z.array(runStepSchema),
   attempts: z.array(runAttemptSchema),
+  /** A looped review or triage run's iterations, first first; empty for any other run. */
+  iterations: z.array(runIterationSchema),
   details: runDetailsSchema,
   /** The chat it came from; null for a run that didn't come from one. */
   chat: runChatSchema.nullable(),
