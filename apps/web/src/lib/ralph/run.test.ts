@@ -106,6 +106,7 @@ import { reconcileRuns } from "./reconcile";
 import type { Adapter } from "chat";
 import type { ChatChannel } from "./conversation";
 import { fitTitle } from "@omniralph/ralph";
+import { parseWorkItem } from "@omniralph/planning";
 import {
   CODING_DEFAULTS,
   getBuiltinPlaybook,
@@ -1776,11 +1777,20 @@ Tasks have no priority.
       // The gap is a new task of the epic, which the run works next.
       const gap = children(epic.id).find((c) => c.title === "Show the priority badge");
       expect(gap).toBeDefined();
-      expect(gap!.description).toContain("Covers: FR-2");
-      expect(gap!.description).toContain("What is missing: Nothing does FR-2 yet.");
-      expect(gap!.description).toContain(
-        "- [ ] FR-2 holds: The system must show each task's priority as a badge.",
-      );
+      // Filed as a three-paragraph task: the requirement and what's missing, the audit's
+      // guidance, and the requirement as its done criterion (no Covers line or checklist).
+      expect(gap!.description).not.toContain("Covers:");
+      expect(gap!.description).not.toContain("## Acceptance Criteria");
+      const task = parseWorkItem(gap!.description);
+      expect(task).toMatchObject({
+        format: "task",
+        acceptanceCriteria: ["FR-2 holds: The system must show each task's priority as a badge."],
+      });
+      expect(task!.description).toMatch(/^I want you to make ENG-700 meet FR-2\b/);
+      expect(task!.description).toContain("The system must show each task's priority as a badge.");
+      expect(task!.description).toContain("What is missing: Nothing does FR-2 yet.");
+      expect(task!.approach).toMatch(/^Build it by .*Looked in src\/\./);
+      expect(task!.done).not.toContain(FOLLOW_UP_MARK);
       expect((await getRun(db, run.id))?.audits[0]).toMatchObject({
         status: "gaps",
         filed: [gap!.identifier],

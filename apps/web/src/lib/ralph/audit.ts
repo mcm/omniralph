@@ -296,7 +296,12 @@ export function auditOutcome(audit: RalphEpicAudit, job: Job | null, now: Date):
       missing: finding.missing,
     });
     if (finding.status === "gap") {
-      gaps.push({ ...requirement, missing: finding.missing, title: finding.title });
+      gaps.push({
+        ...requirement,
+        missing: finding.missing,
+        title: finding.title,
+        evidence: finding.evidence,
+      });
     }
   }
   if (requirements.length === 0) return fail("the audit reported on none of the requirements");

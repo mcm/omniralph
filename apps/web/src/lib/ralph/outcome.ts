@@ -584,6 +584,8 @@ export interface AuditGap {
   /** What is missing, and the title of the task that closes it (may be blank). */
   missing: string;
   title: string;
+  /** What the audit looked at (the files or tests it checked), if it said. */
+  evidence?: string;
 }
 
 /** The title of the task that closes an audit gap: the audit's, else one from the requirement. */
@@ -594,25 +596,38 @@ export function auditGapTitle(gap: Pick<AuditGap, "id" | "text" | "title">): str
   return `Meet ${gap.id}: ${text.length > 150 ? `${text.slice(0, 149)}…` : text}`;
 }
 
-/** The description of the task that closes an audit gap: the requirement it covers, what's missing and its criterion. */
-function auditGapDescription(run: RalphRun, gap: AuditGap, round: number): string {
+/** One line of an audit's text, so it can't open a task paragraph of its own. */
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The description of the task that closes an audit gap, as a three-paragraph task:
+ * the requirement and what is missing ("I want you to …"), the audit's guidance
+ * ("Build it by …", with the follow-up mark, so the stop condition stays only the
+ * requirement) and the requirement as the done criterion ("Don't stop until …").
+ */
+function auditGapDescription(
+  run: Pick<RalphRun, "trackerIdentifier">,
+  gap: AuditGap,
+  round: number,
+): string {
+  const requirement = oneLine(gap.text);
+  const missing = oneLine(gap.missing);
+  const evidence = oneLine(gap.evidence ?? "");
+  const epic = run.trackerIdentifier;
   return [
-    `Covers: ${gap.id}`,
-    "",
-    `The audit of ${run.trackerIdentifier} against its requirements (round ${round}) found this requirement isn't met yet:`,
-    "",
-    quote(`${gap.id}: ${gap.text}`),
-    "",
-    gap.missing.trim() ? `What is missing: ${gap.missing.trim()}` : "",
-    "",
-    "## Acceptance Criteria",
-    "",
-    `- [ ] ${gap.id} holds: ${gap.text.replace(/\s+/g, " ").trim()}`,
-    "",
-    `_${FOLLOW_UP_MARK} the audit of ${run.trackerIdentifier}._`,
-  ]
-    .filter((line, i, lines) => line !== "" || lines[i - 1] !== "")
-    .join("\n");
+    `I want you to make ${epic} meet ${gap.id}, which the audit of its finished branch (round ${round}) found isn't met yet: ${requirement}${missing ? ` What is missing: ${missing}` : ""}`,
+    [
+      evidence
+        ? `Build it by starting from what the audit checked: ${evidence}`
+        : `Build it by finding where the epic's code falls short of ${gap.id}.`,
+      " Add what is missing, following the patterns of the code the epic's other tasks wrote.",
+    ].join(""),
+    `_${FOLLOW_UP_MARK} the audit of ${epic}._`,
+    "Don't stop until:",
+    `- ${gap.id} holds: ${requirement}`,
+  ].join("\n\n");
 }
 
 /**
