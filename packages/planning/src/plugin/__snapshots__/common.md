@@ -15,7 +15,7 @@ then fixes failed CI and its own review findings on it. Omniralph shows the
 agent the epic's description as background and the task's own description as
 the work. It reads tasks from **Linear's own fields** (identifier,
 title, priority, sub-issue order, workflow state, labels and "blocks"
-relations) plus the checkboxes in each description, never from identifiers or
+relations) plus the text of each description, never from identifiers or
 metadata written into titles or bodies, so don't write any.
 
 ---
@@ -64,7 +64,8 @@ Typically 2–4 rounds are needed, fewer for small, well-specified work.
 
 ### Story or fix
 
-Settle early whether the work is new work (a story) or a bug (a fix). For a
+Settle early whether the work is new work (a story) or a bug (a fix): both are
+written as the same three paragraphs, and a fix carries the bug label. For a
 bug, ask what happens now, what should happen instead, and what nearby
 behavior must not change, unless the issue already says.
 
@@ -242,14 +243,19 @@ the task names: Omniralph uses them in plans, prompts and commit messages
 
 ```
 US-001 — Add priority field to database
-Kind: Story · Covers: FR-1 · Priority: High · Blocked by: — · Manual: no
+Kind: Story · Priority: High · Blocked by: — · Manual: no
 
-As a developer, I want to store task priority in the database so that it
-persists across sessions.
+I want you to store a priority on every task, so that it persists across
+sessions and the task list can show and filter by it.
 
-Acceptance criteria:
-- [ ] ...
+Build it by ...
+
+Don't stop until:
+- ...
 ```
+
+Show all three paragraphs of every task: the user reviews how it will be
+built as well as what it delivers and when it is done.
 
 **Sub-issue title:** the plain task title. No `US-001:` prefix.
 
@@ -289,11 +295,13 @@ each mode file), the target structure is one of:
   repo tag, if the user asked for one).
 - One sub-issue per task, created **in task order**, each with:
   - `parentId` = the epic, `title` = the plain task title, `description` =
-    the task in the story or fix format;
+    the task's three paragraphs;
   - `priority` (1 Urgent, 2 High, 3 Medium, 4 Low), always set;
   - `blockedBy` = the tasks (and any work items outside the epic) it depends
     on, as the dependency rules allow;
-  - the **manual** label (`addLabels`) for steps for a person.
+  - the **manual** label (`addLabels`) for steps for a person, and the bug
+    label (the team's `Bug` label, unless `LINEAR.md` names
+    another) for a fix.
 - No validation sub-issue: Omniralph audits the epic against its
   requirements before its pull request opens.
 - If the epic as a whole waits on other work, make the **epic** `blockedBy`
@@ -307,12 +315,12 @@ After creating them:
 
 **Single task (smaller than L):**
 
-- One issue whose description is a story, or a fix for a bug, with no
-  `Covers:` line, plus the branch line. No sub-issues.
+- One issue whose description is the task's three paragraphs, plus the branch
+  line. No sub-issues. A fix gets the bug label.
 - Omniralph builds the whole description as one task, and would split it into
   sub-issues if it looked like an epic. So in a single task: no requirement
-  list, no task-style headings such as `### US-001: …`, and
-  `## Acceptance Criteria` is the last section.
+  list, no headings (no task-style `### US-001: …` ones either), no
+  `Covers:` line and no checklist section.
 - Set `blockedBy` for any work item it waits on, as for an epic.
 
 Whenever removing a task in Linear, **cancel** it (do not delete).

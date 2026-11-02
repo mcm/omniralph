@@ -78,11 +78,17 @@ export type TriageOutcomeKind = (typeof TRIAGE_OUTCOME_KINDS)[number];
 /** Tracker priority of a story: 1 Urgent, 2 High, 3 Medium, 4 Low. */
 const StoryPriority = z.int().min(1).max(4);
 
+/** The kind of a triaged task: `fix` for a bug, `story` otherwise. */
+export const TriageTaskKind = z.enum(["story", "fix"]);
+export type TriageTaskKind = z.infer<typeof TriageTaskKind>;
+
 /** A story sub-issue to create for a new epic, in story order. */
 export const TriageStory = z.object({
   title: z.string().trim().min(1).max(255),
-  /** User story sentence, optional context, then `## Acceptance Criteria`. */
+  /** The task's three paragraphs: "I want you to …", "Build it by …", "Don't stop until …". */
   body: z.string().trim().min(1).max(MAX_DOCUMENT_LENGTH),
+  /** A Fix is created with the integration's fix (bug) label. */
+  kind: TriageTaskKind.default("story"),
   priority: StoryPriority,
   /** Indexes (0-based) of the earlier stories it is blocked by. */
   dependsOn: z.array(z.int().min(0)).max(100).default([]),
@@ -108,6 +114,8 @@ export const TriageOutcome = z.object({
   outcome: z.enum(TRIAGE_OUTCOME_KINDS),
   size: z.enum(TRIAGE_SIZES),
   title: z.string().trim().min(1).max(255),
+  /** A single task's kind: a Fix gets the integration's fix (bug) label. Always `story` for an epic. */
+  kind: TriageTaskKind.default("story"),
   /** The PRD, without the `## Open Questions` section (the control panel adds it from `openQuestions`). */
   description: z.string().trim().min(1).max(MAX_DOCUMENT_LENGTH),
   /** What it couldn't decide; empty when the issue is ready for Todo. */

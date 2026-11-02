@@ -19,11 +19,16 @@ const PLAN_CHECKLIST = `- [ ] Sized the whole body of work and chose the structu
       (an epic only if L or larger)
 - [ ] The epic has \`## Problem\`, \`## Scope\` (\`### In\` / \`### Out\`) and
       \`## Requirements\`, and nothing else besides the optional design and
-      technical notes; a single task is a story, or a fix for a bug
+      technical notes
+- [ ] Every task, a single one or an epic's, is three paragraphs ("I want you
+      to …", "Build it by …", "Don't stop until …") and nothing else: no
+      \`Covers:\` line, story sentence, behavior sections or checklist heading
+- [ ] Every constraint that must hold is in the "Don't stop until" paragraph,
+      not in "Build it by"
+- [ ] A fix has the bug label; a story doesn't
 - [ ] Requirements are numbered \`FR-n\` bullets, one behavior each, with WHEN
       or IF only for conditional behavior
-- [ ] Every requirement is owned by at least one task's \`Covers:\` line, and
-      every \`Covers:\` entry is one of the epic's requirements
+- [ ] Every requirement is built by at least one task
 - [ ] Tasks split by feature, not by phase, each small enough for one session
 - [ ] Full scope stated up front; nothing labelled future/stretch/v2 unless the
       user did, and genuinely optional items were put to the user
@@ -49,8 +54,8 @@ You are planning a piece of software work from scratch, then saving it to
 {{trackerName}}.
 
 Depending on the size, it becomes either an epic (a {{trackerName}} issue with
-one sub-issue per task, when the work is **L** or larger) or a single story or
-fix (when smaller).
+one sub-issue per task, when the work is **L** or larger) or a single task, a
+story or a fix (when smaller).
 
 If the invocation included \`--project\` and/or \`--team\` hints, use them when
 creating the issues. If a \`{{conventionsFile}}\` exists, honor its conventions.
@@ -83,14 +88,14 @@ story or fix) before continuing.
 
 - **L or larger:** write the epic in the epic format, with its numbered
   requirements.
-- **Smaller than L:** write a single task: the fix format for a bug, the story
-  format otherwise, with no \`Covers:\` line.
+- **Smaller than L:** write a single task in the task format: its three
+  paragraphs, framed as a fix for a bug and as a story otherwise.
 
 ## Step 4: Tasks (L or larger only)
 
-Split the epic into tasks by the Splitting rule, each in the story format (or
-the fix format for a bug), with a \`Covers:\` line naming the requirements it
-owns. Present them as \`common.md\` → "Drafting tasks with the user" shows.
+Split the epic into tasks by the Splitting rule, each in the task format (a
+fix for a bug, a story otherwise). Present them as \`common.md\` → "Drafting
+tasks with the user" shows.
 Don't add a validation task: Omniralph audits the epic against its
 requirements before its pull request opens.
 
@@ -109,17 +114,17 @@ user review and confirm it is ready to save. Only after they confirm, use the
   - Set \`blockedBy\` for any work item the whole epic waits on.
 - Create a sub-issue for each task, in task order.
   - Use the plain task title as the sub-issue title (no drafting label).
-  - Use the task in the story or fix format as the description.
-  - Set its priority, its \`blockedBy\` dependencies, and the manual label for
-    steps for a person.
+  - Use the task's three paragraphs as the description.
+  - Set its priority, its \`blockedBy\` dependencies, the manual label for
+    steps for a person, and the bug label for a fix.
 - Do the post-creation steps: replace drafting labels with {{trackerName}}
   identifiers, and verify the blocks relations.
 
 **If smaller than L, create a single task (no sub-issues):**
 
-- Create one new issue with a descriptive but concise title, the story or fix
-  (with the branch line, if any) as its description, and \`blockedBy\` for any
-  work item it waits on.
+- Create one new issue with a descriptive but concise title, the task's three
+  paragraphs (with the branch line, if any) as its description, the bug label
+  for a fix, and \`blockedBy\` for any work item it waits on.
 - Do **not** create any sub-issues.
 
 ## Checklist before creating the issues
@@ -199,14 +204,17 @@ resulting structure before continuing.
 
 - **L or larger:** the epic format, with its numbered requirements. It
   replaces the current description.
-- **Smaller than L:** a single task in the fix format for a bug, the story
-  format otherwise, with no \`Covers:\` line.
+- **Smaller than L:** a single task in the task format: its three paragraphs,
+  framed as a fix for a bug and as a story otherwise. It replaces the current
+  description, including one in an older format (a story sentence with a
+  \`Covers:\` line, or \`## Current behavior\` / \`## Expected behavior\`
+  sections).
 
 ## Step 5: Tasks (L or larger only)
 
-Split the epic into tasks by the Splitting rule, in the story or fix format,
-each with its \`Covers:\` line, and present them as \`common.md\` → "Drafting
-tasks with the user" shows. Don't add a validation task: Omniralph audits the
+Split the epic into tasks by the Splitting rule, each in the task format (a
+fix for a bug, a story otherwise), and present them as \`common.md\` →
+"Drafting tasks with the user" shows. Don't add a validation task: Omniralph audits the
 epic against its requirements before its pull request opens.
 
 ## Final step: update the issue in {{trackerName}}
@@ -229,15 +237,16 @@ In both cases:
 
 **If L or larger, turn it into an epic:**
 
-- Create a sub-issue for each task, in task order: plain task title, the task
-  in the story or fix format, a priority, its \`blockedBy\` dependencies, and
-  the manual label for steps for a person.
+- Create a sub-issue for each task, in task order: plain task title, the
+  task's three paragraphs, a priority, its \`blockedBy\` dependencies, the
+  manual label for steps for a person, and the bug label for a fix.
 - Do the post-creation steps: replace drafting labels with {{trackerName}}
   identifiers, and verify the blocks relations.
 
 **If smaller than L, keep it a single task:**
 
-- The description is the story or fix, with \`## Acceptance Criteria\` last.
+- The description is the task's three paragraphs. Add the bug label if it is
+  a fix and doesn't have it yet.
 - Do **not** create any sub-issues.
 
 ## Checklist before updating the issue
@@ -280,8 +289,12 @@ issue and all of its sub-issues.
   session. If it does, Omniralph may be working a task right now.
 - Look for an older format: a description with Introduction, Goals or
   Non-Goals sections, lists of metrics or of commands to run, stories as
-  \`### US-001: …\` headings, \`US-001:\` title prefixes, and
-  \`## Ralph Metadata\` sections (Story ID, Ralph Priority, Dependencies).
+  \`### US-001: …\` headings, \`US-001:\` title prefixes,
+  \`## Ralph Metadata\` sections (Story ID, Ralph Priority, Dependencies), and
+  tasks written as a story sentence ("As a … I want …") with a \`Covers:\`
+  line and an \`## Acceptance Criteria\` checklist, or as
+  \`## Current behavior\` / \`## Expected behavior\` /
+  \`## Unchanged behavior\` sections.
 
 Then summarize for the user:
 
@@ -347,6 +360,12 @@ under \`## Scope\`, design and technical considerations become \`## Design\` and
 \`## Requirements\`. Drop lists of commands to run and of metrics: the repo
 decides the checks, and outcomes belong in planning documents.
 
+When rewriting a task in an older format, map it onto the task format: the
+story sentence (or the current and expected behavior of a fix) becomes the
+"I want you to" paragraph, its notes on how to build it the "Build it by"
+paragraph, and its acceptance criteria (with the unchanged behavior of a fix)
+the "Don't stop until" paragraph. Drop its \`Covers:\` line.
+
 ## Step 3: Write the revised work item
 
 After incorporating the user's answers, write the revised epic or task in the
@@ -364,9 +383,9 @@ end of an epic, before the branch line:
 - Any sub-issues closed, reopened, added, or whose dependencies shifted
 \`\`\`
 
-Refer to tasks in the Change Log by {{trackerName}} identifier. In a single
-task, place the Change Log before \`## Acceptance Criteria\`, which must stay
-last.
+Refer to tasks in the Change Log by {{trackerName}} identifier. A single task
+has no Change Log section: it stays three paragraphs, so give the user the
+change summary in the conversation instead.
 
 ## Step 4: Re-size the work
 
@@ -400,9 +419,8 @@ Guidelines:
 - Existing tasks are named by their {{trackerName}} identifier, which never
   changes: Omniralph's commits and progress log reference it. Label new tasks
   \`new-1\`, \`new-2\`, … until they are created.
-- Each kept, edited or new task follows the story or fix format, with its
-  \`Covers:\` line, a priority, blocks relations, and the manual label where it
-  applies.
+- Each edited or new task follows the task format, with a priority, blocks
+  relations, and the manual label or the bug label where it applies.
 - **Older markup** (if the user chose to rewrite): remove \`## Ralph Metadata\`
   sections and \`US-001:\` title prefixes from pending tasks only. Omniralph
   uses a legacy \`Ralph Priority\` when a sub-issue has no {{trackerName}}
@@ -416,14 +434,14 @@ Guidelines:
 ## Step 6: Update the requirements
 
 Update the numbered requirements. Keep the numbers of unchanged requirements;
-append new ones at the end rather than renumbering, so \`Covers:\` lines and
-other references stay valid.
+append new ones at the end rather than renumbering, so references to them
+stay valid.
 
 - "FR-2: WHEN a user clicks X, the system must..." (edited: was about Y)
 - "FR-7: [new requirement]"
 
 If a requirement is being removed, mark it removed rather than deleting the
-number, and take it out of every \`Covers:\` line:
+number:
 
 - "FR-3: ~~[original text]~~ (removed in this revision)"
 
@@ -459,7 +477,8 @@ they confirm, use the {{trackerName}} MCP tools:
 
 **If the issue stays (or becomes) a single task, smaller than L:**
 
-- Keep its acceptance criteria in the story or fix format, last.
+- Keep it in the task format: its done criteria in the "Don't stop until"
+  paragraph, last.
 - Do not create new sub-issues. If the user confirmed collapsing an existing
   epic, fold the remaining sub-issues' content into the description and cancel
   (do not delete) those sub-issues, but never collapse a sub-issue that is
@@ -486,6 +505,52 @@ Once the changes are applied, if Omniralph is running on the epic, tell the
 user it picks them up from a reply in its session. Then tell the user you're
 done. Don't offer to delegate or re-delegate the epic.`,
 };
+
+/**
+ * The body of a ui-loop epic's review task, in the task format, with \`<…>\`
+ * placeholders the skill fills in. Its round steps, anchoring rules and
+ * reporting rules are the builder's guidance ("Build it by"); what the
+ * verifier checks is in "Don't stop until".
+ */
+export const REVIEW_TASK_TEMPLATE = `I want you to review this round of UI/UX work against the last one, for the project owner, so that the loop files the next round of fixes and ends once the bar is cleared. This task reviews; it doesn't fix: everything it finds is reported as follow-ups.
+
+Build it by running each round in these steps:
+
+1. **Checks.** Run the repo's checks, the screenshot command and \`impeccable detect\` on <target> (and on each consumer listed in the epic). Record the output.
+2. **Requirements.** Verify FR-1 … FR-n and every completed task's done criteria, with evidence (command output or screenshot path).
+3. **Critique.** Run \`/impeccable critique <target>\` at <viewports> in <themes>, anchored to the previous review as below. <Lean mode only: if \`.impeccable/critique/\` holds no \`*__<slug>.md\` yet, this is the baseline round: run a normal, unanchored critique.>
+4. **Keep the report.** Leave it in the worktree under \`.impeccable/critique/\`. Omniralph commits it with the round (as \`wip(…)\` when the round reports blocked, which needs the repo's checks to pass), and the next round anchors to it.
+5. **Post one comment** on this issue: \`Round N: PASS|FAIL\`, the score and its trend across rounds, P0/P1/P2 counts, the checks table, the requirements table, and the follow-ups filed.
+
+**Anchoring the critique.** This overrides the critique skill's default, which shows Assessment A no earlier runs.
+
+1. **Find the previous review.** It is the newest \`.impeccable/critique/*__<slug>.md\`. Find the commit that added it with \`git log -1 --format=%H -- <file>\`. The code changed since then is \`git diff --stat <commit> -- <target> <other paths>\`.
+2. **Give Assessment A the previous review and that diff.** Assessment B stays isolated. A must:
+   * **Re-check every previous Priority Issue and heuristic key issue.** Mark each *fixed*, *still open* or *regressed*, with a file:line or screenshot as evidence.
+   * **Start each heuristic at its previous score.** Change a score only for a stated reason: a previous issue fixed (up), or a regression or new problem in code changed since the previous review (down).
+   * **Report problems in unchanged code as *newly noticed*.** A newly noticed P0 or P1 can lower its heuristic. A newly noticed P2 or P3 is listed but doesn't change the score.
+3. **Show the comparison.** The report header names the previous review. A *Changes since the previous review* table lists each earlier issue's status and each score change with its reason.
+
+Detector findings checked and judged false positives go in \`.impeccable/critique/ignore.md\` with the reason, so later rounds don't re-litigate them.
+
+**What to report.**
+
+* **The bar is cleared** (score ≥ <N>/40, zero <blocking severities>, every check and requirement holds): report **complete** with no follow-ups. List any remaining lower-severity notes in the comment only; the loop is done.
+* **Otherwise** report **blocked**, with follow-ups for every <filed severities> finding and every failing requirement or check.
+* **Every round**, report the score as \`metric\`: name \`critique score\`, the value, direction \`higher\` and target <N>. Keep the name and direction the same every round: the loop is set aside when the best score stops improving.
+  * Group findings into at most 8 follow-ups, each one session of work, layer by layer. Each states its finding, the evidence and checkable done criteria.
+  * Reuse an open sub-issue that already covers a finding rather than filing a duplicate.
+  * Anything under the epic's \`### Out\` is a P3 note, never a follow-up.
+  * A follow-up for a person (e.g. a commit in another repo) is marked manual. File it only if this task can't pass without it.
+
+Don't stop until:
+- The round's critique, anchored to the previous review (or the baseline in round one), is saved under \`.impeccable/critique/\`
+- The critique scores ≥ <N>/40 with zero <blocking severities> findings
+- FR-1: …
+- Every done criterion of the epic's completed tasks still holds
+- \`impeccable detect\` exits 0 on <target> (and listed consumers)
+- The repo's checks pass
+- No file outside \`.impeccable/critique/\` changes: this task reviews, it doesn't fix`;
 
 /** `ui-loop`: an epic that improves a UI in critique rounds until it clears a bar. */
 export const MODE_UI_LOOP: PluginMode = {
@@ -673,7 +738,7 @@ Write the epic in the epic format, with:
 
 ## Step 5: Tasks
 
-In task order, each in the story format with its \`Covers:\` line:
+In task order, each in the task format:
 
 1. **Setup** (only what Step 1 found missing): commit the design context,
    build the screenshot loop.
@@ -685,7 +750,7 @@ In task order, each in the story format with its \`Covers:\` line:
    criterion points to a finding and is evidence an agent can check: a lint
    rule, the contrast script, a command's output, or a named screenshot
    inspected.
-4. **The review task**, last, blocked by every other sub-issue. It covers
+4. **The review task**, last, blocked by every other sub-issue. It checks
    every requirement. Title:
    \`Validate the UI/UX bar and functional requirements\`. Body: the template
    below.
@@ -696,51 +761,7 @@ Fill in the \`<…>\` placeholders. Keep the rest verbatim: the anchoring rules
 are what make the score track progress rather than reviewer variance.
 
 \`\`\`markdown
-As the project owner, I want each round of UI/UX work reviewed against the last one, so that the loop files the next round of fixes and ends once the bar is cleared.
-
-Covers: FR-1, …, FR-n
-
-This task reviews; it doesn't fix. Everything it finds is reported as follow-ups.
-
-## Each round
-
-1. **Checks.** Run the repo's checks, the screenshot command and \`impeccable detect\` on <target> (and on each consumer listed in the epic). Record the output.
-2. **Requirements.** Verify FR-1 … FR-n and every completed task's acceptance criteria, with evidence (command output or screenshot path).
-3. **Critique.** Run \`/impeccable critique <target>\` at <viewports> in <themes>, anchored to the previous review as below. <Lean mode only: if \`.impeccable/critique/\` holds no \`*__<slug>.md\` yet, this is the baseline round: run a normal, unanchored critique.>
-4. **Keep the report.** Leave it in the worktree under \`.impeccable/critique/\`. Omniralph commits it with the round (as \`wip(…)\` when the round reports blocked, which needs the repo's checks to pass), and the next round anchors to it.
-5. **Post one comment** on this issue: \`Round N: PASS|FAIL\`, the score and its trend across rounds, P0/P1/P2 counts, the checks table, the requirements table, and the follow-ups filed.
-
-## Anchoring the critique
-
-This overrides the critique skill's default, which shows Assessment A no earlier runs.
-
-1. **Find the previous review.** It is the newest \`.impeccable/critique/*__<slug>.md\`. Find the commit that added it with \`git log -1 --format=%H -- <file>\`. The code changed since then is \`git diff --stat <commit> -- <target> <other paths>\`.
-2. **Give Assessment A the previous review and that diff.** Assessment B stays isolated. A must:
-   * **Re-check every previous Priority Issue and heuristic key issue.** Mark each *fixed*, *still open* or *regressed*, with a file:line or screenshot as evidence.
-   * **Start each heuristic at its previous score.** Change a score only for a stated reason: a previous issue fixed (up), or a regression or new problem in code changed since the previous review (down).
-   * **Report problems in unchanged code as *newly noticed*.** A newly noticed P0 or P1 can lower its heuristic. A newly noticed P2 or P3 is listed but doesn't change the score.
-3. **Show the comparison.** The report header names the previous review. A *Changes since the previous review* table lists each earlier issue's status and each score change with its reason.
-
-Detector findings checked and judged false positives go in \`.impeccable/critique/ignore.md\` with the reason, so later rounds don't re-litigate them.
-
-## What to report
-
-* **The bar is cleared** (score ≥ <N>/40, zero <blocking severities>, every check and requirement holds): report **complete** with no follow-ups. List any remaining lower-severity notes in the comment only; the loop is done.
-* **Otherwise** report **blocked**, with follow-ups for every <filed severities> finding and every failing requirement or check.
-* **Every round**, report the score as \`metric\`: name \`critique score\`, the value, direction \`higher\` and target <N>. Keep the name and direction the same every round: the loop is set aside when the best score stops improving.
-  * Group findings into at most 8 follow-ups, each one session of work, layer by layer. Each states its finding, the evidence and checkable acceptance criteria.
-  * Reuse an open sub-issue that already covers a finding rather than filing a duplicate.
-  * Anything under the epic's \`### Out\` is a P3 note, never a follow-up.
-  * A follow-up for a person (e.g. a commit in another repo) is marked manual. File it only if this task can't pass without it.
-
-## Acceptance Criteria
-
-- [ ] The round's critique, anchored as above (or the baseline in round one), is saved under \`.impeccable/critique/\`
-- [ ] The critique scores ≥ <N>/40 with zero <blocking severities> findings
-- [ ] FR-1: …
-- [ ] Every acceptance criterion of the epic's completed tasks still holds
-- [ ] \`impeccable detect\` exits 0 on <target> (and listed consumers)
-- [ ] The repo's checks pass
+${REVIEW_TASK_TEMPLATE}
 \`\`\`
 
 ## Final step: save to {{trackerName}}

@@ -1,9 +1,9 @@
 /**
  * The triage methodology: the steps an unattended triage session follows to
- * turn a tracker issue into an epic, a story or a fix, composed from the
- * shared rules (each written once in `rules.ts`) and the triage-only steps
- * below. The triage-only steps name the fields of the triage result
- * (`outcome`, `description`, `size`, `stories`, `subIssueUpdates`,
+ * turn a tracker issue into an epic or a task (a Story or a Fix), composed
+ * from the shared rules (each written once in `rules.ts`) and the triage-only
+ * steps below. The triage-only steps name the fields of the triage result
+ * (`outcome`, `kind`, `description`, `size`, `stories`, `subIssueUpdates`,
  * `openQuestions`, `summary`).
  */
 import {
@@ -13,9 +13,18 @@ import {
   renderFragment,
   renderSection,
 } from "./rules.js";
-import { COVERS_LABEL, VALIDATION_AUDIT_TITLE } from "./templates.js";
+import { TASK_PARAGRAPHS, VALIDATION_AUDIT_TITLE } from "./templates.js";
 
-const TRIAGE_INTRO = `What you write is built by Omniralph, which runs each task as one fresh, unattended AI coding session: it runs the repo's checks, commits, marks the task done and moves on, and opens the pull request once every task in the epic is done. Precise, checkable acceptance criteria matter. Omniralph reads tasks from {{trackerName}}'s own fields (identifier, title, priority, sub-issue order, state, labels, "blocks" relations) plus the checkboxes in each description, never from identifiers or metadata written into titles or bodies.`;
+function code(text: string): string {
+  return `\`${text}\``;
+}
+
+/** The three openings of a task, quoted in order, as the triage steps name them. */
+const OPENINGS = [TASK_PARAGRAPHS.build, TASK_PARAGRAPHS.approach, TASK_PARAGRAPHS.done]
+  .map((paragraph) => code(`${paragraph.opening} …`))
+  .join(", ");
+
+const TRIAGE_INTRO = `What you write is built by Omniralph, which runs each task as one fresh, unattended AI coding session: it runs the repo's checks, commits, marks the task done and moves on, and opens the pull request once every task in the epic is done. Precise, checkable acceptance criteria matter. Omniralph reads tasks from {{trackerName}}'s own fields (identifier, title, priority, sub-issue order, state, labels, "blocks" relations) plus the text of each description, never from identifiers or metadata written into titles or bodies.`;
 
 /** Reading the issue and the repo. */
 export const TRIAGE_UNDERSTAND_STEP: Fragment = {
@@ -31,7 +40,7 @@ export const TRIAGE_UNDERSTAND_STEP: Fragment = {
 export const TRIAGE_OUTCOME_STEP: Fragment = {
   id: "triage-outcome",
   title: "Decide what kind of triage this is (`outcome`)",
-  body: `- \`prd\`: the issue has no sub-issues and isn't yet written in the formats below (a one-liner, a bug report, loose notes, a partial spec, or an older format). Write it out; if it is L or larger, also write its tasks.
+  body: `- \`prd\`: the issue has no sub-issues and isn't yet written in the formats below (a one-liner, a bug report, loose notes, a partial spec, or an older format, such as a story sentence with a \`Covers:\` line, \`## Current behavior\` / \`## Expected behavior\` sections or an \`## Acceptance Criteria\` checklist). Write it out; if it is L or larger, also write its tasks.
 - \`reformat\`: the issue is already planned (it has sub-issues) but isn't in the formats below. Reformat it, don't replan it: keep its scope, decisions, tasks and their order, and fix the format of the description and of every Backlog or Todo sub-issue (\`subIssueUpdates\`). Never add tasks beside existing sub-issues (\`stories\` stays empty), and never drop, merge or cancel sub-issues; if work seems missing, or a sub-issue seems wrong or redundant, say so in an open question.
 - \`unchanged\`: the issue is already in the formats below and needs no rewrite. Return its current title and description as they are (without any \`## Open Questions\` section), with no tasks or sub-issue updates.
 - An issue whose description holds user stories but has no sub-issues (e.g. a \`### US-001: …\` list) is \`prd\`: rewrite it, with its stories as tasks when it is L or larger.
@@ -44,7 +53,9 @@ export const TRIAGE_DESCRIPTION_STEP: Fragment = {
   title: "Write the description (`description`)",
   body: `The description becomes the issue's description, and Omniralph shows it to the agent working each task. Size the work first (see Sizing), then write:
 - **L or larger:** the epic format. The tasks go in \`stories\`, never into the description.
-- **Smaller than L:** a single task, in the fix format when the issue is a bug and the story format otherwise, with no \`${COVERS_LABEL}:\` line. Omniralph builds the whole description as one task, so it has no requirement list, no story-style headings such as \`### US-001: …\`, and its \`## Acceptance Criteria\` is the last section.
+- **Smaller than L:** a single task in the task format: its three paragraphs (${OPENINGS}) and nothing else. Omniralph builds the whole description as one task, so it has no headings, no requirement list, no \`Covers:\` line, no story sentence ("As a … I want … so that …"), no current, expected or unchanged behavior sections and no checklist section. Its done criteria and constraints are the ${code(TASK_PARAGRAPHS.done.opening)} paragraph.
+
+Set \`kind\` to \`fix\` when that single task fixes a bug, and to \`story\` otherwise (always \`story\` for an epic): Omniralph gives a Fix the bug label, which is how it knows a Fix.
 
 Never write a \`## Open Questions\` section yourself: report open questions in \`openQuestions\` and Omniralph adds the section at the end.
 
@@ -62,9 +73,10 @@ export const TRIAGE_SIZE_STEP: Fragment = {
 export const TRIAGE_STORIES_STEP: Fragment = {
   id: "triage-stories",
   title: "Write the tasks (`stories`; `prd` epics only, L or larger)",
-  body: `Each entry becomes one sub-issue of the epic, in the story or fix format, split by the Splitting rule.
+  body: `Each entry becomes one sub-issue of the epic, in the task format, split by the Splitting rule.
 - \`title\`: the plain task title, with no \`US-001:\` prefix or other identifiers.
-- \`body\`: the description, in the story format (or the fix format for a bug in the epic).
+- \`body\`: the task's three paragraphs (${OPENINGS}) and nothing else: no \`Covers:\` line, story sentence or behavior sections.
+- \`kind\`: \`fix\` for a task that fixes a bug (Omniralph creates it with the bug label), else \`story\`.
 - \`priority\`: 1 Urgent, 2 High, 3 Medium, 4 Low. Priority beats order when Omniralph picks the next task, so use one priority for the whole epic, or priorities that agree with the order on purpose.
 - \`dependsOn\`: the 0-based indexes, in \`stories\`, of the tasks it really depends on. These become "blocks" relations.
 - \`manual\`: true for a step only a person can do.
@@ -75,7 +87,7 @@ export const TRIAGE_STORIES_STEP: Fragment = {
 export const TRIAGE_REFORMAT_STEP: Fragment = {
   id: "triage-reformat",
   title: "Reformat sub-issues (`subIssueUpdates`; `reformat` only)",
-  body: `For each sub-issue in state type \`backlog\` or \`unstarted\` that isn't in the story or fix format, add an entry with its \`id\` (as given below), its title without identifier prefixes, its body in the story or fix format (keep its intent and criteria; drop metadata sections, identifiers, priority and dependency lines, and turn its criteria into a \`## Acceptance Criteria\` checklist), its \`priority\` (1–4; keep the current one unless it has none) and \`blockedBy\` (the \`id\`s of the sibling sub-issues it depends on, and the identifiers of work items outside this issue it is blocked by, including the existing relations under Blocked by; Omniralph applies the Dependency rules). Leave out sub-issues that are already fine and every sub-issue in any other state.`,
+  body: `For each sub-issue in state type \`backlog\` or \`unstarted\` that isn't in the task format, add an entry with its \`id\` (as given below), its title without identifier prefixes, its body in the task format (keep its intent, approach and criteria: what it delivers or fixes becomes the ${code(TASK_PARAGRAPHS.build.opening)} paragraph, its notes on how the ${code(TASK_PARAGRAPHS.approach.opening)} paragraph, and its acceptance criteria and constraints the ${code(TASK_PARAGRAPHS.done.opening)} paragraph; drop a \`Covers:\` line, metadata sections, identifiers, priority and dependency lines; its labels are kept, so a Fix stays a Fix), its \`priority\` (1–4; keep the current one unless it has none) and \`blockedBy\` (the \`id\`s of the sibling sub-issues it depends on, and the identifiers of work items outside this issue it is blocked by, including the existing relations under Blocked by; Omniralph applies the Dependency rules). Leave out sub-issues that are already fine and every sub-issue in any other state.`,
 };
 
 /** Turning what's left into open questions. */
@@ -90,7 +102,7 @@ export const TRIAGE_OPEN_QUESTIONS_STEP: Fragment = {
 export const TRIAGE_SUMMARY_STEP: Fragment = {
   id: "triage-summary",
   title: "Summary (`summary`)",
-  body: `A few lines for the thread on {{trackerName}}: the outcome, the size and why, the structure (a single story or fix, an epic with N tasks, or which sub-issues were reformatted), and how many open questions remain.`,
+  body: `A few lines for the thread on {{trackerName}}: the outcome, the size and why, the structure (a single Story or Fix, an epic with N tasks, or which sub-issues were reformatted), and how many open questions remain.`,
 };
 
 /** The triage-only steps, in order. */

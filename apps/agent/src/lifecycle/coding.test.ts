@@ -215,6 +215,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
         trackerIssueId: "issue-91",
         url: null,
         description: "Run it.\n\n## Acceptance Criteria\n- [ ] it runs\n",
+        approach: "",
         kind: "story",
       },
       stories: [

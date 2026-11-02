@@ -1,4 +1,4 @@
-Triage the Linear issue ENG-42 into an epic, a story or a fix that Omniralph can build.
+Triage the Linear issue ENG-42 into an epic or a task (a Story or a Fix) that Omniralph can build.
 
 ## The issue
 - Identifier: ENG-42 (https://linear.app/acme/issue/ENG-42/csv-export)
@@ -94,7 +94,7 @@ Someone replied in the thread on Linear (typically answers to the open questions
 
 ## How to triage
 
-What you write is built by Omniralph, which runs each task as one fresh, unattended AI coding session: it runs the repo's checks, commits, marks the task done and moves on, and opens the pull request once every task in the epic is done. Precise, checkable acceptance criteria matter. Omniralph reads tasks from Linear's own fields (identifier, title, priority, sub-issue order, state, labels, "blocks" relations) plus the checkboxes in each description, never from identifiers or metadata written into titles or bodies.
+What you write is built by Omniralph, which runs each task as one fresh, unattended AI coding session: it runs the repo's checks, commits, marks the task done and moves on, and opens the pull request once every task in the epic is done. Precise, checkable acceptance criteria matter. Omniralph reads tasks from Linear's own fields (identifier, title, priority, sub-issue order, state, labels, "blocks" relations) plus the text of each description, never from identifiers or metadata written into titles or bodies.
 
 ### 1. Understand the issue
 
@@ -105,7 +105,7 @@ What you write is built by Omniralph, which runs each task as one fresh, unatten
 
 ### 2. Decide what kind of triage this is (`outcome`)
 
-- `prd`: the issue has no sub-issues and isn't yet written in the formats below (a one-liner, a bug report, loose notes, a partial spec, or an older format). Write it out; if it is L or larger, also write its tasks.
+- `prd`: the issue has no sub-issues and isn't yet written in the formats below (a one-liner, a bug report, loose notes, a partial spec, or an older format, such as a story sentence with a `Covers:` line, `## Current behavior` / `## Expected behavior` sections or an `## Acceptance Criteria` checklist). Write it out; if it is L or larger, also write its tasks.
 - `reformat`: the issue is already planned (it has sub-issues) but isn't in the formats below. Reformat it, don't replan it: keep its scope, decisions, tasks and their order, and fix the format of the description and of every Backlog or Todo sub-issue (`subIssueUpdates`). Never add tasks beside existing sub-issues (`stories` stays empty), and never drop, merge or cancel sub-issues; if work seems missing, or a sub-issue seems wrong or redundant, say so in an open question.
 - `unchanged`: the issue is already in the formats below and needs no rewrite. Return its current title and description as they are (without any `## Open Questions` section), with no tasks or sub-issue updates.
 - An issue whose description holds user stories but has no sub-issues (e.g. a `### US-001: …` list) is `prd`: rewrite it, with its stories as tasks when it is L or larger.
@@ -115,7 +115,9 @@ What you write is built by Omniralph, which runs each task as one fresh, unatten
 
 The description becomes the issue's description, and Omniralph shows it to the agent working each task. Size the work first (see Sizing), then write:
 - **L or larger:** the epic format. The tasks go in `stories`, never into the description.
-- **Smaller than L:** a single task, in the fix format when the issue is a bug and the story format otherwise, with no `Covers:` line. Omniralph builds the whole description as one task, so it has no requirement list, no story-style headings such as `### US-001: …`, and its `## Acceptance Criteria` is the last section.
+- **Smaller than L:** a single task in the task format: its three paragraphs (`I want you to …`, `Build it by …`, `Don't stop until …`) and nothing else. Omniralph builds the whole description as one task, so it has no headings, no requirement list, no `Covers:` line, no story sentence ("As a … I want … so that …"), no current, expected or unchanged behavior sections and no checklist section. Its done criteria and constraints are the `Don't stop until` paragraph.
+
+Set `kind` to `fix` when that single task fixes a bug, and to `story` otherwise (always `story` for an epic): Omniralph gives a Fix the bug label, which is how it knows a Fix.
 
 Never write a `## Open Questions` section yourself: report open questions in `openQuestions` and Omniralph adds the section at the end.
 
@@ -127,9 +129,10 @@ Report the size by the Sizing rule, and mention it with a one-line rationale in 
 
 ### 5. Write the tasks (`stories`; `prd` epics only, L or larger)
 
-Each entry becomes one sub-issue of the epic, in the story or fix format, split by the Splitting rule.
+Each entry becomes one sub-issue of the epic, in the task format, split by the Splitting rule.
 - `title`: the plain task title, with no `US-001:` prefix or other identifiers.
-- `body`: the description, in the story format (or the fix format for a bug in the epic).
+- `body`: the task's three paragraphs (`I want you to …`, `Build it by …`, `Don't stop until …`) and nothing else: no `Covers:` line, story sentence or behavior sections.
+- `kind`: `fix` for a task that fixes a bug (Omniralph creates it with the bug label), else `story`.
 - `priority`: 1 Urgent, 2 High, 3 Medium, 4 Low. Priority beats order when Omniralph picks the next task, so use one priority for the whole epic, or priorities that agree with the order on purpose.
 - `dependsOn`: the 0-based indexes, in `stories`, of the tasks it really depends on. These become "blocks" relations.
 - `manual`: true for a step only a person can do.
@@ -137,7 +140,7 @@ Each entry becomes one sub-issue of the epic, in the story or fix format, split 
 
 ### 6. Reformat sub-issues (`subIssueUpdates`; `reformat` only)
 
-For each sub-issue in state type `backlog` or `unstarted` that isn't in the story or fix format, add an entry with its `id` (as given below), its title without identifier prefixes, its body in the story or fix format (keep its intent and criteria; drop metadata sections, identifiers, priority and dependency lines, and turn its criteria into a `## Acceptance Criteria` checklist), its `priority` (1–4; keep the current one unless it has none) and `blockedBy` (the `id`s of the sibling sub-issues it depends on, and the identifiers of work items outside this issue it is blocked by, including the existing relations under Blocked by; Omniralph applies the Dependency rules). Leave out sub-issues that are already fine and every sub-issue in any other state.
+For each sub-issue in state type `backlog` or `unstarted` that isn't in the task format, add an entry with its `id` (as given below), its title without identifier prefixes, its body in the task format (keep its intent, approach and criteria: what it delivers or fixes becomes the `I want you to` paragraph, its notes on how the `Build it by` paragraph, and its acceptance criteria and constraints the `Don't stop until` paragraph; drop a `Covers:` line, metadata sections, identifiers, priority and dependency lines; its labels are kept, so a Fix stays a Fix), its `priority` (1–4; keep the current one unless it has none) and `blockedBy` (the `id`s of the sibling sub-issues it depends on, and the identifiers of work items outside this issue it is blocked by, including the existing relations under Blocked by; Omniralph applies the Dependency rules). Leave out sub-issues that are already fine and every sub-issue in any other state.
 
 ### 7. Open questions (`openQuestions`)
 
@@ -146,7 +149,7 @@ You can't ask anyone during the session. Answer what you can from the issue, com
 
 ### 8. Summary (`summary`)
 
-A few lines for the thread on Linear: the outcome, the size and why, the structure (a single story or fix, an epic with N tasks, or which sub-issues were reformatted), and how many open questions remain.
+A few lines for the thread on Linear: the outcome, the size and why, the structure (a single Story or Fix, an epic with N tasks, or which sub-issues were reformatted), and how many open questions remain.
 
 ## Planning rules
 
@@ -273,6 +276,6 @@ A "blocks" relation is the only thing that stops work from starting early, and O
 
 ## Triage this issue
 1. Study the issue, its comments and sub-issues, and the repo (`LINEAR.md` first).
-2. Decide the outcome and the kind (a Story or a Fix), size the work, write or reformat the epic, story or fix, and write the tasks or sub-issue updates the structure needs.
+2. Decide the outcome and the kind (a Story or a Fix), size the work, write or reformat the epic or the task in its three paragraphs, and write the tasks or sub-issue updates the structure needs.
 3. Turn every remaining ambiguity into an open question.
-4. Report the result in your structured output: `outcome`, `title`, `description`, `size`, `openQuestions`, `stories`, `subIssueUpdates` and `summary`.
+4. Report the result in your structured output: `outcome`, `title`, `kind`, `description`, `size`, `openQuestions`, `stories`, `subIssueUpdates` and `summary`.

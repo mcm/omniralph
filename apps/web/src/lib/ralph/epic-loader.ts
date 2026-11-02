@@ -189,7 +189,7 @@ export function materializePrd(
 /**
  * Creates `plan`'s sub-issues of `parent` in order (the helper behind
  * `materializePrd`, also used by triage): priority, sub-issue order, project,
- * the manual label and completion, then the plan's "blocks" relations. Planned
+ * the manual label (and `fixLabel` on a Fix) and completion, then the plan's "blocks" relations. Planned
  * issues titled like one of `existing` are reused, not created; relations are
  * only added for new issues. Returns the created issues, in plan order.
  */
@@ -199,6 +199,7 @@ export async function createPlannedSubIssues(
   plan: MaterializationPlan,
   manualLabel: string,
   existing: readonly IssueSummary[] = [],
+  fixLabel: string = DEFAULT_FIX_LABELS[0] ?? "Bug",
 ): Promise<IssueSummary[]> {
   const byTitle = new Map(existing.map((issue) => [issue.title.trim(), issue]));
   const issues = new Map<string, IssueSummary>();
@@ -217,7 +218,9 @@ export async function createPlannedSubIssues(
       priority: toIssuePriority(planned.priority),
       subIssueSortOrder: planned.subIssueSortOrder,
       ...(parent.projectName && { projectName: parent.projectName }),
-      ...(planned.manual && { labels: [manualLabel] }),
+      ...((planned.manual || planned.fix) && {
+        labels: [...(planned.manual ? [manualLabel] : []), ...(planned.fix ? [fixLabel] : [])],
+      }),
     });
     issues.set(planned.storyId, issue);
     created.set(planned.storyId, issue);

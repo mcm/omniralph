@@ -19,14 +19,8 @@ import {
   EXAMPLE_STORY,
   TRACKER_STRUCTURE,
 } from "./common.js";
-import { PLUGIN_MODES } from "./modes.js";
-import {
-  GENERATED_NOTICE,
-  PLUGIN_CONTEXT,
-  renderCommon,
-  renderPluginFiles,
-  renderSkill,
-} from "./render.js";
+import { PLUGIN_MODES, REVIEW_TASK_TEMPLATE } from "./modes.js";
+import { GENERATED_NOTICE, PLUGIN_CONTEXT, renderCommon, renderPluginFiles } from "./render.js";
 import { SKILL_BODY } from "./skill.js";
 
 const tempDirs: string[] = [];
@@ -133,6 +127,8 @@ describe("renderPluginFiles", () => {
 });
 
 describe("the plugin's methodology", () => {
+  const files = renderPluginFiles();
+
   it("renders every shared rule exactly as the triage prompts do", () => {
     const common = renderCommon();
     const triage = renderTriageMethodology(PLUGIN_CONTEXT);
@@ -175,11 +171,46 @@ describe("the plugin's methodology", () => {
     }
   });
 
-  it("matches the SKILL.md snapshot", async () => {
-    await expect(renderSkill()).toMatchFileSnapshot("__snapshots__/SKILL.md");
+  it("gives a review task template for ui-loop that, filled in, parses as a task and lints clean", () => {
+    const filled = REVIEW_TASK_TEMPLATE.replaceAll("FR-1: …", "FR-1 holds").replace(
+      /<[^>]+>/g,
+      "x",
+    );
+    const task = parseWorkItem(filled);
+    expect(task?.format).toBe("task");
+    expect(lintWorkItem(filled)).toEqual([]);
+    // The verifier sees only paragraphs 1 and 3: the review's constraints are there.
+    expect(task?.acceptanceCriteria).toContain(
+      "No file outside `.impeccable/critique/` changes: this task reviews, it doesn't fix",
+    );
+    expect(task?.approach).toContain("Anchoring the critique");
   });
 
-  it("matches the common.md snapshot", async () => {
-    await expect(renderCommon()).toMatchFileSnapshot("__snapshots__/common.md");
+  it("writes tasks in the three-paragraph shape in every mode", () => {
+    for (const file of files.filter((f) => f.path.endsWith(".md"))) {
+      expect([file.path, file.content]).not.toEqual([
+        file.path,
+        expect.stringMatching(/\b(story|fix|story or fix) format\b/i),
+      ]);
+      // A task is never drafted with a Covers line or an acceptance-criteria checklist.
+      expect([file.path, file.content]).not.toEqual([
+        file.path,
+        expect.stringMatching(/^(Covers: FR|Acceptance criteria:$|## Acceptance Criteria$)/m),
+      ]);
+    }
+    for (const mode of PLUGIN_MODES.filter((m) => m.id !== "ui-loop")) {
+      expect(mode.body).toContain("three paragraphs");
+      expect(mode.body).toContain("bug label");
+    }
   });
+
+  it.each(files.filter((f) => f.path.endsWith(".md")).map((f) => f.path))(
+    "commits %s as the generator writes it",
+    async (filePath) => {
+      const file = files.find((f) => f.path === filePath)!;
+      await expect(file.content).toMatchFileSnapshot(
+        `__snapshots__/${path.posix.basename(filePath)}`,
+      );
+    },
+  );
 });

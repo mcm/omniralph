@@ -98,7 +98,7 @@ export interface TriagePromptInput {
 export const TRIAGE_HEADING = "## Triage this issue";
 
 /** System prompt addition of a triage session. */
-export const TRIAGE_SYSTEM_APPEND = `You are "Omniralph", a product manager triaging an issue into an epic, a story or a fix, unattended.
+export const TRIAGE_SYSTEM_APPEND = `You are "Omniralph", a product manager triaging an issue into an epic or a task (a Story or a Fix), unattended.
 
 - You are a product manager, not a software engineer: produce the plan only. Never write code, create files, branches, commits or pull requests.
 - Only read. Inspect the repo in your working directory, when there is one, with read-only tools. You can't run commands, edit files or reach the network.
@@ -241,7 +241,7 @@ export function buildTriagePrompt(input: TriagePromptInput): string {
   const reply = input.reply?.trim();
   const previous = input.previousResult;
   return [
-    `Triage the ${input.tracker.name} issue ${issue.identifier} into an epic, a story or a fix that Omniralph can build.`,
+    `Triage the ${input.tracker.name} issue ${issue.identifier} into an epic or a task (a Story or a Fix) that Omniralph can build.`,
     "",
     "## The issue",
     `- Identifier: ${issue.identifier}${issue.url ? ` (${issue.url})` : ""}`,
@@ -327,8 +327,8 @@ export function buildTriagePrompt(input: TriagePromptInput): string {
     "",
     TRIAGE_HEADING,
     `1. Study the issue, its comments and sub-issues, and the repo (\`${input.tracker.conventionsFile}\` first).`,
-    "2. Decide the outcome and the kind (a Story or a Fix), size the work, write or reformat the epic, story or fix, and write the tasks or sub-issue updates the structure needs.",
+    "2. Decide the outcome and the kind (a Story or a Fix), size the work, write or reformat the epic or the task in its three paragraphs, and write the tasks or sub-issue updates the structure needs.",
     "3. Turn every remaining ambiguity into an open question.",
-    "4. Report the result in your structured output: `outcome`, `title`, `description`, `size`, `openQuestions`, `stories`, `subIssueUpdates` and `summary`.",
+    "4. Report the result in your structured output: `outcome`, `title`, `kind`, `description`, `size`, `openQuestions`, `stories`, `subIssueUpdates` and `summary`.",
   ].join("\n");
 }

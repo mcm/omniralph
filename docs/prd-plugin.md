@@ -7,7 +7,8 @@ from this repo: don't edit them there, since the next publish overwrites them.
 
 ## Where the text comes from
 
-- **Shared rules and templates** (the epic, story and fix formats, requirement wording,
+- **Shared rules and templates** (the epic format, the three-paragraph task format of every
+  story and fix, requirement wording,
   checkable criteria, sizing, splitting, the epic audit and the dependency rules) come
   from `packages/planning/src/methodology/rules.ts` and `templates.ts`. Omniralph's triage
   prompts render the same fragments, so planning in Claude and triage in Omniralph follow the
@@ -18,7 +19,8 @@ from this repo: don't edit them there, since the next publish overwrites them.
   the files together.
 
 To change the plugin, change those files. `packages/planning/src/plugin/plugin.test.ts`
-snapshots `SKILL.md` and `common.md` (`__snapshots__/`); update them with
+snapshots every Markdown file it generates (`SKILL.md`, `common.md` and each `mode-*.md`,
+in `__snapshots__/`); update them with
 `pnpm --filter @omniralph/planning exec vitest run -u` and review the diff.
 
 ## Building it

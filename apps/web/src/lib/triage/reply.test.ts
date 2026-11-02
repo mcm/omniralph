@@ -54,6 +54,7 @@ const outcome = (overrides: Partial<TriageOutcome> = {}): TriageOutcome => ({
   outcome: "prd",
   size: "S",
   title: "Export widgets",
+  kind: "story",
   description: PRD,
   openQuestions: [],
   stories: [],
