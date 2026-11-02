@@ -33,9 +33,16 @@ import type {
 } from "@/lib/api/playbooks";
 import { bumpOrganizationHeartbeat } from "@/lib/agents/heartbeat-cache";
 import type { OrgUser } from "@/lib/auth/session";
-import { getPlaybook, listPlaybookChoices, listPlaybooks } from "./index";
+import {
+  getPlaybook,
+  listPlaybookChoices,
+  listPlaybooks,
+  type PlaybookChoice,
+  type ResolvedPlaybook,
+} from "./index";
 import { hasNoReferrers, loadPlaybookUsage, type PlaybookReferrers } from "./referrers";
 import { validateOrganizationPlaybook } from "./validation";
+import { reviewLoopVerifierProblem, storyVerifierProblem } from "./verifiers";
 
 /**
  * Playbooks: what the `/api/ui/playbooks/**` handlers load and change. Every
@@ -159,7 +166,8 @@ async function savedPlaybook(db: Database, user: OrgUser, id: string): Promise<S
  * organization's non-revoked agents report, the built-in, agent and tracker tool names, the
  * MCP servers of the installables its agents report (`<package>:<server>`), the PR
  * description playbooks a story or request playbook can name, the task verifier and epic
- * audit playbooks a story playbook can name and the host tool names to
+ * audit playbooks a story playbook can name, the finding verifiers a review playbook's loop
+ * can name (each only the verifiers whose output its run reads) and the host tool names to
  * suggest (those its agents report with a path and those its playbooks require).
  */
 export async function loadPlaybookFormOptions(
@@ -167,21 +175,15 @@ export async function loadPlaybookFormOptions(
   user: OrgUser,
 ): Promise<PlaybookFormOptions> {
   const organizationId = user.organization.id;
-  const [
-    models,
-    installables,
-    prDescriptionPlaybooks,
-    verifierPlaybooks,
-    auditPlaybooks,
-    hostTools,
-  ] = await Promise.all([
-    listReportedModels(db, organizationId),
-    listReportedInstallables(db, organizationId),
-    listPlaybookChoices(db, organizationId, { roles: ["pr-description"] }),
-    listPlaybookChoices(db, organizationId, { roles: ["verifier"] }),
-    listPlaybookChoices(db, organizationId, { roles: ["audit"] }),
-    listHostToolSuggestions(db, organizationId),
-  ]);
+  const [models, installables, prDescriptionPlaybooks, verifiers, auditPlaybooks, hostTools] =
+    await Promise.all([
+      listReportedModels(db, organizationId),
+      listReportedInstallables(db, organizationId),
+      listPlaybookChoices(db, organizationId, { roles: ["pr-description"] }),
+      listPlaybooks(db, organizationId, { roles: ["verifier"] }),
+      listPlaybookChoices(db, organizationId, { roles: ["audit"] }),
+      listHostToolSuggestions(db, organizationId),
+    ]);
   return {
     roles: [...CUSTOM_PLAYBOOK_ROLES],
     models: models.map(({ value, displayName }) => ({ value, displayName })),
@@ -194,10 +196,21 @@ export async function loadPlaybookFormOptions(
       mcpServers.map((server) => `${name}${INSTALLABLE_MCP_SERVER_SEPARATOR}${server}`),
     ),
     prDescriptionPlaybooks,
-    verifierPlaybooks,
+    verifierPlaybooks: verifierChoices(verifiers, storyVerifierProblem),
+    reviewVerifierPlaybooks: verifierChoices(verifiers, reviewLoopVerifierProblem),
     auditPlaybooks,
     hostTools,
   };
+}
+
+/** The `verifiers` a picker offers: those without a `problem`. */
+function verifierChoices(
+  verifiers: readonly ResolvedPlaybook[],
+  problem: (verifier: Playbook) => string | null,
+): PlaybookChoice[] {
+  return verifiers
+    .filter(({ playbook }) => problem(playbook) === null)
+    .map(({ playbook, builtin }) => ({ id: playbook.id, name: playbook.name, builtin }));
 }
 
 /**

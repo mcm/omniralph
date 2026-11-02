@@ -504,10 +504,12 @@ function LoopCard({
     );
   }
   const { verifierPlaybookId } = draft.loop;
+  // Review is the only custom role with a loop block: its loop verifies findings.
+  const offered = options.reviewVerifierPlaybooks;
   const verifiers =
-    !verifierPlaybookId || options.verifierPlaybooks.some((p) => p.id === verifierPlaybookId)
-      ? options.verifierPlaybooks
-      : [...options.verifierPlaybooks, { id: verifierPlaybookId, name: verifierPlaybookId }];
+    !verifierPlaybookId || offered.some((p) => p.id === verifierPlaybookId)
+      ? offered
+      : [...offered, { id: verifierPlaybookId, name: verifierPlaybookId }];
   return (
     <Card title="Loop" headingLevel={3}>
       <Field

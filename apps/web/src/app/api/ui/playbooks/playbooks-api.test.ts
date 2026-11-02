@@ -369,9 +369,10 @@ describe.skipIf(!databaseAvailable)("/api/ui/playbooks", () => {
           expect.objectContaining({ id: "builtin:describe-pr", builtin: true }),
           { id: mine.id, name: "Our PR description", builtin: false },
         ],
-        // Built-in only: the verifier role is never a custom playbook's.
-        verifierPlaybooks: [
-          { id: "builtin:verify-task", name: "Verify a task", builtin: true },
+        // Built-in only: the verifier role is never a custom playbook's. Each picker offers
+        // only the verifiers whose output its run reads.
+        verifierPlaybooks: [{ id: "builtin:verify-task", name: "Verify a task", builtin: true }],
+        reviewVerifierPlaybooks: [
           { id: "builtin:verify-findings", name: "Verify findings", builtin: true },
         ],
         auditPlaybooks: [{ id: "builtin:audit-epic", name: "Audit an epic", builtin: true }],
