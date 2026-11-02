@@ -234,6 +234,13 @@ export const DEFAULT_PR_DESCRIPTION_TASK_ID = "builtin:describe-pr";
 /** The query task that checks a story attempt against its acceptance criteria by default. */
 export const DEFAULT_VERIFIER_TASK_ID = "builtin:verify-task";
 
+/** The query task that audits a finished epic against its requirements by default. */
+export const DEFAULT_AUDIT_TASK_ID = "builtin:audit-epic";
+/** Audit rounds an epic gets before its PR opens with the gaps left (`maxAuditRounds`). */
+export const DEFAULT_MAX_AUDIT_ROUNDS = 2;
+/** Most audit rounds a story playbook may allow. */
+export const MAX_AUDIT_ROUNDS = 10;
+
 const FixRounds = z.int().min(0).max(CODING_MAX_FIX_ROUNDS);
 
 /** A one-line shell command (a repo's check or the worktree setup command). */
@@ -271,6 +278,17 @@ export const CODING_FIELDS = {
    * story playbook's run spec always names one (`DEFAULT_VERIFIER_TASK_ID` by default).
    */
   verifierTaskId: DefinitionId.optional(),
+  /**
+   * Query task (accepting `run.invoked`) that audits a finished epic against its
+   * requirements before its PR opens; each gap becomes a task in the epic. A story
+   * playbook's run spec always names one (`DEFAULT_AUDIT_TASK_ID` by default).
+   */
+  auditTaskId: DefinitionId.optional(),
+  /**
+   * Audit rounds an epic gets: after this many rounds with gaps left, its PR opens
+   * anyway, listing them. Story playbooks only (`DEFAULT_MAX_AUDIT_ROUNDS` by default).
+   */
+  maxAuditRounds: z.int().min(1).max(MAX_AUDIT_ROUNDS).optional(),
   /** Run once in a fresh branch worktree (e.g. `pnpm install`); null for none. */
   worktreeSetupCommand: CodingCommand.nullable().optional(),
   /** Also run the PRD's `## Quality Gates` commands. */

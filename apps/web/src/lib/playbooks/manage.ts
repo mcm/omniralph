@@ -158,8 +158,8 @@ async function savedPlaybook(db: Database, user: OrgUser, id: string): Promise<S
  * What the playbook editor offers: the roles a custom playbook can take, the models the
  * organization's non-revoked agents report, the built-in, agent and tracker tool names, the
  * MCP servers of the installables its agents report (`<package>:<server>`), the PR
- * description playbooks a story or request playbook can name, the task verifier playbooks
- * a story playbook can name and the host tool names to
+ * description playbooks a story or request playbook can name, the task verifier and epic
+ * audit playbooks a story playbook can name and the host tool names to
  * suggest (those its agents report with a path and those its playbooks require).
  */
 export async function loadPlaybookFormOptions(
@@ -167,14 +167,21 @@ export async function loadPlaybookFormOptions(
   user: OrgUser,
 ): Promise<PlaybookFormOptions> {
   const organizationId = user.organization.id;
-  const [models, installables, prDescriptionPlaybooks, verifierPlaybooks, hostTools] =
-    await Promise.all([
-      listReportedModels(db, organizationId),
-      listReportedInstallables(db, organizationId),
-      listPlaybookChoices(db, organizationId, { roles: ["pr-description"] }),
-      listPlaybookChoices(db, organizationId, { roles: ["verifier"] }),
-      listHostToolSuggestions(db, organizationId),
-    ]);
+  const [
+    models,
+    installables,
+    prDescriptionPlaybooks,
+    verifierPlaybooks,
+    auditPlaybooks,
+    hostTools,
+  ] = await Promise.all([
+    listReportedModels(db, organizationId),
+    listReportedInstallables(db, organizationId),
+    listPlaybookChoices(db, organizationId, { roles: ["pr-description"] }),
+    listPlaybookChoices(db, organizationId, { roles: ["verifier"] }),
+    listPlaybookChoices(db, organizationId, { roles: ["audit"] }),
+    listHostToolSuggestions(db, organizationId),
+  ]);
   return {
     roles: [...CUSTOM_PLAYBOOK_ROLES],
     models: models.map(({ value, displayName }) => ({ value, displayName })),
@@ -188,6 +195,7 @@ export async function loadPlaybookFormOptions(
     ),
     prDescriptionPlaybooks,
     verifierPlaybooks,
+    auditPlaybooks,
     hostTools,
   };
 }

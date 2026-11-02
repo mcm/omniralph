@@ -429,6 +429,43 @@ describe("playbookRunSpec", () => {
     expect(task.draftPullRequest).toBeUndefined();
   });
 
+  it("audits a story playbook's epics with its audit (the built-in, 2 rounds by default), and no request's", () => {
+    const story = (coding?: PlaybookInput["coding"]) =>
+      playbookRunSpec(
+        Playbook.parse({ ...chat, role: "story", promptTemplate: "{{epic.title}}", coding }),
+      ).task;
+    expect(story()).toMatchObject({ auditTaskId: "builtin:audit-epic", maxAuditRounds: 2 });
+    expect(story({ auditPlaybookId: UUID, maxAuditRounds: 4 })).toMatchObject({
+      auditTaskId: UUID,
+      maxAuditRounds: 4,
+    });
+    const request = Playbook.parse({ ...chat, role: "request", promptTemplate: "{{branch}}" });
+    expect(playbookRunSpec(request).task).not.toHaveProperty("auditTaskId");
+    expect(playbookRunSpec(request).task).not.toHaveProperty("maxAuditRounds");
+    expect(
+      Playbook.safeParse({
+        ...chat,
+        role: "request",
+        promptTemplate: "{{branch}}",
+        coding: { auditPlaybookId: UUID, maxAuditRounds: 3 },
+      }).error?.issues,
+    ).toEqual([
+      expect.objectContaining({
+        path: ["coding", "auditPlaybookId"],
+        message: expect.stringContaining("Only story playbooks audit their epics"),
+      }),
+      expect.objectContaining({ path: ["coding", "maxAuditRounds"] }),
+    ]);
+    expect(
+      Playbook.safeParse({
+        ...chat,
+        role: "story",
+        promptTemplate: "{{epic.title}}",
+        coding: { maxAuditRounds: 0 },
+      }).success,
+    ).toBe(false);
+  });
+
   it("verifies a story playbook's tasks with its verifier (the built-in by default), and no request's", () => {
     const story = (coding?: PlaybookInput["coding"]) =>
       playbookRunSpec(

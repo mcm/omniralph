@@ -69,6 +69,22 @@ describe("validateCodingTask", () => {
     });
   });
 
+  it("rejects an auditTaskId that can't audit an epic against its requirements", () => {
+    expect(errors({ ...story, auditTaskId: "builtin:audit-epic" })).toEqual({});
+    expect(errors({ ...story, auditTaskId: "builtin:implement-story" })).toEqual({
+      auditTaskId: "builtin:implement-story isn't a query task started by run.invoked.",
+    });
+    expect(errors({ ...story, auditTaskId: "builtin:nope" })).toEqual({
+      auditTaskId: "There is no task builtin:nope.",
+    });
+    // A query task started by run.invoked whose output isn't a finding per requirement.
+    expect(errors({ ...story, auditTaskId: "builtin:verify-task" })).toEqual({
+      auditTaskId: expect.stringContaining(
+        "builtin:verify-task doesn't output the { requirements, summary } of an epic audit",
+      ),
+    });
+  });
+
   it("rejects a verifierTaskId that can't check a task's acceptance criteria", () => {
     expect(errors({ ...story, verifierTaskId: "builtin:verify-task" })).toEqual({});
     expect(errors({ ...story, verifierTaskId: "builtin:implement-story" })).toEqual({

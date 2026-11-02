@@ -20,6 +20,7 @@ import {
   RALPH_REQUEST_JOB_TYPE,
   RALPH_STORY_JOB_TYPE,
   RALPH_VERIFY_TASK_JOB_TYPE,
+  RALPH_AUDIT_EPIC_JOB_TYPE,
 } from "./ralph-job.js";
 import { REVIEW_REPLY_JOB_TYPE } from "./reply.js";
 import { REVIEW_TASK_JOB_TYPE } from "./review-job.js";
@@ -153,6 +154,13 @@ const PHRASES: Record<string, (context: AttemptLabelContext) => Phrase> = {
     ),
   [RALPH_VERIFY_TASK_JOB_TYPE]: (c) =>
     phrase("check", "Checking", "Checked", `${workTarget(c)} against its acceptance criteria`),
+  [RALPH_AUDIT_EPIC_JOB_TYPE]: (c) =>
+    phrase(
+      "audit",
+      "Auditing",
+      "Audited",
+      `${present(c.workItem) ?? RUN_FALLBACK} against its requirements`,
+    ),
   [RALPH_PREPARE_JOB_TYPE]: preparation,
   [WORKTREE_EXEC_JOB_TYPE]: preparation,
   [RALPH_CLEANUP_JOB_TYPE]: cleanup,

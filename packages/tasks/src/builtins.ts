@@ -4,6 +4,7 @@
  * over the registry) checks they're valid.
  */
 import { ASK_ABOUT_CODE_PLAYBOOK } from "./builtin/ask-about-code.js";
+import { AUDIT_EPIC_PLAYBOOK } from "./builtin/audit-epic.js";
 import { CORRELATE_FINDINGS_PLAYBOOK } from "./builtin/correlate-findings.js";
 import { DESCRIBE_PR_PLAYBOOK } from "./builtin/describe-pr.js";
 import { HANDLE_REQUEST_PLAYBOOK } from "./builtin/handle-request.js";
@@ -38,6 +39,7 @@ const PLAYBOOK_INPUTS: readonly PlaybookInput[] = [
   HANDLE_REQUEST_PLAYBOOK,
   DESCRIBE_PR_PLAYBOOK,
   VERIFY_TASK_PLAYBOOK,
+  AUDIT_EPIC_PLAYBOOK,
 ];
 
 export const BUILTIN_PLAYBOOKS: readonly Playbook[] = PLAYBOOK_INPUTS.map((playbook) =>

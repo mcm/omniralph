@@ -113,6 +113,20 @@ const CASES: [string, AttemptLabelContext, string, string, string][] = [
     "Couldn't check this run against its acceptance criteria",
   ],
   [
+    "ralph.audit-epic",
+    FULL,
+    "Auditing SOC-1719 against its requirements",
+    "Audited SOC-1719 against its requirements",
+    "Couldn't audit SOC-1719 against its requirements",
+  ],
+  [
+    "ralph.audit-epic",
+    {},
+    "Auditing this run against its requirements",
+    "Audited this run against its requirements",
+    "Couldn't audit this run against its requirements",
+  ],
+  [
     "ralph.prepare",
     { story: "SOC-1721" },
     "Running the preparation commands for SOC-1721",

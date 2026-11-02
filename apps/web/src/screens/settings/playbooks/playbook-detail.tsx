@@ -15,6 +15,8 @@ import {
 import {
   CODING_DEFAULTS,
   DEFAULT_VERIFIER_TASK_ID,
+  DEFAULT_AUDIT_TASK_ID,
+  DEFAULT_MAX_AUDIT_ROUNDS,
   playbookLoopSettings,
   roleLoops,
   roleTaskType,
@@ -376,6 +378,14 @@ function LoopCard({ playbook }: { playbook: Playbook }) {
                 {coding.verifierPlaybookId ?? DEFAULT_VERIFIER_TASK_ID}
               </code>
             </AppLink>
+          </Fact>
+          <Fact term="Epic audit">
+            <AppLink href={playbookHref(coding.auditPlaybookId ?? DEFAULT_AUDIT_TASK_ID)}>
+              <code className="or-mono">{coding.auditPlaybookId ?? DEFAULT_AUDIT_TASK_ID}</code>
+            </AppLink>
+          </Fact>
+          <Fact term="Audit rounds">
+            {countLabel(coding.maxAuditRounds ?? DEFAULT_MAX_AUDIT_ROUNDS, "round")}
           </Fact>
         </dl>
       </Card>

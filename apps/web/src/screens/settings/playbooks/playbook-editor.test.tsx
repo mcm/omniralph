@@ -41,6 +41,7 @@ import { PLAYBOOKS_PATH, playbookEditHref, playbookHref } from "./labels";
 import { PlaybookDetail } from "./playbook-detail";
 import { ADMINS_ONLY, BUILTIN_READ_ONLY, EditPlaybookEditor } from "./playbook-editor";
 import {
+  draftErrors,
   draftFromPlaybook,
   draftToInput,
   errorAt,
@@ -146,6 +147,7 @@ const formOptions: PlaybookFormOptions = {
   mcpServers: ["@omniralph/code-graph:graph"],
   prDescriptionPlaybooks: [{ id: "builtin:describe-pr", name: "Describe a PR", builtin: true }],
   verifierPlaybooks: [{ id: "builtin:verify-task", name: "Verify a task", builtin: true }],
+  auditPlaybooks: [{ id: "builtin:audit-epic", name: "Audit an epic", builtin: true }],
   hostTools: ["gh", "opengrep"],
 };
 
@@ -391,6 +393,11 @@ describe("creating a playbook", () => {
       within(loop).getByText(/reviews the change against each acceptance criterion/),
     ).toBeTruthy();
     expect((field("Task verifier") as HTMLSelectElement).value).toBe("builtin:verify-task");
+    // Its epics are audited by the built-in audit, two rounds unless it says otherwise.
+    expect((field("Epic audit") as HTMLSelectElement).value).toBe("builtin:audit-epic");
+    expect((field("Audit rounds") as HTMLInputElement).value).toBe("2");
+    await userEvent.clear(field("Audit rounds"));
+    await userEvent.type(field("Audit rounds"), "3");
 
     // Coding settings.
     await userEvent.type(field("Worktree setup"), "pnpm install");
@@ -453,6 +460,8 @@ describe("creating a playbook", () => {
         maxRoundsPerStory: 8,
         stallRounds: 3,
         verifierPlaybookId: "builtin:verify-task",
+        auditPlaybookId: "builtin:audit-epic",
+        maxAuditRounds: 3,
       },
     });
 
@@ -501,6 +510,7 @@ describe("creating a playbook", () => {
       await userEvent.selectOptions(field("Role"), role);
       expect(screen.queryByRole("region", { name: "Loop" })).toBeNull();
       expect(screen.queryByLabelText("Task verifier")).toBeNull();
+      expect(screen.queryByLabelText("Epic audit")).toBeNull();
     }
     await userEvent.selectOptions(field("Role"), "review");
     const loop = screen.getByRole("region", { name: "Loop" });
@@ -874,6 +884,31 @@ describe("the draft", () => {
     const asRequest = draftToInput({ ...story, role: "request" });
     expect(asRequest.coding).not.toHaveProperty("verifierPlaybookId");
     expect(Playbook.safeParse({ ...asRequest, id: CUSTOM_ID }).success).toBe(true);
+  });
+
+  it("keeps an epic audit only on a story playbook", () => {
+    const story = draftFromPlaybook({
+      ...customPlaybook,
+      coding: {
+        ...customPlaybook.coding,
+        auditPlaybookId: "builtin:audit-epic",
+        maxAuditRounds: 4,
+      },
+    });
+    expect(draftToInput(story)).toMatchObject({
+      coding: { auditPlaybookId: "builtin:audit-epic", maxAuditRounds: 4 },
+    });
+    const asRequest = draftToInput({ ...story, role: "request" });
+    expect(asRequest.coding).not.toHaveProperty("auditPlaybookId");
+    expect(asRequest.coding).not.toHaveProperty("maxAuditRounds");
+    expect(Playbook.safeParse({ ...asRequest, id: CUSTOM_ID }).success).toBe(true);
+  });
+
+  it("refuses audit rounds out of range", () => {
+    const story = draftFromPlaybook(customPlaybook);
+    expect(draftErrors({ ...story, coding: { ...story.coding, maxAuditRounds: "0" } })).toEqual({
+      "coding.maxAuditRounds": "Enter a number from 1 to 10.",
+    });
   });
 
   it("gives a new correlation playbook its fixed output", () => {

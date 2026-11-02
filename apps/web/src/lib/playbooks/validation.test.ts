@@ -121,6 +121,26 @@ describe("validatePlaybookAgainst", () => {
     });
   });
 
+  it("accepts a story playbook naming the built-in audit, and refuses one that isn't an audit", () => {
+    expect(
+      validatePlaybookAgainst(
+        clone("builtin:implement-story", {
+          coding: { auditPlaybookId: "builtin:audit-epic", maxAuditRounds: 3 },
+        }),
+        BUILTIN_PLAYBOOKS,
+      ),
+    ).toMatchObject({ ok: true });
+    expect(
+      validatePlaybookAgainst(
+        clone("builtin:implement-story", { coding: { auditPlaybookId: "builtin:verify-task" } }),
+        BUILTIN_PLAYBOOKS,
+      ),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { "coding.auditPlaybookId": "builtin:verify-task isn't an audit playbook." },
+    });
+  });
+
   it("refuses a verifier on a request playbook", () => {
     expect(
       validatePlaybookAgainst(

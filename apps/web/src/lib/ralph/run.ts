@@ -95,6 +95,7 @@ import { laneAgentId, mainBranch, routeStories, storyLane, type StoryLanes } fro
 import { postActivity, quietly } from "./notify";
 import { settleStrandedMessages } from "./messages";
 import { applyJobOutcomes, isBlockedFeedback } from "./outcome";
+import { applyAuditJob, auditBeforePublishing } from "./audit";
 import { awaitRepository } from "./repository-selection";
 import {
   buildDescribePrPayload,
@@ -243,6 +244,8 @@ export type AdvanceResult =
   | { action: "enqueued"; run: RalphRun; story: RalphStory; jobId: string }
   /** Every story is done and the story task pushes only at the end: a `ralph.push` run pushes a lane's branch. */
   | { action: "pushing"; run: RalphRun; jobId: string }
+  /** Every story is done: a `ralph.audit-epic` job audits the epic against its requirements. */
+  | { action: "auditing"; run: RalphRun; jobId: string }
   /** Every story is done: a `ralph.describe-pr` job writes a lane's PR/MR. */
   | { action: "describing"; run: RalphRun; jobId: string }
   /** An approved manual-story preparation runs as a `worktree.exec` system RPC. */
@@ -283,7 +286,10 @@ async function advance(runId: string, deps: RalphDeps): Promise<AdvanceResult> {
     const pullRequest = await applyPullRequestJob(deps, tx, run);
     const preparation = await applyPreparationJob(deps, tx, run);
     const request = await applyRequestJob(deps, tx, run);
-    return { busy: stories.busy || pullRequest.busy || preparation.busy || request.busy };
+    const audit = await applyAuditJob(deps, tx, run);
+    return {
+      busy: stories.busy || pullRequest.busy || preparation.busy || request.busy || audit.busy,
+    };
   });
   if (!applied) return { action: "gone" };
   const result = await lockRun(deps.db, runId, (tx, run) => step(deps, tx, run));
@@ -394,7 +400,12 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
     if (run.status === "waiting" && run.error) {
       return { action: "waiting", run, waitingOn: run.waitingOn ?? { blockers: [], manual: [] } };
     }
-    return publishLanes(deps, tx, run, { epic, stories, rows });
+    // Audited against its requirements first: each gap becomes a task the run works.
+    const audit = await auditBeforePublishing(deps, tx, run, { epic, stories, rows });
+    if (audit.kind === "auditing")
+      return { action: "auditing", run: audit.run, jobId: audit.jobId };
+    if (audit.kind === "busy") return { action: "busy", run: audit.run };
+    return publishLanes(deps, tx, audit.run, { epic, stories, rows });
   }
   return wait(deps, tx, run, { epic, stories, rows, rootBlockers, hitCap: null });
 }

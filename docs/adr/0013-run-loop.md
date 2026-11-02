@@ -90,6 +90,23 @@ story completes, so the epic is never held up by a broken verifier. It is a ligh
 evidence: agents rarely claim done falsely, and the verifier judges what each criterion asks for,
 not how it would have built it.
 
+### Coding: the epic audit
+
+When every task of an epic is done, `advanceRun` (`apps/web/src/lib/ralph/run.ts`) audits the epic
+before publishing (`auditBeforePublishing`, `apps/web/src/lib/ralph/audit.ts`): a
+`ralph.audit-epic` query run of the story playbook's audit (`auditTaskId`, `builtin:audit-epic` by
+default) on a checkout of the main lane, invoked as the task verifier is, that checks each epic
+requirement (`## Requirements`, or a legacy PRD's `## Functional Requirements`) against the code
+and answers `met` with evidence or a `gap` with what is missing. `applyAuditJob` applies it under
+the run's row lock: the evidence goes to the thread, and each gap is filed as a task of the epic
+(`fileAuditGaps`, next to `fileFollowUps`), which the run works like any other before auditing
+again. The epic's tasks at the time of each audit are kept with it (`ralph_runs.audits`), so a run
+whose tasks haven't changed since its last audit publishes without another. After
+`maxAuditRounds` (2 by default), the PR opens anyway with the gaps left listed in its description;
+an audit that fails is noted and never holds the PR up, and an epic without requirements skips it
+with a note. This replaces the "Validate functional requirements" sub-issue for new epics; an epic
+that still has one runs it as a task and is audited as well.
+
 ## Consequences
 
 - Reviews and triage don't change until they register an adapter: this ADR adds the driver they

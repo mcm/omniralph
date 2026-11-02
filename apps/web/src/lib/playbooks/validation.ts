@@ -52,6 +52,7 @@ const PLAYBOOK_FIELD: Record<string, string> = {
   ...Object.fromEntries(CODING_FIELD_NAMES.map((name) => [name, `coding.${name}`])),
   prDescriptionTaskId: "coding.prDescriptionPlaybookId",
   verifierTaskId: "coding.verifierPlaybookId",
+  auditTaskId: "coding.auditPlaybookId",
   // The agent half of the run spec is the playbook's own tools.
   agentId: "tools.agent",
   // The role fixes both.
@@ -77,6 +78,7 @@ function zodFieldErrors(error: z.ZodError): Record<string, string> {
  *   limits, output schema, coding settings, its PR description and task verifier
  *   playbooks among `playbooks`);
  * - `coding.verifierPlaybookId`: a playbook that isn't a `verifier` playbook.
+ * - `coding.auditPlaybookId`: a playbook that isn't an `audit` playbook.
  */
 export function validatePlaybookAgainst(
   input: unknown,
@@ -119,6 +121,13 @@ export function validatePlaybookAgainst(
     const verifier = playbooks.find((other) => other.id === verifierId);
     if (verifier && verifier.role !== "verifier") {
       add("coding.verifierPlaybookId", `${verifierId} isn't a verifier playbook.`);
+    }
+  }
+  const auditId = playbook.coding?.auditPlaybookId;
+  if (auditId !== undefined) {
+    const audit = playbooks.find((other) => other.id === auditId);
+    if (audit && audit.role !== "audit") {
+      add("coding.auditPlaybookId", `${auditId} isn't an audit playbook.`);
     }
   }
   const validation = validateTaskDefinition(spec.task, context);

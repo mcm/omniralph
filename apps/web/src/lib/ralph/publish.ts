@@ -43,6 +43,7 @@ import {
   pushTimingFor,
   storyCodingSettings,
 } from "./coding";
+import { remainingGaps, withRemainingGaps } from "./audit";
 import { conversationFor, runCompletedEvent } from "./conversation";
 import { errorMessage, postActivity, quietly, tail } from "./notify";
 import { jobFailure } from "./outcome";
@@ -505,7 +506,10 @@ export async function applyPullRequestJob(
   });
   let pr: PublishedPullRequest;
   try {
-    pr = await publishPullRequest(deps, lane, text, epic);
+    // The main lane's description lists the gaps the epic's last audit round left.
+    const described =
+      lane.repositoryId === run.repositoryId ? withRemainingGaps(text, remainingGaps(run)) : text;
+    pr = await publishPullRequest(deps, lane, described, epic);
   } catch (error) {
     await failed(`${errorMessage(error)}.`);
     return { busy: false };

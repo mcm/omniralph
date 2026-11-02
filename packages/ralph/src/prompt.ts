@@ -1120,3 +1120,80 @@ export function verifyTaskTemplateContext(ctx: VerifyTaskPromptContext): VerifyT
     qualityGates: commandList(uniqueCommands(ctx.qualityGates)),
   };
 }
+
+/** What an epic audit checks (see `auditEpicTemplateContext`). */
+export interface AuditEpicPromptContext {
+  branch: string;
+  baseBranch: string;
+  epic: { identifier: string; title: string; description: string };
+  /** The epic's requirements (`## Requirements`, or a legacy PRD's `## Functional Requirements`). */
+  requirements: readonly { id: string; text: string }[];
+  /** The epic's tasks, with what each one was checked against. */
+  tasks: readonly {
+    identifier: string;
+    title: string;
+    /** The repo it was worked in when it isn't the audited one; null otherwise. */
+    repository: string | null;
+    acceptanceCriteria: readonly string[];
+  }[];
+  /** The commit audited (the lane's head); null when it is the branch as checked out. */
+  commitSha: string | null;
+  /** This audit round (1-based) and the most the epic gets. */
+  round: number;
+  maxRounds: number;
+  /** `pull request` (GitHub) or `merge request` (GitLab). */
+  prTerm: string;
+}
+
+/** What `builtin:audit-epic`'s template renders (see `auditEpicTemplateContext`). */
+export interface AuditEpicTemplateContext {
+  branch: string;
+  baseBranch: string;
+  epic: {
+    identifier: string;
+    title: string;
+    /** The PRD, cut to 6000 characters; null when blank. */
+    prd: string | null;
+  };
+  requirements: TemplateList<{ id: string; text: string }>;
+  tasks: TemplateList<{
+    identifier: string;
+    title: string;
+    repository: string | null;
+    acceptanceCriteria: TemplateList<string>;
+  }>;
+  /** The full SHA audited; null when it is the branch as checked out. */
+  commit: string | null;
+  audit: { round: number; maxRounds: number; last: boolean };
+  prTerm: string;
+}
+
+/** `ctx` as the trigger context of a `builtin:audit-epic` run (see `AuditEpicTemplateContext`). */
+export function auditEpicTemplateContext(ctx: AuditEpicPromptContext): AuditEpicTemplateContext {
+  const prd = ctx.epic.description.trim();
+  return {
+    branch: ctx.branch,
+    baseBranch: ctx.baseBranch,
+    epic: {
+      identifier: ctx.epic.identifier,
+      title: oneLine(ctx.epic.title),
+      prd: prd ? prdExcerpt(prd) : null,
+    },
+    requirements: templateList(ctx.requirements.map((r) => ({ id: r.id, text: oneLine(r.text) }))),
+    tasks: templateList(
+      ctx.tasks.map((task) => ({
+        identifier: task.identifier,
+        title: oneLine(task.title),
+        repository: task.repository,
+        acceptanceCriteria: templateList(task.acceptanceCriteria.map(oneLine)),
+      })),
+    ),
+    commit: ctx.commitSha,
+    audit: {
+      round: ctx.round,
+      maxRounds: ctx.maxRounds,
+      last: ctx.round >= ctx.maxRounds,
+    },
+    prTerm: ctx.prTerm,
+  };
+}

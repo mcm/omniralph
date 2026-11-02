@@ -6,17 +6,24 @@
  */
 import type { Job, RalphMessage, RalphMessageTrigger, RalphRun, Repository } from "@omniralph/db";
 import {
+  auditEpicTemplateContext,
   describePrTemplateContext,
   fitPullRequestDescription,
   readPullRequestDescription,
   verifyTaskTemplateContext,
 } from "@omniralph/ralph";
-import type { RalphDescribePrPayload, RalphVerifyTaskPayload } from "@omniralph/shared";
+import type {
+  RalphAuditEpicPayload,
+  RalphDescribePrPayload,
+  RalphVerifyTaskPayload,
+} from "@omniralph/shared";
 import {
   MAX_ATTEMPTS_PER_STORY,
   MAX_ROUNDS_PER_STORY,
   QueryRunResult,
+  RalphAuditEpicTriggerContext,
   RalphDescribePrTriggerContext,
+  RalphEpicAuditResult,
   RalphPushResult,
   RalphTaskVerdict,
   RalphVerifyTaskTriggerContext,
@@ -28,6 +35,7 @@ import {
 } from "@omniralph/shared";
 import {
   CODING_DEFAULTS,
+  DEFAULT_MAX_AUDIT_ROUNDS,
   playbookRunSpec,
   type PushTiming,
   type TaskDefinition,
@@ -482,4 +490,102 @@ export function taskVerdictOf(job: Pick<Job, "result">): TaskVerdictOutcome {
     return { kind: "failed", error: "the verifier's answer isn't a verdict per criterion" };
   }
   return { kind: "verdict", verdict: verdict.data };
+}
+
+/** The audit a repository's story playbook runs on a finished epic, and its round cap. */
+export interface EpicAuditSettings {
+  taskId: string;
+  maxRounds: number;
+}
+
+/**
+ * The query task that audits an epic worked in `repository` (its story task's
+ * `auditTaskId`) and the rounds it gets (`maxAuditRounds`). Null when the story task
+ * isn't a story playbook (only story runs audit their epics).
+ */
+export async function epicAuditFor(
+  repository: Pick<Repository, "storyPlaybookId">,
+  definitions: PlaybookSource,
+): Promise<EpicAuditSettings | null> {
+  const task = await codingTask(storyTaskFor(repository), definitions);
+  if (!task?.auditTaskId) return null;
+  return { taskId: task.auditTaskId, maxRounds: task.maxAuditRounds ?? DEFAULT_MAX_AUDIT_ROUNDS };
+}
+
+/** The `run.invoked` trigger context of an epic audit's query run. */
+export function auditEpicTriggerContext(
+  payload: RalphAuditEpicPayload,
+): RalphAuditEpicTriggerContext {
+  return RalphAuditEpicTriggerContext.parse({
+    ...auditEpicTemplateContext({
+      branch: payload.branch,
+      baseBranch: payload.baseBranch,
+      epic: {
+        identifier: payload.epic.identifier,
+        title: payload.epic.title,
+        description: payload.epic.prd,
+      },
+      requirements: payload.requirements,
+      tasks: payload.tasks,
+      commitSha: payload.commitSha,
+      round: payload.round,
+      maxRounds: payload.maxRounds,
+      prTerm: payload.repository.provider === "gitlab" ? "merge request" : "pull request",
+    }),
+    invoker: { kind: "ralph-run", id: payload.runId },
+    payload,
+  });
+}
+
+/**
+ * An epic audit job's routing and payload, spread into `createAndPublish`'s input: a
+ * query run of `taskId` (trigger `run.invoked`, `payload` in its trigger context) in a
+ * disposable checkout of the lane's head (its branch when `commitSha` is null). A string
+ * says why there is none: that task isn't a query task taking `run.invoked`.
+ */
+export async function auditEpicJobInput(
+  taskId: string,
+  payload: RalphAuditEpicPayload,
+  definitions: PlaybookSource,
+): Promise<ReturnType<typeof runSpecJobInput> | string> {
+  const task = await getPlaybookTask(definitions, taskId);
+  if (task?.taskType !== "query" || !task.triggers.includes("run.invoked")) {
+    return `${taskId} isn't a query task started by run.invoked`;
+  }
+  return taskJobInput(definitions, task, {
+    trigger: { kind: "run.invoked", context: auditEpicTriggerContext(payload) },
+    repositoryId: payload.repositoryId,
+    ref: payload.commitSha ?? payload.branch,
+    requireCheckout: true,
+  });
+}
+
+/** What a finished epic audit job said (`epicAuditOf`). */
+export type EpicAuditOutcome =
+  | { kind: "result"; result: RalphEpicAuditResult }
+  /** The audit couldn't check the epic: why. */
+  | { kind: "failed"; error: string };
+
+/**
+ * The findings of a completed epic audit job: its answered query run's
+ * `{ requirements, summary }`. A run that answered nothing usable, or found nothing to
+ * check out, failed rather than found gaps.
+ */
+export function epicAuditOf(job: Pick<Job, "result">): EpicAuditOutcome {
+  const parsed = QueryRunResult.safeParse(job.result);
+  if (!parsed.success) return { kind: "failed", error: "the audit sent an invalid result" };
+  if (parsed.data.outcome !== "answered") {
+    return {
+      kind: "failed",
+      error:
+        parsed.data.outcome === "no_checkout"
+          ? "the audit couldn't check out the branch"
+          : "the audit ran out of its token budget",
+    };
+  }
+  const result = RalphEpicAuditResult.safeParse(parsed.data.structured);
+  if (!result.success) {
+    return { kind: "failed", error: "the audit's answer isn't a finding per requirement" };
+  }
+  return { kind: "result", result: result.data };
 }
