@@ -62,13 +62,17 @@ ${SUGGESTION_RULE}
 - confidence: 0 to 1.
 An empty list is a valid answer: {"findings": []}.`;
 
-// The stable part (instruction, depth, rubric, repository rules) comes first so it can be cached
+// The stable part (instruction, depth, a pass's check type, rubric, repository rules) comes first so it can be cached
 // across reviews; optional sections start with their blank line, inside their section tags.
 const REVIEW_TEMPLATE = `${BASE_INSTRUCTION.replaceAll("{{", "\\{{")}
 
 # Review depth
 
-{{depth}}
+{{depth}}{{#check}}
+
+# Check type
+
+{{check}}{{/check}}
 
 {{rubric}}{{#repositoryRules}}
 

@@ -8,7 +8,7 @@ import {
 } from "@omniralph/tasks";
 import { describe, expect, it } from "vitest";
 import { parseDiff } from "./diff.js";
-import { planReview } from "./plan.js";
+import { planReview, type CheckType } from "./plan.js";
 import {
   buildPrompt,
   type PreviousFinding,
@@ -23,6 +23,7 @@ import {
   RUBRIC_LANGUAGES,
   rubricDocName,
   rubricFromDocs,
+  renderCheckRubric,
   renderRubric,
   universalRubric,
 } from "./rubric/index.js";
@@ -83,6 +84,7 @@ interface Case {
   rules?: ReviewConfig["rules"];
   incremental?: boolean;
   previousFindings?: PreviousFinding[];
+  checkType?: CheckType;
 }
 
 const RULES: ReviewConfig["rules"] = [
@@ -148,6 +150,21 @@ const CASES: Record<string, Case> = {
   },
   "quick-workflow": { profile: "quick", diff: "workflow-injection", title: "  CI: ${{ x }}  " },
   "custom-profile": { profile: "team", diff: "renames-binary", rules: RULES.slice(0, 2) },
+  // Looped review passes: one check type's focus and rubric sections.
+  "check-security": { profile: "deep", diff: "risk-signals", rules: RULES, checkType: "security" },
+  "check-stability": { profile: "standard", diff: "basic", checkType: "stability" },
+  "check-performance": { profile: "quick", diff: "basic", checkType: "performance" },
+  "check-compatibility-workflow": {
+    profile: "quick",
+    diff: "workflow-injection",
+    checkType: "compatibility",
+  },
+  "check-maintainability": {
+    profile: "deep",
+    diff: "tricky",
+    previousFindings: PREVIOUS,
+    checkType: "maintainability",
+  },
 };
 
 function config(c: Case): ReviewConfig {
@@ -169,6 +186,7 @@ function legacyPrompt(c: Case): string {
     hints: { hotspots: plan.hotspots, complexityScore: plan.complexityScore },
     incremental: c.incremental ? { fromSha: FROM, headSha: HEAD } : undefined,
     previousFindings: c.previousFindings,
+    checkType: c.checkType,
   }).text;
 }
 
@@ -195,6 +213,7 @@ function rendered(t: TaskDefinition, c: Case): string {
     config: config(c),
     referenceDocs: agent.referenceDocs,
     previousFindings: c.previousFindings,
+    checkType: c.checkType,
   });
   const trigger = {
     repository: "acme/app",
@@ -250,5 +269,11 @@ describe("builtin:review-pr agrees with the review prompt builders", () => {
       renderRubric(["typescript", "ci"]),
     );
     expect(rubricFromDocs([], ["typescript"])).toBeUndefined();
+    for (const categories of [["security"], ["breaking-change", "tests"], []] as const) {
+      expect(rubricFromDocs(agent.referenceDocs, ["typescript", "ci"], categories)).toBe(
+        renderCheckRubric(["typescript", "ci"], categories),
+      );
+    }
+    expect(rubricFromDocs([], ["typescript"], ["security"])).toBeUndefined();
   });
 });

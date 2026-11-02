@@ -1,8 +1,13 @@
 import { FINDING_CATEGORIES } from "@omniralph/shared";
 import type { DiffFile } from "./diff.js";
-import type { PlanProfile } from "./plan.js";
+import { CHECK_TYPE_CATEGORIES, type CheckType, type PlanProfile } from "./plan.js";
 import { DEFAULT_RISK_WEIGHT, type FileRisk } from "./riskScan.js";
-import { languagesForPaths, renderRubric, type RubricLanguage } from "./rubric/index.js";
+import {
+  languagesForPaths,
+  renderCheckRubric,
+  renderRubric,
+  type RubricLanguage,
+} from "./rubric/index.js";
 
 /** The profile fields a review needs (its depth's preset, `reviewProfileConfigForDepth`). */
 export interface ReviewProfileConfig extends PlanProfile {
@@ -69,14 +74,22 @@ export interface PromptInput {
   incremental?: IncrementalScope;
   /** Open findings of earlier reviews; their position in the list is their `id`. */
   previousFindings?: readonly PreviousFinding[];
+  /**
+   * The check type of a looped review's pass: the prompt gets its focus
+   * (`checkGuidance`) and only its categories' rubric sections plus the
+   * shared ones. Without it, the single-pass prompt over the whole rubric.
+   */
+  checkType?: CheckType;
 }
 
 export interface AssembledPrompt {
   /** The full prompt: `stablePrefix` followed by the per-PR content. */
   text: string;
-  /** Base instruction, depth, rubric and repo rules; identical per (repo, profile, languages). */
+  /** Base instruction, depth, check type, rubric and repo rules; identical per (repo, profile, check type, languages). */
   stablePrefix: string;
   languages: RubricLanguage[];
+  /** The pass's check type; undefined for a single-pass review. */
+  checkType?: CheckType;
 }
 
 /** Longest conventions text quoted into the prompt. */
@@ -140,6 +153,32 @@ export function depthGuidance(profile: ReviewProfileConfig): string {
     : `${profile.name} review: look only at the diff and review the changed lines against the rubric.`;
 }
 
+const CHECK_TYPE_FOCUS: Readonly<Record<CheckType, string>> = {
+  security:
+    "This pass checks security only: injection, secrets, unsafe handling of untrusted input, and missing or bypassed authentication and authorization. For every finding, explain in body how it could be exploited: who controls the input, how it reaches the code, and what they gain.",
+  stability:
+    "This pass checks stability only: wrong results, concurrency, resource management and error handling.",
+  performance:
+    "This pass checks performance only: work that grows with the input or the traffic beyond what the change needs, on paths that run in production.",
+  compatibility:
+    "This pass checks compatibility only: breaking changes for the code's consumers and callers, and tests that no longer protect the behavior.",
+  maintainability:
+    "This pass checks maintainability only: a change that will plausibly cause the next change to go wrong, such as duplicated logic that must stay in sync, dead or unreachable code, or a comment, name or type that contradicts what the code does. Use the category `correctness` for these findings.",
+};
+
+/**
+ * What a check-type pass looks for: its focus and the categories it may
+ * report, leaving other check types' issues to their own passes.
+ */
+export function checkGuidance(checkType: CheckType): string {
+  const categories = CHECK_TYPE_CATEGORIES[checkType];
+  const scope =
+    categories.length > 0
+      ? ` Report only findings in the ${categories.length === 1 ? "category" : "categories"} ${categories.map((c) => `\`${c}\``).join(", ")}.`
+      : "";
+  return `${CHECK_TYPE_FOCUS[checkType]}${scope} Other check types are reviewed in separate passes, so leave their issues out.`;
+}
+
 /** A fenced block longer than any backtick run inside `content`, so the content can't close it. */
 export function fence(content: string, info = ""): string {
   const longest = Math.max(0, ...[...content.matchAll(/`+/g)].map((m) => m[0].length));
@@ -178,11 +217,15 @@ function repoRulesSection(config: ReviewConfig): string | undefined {
 export function buildStablePrefix(
   config: ReviewConfig,
   languages: readonly RubricLanguage[],
+  checkType?: CheckType,
 ): string {
   return [
     BASE_INSTRUCTION,
     `# Review depth\n\n${depthGuidance(config.profile)}`,
-    renderRubric(languages),
+    checkType ? `# Check type\n\n${checkGuidance(checkType)}` : undefined,
+    checkType
+      ? renderCheckRubric(languages, CHECK_TYPE_CATEGORIES[checkType])
+      : renderRubric(languages),
     repoRulesSection(config),
   ]
     .filter((s): s is string => Boolean(s))
@@ -291,13 +334,13 @@ function diffSection(files: readonly DiffFile[], incremental?: IncrementalScope)
 
 /**
  * Assembles the review prompt. The stable prefix (base instruction, depth,
- * rubric, repo rules) comes first so it can be cached across reviews; the
+ * check type, rubric, repo rules) comes first so it can be cached across reviews; the
  * per-PR content (conventions, hints, PR text, previous findings, diff) comes
  * last.
  */
 export function buildPrompt(input: PromptInput): AssembledPrompt {
   const languages = languagesForPaths(input.files.map((f) => f.path));
-  const stablePrefix = buildStablePrefix(input.config, languages);
+  const stablePrefix = buildStablePrefix(input.config, languages, input.checkType);
   const conventions = input.conventions?.trim();
   const perChange = [
     conventions ? conventionsSection(conventions) : undefined,
@@ -306,5 +349,10 @@ export function buildPrompt(input: PromptInput): AssembledPrompt {
     input.previousFindings?.length ? previousFindingsSection(input.previousFindings) : undefined,
     diffSection(input.files, input.incremental),
   ].filter((s): s is string => Boolean(s));
-  return { text: [stablePrefix, ...perChange].join("\n\n") + "\n", stablePrefix, languages };
+  return {
+    text: [stablePrefix, ...perChange].join("\n\n") + "\n",
+    stablePrefix,
+    languages,
+    ...(input.checkType ? { checkType: input.checkType } : {}),
+  };
 }

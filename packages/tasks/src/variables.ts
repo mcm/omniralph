@@ -719,12 +719,20 @@ export const VARIABLES: readonly VariableDefinition[] = [
       "How thoroughly to review, from the review depth (e.g. `Quick review: look only at the diff. …`).",
   },
   {
+    name: "check",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["review"],
+    description:
+      "A looped review pass's check type focus (e.g. `This pass checks security only: …`); null for a single-pass review.",
+  },
+  {
     name: "rubric",
     source: "taskType",
     trust: "trusted",
     taskTypes: ["review"],
     description:
-      "The agent's rubric reference docs for the diff's languages: `rubric/universal.md`, then `rubric/languages/<language>.md` per language (null without any).",
+      "The agent's rubric reference docs for the diff's languages: `rubric/universal.md`, then `rubric/languages/<language>.md` per language (null without any). A looped review pass gets only its check type's sections plus the shared ones.",
   },
   {
     name: "repositoryRules",
