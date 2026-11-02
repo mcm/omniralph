@@ -167,6 +167,12 @@ export const workItemDetailSchema = workItemRowSchema.extend({
   triageRunning: z.boolean(),
   /** Its latest run, if one exists. */
   run: z.object({ id: z.string(), status: z.enum(RUN_STATUSES) }).nullable(),
+  /**
+   * The open questions the user can answer from the PRD tab: those its newest triage run left
+   * when that run is completed (Needs answers), with the run to send the answers to. Null when
+   * that run isn't completed, left none, or the user's role can't answer.
+   */
+  triageQuestions: z.object({ runId: z.string(), questions: z.array(z.string()) }).nullable(),
   actions: workItemActionsSchema,
   /**
    * Why Start epic is refused, when it is (absent otherwise): it's a feature, a work item

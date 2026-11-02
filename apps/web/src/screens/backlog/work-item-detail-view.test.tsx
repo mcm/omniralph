@@ -41,7 +41,9 @@ import {
   refineRow,
   workItemRow,
 } from "./test-fixtures";
-import { WORK_ITEM_NOT_FOUND } from "./work-item-detail-view";
+import { OPEN_QUESTIONS_FORM, SEND_ANSWERS } from "@/components/runs/open-questions-form";
+import { ANSWERS_SENT } from "@/components/runs/use-triage-answers";
+import { OPEN_QUESTIONS, WORK_ITEM_NOT_FOUND } from "./work-item-detail-view";
 
 const ui = vi.hoisted(() => ({ toast: vi.fn() }));
 vi.mock("@omniralph/ui", async (importOriginal) => ({
@@ -82,6 +84,8 @@ function deferred() {
 }
 
 const ORG = TEST_ORGANIZATION_ID;
+/** The triage run whose open questions the PRD tab answers. */
+const TRIAGE_RUN = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1";
 
 const allOrganizations: SessionUser = {
   ...testUser,
@@ -113,6 +117,7 @@ function detailOf(row: WorkItemRow, overrides: Partial<WorkItemDetail> = {}): Wo
     stories: [],
     activity: [],
     triageRunning: false,
+    triageQuestions: null,
     run: null,
     actions: {
       start: ready && !row.blocked && !row.manual,
@@ -185,6 +190,7 @@ function serve() {
     }
     routes[`PUT /api/ui/work-items/${id}/repository`] = action("PUT", "repository");
   }
+  routes[`POST /api/ui/runs/${TRIAGE_RUN}/triage/answers`] = action("POST", "triage/answers");
   seen = mockFetch(routes);
 }
 
@@ -744,6 +750,40 @@ describe("the tabs", () => {
         within(screen.getByRole("tabpanel", { name: "PRD" })).getByText("Export every invoice."),
       ).toBeTruthy(),
     );
+  });
+
+  it("answers its triage's open questions above the PRD when it has some", async () => {
+    details["linear-issue-412"] = detailOf(workItemRow(), {
+      triageQuestions: { runId: TRIAGE_RUN, questions: ["Which format?", "Who exports?"] },
+    });
+    answers["POST triage/answers"] = () => jsonResponse({ kind: "retriage" });
+    renderBacklog();
+    await loaded();
+    const prd = screen.getByRole("tabpanel", { name: "PRD" });
+    const questions = within(prd).getByRole("region", { name: OPEN_QUESTIONS });
+    const form = within(questions).getByRole("form", { name: OPEN_QUESTIONS_FORM });
+    // Above the PRD.
+    await within(prd).findByText("Export every invoice.");
+    expect(
+      questions.compareDocumentPosition(within(prd).getByText("Export every invoice.")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    await userEvent.type(within(form).getByLabelText("Who exports?"), "Admins");
+    await userEvent.click(within(form).getByRole("button", { name: SEND_ANSWERS }));
+    await waitFor(() => expect(ui.toast).toHaveBeenCalledWith(ANSWERS_SENT));
+    const [sent] = requests("POST", `/api/ui/runs/${TRIAGE_RUN}/triage/answers`);
+    expect(sent?.body).toEqual({
+      answers: [{ index: 1, question: "Who exports?", answer: "Admins" }],
+    });
+  });
+
+  it("shows the PRD alone when its triage left nothing to answer", async () => {
+    renderBacklog();
+    await loaded();
+    const prd = screen.getByRole("tabpanel", { name: "PRD" });
+    await within(prd).findByText("Export every invoice.");
+    expect(within(prd).queryByRole("form", { name: OPEN_QUESTIONS_FORM })).toBeNull();
   });
 
   it("puts the chosen tab in the URL, keeping the filters", async () => {

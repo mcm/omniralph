@@ -72,6 +72,7 @@ function workItem(overrides: Partial<WorkItemDetail> = {}): WorkItemDetail {
     stories: [],
     activity: [],
     triageRunning: false,
+    triageQuestions: null,
     run: { id: RUN_ID, status: "running" },
     actions: {
       start: false,

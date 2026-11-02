@@ -126,3 +126,20 @@
     order: 2;
   }
 }
+
+/* The PRD tab's open questions form, above the PRD, when its triage left some. */
+.or-backlog-detail__questions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--or-line);
+}
+
+.or-backlog-detail__subtitle {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 13px;
+  font-weight: 600;
+}
