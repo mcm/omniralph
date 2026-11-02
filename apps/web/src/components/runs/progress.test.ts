@@ -58,6 +58,7 @@ describe("stepsToProgress", () => {
         tokens: { in: 0, out: 0 },
         durationMs: null,
         openFindings: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
+        check: null,
       },
       {
         kind: "correlation",

@@ -39,6 +39,7 @@ import {
 import { RunFactBadges, RunLanes } from "@/components/runs/run-details";
 import { RunIterations } from "@/components/runs/run-iterations";
 import { RunProgress } from "@/components/runs/run-progress";
+import { ReviewPlanCard } from "@/components/runs/review-plan-card";
 import { RunSession } from "@/components/runs/run-session";
 import { epicAuditTabs } from "@/components/runs/epic-audit";
 import { reviewFindingsTabs } from "@/components/runs/review-findings";
@@ -250,6 +251,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
       ) : null}
       <div className="or-run-detail__cards">
         {run.kind === "triage" ? <TriageSummary runId={run.id} onViewPrd={openPrd} /> : null}
+        <ReviewPlanCard run={run} headingLevel={3} />
         {run.steps.length > 0 ? (
           <RunProgress
             run={run}
@@ -313,7 +315,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
  * A run of any kind on the Runs screen (Design board Runs): its header badges and toolbar
  * (Design rule 5, with View PRD for a run with a work item), its status line, title, a
  * multi-repo epic's lanes and, for a waiting, stopped or failed run, why;
- * an open question's form; the progress card with the selected step (`?step=`, else
+ * an open question's form; a looped review's Plan; the progress card with the selected step (`?step=`, else
  * `defaultStep`) and its `StepPanel`; a triage run's summary; a looped run's iterations; an
  * epic's or request's collapsed
  * Session; and the run's Activity. A live query: the run's

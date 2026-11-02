@@ -1,0 +1,50 @@
+/* A looped review's Plan card: its check types, their files and passes. Only `--or-` tokens. */
+.or-review-plan .or-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.or-review-plan__totals {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 13px;
+}
+
+.or-review-plan__paths {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--or-sec);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.or-review-plan__passes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-review-plan__pass {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 8px;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-review-plan__pass-name {
+  color: var(--or-text);
+}
+
+.or-review-plan__note {
+  color: var(--or-ter);
+  font-size: 12px;
+}

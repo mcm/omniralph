@@ -6,6 +6,7 @@ import {
   type StepState,
 } from "@omniralph/ui";
 import type { RunDetail, RunStep } from "@/lib/api/runs";
+import { REVIEW_CHECK_LABELS } from "./review-plan";
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -53,13 +54,16 @@ export function stepState(status: RunStep["status"] | "waiting"): StepState {
   }
 }
 
-/** A step's name, as its progress card row reads (a story's title, a pass's task). */
+/**
+ * A step's name, as its progress card row reads (a story's title, a pass's task, a looped
+ * review's check type).
+ */
 export function stepLabel(step: RunStep): string {
   switch (step.kind) {
     case "story":
       return step.title;
     case "review_pass":
-      return step.taskName;
+      return step.check ? REVIEW_CHECK_LABELS[step.check.type] : step.taskName;
     case "correlation":
     case "attempt":
       return step.label;

@@ -15,6 +15,7 @@ import {
   type RalphEpicAudit,
   type RalphRunDetailFacts,
   type RalphTaskVerification,
+  type ReviewPassEntry,
   type ReviewRunDetailFacts,
   type RunAttemptEntry,
   type RunIndexEntry,
@@ -23,6 +24,7 @@ import {
 } from "@omniralph/db";
 import type {
   AttemptVerification,
+  ReviewCheck,
   RunAttempt,
   RunChat,
   RunDetail,
@@ -37,7 +39,7 @@ import { organizationPlaybooks } from "@/lib/playbooks";
 import { siblingIssueUrl } from "@/lib/tracker/adapters";
 import { reviewTaskNames } from "@/lib/review/post";
 import { changeRequestWebUrl } from "@/lib/repositories/web-url";
-import { describeAttempt, type AttemptLabelContext } from "@omniralph/shared";
+import { describeAttempt, REVIEW_CHECK_TYPES, type AttemptLabelContext } from "@omniralph/shared";
 import { runActions } from "./actions";
 import { runRow } from "./list";
 import { loadRunQuestion } from "./question";
@@ -299,6 +301,43 @@ function ralphKindFacts(
   };
 }
 
+/**
+ * A looped review's check type as its step shows it; null for a single pass. Its files are
+ * every file its passes reviewed (the first pass reviews them all); its pass in progress is
+ * its newest loop iteration while that one's review or verifier runs.
+ */
+export function reviewCheck(pass: ReviewPassEntry): ReviewCheck | null {
+  const type = REVIEW_CHECK_TYPES.find((t) => t === pass.checkType);
+  if (!type) return null;
+  const files = [...new Set(pass.passes.flatMap((p) => p.files))];
+  const active = pass.status === "queued" || pass.status === "running";
+  const { iteration } = pass;
+  return {
+    type,
+    files,
+    passes: pass.passes.map((p) => ({
+      number: p.number,
+      files: p.files,
+      reported: p.reported,
+      confirmed: p.confirmed,
+      new: p.new,
+      dropped: p.dropped,
+      verification: p.verification,
+      unreached: p.unreached,
+      summary: p.summary,
+    })),
+    droppedFindings: pass.droppedFindings,
+    current:
+      active && iteration && (iteration.status === "working" || iteration.status === "verifying")
+        ? {
+            number: iteration.number,
+            phase: iteration.status === "working" ? "reviewing" : "verifying",
+          }
+        : null,
+    error: pass.error,
+  };
+}
+
 async function reviewKindFacts(
   db: Database,
   run: RunIndexEntry,
@@ -325,6 +364,7 @@ async function reviewKindFacts(
     tokens: pass.tokens,
     durationMs: pass.durationMs,
     openFindings: pass.openFindings,
+    check: reviewCheck(pass),
   }));
   const correlation = facts.correlationJobId
     ? attempts.find((a) => a.id === facts.correlationJobId)
