@@ -89,7 +89,7 @@ export interface SkippedFile {
 export interface ReviewTask {
   id: string;
   files: DiffFile[];
-  /** Token budget for the task (the profile's full `maxTokensPerReview` in v1). */
+  /** Token budget for the task (`planReview`: the profile's full `maxTokensPerReview`). */
   budget: number;
 }
 
@@ -273,6 +273,11 @@ export function isTestPath(path: string): boolean {
 export interface ChecksOptions extends PlanOptions {
   /** Plan the maintainability check type too (off by default). */
   maintainability?: boolean;
+  /**
+   * Tokens the review has left to spend (defaults to the profile's
+   * `maxTokensPerReview`). It is split evenly across the planned check types.
+   */
+  remainingTokens?: number;
 }
 
 export interface CheckPlanEntry {
@@ -281,10 +286,14 @@ export interface CheckPlanEntry {
   categories: readonly FindingCategory[];
   /** Every file the check type covers, in diff order. */
   files: DiffFile[];
+  /** The check type's share of the remaining token budget. */
+  budget: number;
   /**
-   * The check type's files in groups of related files (by directory), at most
-   * `MAX_FILES_PER_CHECK_GROUP` each; one group when the check type covers
-   * no more than that. Ids are `<type>-<n>`.
+   * The plan's shared groups (`CheckPlan.groups`) filtered to this check
+   * type's files, skipping groups it has no file in. Ids are `<type>-<n>`,
+   * where `n` is the shared group's 1-based position, so `security-2` and
+   * `stability-2` read the same group. Each group's budget is the check
+   * type's budget split in proportion to the group's estimated tokens.
    */
   groups: ReviewTask[];
 }
@@ -292,6 +301,12 @@ export interface CheckPlanEntry {
 export interface CheckPlan {
   /** The check types that apply, in `CHECK_TYPES` order; every included file is in at least one. */
   checks: CheckPlanEntry[];
+  /**
+   * Groups of related included files every check type shares: one group up
+   * to `MAX_FILES_PER_CHECK_GROUP` included files, otherwise by directory
+   * with at most that many each.
+   */
+  groups: DiffFile[][];
   skipped: SkippedFile[];
   /** Estimated input tokens of the included files' diffs. */
   estimatedInputTokens: number;
@@ -352,12 +367,42 @@ export function groupFilesByDirectory(
 }
 
 /**
+ * Splits `total` tokens into whole shares proportional to `weights` (evenly
+ * when every weight is 0). Shares sum to `total`; the remainder of the
+ * rounding goes to the largest fractional parts, earlier entries first.
+ */
+export function splitBudget(total: number, weights: readonly number[]): number[] {
+  if (weights.length === 0) return [];
+  const whole = Math.max(0, Math.floor(total));
+  const positive = weights.map((w) => Math.max(0, w));
+  const sum = positive.reduce((acc, w) => acc + w, 0);
+  const exact = positive.map((w) => (sum > 0 ? (whole * w) / sum : whole / weights.length));
+  const shares = exact.map((value) => Math.floor(value));
+  let rest = whole - shares.reduce((acc, s) => acc + s, 0);
+  const byFraction = exact
+    .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
+    .sort((a, b) => b.fraction - a.fraction || a.index - b.index);
+  for (const { index } of byFraction) {
+    if (rest <= 0) break;
+    shares[index] = (shares[index] as number) + 1;
+    rest -= 1;
+  }
+  return shares;
+}
+
+/**
  * Plans a looped review: the same file selection as `planReview`, then the
  * check types that apply to the included files. Security, stability and
  * compatibility cover every file in a rubric language, performance only
  * those outside test paths, and maintainability (when enabled) every file in
  * a rubric language. Files no check type covers (docs, config) go to
  * stability, so every included file is reviewed by at least one check type.
+ *
+ * The included files are grouped once (by directory above
+ * `MAX_FILES_PER_CHECK_GROUP`) and every check type reads those groups,
+ * filtered to its files. The remaining token budget is split evenly across
+ * the check types, and each type's share across its groups in proportion to
+ * their estimated tokens.
  */
 export function planChecks(
   files: readonly DiffFile[],
@@ -366,34 +411,53 @@ export function planChecks(
 ): CheckPlan {
   const selection = selectFiles(files, profile, options);
   const included = selection.included.map((c) => c.file);
+  const tokensOf = new Map(selection.included.map((c) => [c.file, c.tokens]));
   const types = CHECK_TYPES.filter((type) => type !== "maintainability" || options.maintainability);
 
-  const covered = new Map<CheckType, DiffFile[]>(types.map((type) => [type, []]));
+  const covered = new Map<CheckType, Set<DiffFile>>(types.map((type) => [type, new Set()]));
   for (const file of included) {
     const owners = types.filter((type) => checkCovers(type, file.path));
     for (const type of owners.length > 0 ? owners : (["stability"] as const)) {
-      covered.get(type)?.push(file);
+      covered.get(type)?.add(file);
     }
   }
 
-  const checks: CheckPlanEntry[] = [];
-  for (const type of types) {
-    const typeFiles = covered.get(type) ?? [];
-    if (typeFiles.length === 0) continue;
-    checks.push({
+  const sharedGroups = groupFilesByDirectory(included);
+  const planned = types.filter((type) => (covered.get(type)?.size ?? 0) > 0);
+  const remaining = options.remainingTokens ?? profile.maxTokensPerReview;
+  const typeBudgets = splitBudget(
+    remaining,
+    planned.map(() => 1),
+  );
+
+  const checks: CheckPlanEntry[] = planned.map((type, typeIndex) => {
+    const typeFiles = covered.get(type) as Set<DiffFile>;
+    const groups = sharedGroups
+      .map((group, index) => ({
+        id: `${type}-${index + 1}`,
+        files: group.filter((file) => typeFiles.has(file)),
+      }))
+      .filter((group) => group.files.length > 0);
+    const budget = typeBudgets[typeIndex] as number;
+    const groupBudgets = splitBudget(
+      budget,
+      groups.map((group) => group.files.reduce((sum, file) => sum + (tokensOf.get(file) ?? 0), 0)),
+    );
+    return {
       type,
       categories: CHECK_TYPE_CATEGORIES[type],
-      files: typeFiles,
-      groups: groupFilesByDirectory(typeFiles).map((group, index) => ({
-        id: `${type}-${index + 1}`,
-        files: group,
-        budget: profile.maxTokensPerReview,
+      files: included.filter((file) => typeFiles.has(file)),
+      budget,
+      groups: groups.map((group, index) => ({
+        ...group,
+        budget: groupBudgets[index] as number,
       })),
-    });
-  }
+    };
+  });
 
   return {
     checks,
+    groups: sharedGroups,
     skipped: selection.skipped,
     estimatedInputTokens: selection.estimatedInputTokens,
     hotspots: selectHotspots(selection.included.map((c) => c.risk)),
