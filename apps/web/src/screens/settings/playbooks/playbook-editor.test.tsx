@@ -379,6 +379,13 @@ describe("creating a playbook", () => {
     await userEvent.click(screen.getByRole("button", { name: "Remove teardown command 1" }));
     expect(screen.queryByRole("list", { name: "Teardown commands" })).toBeNull();
 
+    // Loop settings: a story's attempts and rounds, explained.
+    const loop = screen.getByRole("region", { name: "Loop" });
+    expect(within(loop).getByText(/How many times Om works a story/)).toBeTruthy();
+    expect((field("Rounds per story") as HTMLInputElement).value).toBe("8");
+    await userEvent.clear(field("Attempts per story"));
+    await userEvent.type(field("Attempts per story"), "5");
+
     // Coding settings.
     await userEvent.type(field("Worktree setup"), "pnpm install");
     await userEvent.selectOptions(field("Epic completed state"), "completed");
@@ -436,6 +443,9 @@ describe("creating a playbook", () => {
         cleanupMergedWorktrees: true,
         unmergedBranchTimeoutMinutes: 60,
         prDescriptionPlaybookId: "builtin:describe-pr",
+        maxAttemptsPerStory: 5,
+        maxRoundsPerStory: 8,
+        stallRounds: 3,
       },
     });
 
@@ -475,6 +485,39 @@ describe("creating a playbook", () => {
     expect(writes()[0]!.body).toMatchObject({ role: "review", tokenBudget: null });
     expect(writes()[0]!.body).not.toHaveProperty("coding");
     expect(writes()[0]!.body).toMatchObject({ tools: { agent: [] } });
+  });
+
+  it("shows loop settings for looped roles only, and sends a review's loop limits", async () => {
+    renderAt(`${PLAYBOOKS_PATH}/new`);
+    expect(await pageTitle("New playbook")).toBeTruthy();
+    for (const role of ["request", "chat-ask", "pr-description", "correlation", "review-summary"]) {
+      await userEvent.selectOptions(field("Role"), role);
+      expect(screen.queryByRole("region", { name: "Loop" })).toBeNull();
+    }
+    await userEvent.selectOptions(field("Role"), "review");
+    const loop = screen.getByRole("region", { name: "Loop" });
+    expect(within(loop).getByText(/a verifier checks the work/)).toBeTruthy();
+    expect(screen.queryByLabelText("Attempts per story")).toBeNull();
+    expect((field("Stall rounds") as HTMLInputElement).value).toBe("2");
+    await userEvent.clear(field("Most iterations"));
+    await userEvent.type(field("Most iterations"), "8");
+    await userEvent.click(screen.getByRole("button", { name: "Create playbook" }));
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0]!.body).toMatchObject({ loop: { maxIterations: 8, stallRounds: 2 } });
+  });
+
+  it("checks the loop settings before sending anything", async () => {
+    renderAt(`${PLAYBOOKS_PATH}/new`);
+    expect(await pageTitle("New playbook")).toBeTruthy();
+    await userEvent.clear(field("Attempts per story"));
+    await userEvent.type(field("Attempts per story"), "21");
+    await userEvent.click(screen.getByRole("button", { name: "Create playbook" }));
+    expect(describedError(field("Attempts per story"))).toBe("Enter a number from 1 to 20.");
+    await userEvent.selectOptions(field("Role"), "review");
+    await userEvent.clear(field("Most iterations"));
+    await userEvent.click(screen.getByRole("button", { name: "Create playbook" }));
+    expect(describedError(field("Most iterations"))).toBe("Enter a number from 1 to 50.");
+    expect(writes()).toEqual([]);
   });
 
   it("suggests the host tools agents report and playbooks require, and takes any valid name", async () => {
@@ -788,6 +831,27 @@ describe("the draft", () => {
       coding: { maxAttemptsPerStory: 5 },
     });
     expect(draftToInput({ ...draft, role: "chat-ask" })).not.toHaveProperty("coding");
+  });
+
+  it("keeps a loop block only on a looped role that doesn't code", () => {
+    const review = draftFromPlaybook(
+      Playbook.parse({
+        id: CUSTOM_ID,
+        name: "Strict review",
+        role: "review",
+        systemPrompt: "Be strict.",
+        promptTemplate: "Review {{pr.title}}.",
+        loop: { maxIterations: 9 },
+      }),
+    );
+    expect(draftToInput(review).loop).toEqual({ maxIterations: 9, stallRounds: 2 });
+    expect(draftToInput({ ...review, role: "chat-ask" })).not.toHaveProperty("loop");
+    expect(draftToInput({ ...review, role: "story" })).not.toHaveProperty("loop");
+    // A request keeps the attempts it had: the editor doesn't show them.
+    const request = draftFromPlaybook({ ...customPlaybook, role: "request" });
+    expect(
+      draftToInput({ ...request, coding: { ...request.coding, maxAttemptsPerStory: "9" } }),
+    ).toMatchObject({ coding: { maxAttemptsPerStory: 5 } });
   });
 
   it("gives a new correlation playbook its fixed output", () => {

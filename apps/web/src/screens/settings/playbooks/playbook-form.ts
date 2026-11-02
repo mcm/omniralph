@@ -5,7 +5,12 @@ import {
   DEFAULT_PR_DESCRIPTION_TASK_ID,
   HostToolName,
   InstallablePackageName,
+  LOOP_DEFAULTS,
+  MAX_LOOP_ITERATIONS,
+  MAX_LOOP_STALL_ROUNDS,
   PR_DESCRIPTION_OUTPUT_SCHEMA,
+  roleHasLoopSettings,
+  roleLoops,
   roleTaskType,
   type JsonSchema,
   type Playbook,
@@ -44,6 +49,16 @@ export interface CodingDraft {
   cleanupMergedWorktrees: boolean;
   unmergedBranchTimeoutMinutes: string;
   prDescriptionPlaybookId: string;
+  /** A story playbook's loop settings, as typed. */
+  maxAttemptsPerStory: string;
+  maxRoundsPerStory: string;
+  stallRounds: string;
+}
+
+/** A looped non-coding playbook's loop limits, as typed. */
+export interface LoopDraft {
+  maxIterations: string;
+  stallRounds: string;
 }
 
 export interface PlaybookDraft {
@@ -67,6 +82,7 @@ export interface PlaybookDraft {
   setupCommands: CommandDraft[];
   teardownCommands: CommandDraft[];
   coding: CodingDraft;
+  loop: LoopDraft;
 }
 
 let nextKey = 0;
@@ -84,6 +100,11 @@ export function isReviewRole(role: PlaybookRole): boolean {
 /** Whether `role` has coding settings (story and request). */
 export function isCodingRole(role: PlaybookRole): boolean {
   return roleTaskType(role) === "coding";
+}
+
+/** Whether the editor shows `role`'s loop settings (every looped role). */
+export function showsLoopSettings(role: PlaybookRole): boolean {
+  return roleLoops(role);
 }
 
 /** The agent tools `role`'s runs may use. */
@@ -110,6 +131,16 @@ function codingDraft(coding: Playbook["coding"]): CodingDraft {
       set.unmergedBranchTimeoutMinutes ?? CODING_DEFAULTS.unmergedBranchTimeoutMinutes,
     ),
     prDescriptionPlaybookId: set.prDescriptionPlaybookId ?? DEFAULT_PR_DESCRIPTION_TASK_ID,
+    maxAttemptsPerStory: String(set.maxAttemptsPerStory ?? CODING_DEFAULTS.maxAttemptsPerStory),
+    maxRoundsPerStory: String(set.maxRoundsPerStory ?? CODING_DEFAULTS.maxRoundsPerStory),
+    stallRounds: String(set.stallRounds ?? CODING_DEFAULTS.stallRounds),
+  };
+}
+
+function loopDraft(loop: Playbook["loop"]): LoopDraft {
+  return {
+    maxIterations: String(loop?.maxIterations ?? LOOP_DEFAULTS.maxIterations),
+    stallRounds: String(loop?.stallRounds ?? LOOP_DEFAULTS.stallRounds),
   };
 }
 
@@ -144,6 +175,7 @@ export function draftFromPlaybook(playbook: Playbook): PlaybookDraft {
     setupCommands: commandDrafts(playbook.setupCommands),
     teardownCommands: commandDrafts(playbook.teardownCommands),
     coding: codingDraft(playbook.coding),
+    loop: loopDraft(playbook.loop),
   };
 }
 
@@ -167,6 +199,7 @@ export function newDraft(role: PlaybookRole): PlaybookDraft {
     setupCommands: [],
     teardownCommands: [],
     coding: codingDraft(undefined),
+    loop: loopDraft(undefined),
   };
 }
 
@@ -179,6 +212,18 @@ function fixedOutputSchema(role: PlaybookRole): JsonSchema | undefined {
 
 const WHOLE_NUMBER = /^\d+$/;
 
+/** Whether `text` is a whole number from `min` to `max`. */
+function inRange(text: string, min: number, max: number): boolean {
+  return WHOLE_NUMBER.test(text) && Number(text) >= min && Number(text) <= max;
+}
+
+/** Story loop settings: the field, and its bounds (as `CODING_FIELDS` has them). */
+const STORY_LOOP_FIELDS = [
+  ["maxAttemptsPerStory", 20],
+  ["maxRoundsPerStory", 100],
+  ["stallRounds", 100],
+] as const;
+
 /** Errors the editor finds before sending anything, by the same field paths as the server's. */
 export function draftErrors(draft: PlaybookDraft): Record<string, string> {
   const errors: Record<string, string> = {};
@@ -190,23 +235,41 @@ export function draftErrors(draft: PlaybookDraft): Record<string, string> {
   if (isCodingRole(draft.role) && !(WHOLE_NUMBER.test(timeout) && Number(timeout) > 0)) {
     errors["coding.unmergedBranchTimeoutMinutes"] = "Enter a number of minutes.";
   }
+  if (isCodingRole(draft.role) && showsLoopSettings(draft.role)) {
+    for (const [field, max] of STORY_LOOP_FIELDS) {
+      if (!inRange(draft.coding[field], 1, max)) {
+        errors[`coding.${field}`] = `Enter a number from 1 to ${max}.`;
+      }
+    }
+  }
+  if (roleHasLoopSettings(draft.role)) {
+    if (!inRange(draft.loop.maxIterations, 1, MAX_LOOP_ITERATIONS)) {
+      errors["loop.maxIterations"] = `Enter a number from 1 to ${MAX_LOOP_ITERATIONS}.`;
+    }
+    if (!inRange(draft.loop.stallRounds, 1, MAX_LOOP_STALL_ROUNDS)) {
+      errors["loop.stallRounds"] = `Enter a number from 1 to ${MAX_LOOP_STALL_ROUNDS}.`;
+    }
+  }
   return errors;
 }
 
 /**
  * The playbook `draft` saves: the fields it started from with the edited ones over them.
  * Review roles set no model or budget of their own only when the editor hides those; a
- * coding playbook's unedited coding settings stay as they were.
+ * coding playbook's unedited coding settings stay as they were. Only a looped non-coding
+ * role keeps a loop block.
  */
 export function draftToInput(draft: PlaybookDraft): Record<string, unknown> {
   const {
     id: _id,
     coding: baseCoding,
+    loop: baseLoop,
     outputSchema,
     ...base
   } = draft.base as {
     id?: unknown;
     coding?: Record<string, unknown>;
+    loop?: Record<string, unknown>;
     outputSchema?: JsonSchema;
   } & Record<string, unknown>;
   const input: Record<string, unknown> = {
@@ -251,6 +314,20 @@ export function draftToInput(draft: PlaybookDraft): Record<string, unknown> {
       cleanupMergedWorktrees: coding.cleanupMergedWorktrees,
       unmergedBranchTimeoutMinutes: Number(coding.unmergedBranchTimeoutMinutes),
       prDescriptionPlaybookId: coding.prDescriptionPlaybookId,
+      ...(showsLoopSettings(draft.role)
+        ? {
+            maxAttemptsPerStory: Number(coding.maxAttemptsPerStory),
+            maxRoundsPerStory: Number(coding.maxRoundsPerStory),
+            stallRounds: Number(coding.stallRounds),
+          }
+        : {}),
+    };
+  }
+  if (roleHasLoopSettings(draft.role)) {
+    input.loop = {
+      ...baseLoop,
+      maxIterations: Number(draft.loop.maxIterations),
+      stallRounds: Number(draft.loop.stallRounds),
     };
   }
   return input;
@@ -309,8 +386,12 @@ export function shownFields(role: PlaybookRole): string[] {
           "coding.cleanupMergedWorktrees",
           "coding.unmergedBranchTimeoutMinutes",
           "coding.prDescriptionPlaybookId",
+          ...(showsLoopSettings(role)
+            ? ["coding.maxAttemptsPerStory", "coding.maxRoundsPerStory", "coding.stallRounds"]
+            : []),
         ]
       : []),
+    ...(roleHasLoopSettings(role) ? ["loop.maxIterations", "loop.stallRounds"] : []),
   ];
 }
 

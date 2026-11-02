@@ -98,6 +98,7 @@ const storyInput: PlaybookInput = {
     runPrdQualityGates: false,
     epicCompletedState: "completed",
     unmergedBranchTimeoutMinutes: 120,
+    maxAttemptsPerStory: 1,
   },
 };
 const storyPlaybook = Playbook.parse(storyInput);
@@ -308,6 +309,8 @@ describe("the playbooks list", () => {
       ["triage", "Triage"],
       ["learn-rule", "Learn rule"],
       ["reply-to-finding", "Reply to finding"],
+      ["verifier", "Verifier"],
+      ["audit", "Epic audit"],
     ] as const;
     playbooks = roles.map(([role], index) => ({
       ...playbookList[3]!,
@@ -380,6 +383,11 @@ describe("a playbook's page", () => {
       ["Setup", "None"],
       ["Teardown", "None"],
     ]);
+    // A review loops: its limits at their defaults.
+    expect(facts("Loop")).toEqual([
+      ["Most iterations", "5 iterations"],
+      ["Stall rounds", "Stops after 2 iterations without a better score"],
+    ]);
     expect(screen.queryByRole("region", { name: "Coding" })).toBeNull();
     const used = screen.getByRole("region", { name: "Used by" });
     expect(within(used).getByText("acme/repo-1")).toBeTruthy();
@@ -423,6 +431,12 @@ describe("a playbook's page", () => {
       ["Merged worktree cleanup", "Removes the worktree and branch after the pull request merges"],
       ["Unmerged branch timeout", "2 hours"],
     ]);
+    // A story loops by its coding settings, unset ones at their defaults.
+    expect(facts("Loop")).toEqual([
+      ["Attempts per story", "1 attempt"],
+      ["Rounds per story", "8 rounds"],
+      ["Stall rounds", "Set aside after 3 rounds without a better score"],
+    ]);
     expect(
       within(screen.getByRole("region", { name: "Used by" })).getByText("Story, Request"),
     ).toBeTruthy();
@@ -438,6 +452,8 @@ describe("a playbook's page", () => {
       ["Fallback model", "None"],
       ["Token budget", "No limit"],
     ]);
+    // A chat answer is one session.
+    expect(screen.queryByRole("region", { name: "Loop" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Coding" })).toBeNull();
     const used = screen.getByRole("region", { name: "Used by" });
     expect(within(used).getByText("Ask about code")).toBeTruthy();
