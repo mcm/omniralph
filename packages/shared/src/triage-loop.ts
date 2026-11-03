@@ -36,8 +36,21 @@ export const TriageRoundDraft = z.object({
   title: z.string(),
   description: z.string(),
   openQuestions: z.array(z.string()),
-  /** An epic's stories (or a reformat's sub-issue updates), in order. */
-  stories: z.array(z.object({ title: z.string(), body: z.string() })),
+  /**
+   * An epic's stories (or a reformat's sub-issue updates), in order, with what the plan critic
+   * judges the epic's story order and split by: each one's kind, the 0-based indexes of the
+   * stories it is blocked by and whether only a person can do it (rounds recorded before these
+   * were kept read as a story with no blockers, for an agent).
+   */
+  stories: z.array(
+    z.object({
+      title: z.string(),
+      body: z.string(),
+      kind: z.enum(["story", "fix"]).default("story"),
+      dependsOn: z.array(z.int().min(0)).default([]),
+      manual: z.boolean().default(false),
+    }),
+  ),
 });
 export type TriageRoundDraft = z.infer<typeof TriageRoundDraft>;
 

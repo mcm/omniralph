@@ -82,6 +82,38 @@ const draft = (overrides: Partial<TriageOutcome> = {}) => ({
   ...overrides,
 });
 
+/** An epic, in the epic format. */
+const EPIC = [
+  "## Problem",
+  "",
+  "Widgets can't leave the app.",
+  "",
+  "## Scope",
+  "",
+  "### In",
+  "",
+  "- CSV export",
+  "",
+  "### Out",
+  "",
+  "- Other formats",
+  "",
+  "## Requirements",
+  "",
+  "- FR-1: The system must export widgets as CSV",
+].join("\n");
+
+/** A story of an epic draft, in the task format. */
+const epicStory = (title: string, overrides: Partial<TriageOutcome["stories"][number]> = {}) => ({
+  title,
+  body: STORY,
+  kind: "story" as const,
+  priority: 2,
+  dependsOn: [] as number[],
+  manual: false,
+  ...overrides,
+});
+
 const answered = (structured: unknown): QueryRunResult => ({
   outcome: "answered",
   answer: null,
@@ -245,6 +277,59 @@ describe.skipIf(!databaseAvailable)("triage as a loop", () => {
       "**Checks:** passed the work item lint and the plan critic in round 1 of 3",
     );
     expect(await withOpenQuestions(deps(), issue.id)).toBeNull();
+  });
+
+  it("asks the critic to judge an Epic's story order and split with its stories' dependencies", async () => {
+    const issue = addIssue();
+    const { runId, jobId } = await triage(issue);
+
+    await finish(
+      jobId,
+      answered(
+        draft({
+          sizing: { size: "epic", reason: "Three stories in one pull request." },
+          size: "L",
+          description: EPIC,
+          stories: [
+            epicStory("Add the CSV writer"),
+            epicStory("Fix quoting of commas", { kind: "fix", dependsOn: [0] }),
+            epicStory("Grant the export role", { manual: true, dependsOn: [0, 1] }),
+          ],
+        }),
+      ),
+    );
+
+    // The round's record keeps the order, so a later round (or the triage page) has it too.
+    expect((await round(runId, 1)).draft?.stories).toMatchObject([
+      { title: "Add the CSV writer", kind: "story", dependsOn: [], manual: false },
+      { title: "Fix quoting of commas", kind: "fix", dependsOn: [0], manual: false },
+      { title: "Grant the export role", kind: "story", dependsOn: [0, 1], manual: true },
+    ]);
+    const { context } = await critic(runId, 1);
+    expect(context.critique).toMatchObject({ size: "epic", epic: true });
+    expect(context.critique.draft.stories).toEqual([
+      expect.objectContaining({
+        index: 0,
+        title: "Add the CSV writer",
+        kind: "story",
+        dependsOn: [],
+        manual: false,
+      }),
+      expect.objectContaining({
+        index: 1,
+        title: "Fix quoting of commas",
+        kind: "fix",
+        dependsOn: [0],
+        manual: false,
+      }),
+      expect.objectContaining({
+        index: 2,
+        title: "Grant the export role",
+        kind: "story",
+        dependsOn: [0, 1],
+        manual: true,
+      }),
+    ]);
   });
 
   it("revises a draft that fails a check with its findings, and applies the passing revision", async () => {

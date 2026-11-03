@@ -52,7 +52,9 @@ describe("triageRoundViews", () => {
       draft({
         sizing: { size: "epic", reason: "Two stories." },
         size: "L",
-        stories: [{ title: "API", body: "Add the endpoint." }],
+        stories: [
+          { title: "API", body: "Add the endpoint.", kind: "story", dependsOn: [], manual: false },
+        ],
         openQuestions: ["Which currency?"],
       }),
     );
