@@ -14,9 +14,12 @@ import {
   skipReviewRuns,
   type Database,
   type Job,
+  type Repository,
   type Review,
 } from "@omniralph/db";
 import {
+  DOCUMENTATION_DEPTHS,
+  documentationCheckContext,
   FindingCategory,
   LOOPED_REVIEW_CHECK_TYPES,
   MAX_OPEN_FINDING_BODY_CHARS,
@@ -41,8 +44,9 @@ import {
   taskJobInput,
   type PlaybookSource,
 } from "@/lib/playbooks";
+import { documentationIterationJobKey } from "./docs-loop";
 import { reviewIdOfJob, reviewJobKey, reviewJobKeyPrefix, reviewPassJobKey } from "./job-review";
-import { firstPass, startReviewLoop } from "./loop";
+import { firstPass, startDocumentationCheckLoop, startReviewLoop } from "./loop";
 
 export interface EnqueueReviewInput {
   repositoryId: string;
@@ -123,6 +127,25 @@ export { reviewIdOfJob };
 
 export { reviewJobKey, reviewJobKeyPrefix };
 
+/** The documentation check a review run adds when its repo's check isn't off. */
+export const DOCUMENTATION_CHECK_TASK_ID = "builtin:check-docs";
+
+/** The playbook role of documentation checks: they run only as the repo's documentation check. */
+const DOCUMENTATION_CHECK_ROLE = "docs-check";
+
+/**
+ * The review task IDs of a review run of `repository`: its review tasks,
+ * then the documentation check (`builtin:check-docs`) when its
+ * `documentationCheck` isn't `off`. A repo with the check off runs exactly
+ * its review tasks.
+ */
+export function reviewTaskIdsOf(
+  repository: Pick<Repository, "reviewPlaybookIds" | "documentationCheck">,
+): string[] {
+  if (repository.documentationCheck === "off") return [...repository.reviewPlaybookIds];
+  return [...repository.reviewPlaybookIds, DOCUMENTATION_CHECK_TASK_ID];
+}
+
 /**
  * A review task that only writes a summary: its sink is `sticky-comment`, so
  * its review is left out of the run's correlation and posted review.
@@ -183,7 +206,11 @@ export async function reviewTasksFor(
  * task: task type `review`). A looped review task (`isLoopedReviewTask`)
  * gets one review per check type instead, each the loop of its passes
  * (`startReviewLoop`) whose first pass's job is created now, capped at the
- * depth's passes. Each job's trigger (`pr.updated`,
+ * depth's passes. When the repo's documentation check isn't `off`, the run
+ * also has the documentation check (`builtin:check-docs`, `reviewTaskIdsOf`):
+ * one summary-only review whose loop (`startDocumentationCheckLoop`) runs at
+ * the repo's documentation depth over the whole diff, posted as its sticky
+ * comment once it ends. Each job's trigger (`pr.updated`,
  * `pr.mention` or `review.rerun`) carries the review config resolved now
  * (the depth's preset, rules, instructions, excludes), the PR text, the mode and the
  * previous review's head SHA (none for a `full` review) and open findings
@@ -210,7 +237,7 @@ export async function enqueueReview(
 
   const definitions = organizationPlaybooks(db, repository.organizationId);
   const tasks = await reviewTasksFor(
-    repository.reviewPlaybookIds,
+    reviewTaskIdsOf(repository),
     input.trigger,
     { repositoryId: repository.id },
     definitions,
@@ -315,10 +342,71 @@ export async function enqueueReview(
     },
   } satisfies Omit<ReviewTriggerContext, "reviewId">;
 
+  /**
+   * The documentation check's task run: one summary-only review whose loop
+   * (`startDocumentationCheckLoop`) runs at the repo's documentation depth
+   * (its model and token cap), over the whole diff at head (`full`, no
+   * open findings): its comment replaces the last head's.
+   */
+  async function enqueueDocumentationCheck(
+    task: TaskDefinition,
+    playbook: Playbook,
+  ): Promise<ReviewTaskRun> {
+    const documentationDepth = repository.documentationDepth;
+    const preset = DOCUMENTATION_DEPTHS[documentationDepth];
+    const review = await createReview(db, {
+      reviewRunId: reviewRun.id,
+      taskId: task.id,
+      summaryOnly: isSummaryOnlyTask(task),
+      checkType: null,
+      repositoryId: input.repositoryId,
+      prNumber: input.prNumber,
+      prTitle: input.title,
+      headSha: input.headSha,
+      baseSha: input.baseSha,
+      trigger: input.trigger,
+      depth,
+      model: preset.model,
+      budget: preset.maxTokens,
+    });
+    const triggerContext = ReviewTriggerContext.parse({
+      ...context,
+      reviewId: review.id,
+      mode: "full",
+      previousReview: null,
+      documentation: documentationCheckContext(documentationDepth),
+    });
+    const { job, created } = await startDocumentationCheckLoop(
+      db,
+      dispatcher,
+      review,
+      playbook,
+      documentationDepth,
+      {
+        organizationId: repository.organizationId,
+        type: REVIEW_TASK_JOB_TYPE,
+        ...(await taskJobInput(definitions, task, {
+          trigger: { kind: TRIGGER_KINDS[input.trigger], context: triggerContext },
+          repositoryId: input.repositoryId,
+          ref: input.headSha,
+        })),
+        reviewRunId: reviewRun.id,
+        dedupeKey: documentationIterationJobKey(triggerContext, task.id, 1),
+      },
+    );
+    // A concurrent enqueue of the same head got there first.
+    if (!created) throw new DuplicateReviewRun(job);
+    return { taskId: task.id, checkType: null, reviewId: review.id, jobId: job.id };
+  }
+
   const runs: ReviewTaskRun[] = [];
   try {
     for (const task of tasks) {
       const playbook = await definitions.getPlaybook(task.id);
+      if (playbook?.role === DOCUMENTATION_CHECK_ROLE) {
+        runs.push(await enqueueDocumentationCheck(task, playbook));
+        continue;
+      }
       const checkTypes: readonly (ReviewCheckType | null)[] = isLoopedReviewTask(task, playbook)
         ? LOOPED_REVIEW_CHECK_TYPES
         : [null];

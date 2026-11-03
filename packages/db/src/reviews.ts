@@ -134,6 +134,15 @@ export async function markReviewRunRunning(db: Database, reviewRunId: string): P
 }
 
 /** Ends review runs that are still active as `skipped` (e.g. superseded by a newer push). */
+/**
+ * Whether review run `run` was skipped for a newer push of its PR
+ * (`skipReviewRuns`, which gives the reason), not settled `skipped` because
+ * its reviews were (which leaves no error).
+ */
+export function reviewRunSuperseded(run: Pick<ReviewRun, "status" | "error">): boolean {
+  return run.status === "skipped" && run.error !== null;
+}
+
 export async function skipReviewRuns(
   db: Database,
   reviewRunIds: readonly string[],

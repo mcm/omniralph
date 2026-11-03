@@ -294,6 +294,17 @@ in `reviews.documentation_updates` (null for every other review); its summary na
 says "No documentation changes needed for this change." A later iteration that fails keeps what
 the earlier ones confirmed; a first one that fails fails the review.
 
+Every review run of a repo whose check isn't `off` includes it: `enqueueReview` adds
+`builtin:check-docs` after the repo's review tasks (`reviewTaskIdsOf`), with the documentation
+depth's model and token cap, over the whole diff at head (mode `full`, no open findings). Being
+summary-only, it stays out of the run's correlation and posted review, and doesn't hold the run up:
+only a newer push (the run skipped with a reason, `reviewRunSuperseded`) ends it early. Once its
+loop ends, the review loop adapter's `afterCommit` posts it as the PR/MR's documentation sticky
+comment (`postStickyComment`, edited in place on later pushes): one entry per file (path, what is
+wrong or missing, the suggested text as a code block), or "No documentation changes needed for this
+change." Before posting it asks the code host for the PR/MR's head, and a result for a head that is
+no longer current isn't posted. Repos with the check off enqueue the same jobs as before.
+
 #### Repo settings
 
 Each repo sets its check on the Repos page's Reviews card (Documentation section), saved with the
