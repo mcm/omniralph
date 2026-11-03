@@ -23,12 +23,6 @@ const MAX_QUESTION_LENGTH = 4000;
 
 /** A validated triage as its round's record keeps it. */
 export function roundDraft(triage: TriageResult): TriageRoundDraft {
-  const stories =
-    triage.outcome === "reformat"
-      ? triage.subIssueUpdates
-      : triage.outcome === "prd"
-        ? triage.stories
-        : [];
   return {
     outcome: triage.outcome,
     sizing: triage.sizing,
@@ -36,8 +30,37 @@ export function roundDraft(triage: TriageResult): TriageRoundDraft {
     title: triage.title,
     description: triage.description,
     openQuestions: [...triage.openQuestions],
-    stories: stories.map((s) => ({ title: s.title, body: s.body })),
+    stories: draftStories(triage),
   };
+}
+
+/**
+ * A draft's stories with their order: a new epic's stories as planned, or a reformat's sub-issue
+ * updates, each blocked by the updated siblings its `blockedBy` names (blockers outside the
+ * epic aren't stories of the draft). A sub-issue update has no kind or manual flag of its own.
+ */
+function draftStories(triage: TriageResult): TriageRoundDraft["stories"] {
+  if (triage.outcome === "prd") {
+    return triage.stories.map((s) => ({
+      title: s.title,
+      body: s.body,
+      kind: s.kind,
+      dependsOn: [...s.dependsOn],
+      manual: s.manual,
+    }));
+  }
+  if (triage.outcome !== "reformat") return [];
+  const indexOf = new Map(triage.subIssueUpdates.map((u, index) => [u.id, index]));
+  return triage.subIssueUpdates.map((u) => ({
+    title: u.title,
+    body: u.body,
+    kind: "story",
+    dependsOn: u.blockedBy.flatMap((id) => {
+      const index = indexOf.get(id);
+      return index === undefined ? [] : [index];
+    }),
+    manual: false,
+  }));
 }
 
 /**
@@ -87,9 +110,9 @@ export function critiqueRequest(draft: TriageRoundDraft): PlanCritiqueRequest {
     stories: draft.stories.map((s) => ({
       title: s.title,
       body: s.body,
-      kind: "story",
-      dependsOn: [],
-      manual: false,
+      kind: s.kind,
+      dependsOn: [...s.dependsOn],
+      manual: s.manual,
     })),
   };
 }
