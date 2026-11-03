@@ -91,6 +91,7 @@ const baseReviews: ReviewsCardInput = {
   depth: "standard",
   pathExcludes: [],
   reviewerInstructions: "",
+  documentation: { check: "off", depth: "standard", updateTargets: "omniralph" },
 };
 
 const baseCoding: CodingCardInput = {

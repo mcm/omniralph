@@ -83,6 +83,7 @@ const savedCard = (body: ReviewsCardInput): ReviewsCard => ({
   depth: body.depth,
   pathExcludes: body.pathExcludes,
   reviewerInstructions: body.reviewerInstructions.trim(),
+  documentation: body.documentation,
 });
 
 beforeEach(() => {
@@ -164,6 +165,24 @@ const pendingItems = (card: HTMLElement) =>
   }));
 const depthOption = (card: HTMLElement, name: string) =>
   within(within(card).getByRole("radiogroup", { name: "Depth" })).getByRole("radio", { name });
+const radioIn = (card: HTMLElement, group: string, name: string) =>
+  within(within(card).getByRole("radiogroup", { name: group })).getByRole<HTMLButtonElement>(
+    "radio",
+    { name },
+  );
+const documentation = (card: HTMLElement) =>
+  within(card).getByRole("region", { name: "Documentation" });
+/** The detail of the portal (GitLab) with its documentation check set to `values`. */
+const withDocumentation = (values: Partial<ReviewsCard["documentation"]>) => {
+  const saved = repoDetail(portalRow());
+  return {
+    ...saved,
+    reviews: {
+      ...saved.reviews,
+      documentation: { ...saved.reviews.documentation, ...values },
+    },
+  };
+};
 const instructions = (card: HTMLElement) =>
   within(card).getByRole<HTMLTextAreaElement>("textbox", { name: "Reviewer instructions" });
 const reads = () => seen.filter((request) => request.method === "GET");
@@ -182,6 +201,7 @@ describe("the Reviews card", () => {
         depth: "standard",
         pathExcludes: ["dist/**"],
         reviewerInstructions: "Be brief.",
+        documentation: { check: "off", depth: "standard", updateTargets: "omniralph" },
       },
     });
     renderRepos();
@@ -275,6 +295,7 @@ describe("the Reviews card", () => {
       depth: "deep",
       pathExcludes: [],
       reviewerInstructions: "Check migrations.",
+      documentation: { check: "off", depth: "standard", updateTargets: "omniralph" },
     });
     expect(ui.toast).toHaveBeenCalledWith("Saved");
     expect(depthOption(card, "Deep").getAttribute("aria-checked")).toBe("true");
@@ -335,6 +356,7 @@ describe("the Reviews card", () => {
       depth: "standard",
       pathExcludes: ["vendor/**"],
       reviewerInstructions: "",
+      documentation: { check: "off", depth: "standard", updateTargets: "omniralph" },
     });
     expect(
       within(card).getByRole<HTMLInputElement>("checkbox", { name: "Drafts too" }).checked,
@@ -515,5 +537,184 @@ describe("the Reviews card", () => {
     expect(instructions(card).disabled).toBe(true);
     await userEvent.setup().click(within(card).getByRole("switch", { name: "Reviews" }));
     expect(saveBar(card)).toBeNull();
+  });
+
+  it("shows members the documentation check read-only, targets included in Update mode", async () => {
+    const detail = withDocumentation({ check: "update", updateTargets: "same-repo" });
+    details[REPO_PORTAL] = {
+      ...detail,
+      repository: {
+        ...detail.repository,
+        organization: { id: TEST_ORGANIZATION_ID, name: "Acme", role: "member" },
+      },
+      canEdit: false,
+    };
+    renderRepos({ user: member });
+    const card = await reviewsCard();
+    const section = documentation(card);
+    for (const radio of within(section).getAllByRole<HTMLButtonElement>("radio")) {
+      expect(radio.disabled).toBe(true);
+    }
+    expect(radioIn(card, "Documentation check", "Update").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(
+      radioIn(card, "Commit documentation to", "Same-repo MRs too").getAttribute("aria-checked"),
+    ).toBe("true");
+    await userEvent.setup().click(radioIn(card, "Documentation check", "Off"));
+    expect(saveBar(card)).toBeNull();
+  });
+});
+
+describe("the Reviews card's Documentation section", () => {
+  it("Off (the default): says Om doesn't check, shows the depth, hides the targets", async () => {
+    renderRepos();
+    const card = await reviewsCard();
+    const section = documentation(card);
+    expect(within(section).getByRole("heading", { level: 3, name: "Documentation" })).toBeTruthy();
+    expect(radioIn(card, "Documentation check", "Off").getAttribute("aria-checked")).toBe("true");
+    expect(within(section).getByText("Om doesn't check documentation.")).toBeTruthy();
+    expect(radioIn(card, "Documentation depth", "Standard").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(
+      within(section).getByText("Adds the comments and docstrings in the changed files."),
+    ).toBeTruthy();
+    expect(within(card).queryByRole("radiogroup", { name: "Commit documentation to" })).toBeNull();
+  });
+
+  it("Comment: explains the comment and hides the targets (GitHub wording)", async () => {
+    details[REPO_WEB] = {
+      ...repoDetail(webRow()),
+      reviews: {
+        ...repoDetail(webRow()).reviews,
+        documentation: { check: "comment", depth: "quick", updateTargets: "omniralph" },
+      },
+    };
+    renderRepos({ repositoryId: REPO_WEB });
+    const card = await reviewsCard();
+    const section = documentation(card);
+    expect(radioIn(card, "Documentation check", "Comment").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(
+      within(section).getByText(
+        "Om comments on each pull request with the documentation the change makes wrong or incomplete.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(section).getByText(
+        "Checks Markdown docs, READMEs, docs/ and agent instruction files.",
+      ),
+    ).toBeTruthy();
+    expect(within(card).queryByRole("radiogroup", { name: "Commit documentation to" })).toBeNull();
+  });
+
+  it("Update: shows the targets with their one-line explanation", async () => {
+    details[REPO_PORTAL] = withDocumentation({ check: "update" });
+    renderRepos();
+    const card = await reviewsCard();
+    const section = documentation(card);
+    expect(
+      within(section).getByText(
+        "Om commits the documentation updates to the merge requests chosen below and comments on the rest.",
+      ),
+    ).toBeTruthy();
+    expect(radioIn(card, "Commit documentation to", "Om's MRs").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(
+      within(section).getByText(
+        "Only merge requests Om opened. People's merge requests get the comment.",
+      ),
+    ).toBeTruthy();
+    await userEvent.setup().click(radioIn(card, "Commit documentation to", "Same-repo MRs too"));
+    expect(
+      within(section).getByText(
+        "Also people's merge requests whose branch is in this repo. Forks get the comment.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("opens the documentation depth's details: model, token cap, iterations and reads", async () => {
+    renderRepos();
+    const card = await reviewsCard();
+    const user = userEvent.setup();
+    await user.click(radioIn(card, "Documentation depth", "Deep"));
+    await user.click(within(card).getByRole("button", { name: "Deep documentation check" }));
+    const popover = await screen.findByRole("dialog", { name: "Deep documentation check" });
+    expect(
+      [...popover.querySelectorAll(".or-pop__row")].map((row) => [
+        row.querySelector("dt")!.textContent,
+        row.querySelector("dd")!.textContent,
+      ]),
+    ).toEqual([
+      ["Model", "Opus 5.5"],
+      ["Token cap", "500k per iteration"],
+      ["Iterations", "Up to 4"],
+      ["Reads", "Standard's files, plus comments and docstrings across the repo"],
+    ]);
+  });
+
+  it("stages Off → Update, a deeper depth and same-repo targets with their effects, then saves them", async () => {
+    renderRepos();
+    const card = await reviewsCard();
+    const user = userEvent.setup();
+    await user.click(radioIn(card, "Documentation check", "Update"));
+    await user.click(radioIn(card, "Documentation depth", "Deep"));
+    await user.click(radioIn(card, "Commit documentation to", "Same-repo MRs too"));
+    expect(pendingItems(card)).toEqual([
+      {
+        label: "Documentation",
+        from: "Off",
+        to: "Update",
+        effect:
+          "New reviews commit documentation updates to the merge requests allowed below and comment on the rest.",
+      },
+      {
+        label: "Documentation depth",
+        from: "Standard",
+        to: "Deep",
+        effect: "New documentation checks will read more of the repo and use more tokens.",
+      },
+      {
+        label: "Commit documentation to",
+        from: "Om's MRs",
+        to: "Same-repo MRs too",
+        effect: "People's merge requests from branches in this repo get documentation commits too.",
+      },
+    ]);
+    await user.click(within(card).getByRole("button", { name: "Save 3 changes" }));
+    await waitFor(() => expect(saveBar(card)).toBeNull());
+    expect(saves()).toHaveLength(1);
+    expect(saves()[0]!.body).toMatchObject({
+      documentation: { check: "update", depth: "deep", updateTargets: "same-repo" },
+    });
+    expect(radioIn(card, "Commit documentation to", "Same-repo MRs too")).toBeTruthy();
+  });
+
+  it("stages Comment → Off and a shallower depth with their effects", async () => {
+    details[REPO_PORTAL] = withDocumentation({ check: "comment" });
+    renderRepos();
+    const card = await reviewsCard();
+    const user = userEvent.setup();
+    await user.click(radioIn(card, "Documentation check", "Off"));
+    await user.click(radioIn(card, "Documentation depth", "Quick"));
+    expect(pendingItems(card).map((item) => [item.label, item.effect])).toEqual([
+      ["Documentation", "New reviews won't check documentation."],
+      [
+        "Documentation depth",
+        "New documentation checks will be faster, use fewer tokens and read less of the repo.",
+      ],
+    ]);
+  });
+
+  it("stages Off → Comment with its effect", async () => {
+    renderRepos();
+    const card = await reviewsCard();
+    await userEvent.setup().click(radioIn(card, "Documentation check", "Comment"));
+    expect(pendingItems(card).map((item) => item.effect)).toEqual([
+      "New reviews comment on each merge request with the documentation it should update.",
+    ]);
   });
 });

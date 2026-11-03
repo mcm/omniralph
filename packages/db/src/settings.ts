@@ -3,7 +3,12 @@
  * when they're enqueued.
  */
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import type { ReviewDepth } from "@omniralph/shared";
+import type {
+  DocumentationCheckMode,
+  DocumentationDepth,
+  DocumentationUpdateTargets,
+  ReviewDepth,
+} from "@omniralph/shared";
 import type { Database } from "./client.js";
 import type { RepositoryPlaybookBindings } from "./playbooks.js";
 import { recordRepositorySettingsChange, type Repository } from "./repositories.js";
@@ -75,6 +80,15 @@ export interface RepositorySettingsUpdate {
   pathExcludes: string[];
   /** Empty or null clears them. */
   customInstructions: string | null;
+  /**
+   * Its documentation check: the mode, the depth it runs at and the PRs an `update` check
+   * commits to; unchanged when left out.
+   */
+  documentation?: {
+    check: DocumentationCheckMode;
+    depth: DocumentationDepth;
+    updateTargets: DocumentationUpdateTargets;
+  };
   /** Review tasks of the repository's review runs; unchanged when left out. */
   reviewPlaybookIds?: string[];
   /** Correlation task of the repository's review runs; unchanged when left out. */
@@ -102,6 +116,13 @@ export async function updateRepositorySettings(
       triggers: input.triggers,
       pathExcludes: input.pathExcludes,
       customInstructions: input.customInstructions?.trim() || null,
+      ...(input.documentation
+        ? {
+            documentationCheck: input.documentation.check,
+            documentationDepth: input.documentation.depth,
+            documentationUpdateTargets: input.documentation.updateTargets,
+          }
+        : {}),
       ...(input.reviewPlaybookIds ? { reviewPlaybookIds: input.reviewPlaybookIds } : {}),
       ...(input.correlationPlaybookId
         ? { correlationPlaybookId: input.correlationPlaybookId }

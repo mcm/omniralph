@@ -1,4 +1,7 @@
 import {
+  DocumentationCheckModeSchema,
+  DocumentationDepthSchema,
+  DocumentationUpdateTargetsSchema,
   MAX_CUSTOM_INSTRUCTIONS_LENGTH,
   RepositoryCodingInput,
   MAX_PATH_EXCLUDES,
@@ -236,6 +239,18 @@ export type AddedRepositories = z.infer<typeof addedRepositoriesSchema>;
 // ── The Repos page's repo detail (`GET /api/ui/repositories/{id}`) ──────────────────────────
 // Each card's shape is its own schema: the card save endpoints answer with the same one.
 
+/**
+ * The Reviews card's Documentation section: the documentation check run with each review
+ * (`off`, `comment` or `update`), the depth it runs at, and which PRs an `update` check
+ * commits to.
+ */
+export const documentationSettingsSchema = z.object({
+  check: DocumentationCheckModeSchema,
+  depth: DocumentationDepthSchema,
+  updateTargets: DocumentationUpdateTargetsSchema,
+});
+export type DocumentationSettings = z.infer<typeof documentationSettingsSchema>;
+
 /** The Reviews card: when and how Om reviews the repo's pull requests. */
 export const reviewsCardSchema = z.object({
   enabled: z.boolean(),
@@ -244,6 +259,7 @@ export const reviewsCardSchema = z.object({
   pathExcludes: z.array(z.string()),
   /** Empty for none. */
   reviewerInstructions: z.string(),
+  documentation: documentationSettingsSchema,
 });
 export type ReviewsCard = z.infer<typeof reviewsCardSchema>;
 
@@ -364,6 +380,25 @@ export const reviewDepthOptionSchema = z.object({
 });
 export type ReviewDepthOption = z.infer<typeof reviewDepthOptionSchema>;
 
+/**
+ * A documentation depth preset as the Documentation depth control and its "<Depth>
+ * documentation check" popover show it.
+ */
+export const documentationDepthOptionSchema = z.object({
+  id: DocumentationDepthSchema,
+  label: z.string(),
+  /** One sentence: what a check at this depth reads. */
+  summary: z.string(),
+  details: z.object({
+    model: z.string(),
+    tokenCap: z.string(),
+    /** Most worker-then-verifier iterations a check runs. */
+    iterations: z.string(),
+    reads: z.string(),
+  }),
+});
+export type DocumentationDepthOption = z.infer<typeof documentationDepthOptionSchema>;
+
 /** A connected tracker the work item match can read from. */
 export const repositoryTrackerSchema = z.object({
   tracker: z.enum(WORK_ITEM_TRACKERS),
@@ -402,6 +437,8 @@ export const repositoryDetailSchema = z.object({
   reviews: reviewsCardSchema,
   /** Every review depth, fastest first. */
   depths: z.array(reviewDepthOptionSchema),
+  /** Every documentation depth, fastest first. */
+  documentationDepths: z.array(documentationDepthOptionSchema),
   coding: codingCardSchema,
   /** The organization's connected trackers. */
   trackers: z.array(repositoryTrackerSchema),
@@ -440,6 +477,11 @@ export const reviewsCardInputSchema = z.strictObject({
       MAX_CUSTOM_INSTRUCTIONS_LENGTH,
       `Reviewer instructions can be at most ${MAX_CUSTOM_INSTRUCTIONS_LENGTH.toLocaleString("en-US")} characters.`,
     ),
+  documentation: z.strictObject({
+    check: DocumentationCheckModeSchema,
+    depth: DocumentationDepthSchema,
+    updateTargets: DocumentationUpdateTargetsSchema,
+  }),
 });
 export type ReviewsCardInput = z.infer<typeof reviewsCardInputSchema>;
 

@@ -63,6 +63,12 @@ export const chatWebMessageAuthor = pgEnum("chat_web_message_author", ["user", "
 export const chatWebMessageStatus = pgEnum("chat_web_message_status", ["streaming", "complete"]);
 /** A repository's review depth (`REVIEW_DEPTHS` in `@omniralph/shared`). */
 export const reviewDepth = pgEnum("review_depth", ["quick", "standard", "deep"]);
+export const documentationCheck = pgEnum("documentation_check", ["off", "comment", "update"]);
+export const documentationDepth = pgEnum("documentation_depth", ["quick", "standard", "deep"]);
+export const documentationUpdateTargets = pgEnum("documentation_update_targets", [
+  "omniralph",
+  "same-repo",
+]);
 /**
  * Whether a repo's coding runs may rebase and `--force-with-lease`: only when a request asks
  * for it, `always` (rebasing instead of ever merging the base branch) or `never`.
@@ -989,6 +995,20 @@ export const repositories = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     customInstructions: text("custom_instructions"),
+    /**
+     * The documentation check run with its reviews: `off`, `comment` (one sticky comment of
+     * what should change) or `update` (also commit the changes where the targets allow).
+     */
+    documentationCheck: documentationCheck("documentation_check").notNull().default("off"),
+    /** The depth its documentation checks run at: what they read, their model and token cap. */
+    documentationDepth: documentationDepth("documentation_depth").notNull().default("standard"),
+    /**
+     * Which PRs an `update` documentation check commits to: only Om's own (`omniralph`) or
+     * also people's PRs whose branch is in the same repo (`same-repo`).
+     */
+    documentationUpdateTargets: documentationUpdateTargets("documentation_update_targets")
+      .notNull()
+      .default("omniralph"),
     /**
      * The review and review-summary playbooks (`builtin:<name>` or UUIDs) each PR event fans
      * out to, in order.

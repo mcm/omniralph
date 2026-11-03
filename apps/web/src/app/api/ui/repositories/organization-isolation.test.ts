@@ -290,6 +290,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
         depth: "deep",
         pathExcludes: [],
         reviewerInstructions: "",
+        documentation: { check: "off", depth: "standard", updateTargets: "omniralph" },
       }),
     ).toEqual(refused);
     expect(
@@ -332,6 +333,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of repositories and 
         depth: "deep",
         pathExcludes: [],
         reviewerInstructions: "",
+        documentation: { check: "off", depth: "standard", updateTargets: "omniralph" },
       }),
     ).toMatchObject({ ok: true, card: { depth: "deep" } });
     expect((await getRepositoryReviewSettings(db, a.repoId))!.depth).toBe("deep");

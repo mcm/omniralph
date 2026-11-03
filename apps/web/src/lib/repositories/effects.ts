@@ -6,8 +6,13 @@
  * browser.
  */
 import {
+  DOCUMENTATION_DEPTH_IDS,
+  DOCUMENTATION_DEPTHS,
   REVIEW_DEPTH_IDS,
   REVIEW_DEPTHS,
+  type DocumentationCheckMode,
+  type DocumentationDepth,
+  type DocumentationUpdateTargets,
   type RalphHistoryRewrite,
   type ReviewDepth,
 } from "@omniralph/shared";
@@ -142,6 +147,81 @@ export function reviewerInstructionsEffect(): FieldEffect {
     id: "reviewerInstructions",
     label: "Reviewer instructions edited",
     effect: "Applies to new reviews.",
+  };
+}
+
+// ── Reviews › Documentation ──────────────────────────────────────────────────────────────
+
+/** The documentation check's modes, as the card, its save bar and the change history name them. */
+export const DOCUMENTATION_CHECK_LABELS: Readonly<Record<DocumentationCheckMode, string>> = {
+  off: "Off",
+  comment: "Comment",
+  update: "Update",
+};
+
+/** The update targets, as the card, its save bar and the change history name them. */
+export function documentationUpdateTargetsLabel(
+  provider: CodeHost,
+  targets: DocumentationUpdateTargets,
+): string {
+  const abbreviation = requestAbbreviation(provider);
+  return targets === "omniralph" ? `Om's ${abbreviation}s` : `Same-repo ${abbreviation}s too`;
+}
+
+/** The documentation check's mode. */
+export function documentationCheckEffect(
+  provider: CodeHost,
+  from: DocumentationCheckMode,
+  to: DocumentationCheckMode,
+): FieldEffect {
+  const request = requestNoun(provider);
+  const effects: Record<DocumentationCheckMode, string> = {
+    off: "New reviews won't check documentation.",
+    comment: `New reviews comment on each ${request} with the documentation it should update.`,
+    update: `New reviews commit documentation updates to the ${request}s allowed below and comment on the rest.`,
+  };
+  return {
+    id: "documentationCheck",
+    label: "Documentation",
+    from: DOCUMENTATION_CHECK_LABELS[from],
+    to: DOCUMENTATION_CHECK_LABELS[to],
+    effect: effects[to],
+  };
+}
+
+/** The documentation check's depth. */
+export function documentationDepthEffect(
+  from: DocumentationDepth,
+  to: DocumentationDepth,
+): FieldEffect {
+  const deeper = DOCUMENTATION_DEPTH_IDS.indexOf(to) > DOCUMENTATION_DEPTH_IDS.indexOf(from);
+  return {
+    id: "documentationDepth",
+    label: "Documentation depth",
+    from: DOCUMENTATION_DEPTHS[from].label,
+    to: DOCUMENTATION_DEPTHS[to].label,
+    effect: deeper
+      ? "New documentation checks will read more of the repo and use more tokens."
+      : "New documentation checks will be faster, use fewer tokens and read less of the repo.",
+  };
+}
+
+/** Which PRs (MRs) an Update documentation check commits to. */
+export function documentationUpdateTargetsEffect(
+  provider: CodeHost,
+  from: DocumentationUpdateTargets,
+  to: DocumentationUpdateTargets,
+): FieldEffect {
+  const requests = `${requestNoun(provider)}s`;
+  return {
+    id: "documentationUpdateTargets",
+    label: "Commit documentation to",
+    from: documentationUpdateTargetsLabel(provider, from),
+    to: documentationUpdateTargetsLabel(provider, to),
+    effect:
+      to === "omniralph"
+        ? `Only Om's own ${requests} get documentation commits; people's get the comment.`
+        : `People's ${requests} from branches in this repo get documentation commits too.`,
   };
 }
 
