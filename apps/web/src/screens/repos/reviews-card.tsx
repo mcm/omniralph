@@ -1,6 +1,15 @@
 "use client";
 
-import { MAX_PATH_EXCLUDES, pathExcludeGlobError, type ReviewDepth } from "@omniralph/shared";
+import {
+  DOCUMENTATION_CHECK_MODES,
+  DOCUMENTATION_UPDATE_TARGETS,
+  MAX_PATH_EXCLUDES,
+  pathExcludeGlobError,
+  type DocumentationCheckMode,
+  type DocumentationDepth,
+  type DocumentationUpdateTargets,
+  type ReviewDepth,
+} from "@omniralph/shared";
 import {
   Card,
   Checkbox,
@@ -27,6 +36,11 @@ import {
   type ReviewsCardInput,
 } from "@/lib/api/repositories";
 import {
+  DOCUMENTATION_CHECK_LABELS,
+  documentationCheckEffect,
+  documentationDepthEffect,
+  documentationUpdateTargetsEffect,
+  documentationUpdateTargetsLabel,
   requestAbbreviation,
   requestNoun,
   reviewDepthEffect,
@@ -51,6 +65,9 @@ export interface ReviewsDraft {
   depth: ReviewDepth;
   pathExcludes: string[];
   reviewerInstructions: string;
+  documentationCheck: DocumentationCheckMode;
+  documentationDepth: DocumentationDepth;
+  documentationUpdateTargets: DocumentationUpdateTargets;
 }
 
 function toDraft(card: ReviewsCardData): ReviewsDraft {
@@ -62,6 +79,9 @@ function toDraft(card: ReviewsCardData): ReviewsDraft {
     depth: card.depth,
     pathExcludes: card.pathExcludes,
     reviewerInstructions: card.reviewerInstructions,
+    documentationCheck: card.documentation.check,
+    documentationDepth: card.documentation.depth,
+    documentationUpdateTargets: card.documentation.updateTargets,
   };
 }
 
@@ -73,6 +93,11 @@ export function reviewsInput(draft: ReviewsDraft): ReviewsCardInput {
     depth: draft.depth,
     pathExcludes: draft.pathExcludes,
     reviewerInstructions: draft.reviewerInstructions,
+    documentation: {
+      check: draft.documentationCheck,
+      depth: draft.documentationDepth,
+      updateTargets: draft.documentationUpdateTargets,
+    },
   };
 }
 
@@ -91,6 +116,23 @@ export function reviewsChanges(
   changes.push(...skipPathEffects(saved.pathExcludes, draft.pathExcludes));
   if (draft.reviewerInstructions !== saved.reviewerInstructions) {
     changes.push(reviewerInstructionsEffect());
+  }
+  if (draft.documentationCheck !== saved.documentationCheck) {
+    changes.push(
+      documentationCheckEffect(provider, saved.documentationCheck, draft.documentationCheck),
+    );
+  }
+  if (draft.documentationDepth !== saved.documentationDepth) {
+    changes.push(documentationDepthEffect(saved.documentationDepth, draft.documentationDepth));
+  }
+  if (draft.documentationUpdateTargets !== saved.documentationUpdateTargets) {
+    changes.push(
+      documentationUpdateTargetsEffect(
+        provider,
+        saved.documentationUpdateTargets,
+        draft.documentationUpdateTargets,
+      ),
+    );
   }
   return changes;
 }
@@ -112,9 +154,148 @@ function openedLabel(provider: CodeHost): string {
   return `${requestAbbreviation(provider)} opened`;
 }
 
+/** The documentation check's mode, in one line (PR or MR by provider). */
+export function documentationCheckHelp(provider: CodeHost, mode: DocumentationCheckMode): string {
+  const request = requestNoun(provider);
+  switch (mode) {
+    case "off":
+      return "Om doesn't check documentation.";
+    case "comment":
+      return `Om comments on each ${request} with the documentation the change makes wrong or incomplete.`;
+    case "update":
+      return `Om commits the documentation updates to the ${request}s chosen below and comments on the rest.`;
+  }
+}
+
+/** Which PRs (MRs) an Update check commits to, in one line. */
+export function documentationUpdateTargetsHelp(
+  provider: CodeHost,
+  targets: DocumentationUpdateTargets,
+): string {
+  const requests = `${requestNoun(provider)}s`;
+  return targets === "omniralph"
+    ? `Only ${requests} Om opened. People's ${requests} get the comment.`
+    : `Also people's ${requests} whose branch is in this repo. Forks get the comment.`;
+}
+
+/**
+ * The Reviews card's Documentation section: the mode, the depth with its summary and
+ * "<Depth> documentation check" details, and in Update mode which PRs it commits to.
+ */
+function DocumentationSection({
+  provider,
+  draft,
+  set,
+  depths,
+  disabled,
+  fieldErrors,
+}: {
+  provider: CodeHost;
+  draft: ReviewsDraft;
+  set: <K extends keyof ReviewsDraft>(key: K, value: ReviewsDraft[K]) => void;
+  depths: RepositoryDetail["documentationDepths"];
+  disabled: boolean;
+  fieldErrors: Readonly<Record<string, string>>;
+}) {
+  const ids = useId();
+  const titleId = `${ids}-title`;
+  const depth = depths.find((option) => option.id === draft.documentationDepth);
+  const modeError = errorAt(fieldErrors, "documentation.check");
+  const depthError = errorAt(fieldErrors, "documentation.depth");
+  const targetsError = errorAt(fieldErrors, "documentation.updateTargets");
+
+  return (
+    <section className="or-repo-docs" aria-labelledby={titleId}>
+      <h3 id={titleId} className="or-repo-docs__title">
+        Documentation
+      </h3>
+      <p className="or-repo-docs__help">
+        With each review, Om looks for documentation the change leaves wrong or incomplete.
+      </p>
+      <div className="or-field">
+        <div className="or-field__head">
+          <span className="or-field__label">Check</span>
+        </div>
+        <div className="or-field__control">
+          <SegmentedControl<DocumentationCheckMode>
+            aria-label="Documentation check"
+            options={DOCUMENTATION_CHECK_MODES.map((mode) => ({
+              value: mode,
+              label: DOCUMENTATION_CHECK_LABELS[mode],
+              disabled,
+            }))}
+            value={draft.documentationCheck}
+            onValueChange={(value) => set("documentationCheck", value)}
+          />
+          <p className="or-repo-depth__summary">
+            {documentationCheckHelp(provider, draft.documentationCheck)}
+          </p>
+          {modeError ? <p className="or-field-error">{modeError}</p> : null}
+        </div>
+      </div>
+      <div className="or-field">
+        <div className="or-field__head">
+          <span className="or-field__label">Depth</span>
+        </div>
+        <div className="or-field__control">
+          <SegmentedControl<DocumentationDepth>
+            aria-label="Documentation depth"
+            options={depths.map((option) => ({
+              value: option.id,
+              label: option.label,
+              disabled,
+            }))}
+            value={draft.documentationDepth}
+            onValueChange={(value) => set("documentationDepth", value)}
+          />
+          {depth ? (
+            <div className="or-repo-depth">
+              <p className="or-repo-depth__summary">{depth.summary}</p>
+              <DetailsPopover
+                label={`${depth.label} documentation check`}
+                items={[
+                  { term: "Model", detail: depth.details.model },
+                  { term: "Token cap", detail: depth.details.tokenCap },
+                  { term: "Iterations", detail: depth.details.iterations },
+                  { term: "Reads", detail: depth.details.reads },
+                ]}
+              />
+            </div>
+          ) : null}
+          {depthError ? <p className="or-field-error">{depthError}</p> : null}
+        </div>
+      </div>
+      {draft.documentationCheck === "update" ? (
+        <div className="or-field">
+          <div className="or-field__head">
+            <span className="or-field__label">Commit to</span>
+          </div>
+          <div className="or-field__control">
+            <SegmentedControl<DocumentationUpdateTargets>
+              aria-label="Commit documentation to"
+              options={DOCUMENTATION_UPDATE_TARGETS.map((targets) => ({
+                value: targets,
+                label: documentationUpdateTargetsLabel(provider, targets),
+                disabled,
+              }))}
+              value={draft.documentationUpdateTargets}
+              onValueChange={(value) => set("documentationUpdateTargets", value)}
+            />
+            <p className="or-repo-depth__summary">
+              {documentationUpdateTargetsHelp(provider, draft.documentationUpdateTargets)}
+            </p>
+            {targetsError ? <p className="or-field-error">{targetsError}</p> : null}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 /**
  * The Reviews card (Design rule 12): its switch, when reviews start, the depth with its
- * summary and "<Depth> review profile", skip paths and reviewer instructions, staged in its
+ * summary and "<Depth> review profile", skip paths, reviewer instructions and the
+ * Documentation section (`DocumentationSection`), staged in its
  * save bar with each change's effect and saved in one request
  * (`PUT /api/ui/repositories/{id}/reviews`). Members see it read-only.
  */
@@ -287,6 +468,14 @@ export function ReviewsCard({ detail, titleId }: { detail: RepositoryDetail; tit
             errorMessage={errorAt(fieldErrors, "reviewerInstructions")}
           />
         </Field>
+        <DocumentationSection
+          provider={provider}
+          draft={draft}
+          set={set}
+          depths={detail.documentationDepths}
+          disabled={disabled}
+          fieldErrors={fieldErrors}
+        />
       </div>
       {canEdit ? (
         <SaveBar

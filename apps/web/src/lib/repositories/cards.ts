@@ -99,7 +99,10 @@ function recordRepositoryChanged(
 
 // ── Reviews ─────────────────────────────────────────────────────────────────
 
-/** Saves the Reviews card: the switch, triggers, depth, skip paths and reviewer instructions. */
+/**
+ * Saves the Reviews card: the switch, triggers, depth, skip paths, reviewer instructions and
+ * the documentation check (mode, depth and update targets).
+ */
 export async function saveReviewsCard(
   db: Database,
   actor: SettingsActor,
@@ -112,6 +115,7 @@ export async function saveReviewsCard(
     depth: input.depth,
     pathExcludes: input.pathExcludes,
     reviewerInstructions: input.reviewerInstructions.trim(),
+    documentation: input.documentation,
   };
   const saved = await withSettingsChanges(
     db,
@@ -125,6 +129,7 @@ export async function saveReviewsCard(
         triggers: wanted.triggers,
         pathExcludes: wanted.pathExcludes,
         customInstructions: wanted.reviewerInstructions,
+        documentation: wanted.documentation,
       });
       if (current.reviewsEnabled !== wanted.enabled) {
         await setRepositorySwitches(tx, current.organizationId, current.id, {

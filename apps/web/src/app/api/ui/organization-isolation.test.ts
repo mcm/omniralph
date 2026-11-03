@@ -2015,6 +2015,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           depth: "deep",
           pathExcludes: [],
           reviewerInstructions: "",
+          documentation: { check: "off", depth: "standard", updateTargets: "omniralph" },
         },
       }),
       call(repositoryAsk.PUT, { method: "PUT", params: { id }, body: { askEnabled: false } }),
@@ -2137,6 +2138,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           depth: "quick",
           pathExcludes: [],
           reviewerInstructions: "",
+          documentation: { check: "off", depth: "standard", updateTargets: "omniralph" },
         },
       });
       expect(reviews).toMatchObject({ status: 200, body: { card: { depth: "quick" } } });

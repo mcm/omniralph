@@ -294,6 +294,18 @@ in `reviews.documentation_updates` (null for every other review); its summary na
 says "No documentation changes needed for this change." A later iteration that fails keeps what
 the earlier ones confirmed; a first one that fails fails the review.
 
+#### Repo settings
+
+Each repo sets its check on the Repos page's Reviews card (Documentation section), saved with the
+card (`PUT /api/ui/repositories/{id}/reviews`, `documentation: { check, depth, updateTargets }`;
+admins only, 400 for any other value, recorded in the `repository.reviews` change history):
+
+| Column                         | Values                      | Default     | Meaning                                                                                           |
+| ------------------------------ | --------------------------- | ----------- | ------------------------------------------------------------------------------------------------- |
+| `documentation_check`          | `off`, `comment`, `update`  | `off`       | Off; post one sticky comment of what should change; or also commit the changes                    |
+| `documentation_depth`          | `quick`, `standard`, `deep` | `standard`  | The [documentation depth](#documentation-depth) its checks run at                                 |
+| `documentation_update_targets` | `omniralph`, `same-repo`    | `omniralph` | In Update mode: only Om's own PRs, or also people's PRs whose branch is in the repo (never forks) |
+
 #### Documentation depth
 
 `DOCUMENTATION_DEPTHS` in `@omniralph/shared` (`documentation-check.ts`), beside the review depths,

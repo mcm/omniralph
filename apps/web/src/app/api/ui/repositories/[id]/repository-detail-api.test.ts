@@ -272,6 +272,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/repositories/{id}", () => {
       depth: "deep",
       pathExcludes: ["vendor/**"],
       reviewerInstructions: "Mind the migrations.",
+      documentation: { check: "off", depth: "standard", updateTargets: "omniralph" },
     });
     expect(body.depths.map((depth) => depth.id)).toEqual([...REVIEW_DEPTH_IDS]);
     expect(body.depths[2]).toEqual({

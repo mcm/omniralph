@@ -33,6 +33,36 @@ export function isDocumentationDepth(value: unknown): value is DocumentationDept
   );
 }
 
+/**
+ * A repo's documentation check (`repositories.documentation_check`): `off`, `comment` (post
+ * what should change as one sticky comment on the PR) or `update` (also commit the changes
+ * to the PRs `documentation_update_targets` allows).
+ */
+export const DOCUMENTATION_CHECK_MODES = ["off", "comment", "update"] as const;
+export type DocumentationCheckMode = (typeof DOCUMENTATION_CHECK_MODES)[number];
+
+/** The documentation check of a repo that never chose one. */
+export const DEFAULT_DOCUMENTATION_CHECK_MODE: DocumentationCheckMode = "off";
+
+export const DocumentationCheckModeSchema = z.enum(DOCUMENTATION_CHECK_MODES, {
+  error: "Choose a documentation check: off, comment or update.",
+});
+
+/**
+ * Which PRs an `update` check commits to (`repositories.documentation_update_targets`): only
+ * Om's own (`omniralph`), or also people's PRs whose branch is in the same repo
+ * (`same-repo`). Fork PRs always get the comment.
+ */
+export const DOCUMENTATION_UPDATE_TARGETS = ["omniralph", "same-repo"] as const;
+export type DocumentationUpdateTargets = (typeof DOCUMENTATION_UPDATE_TARGETS)[number];
+
+/** The update targets of a repo that never chose them. */
+export const DEFAULT_DOCUMENTATION_UPDATE_TARGETS: DocumentationUpdateTargets = "omniralph";
+
+export const DocumentationUpdateTargetsSchema = z.enum(DOCUMENTATION_UPDATE_TARGETS, {
+  error: "Choose which pull requests to update: omniralph or same-repo.",
+});
+
 /** The kinds of documentation a check can read, from the narrowest scope out. */
 export const DOCUMENTATION_KINDS = ["docs", "changed-file-comments", "related-comments"] as const;
 export type DocumentationKind = (typeof DOCUMENTATION_KINDS)[number];

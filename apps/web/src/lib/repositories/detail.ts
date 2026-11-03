@@ -10,7 +10,12 @@ import {
   type Database,
   type Repository,
 } from "@omniralph/db";
-import { REVIEW_DEPTH_IDS, REVIEW_DEPTHS } from "@omniralph/shared";
+import {
+  DOCUMENTATION_DEPTH_IDS,
+  DOCUMENTATION_DEPTHS,
+  REVIEW_DEPTH_IDS,
+  REVIEW_DEPTHS,
+} from "@omniralph/shared";
 import { ApiRouteError } from "@/lib/api/handler";
 import type {
   AgentsCard,
@@ -20,6 +25,7 @@ import type {
   RepositoryAgentState,
   RepositoryDetail,
   RepositoryTracker,
+  DocumentationDepthOption,
   ReviewDepthOption,
   ReviewsCard,
 } from "@/lib/api/repositories";
@@ -63,6 +69,11 @@ export function reviewsCard(repository: Repository): ReviewsCard {
     depth: repository.reviewDepth,
     pathExcludes: repository.pathExcludes,
     reviewerInstructions: repository.customInstructions ?? "",
+    documentation: {
+      check: repository.documentationCheck,
+      depth: repository.documentationDepth,
+      updateTargets: repository.documentationUpdateTargets,
+    },
   };
 }
 
@@ -239,6 +250,24 @@ export function reviewDepthOptions(): ReviewDepthOption[] {
   });
 }
 
+/** Every documentation depth, fastest first, as the Documentation depth control shows them. */
+export function documentationDepthOptions(): DocumentationDepthOption[] {
+  return DOCUMENTATION_DEPTH_IDS.map((id) => {
+    const { label, summary, details } = DOCUMENTATION_DEPTHS[id];
+    return {
+      id,
+      label,
+      summary,
+      details: {
+        model: details.modelLabel,
+        tokenCap: details.tokenCapLabel,
+        iterations: details.iterationsLabel,
+        reads: details.reads,
+      },
+    };
+  });
+}
+
 /** The organization's connected trackers, with their workspace names. */
 async function loadTrackers(db: Database, organizationId: string): Promise<RepositoryTracker[]> {
   const found = await Promise.all(
@@ -291,6 +320,7 @@ export async function loadRepositoryDetail(
     status: statuses.get(repository.id)!,
     reviews: reviewsCard(repository),
     depths: reviewDepthOptions(),
+    documentationDepths: documentationDepthOptions(),
     coding,
     trackers,
     ask: askCard(repository),

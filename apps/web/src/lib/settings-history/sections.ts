@@ -30,10 +30,14 @@ import {
   type SettingsValues,
   type TrackedSettings,
 } from "@omniralph/db";
-import { REVIEW_DEPTHS } from "@omniralph/shared";
+import { DOCUMENTATION_DEPTHS, REVIEW_DEPTHS } from "@omniralph/shared";
 import type { OrgUser } from "@/lib/auth/session";
 import { platformChannelId } from "@/lib/chat/playbooks";
 import { listPlaybooks } from "@/lib/playbooks";
+import {
+  DOCUMENTATION_CHECK_LABELS,
+  documentationUpdateTargetsLabel,
+} from "@/lib/repositories/effects";
 import type { SettingsSection } from "@/lib/live/events";
 import { ROUTING_FIELDS } from "@/lib/routing/fields";
 import { describeQuery } from "@/lib/routing/describe";
@@ -73,6 +77,9 @@ function repositoryReviewsFields(provider: Repository["provider"]): SettingsFiel
     depth: { label: "Depth" },
     pathExcludes: { label: "Skip paths" },
     reviewerInstructions: { label: "Reviewer instructions" },
+    documentationCheck: { label: "Documentation" },
+    documentationDepth: { label: "Documentation depth" },
+    documentationUpdateTargets: { label: "Commit documentation to" },
   };
 }
 
@@ -91,6 +98,12 @@ async function readRepositoryReviews(
     depth: REVIEW_DEPTHS[repository.reviewDepth].label,
     pathExcludes: repository.pathExcludes,
     reviewerInstructions: repository.customInstructions,
+    documentationCheck: DOCUMENTATION_CHECK_LABELS[repository.documentationCheck],
+    documentationDepth: DOCUMENTATION_DEPTHS[repository.documentationDepth].label,
+    documentationUpdateTargets: documentationUpdateTargetsLabel(
+      repository.provider,
+      repository.documentationUpdateTargets,
+    ),
   };
 }
 

@@ -144,6 +144,30 @@
   line-height: 1.4;
 }
 
+/* The Reviews card's Documentation section: its title and help line, then its fields. */
+.or-repo-docs {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--or-line);
+}
+
+.or-repo-docs__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.or-repo-docs__help {
+  margin: -12px 0 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 /* The Coding card's work item match: a sentence of badges, its editor, conflicts and rules. */
 .or-repo-match {
   display: flex;

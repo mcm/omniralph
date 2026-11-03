@@ -157,12 +157,19 @@ const SHA = (n: number) => n.toString(16).padStart(40, "0");
 const ADMIN = { id: "admin-1", role: "admin" as const, name: "Ada Admin", showAdvanced: false };
 const MEMBER = { id: "member-1", role: "member" as const, name: "Max Member", showAdvanced: true };
 
+const baseDocumentation: ReviewsCardInput["documentation"] = {
+  check: "off",
+  depth: "standard",
+  updateTargets: "omniralph",
+};
+
 const baseReviews: ReviewsCardInput = {
   reviewsEnabled: true,
   triggers: { onOpen: true, onPush: true, drafts: false },
   depth: "standard",
   pathExcludes: [],
   reviewerInstructions: "",
+  documentation: baseDocumentation,
 };
 
 const baseBindings: PlaybooksCardInput["bindings"] = {
@@ -333,6 +340,7 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
         depth: "quick",
         pathExcludes: ["*.snap", "/docs/**"],
         reviewerInstructions: "  Prefer early returns.  ",
+        documentation: baseDocumentation,
       });
       expect(status).toBe(200);
       const card = {
@@ -341,6 +349,7 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
         depth: "quick",
         pathExcludes: ["*.snap", "/docs/**"],
         reviewerInstructions: "Prefer early returns.",
+        documentation: baseDocumentation,
       };
       expect(cardSaveResultSchema(reviewsCardSchema).parse(body)).toEqual({ ok: true, card });
       expect(await getRepository(db, repoId)).toMatchObject({
@@ -388,6 +397,7 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
         depth: "quick",
         pathExcludes: ["*.snap", "/docs/**"],
         reviewerInstructions: "Prefer early returns.",
+        documentation: baseDocumentation,
       });
       expect(again).toMatchObject({ status: 200, body: { ok: true, card }, changes: [] });
       expect(await history("repository.reviews")).toHaveLength(1);
@@ -400,6 +410,125 @@ describe.skipIf(!databaseAvailable)("repo card saves", () => {
         pathExcludes: [],
         customInstructions: null,
       });
+    });
+
+    it("saves the documentation check, depth and update targets: one entry, the repo's change, the card", async () => {
+      expect(await getRepository(db, repoId)).toMatchObject({
+        documentationCheck: "off",
+        documentationDepth: "standard",
+        documentationUpdateTargets: "omniralph",
+      });
+      const documentation = { check: "update", depth: "deep", updateTargets: "same-repo" } as const;
+      const { status, body, changes } = await reviews({ ...baseReviews, documentation });
+      expect(status).toBe(200);
+      expect(cardSaveResultSchema(reviewsCardSchema).parse(body).card.documentation).toEqual(
+        documentation,
+      );
+      expect(await getRepository(db, repoId)).toMatchObject({
+        documentationCheck: "update",
+        documentationDepth: "deep",
+        documentationUpdateTargets: "same-repo",
+      });
+      const detail = await detailRoute.GET(new Request("http://localhost/api/ui"), {
+        params: Promise.resolve({ id: repoId }),
+      });
+      const shown = (await detail.json()) as {
+        reviews: { documentation: unknown };
+        documentationDepths: { id: string; label: string }[];
+      };
+      expect(shown.reviews.documentation).toEqual(documentation);
+      expect(shown.documentationDepths.map((depth) => depth.label)).toEqual([
+        "Quick",
+        "Standard",
+        "Deep",
+      ]);
+      // Labeled as the card shows them (MR on GitLab).
+      expect((await history("repository.reviews"))[0]!.changes).toEqual([
+        { field: "documentationCheck", label: "Documentation", before: "Off", after: "Update" },
+        {
+          field: "documentationDepth",
+          label: "Documentation depth",
+          before: "Standard",
+          after: "Deep",
+        },
+        {
+          field: "documentationUpdateTargets",
+          label: "Commit documentation to",
+          before: "Om's MRs",
+          after: "Same-repo MRs too",
+        },
+      ]);
+      expect(kinds(changes)).toEqual(["repository", "settings:repository.reviews"]);
+
+      // Comment mode keeps the targets for a later switch back to Update.
+      expect(
+        (await reviews({ ...baseReviews, documentation: { ...documentation, check: "comment" } }))
+          .status,
+      ).toBe(200);
+      expect((await history("repository.reviews"))[0]!.changes).toEqual([
+        { field: "documentationCheck", label: "Documentation", before: "Update", after: "Comment" },
+      ]);
+      expect(await getRepository(db, repoId)).toMatchObject({
+        documentationCheck: "comment",
+        documentationUpdateTargets: "same-repo",
+      });
+      await reviews(baseReviews);
+    });
+
+    it("refuses documentation values outside each choice with 400, saving and publishing nothing", async () => {
+      const refusals: [Record<string, unknown>, Record<string, string>][] = [
+        [
+          { check: "always" },
+          { "documentation.check": "Choose a documentation check: off, comment or update." },
+        ],
+        [
+          { check: null },
+          { "documentation.check": "Choose a documentation check: off, comment or update." },
+        ],
+        [
+          { depth: "thorough" },
+          { "documentation.depth": "Choose a documentation depth: quick, standard or deep." },
+        ],
+        [
+          { updateTargets: "forks" },
+          {
+            "documentation.updateTargets":
+              "Choose which pull requests to update: omniralph or same-repo.",
+          },
+        ],
+      ];
+      for (const [values, fieldErrors] of refusals) {
+        expect(
+          await reviews({ ...baseReviews, documentation: { ...baseDocumentation, ...values } }),
+        ).toMatchObject({ status: 400, body: { fieldErrors }, changes: [] });
+      }
+      // A missing section or an unknown key in it is refused too.
+      const { documentation: _documentation, ...withoutDocumentation } = baseReviews;
+      expect(await reviews(withoutDocumentation)).toMatchObject({ status: 400, changes: [] });
+      expect(
+        await reviews({ ...baseReviews, documentation: { ...baseDocumentation, paths: ["docs"] } }),
+      ).toMatchObject({ status: 400, changes: [] });
+      expect(await getRepository(db, repoId)).toMatchObject({
+        documentationCheck: "off",
+        documentationDepth: "standard",
+        documentationUpdateTargets: "omniralph",
+      });
+      expect(await history("repository.reviews")).toEqual([]);
+    });
+
+    it("refuses a member's documentation change with 403", async () => {
+      state.user = MEMBER;
+      expect(
+        await reviews({
+          ...baseReviews,
+          documentation: { check: "comment", depth: "quick", updateTargets: "omniralph" },
+        }),
+      ).toMatchObject({ status: 403, changes: [] });
+      expect(await getRepository(db, repoId)).toMatchObject({
+        documentationCheck: "off",
+        documentationDepth: "standard",
+      });
+      expect(await history("repository.reviews")).toEqual([]);
     });
 
     it("labels the open trigger PR opened on GitHub", async () => {

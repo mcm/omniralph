@@ -1,6 +1,7 @@
 // Repos for the Repos screen's tests, as `GET /api/ui/repositories` and `/{id}` answer them.
 import { TEST_ORGANIZATION_ID } from "@/components/query-test-utils";
 import type {
+  DocumentationDepthOption,
   RepositoryDetail,
   RepositoryListItem,
   ReviewDepthOption,
@@ -115,6 +116,44 @@ export const DEPTHS: ReviewDepthOption[] = [
   },
 ];
 
+/** Every documentation depth, as the detail lists them (`DOCUMENTATION_DEPTHS`). */
+export const DOCUMENTATION_DEPTHS: DocumentationDepthOption[] = [
+  {
+    id: "quick",
+    label: "Quick",
+    summary: "Checks Markdown docs, READMEs, docs/ and agent instruction files.",
+    details: {
+      model: "Haiku 5.5",
+      tokenCap: "100k per iteration",
+      iterations: "Up to 2",
+      reads: "Markdown docs, READMEs, docs/ and agent instruction files",
+    },
+  },
+  {
+    id: "standard",
+    label: "Standard",
+    summary: "Adds the comments and docstrings in the changed files.",
+    details: {
+      model: "Sonnet 5.5",
+      tokenCap: "250k per iteration",
+      iterations: "Up to 3",
+      reads: "Quick's files, plus comments and docstrings in the changed files",
+    },
+  },
+  {
+    id: "deep",
+    label: "Deep",
+    summary:
+      "Adds comments and docstrings anywhere in the repo that mention what the change modifies.",
+    details: {
+      model: "Opus 5.5",
+      tokenCap: "500k per iteration",
+      iterations: "Up to 4",
+      reads: "Standard's files, plus comments and docstrings across the repo",
+    },
+  },
+];
+
 /** The detail of `row` (the portal by default), as an admin of its organization sees it. */
 export function repoDetail(
   row: RepositoryListItem = portalRow(),
@@ -142,8 +181,10 @@ export function repoDetail(
       depth: "standard",
       pathExcludes: [],
       reviewerInstructions: "",
+      documentation: { check: "off", depth: "standard", updateTargets: "omniralph" },
     },
     depths: DEPTHS,
+    documentationDepths: DOCUMENTATION_DEPTHS,
     coding: {
       enabled: row.codingEnabled,
       workItemMatch: null,
