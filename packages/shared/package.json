@@ -26,6 +26,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@omniralph/planning": "workspace:*",
     "@omniralph/tasks": "workspace:*",
     "zod": "^4.6.5"
   }

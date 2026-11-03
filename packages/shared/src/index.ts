@@ -25,3 +25,4 @@ export * from "./text.js";
 export * from "./routing.js";
 export * from "./attempt-labels.js";
 export * from "./finding-verification.js";
+export * from "./plan-critique.js";

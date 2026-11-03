@@ -55,6 +55,9 @@ export {
   renderTriageMethodology,
 } from "./methodology/triage.js";
 
+export { CRITIQUE_SIZES, PLAN_RUBRICS, renderRubric } from "./methodology/critique.js";
+export type { CritiqueSize, RubricItem } from "./methodology/critique.js";
+
 export {
   CRITERIA_AS_EVIDENCE_NOTE,
   EPIC_CONTEXT_HEADING,

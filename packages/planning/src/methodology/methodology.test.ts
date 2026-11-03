@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { CRITIQUE_SIZES, PLAN_RUBRICS, renderRubric } from "./critique.js";
 import { type Fragment, SHARED_RULES, renderFragment } from "./rules.js";
 import { EPIC_TEMPLATE, TASK_PARAGRAPHS, TASK_TEMPLATE } from "./templates.js";
 import { TRIAGE_STEPS, renderTriageMethodology } from "./triage.js";
@@ -119,5 +120,41 @@ describe("renderTriageMethodology", () => {
     expect(methodology).toContain("Acme Tracker");
     expect(methodology).toContain("`ACME.md`");
     expect(methodology).not.toMatch(/\{\{/);
+  });
+});
+
+describe("plan rubrics", () => {
+  it.each(CRITIQUE_SIZES)("gives the %s rubric unique ids the critic can name", (size) => {
+    const ids = PLAN_RUBRICS[size].map((item) => item.id);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(id).toMatch(/^[a-z]+(?:-[a-z]+)*$/);
+  });
+
+  it.each(CRITIQUE_SIZES)(
+    "renders the %s rubric as one line per item, safe in a prompt template",
+    (size) => {
+      const lines = renderRubric(size).split("\n");
+      expect(lines).toHaveLength(PLAN_RUBRICS[size].length);
+      expect(lines[0]).toBe(`- \`${PLAN_RUBRICS[size][0]!.id}\`: ${PLAN_RUBRICS[size][0]!.check}`);
+      // The critic playbook embeds the rubric in its Mustache template.
+      expect(renderRubric(size)).not.toContain("{{");
+    },
+  );
+
+  it("judges a Fix on its cause and reproduction, a Story on its sentence, an Epic on coverage and order", () => {
+    const ids = (size: (typeof CRITIQUE_SIZES)[number]) => PLAN_RUBRICS[size].map((i) => i.id);
+    expect(ids("fix")).toEqual(
+      expect.arrayContaining(["reproduction", "located-cause", "checkable-criteria"]),
+    );
+    expect(ids("story")).toEqual(expect.arrayContaining(["story-sentence", "checkable-criteria"]));
+    expect(ids("story")).not.toContain("located-cause");
+    expect(ids("epic")).toEqual(
+      expect.arrayContaining(["epic-format", "requirements-covered", "story-order"]),
+    );
+    // The epic rubric names the template's sections as the formats define them.
+    for (const section of ["## Problem", "## Scope", "### In", "### Out", "## Requirements"]) {
+      expect(renderRubric("epic")).toContain(`\`${section}\``);
+    }
   });
 });
