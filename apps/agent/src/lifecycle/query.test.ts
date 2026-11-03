@@ -632,12 +632,21 @@ describe("runQueryTask", () => {
     const agent = getBuiltinRunSpec(task.id)!.agent;
     const TRIAGE = {
       outcome: "prd",
+      sizing: { size: "fix", reason: "One function returns the wrong value." },
       title: "Fix last()",
       description: "## Introduction\n\nFix it.\n\n## Quality Gates\n\n- `pnpm test` - Tests",
       size: "S",
       openQuestions: [],
       stories: [],
       subIssueUpdates: [],
+      featureEpics: [],
+      bug: {
+        locations: [{ file: "src/last.ts", symbol: "last" }],
+        reproduction: ["Call last([1, 2])"],
+        currentBehavior: "It returns undefined.",
+        expectedBehavior: "It returns 2.",
+        unlocatedQuestion: "",
+      },
       summary: "Single issue.",
     };
 
