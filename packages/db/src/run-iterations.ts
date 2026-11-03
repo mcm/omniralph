@@ -11,6 +11,7 @@ import { recordReviewChanges } from "./reviews.js";
 import {
   runIterations,
   type LoopRunKind,
+  type RunIterationDetails,
   type RunIterationMetric,
   type RunIterationStatus,
   type RunIterationVerdict,
@@ -77,6 +78,7 @@ export interface RunIterationUpdate {
   summary?: string | null;
   findings?: string[];
   error?: string | null;
+  details?: RunIterationDetails | null;
   outcome?: RunLoopOutcome | null;
   verifyingAt?: Date | null;
   finishedAt?: Date | null;

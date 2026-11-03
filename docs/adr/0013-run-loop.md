@@ -1,6 +1,6 @@
 # ADR 0013: Runs loop: work, verify, feed the findings back
 
-- **Status:** Accepted (TOOL-952, TOOL-954, TOOL-955, TOOL-964).
+- **Status:** Accepted (TOOL-952, TOOL-954, TOOL-955, TOOL-964, TOOL-977).
 - **Date:** 2026-11-02
 
 ## Context
@@ -113,6 +113,21 @@ copied limits, its timestamps, and on the last iteration the loop's `outcome`. E
 a live `run` change for the run, and the run detail (`GET /api/ui/runs/{id}`) lists them as
 `iterations`.
 
+### Triage: a draft checked by the lint and the plan critic
+
+Triage registered its adapter (`lib/triage/loop.ts`, TOOL-977), run kind `triage`, `run_id` the
+`triage_runs` row. The worker is a `triage.run` job, the run's current job; its `triage` sink leaves
+a loop round to the loop. `startVerifier` lints the draft (`lintWorkItem`) and records the round on
+the iteration (`run_iterations.details`, a `TriageRound`), then starts the plan critic
+(`builtin:critique-plan`, a `triage.critique-plan` job with a `triage-run` invoker); `judge` records
+its critique. The round converges when both pass; otherwise the lint failures and the critic's
+unmet items and questions are the next worker's `revision`, with the draft as its
+`previousResult`. An unusable draft (no critic) and a Feature's recommendation (no checks) settle
+without a verifier. `afterCommit` applies the loop's end to the tracker once it committed: the last
+usable draft, with every check still failing as an open question unless it passed. A run triages
+again on a reply, so each new loop starts after the last one's iterations (`startLoop`'s `number`,
+with `maxIterations` counted from it); an iteration without feedback is a loop's first.
+
 ### Coding: the task verifier
 
 Coding runs keep their own loop (story attempts and rounds), and gain a verifier step: when a
@@ -161,8 +176,9 @@ summary, metric and findings, then how the loop ended.
 
 ## Consequences
 
-- Triage doesn't change until it registers an adapter. Reviews registered theirs (TOOL-964): a
-  looped review costs a job per check type and pass, plus a verifier job per pass with findings.
+- Reviews registered their adapter (TOOL-964): a looped review costs a job per check type and
+  pass, plus a verifier job per pass with findings. Triage registered its own (TOOL-977): up to
+  3 rounds of a `triage.run` job and a critic job each.
 - Coding keeps its own loop (attempts, rounds); the task verifier and the epic audit (TOOL-955,
   TOOL-956) are invoked from the ralph run, not through this driver.
 - A loop job's sink isn't told it is part of a loop: a worker's output is applied as it comes back,

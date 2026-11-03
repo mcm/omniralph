@@ -36,6 +36,10 @@ import {
 import type { TriageDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
+// One triage job per round trip: the triage loop has its own tests (loop.test.ts).
+vi.mock("@omniralph/tasks", async (importOriginal) =>
+  (await import("./test-single-session")).singleSessionTasks(await importOriginal()),
+);
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 
 const databaseAvailable = testDatabaseAvailable();

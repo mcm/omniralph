@@ -94,7 +94,26 @@ export interface TriagePromptInput {
   /** A reply in the agent session (e.g. answers to open questions). */
   reply?: string | null;
   previousResult?: TriagePreviousResult | null;
+  /**
+   * A later round of the triage loop: the previous round's draft (as `previousResult`) failed
+   * the work item lint or the plan critic, and `feedback` says why.
+   */
+  revision?: TriageRevisionInput | null;
 }
+
+/** What a round of the triage loop after the first revises. */
+export interface TriageRevisionInput {
+  /** This round (2 or later). */
+  round: number;
+  /** The loop's cap. */
+  maxRounds: number;
+  /** The lint failures and the critic's notes and questions on the previous round's draft. */
+  feedback: string;
+}
+
+/** The section of a revising round's prompt that explains what to do with its feedback. */
+export const TRIAGE_REVISION_INSTRUCTIONS =
+  "Your previous triage above is your draft from the last round. The work item lint and the plan critic checked it, and it didn't pass yet. Revise it: fix every point below, keep what they didn't fault, and turn a point only a person can settle into an open question. Whatever still fails after the last round goes to a person as open questions.";
 
 /** Marks a triage session's prompt (tests and logs tell it apart from other sessions by this). */
 export const TRIAGE_HEADING = "## Triage this issue";
@@ -180,6 +199,26 @@ export interface TriageTemplateContext {
     subIssueUpdates: TemplateList<{ id: string; title: string }>;
     openQuestions: TemplateList<{ number: number; text: string }>;
   } | null;
+  /** A revising round of the triage loop; null for the first round. */
+  revision: { round: number; maxRounds: number; feedback: string } | null;
+}
+
+/** A previous triage as the trigger context's `previousResult` (see `TriageTemplateContext`). */
+export function previousResultContext(
+  previous: TriagePreviousResult,
+): NonNullable<TriageTemplateContext["previousResult"]> {
+  return {
+    outcome: previous.outcome ?? "prd",
+    size: previous.size,
+    sizing: previous.sizing ? { size: previous.sizing.size, reason: previous.sizing.reason } : null,
+    title: previous.title,
+    description: previous.description,
+    stories: templateList(previous.stories?.map((s, index) => ({ index, title: s.title }))),
+    subIssueUpdates: templateList(
+      previous.subIssueUpdates?.map((u) => ({ id: u.id, title: u.title })),
+    ),
+    openQuestions: templateList(previous.openQuestions.map((text, i) => ({ number: i + 1, text }))),
+  };
 }
 
 /** `input` as the trigger context of a `builtin:triage` run (see `TriageTemplateContext`). */
@@ -218,22 +257,12 @@ export function triageTemplateContext(input: TriagePromptInput): TriageTemplateC
     repository: input.repository?.repository.fullPath ?? null,
     branch: input.repository?.defaultBranch ?? null,
     reply: input.reply?.trim() || null,
-    previousResult: previous
+    previousResult: previous ? previousResultContext(previous) : null,
+    revision: input.revision
       ? {
-          outcome: previous.outcome ?? "prd",
-          size: previous.size,
-          sizing: previous.sizing
-            ? { size: previous.sizing.size, reason: previous.sizing.reason }
-            : null,
-          title: previous.title,
-          description: previous.description,
-          stories: templateList(previous.stories?.map((s, index) => ({ index, title: s.title }))),
-          subIssueUpdates: templateList(
-            previous.subIssueUpdates?.map((u) => ({ id: u.id, title: u.title })),
-          ),
-          openQuestions: templateList(
-            previous.openQuestions.map((text, i) => ({ number: i + 1, text })),
-          ),
+          round: input.revision.round,
+          maxRounds: input.revision.maxRounds,
+          feedback: input.revision.feedback,
         }
       : null,
   };
@@ -247,6 +276,7 @@ export function buildTriagePrompt(input: TriagePromptInput): string {
   const blockers = input.blockers ?? [];
   const reply = input.reply?.trim();
   const previous = input.previousResult;
+  const revision = input.revision;
   return [
     `Triage the ${input.tracker.name} issue ${issue.identifier} into an epic or a task (a Story or a Fix) that Omniralph can build.`,
     "",
@@ -328,6 +358,14 @@ export function buildTriagePrompt(input: TriagePromptInput): string {
           "## Reply in the session",
           `Someone replied in the thread on ${input.tracker.name} (typically answers to the open questions, or corrections). Treat the answers as decisions: fold them into the description and drop the questions they answer.`,
           ...quote("reply", reply),
+          "",
+        ]
+      : []),
+    ...(revision
+      ? [
+          `## Revise your draft (round ${revision.round} of ${revision.maxRounds})`,
+          TRIAGE_REVISION_INSTRUCTIONS,
+          ...quote("revision-feedback", revision.feedback),
           "",
         ]
       : []),

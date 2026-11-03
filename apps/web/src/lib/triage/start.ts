@@ -5,14 +5,15 @@
  * progress or done, routes it to a repository the way ralph does (none is
  * fine: triage then runs without a checkout), records a `triage_runs` row and
  * enqueues a run of the built-in query task `builtin:triage` (job type
- * `triage.run`) any of the organization's agents may claim. Its `triage`
- * sink (`lib/sinks/triage.ts`) applies the outcome to the tracker when it finishes.
+ * `triage.run`) any of the organization's agents may claim, as the first round
+ * of the triage loop (`./loop.ts`): the work item lint and the plan critic
+ * check each round's draft, and the loop applies the outcome to the tracker
+ * once they pass or it reaches its cap.
  */
 import {
   createTriageRun,
   getRepositoryWithConnection,
   getTriageRunBySession,
-  setTriageRunJob,
   setTriageRunStatus,
   type TriageRun,
 } from "@omniralph/db";
@@ -39,6 +40,7 @@ import { getPlaybookTask, organizationPlaybooks, taskJobInput } from "@/lib/play
 import { jobRepository } from "@/lib/scm/adapters";
 import type { TriageRunContext } from "./apply";
 import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
+import { startTriageJob } from "./loop";
 
 export type SessionCreatedEvent = SessionStartedEvent;
 
@@ -289,8 +291,9 @@ export async function enqueueTriage(
   const sessionId = run.trackerSessionId;
   const reply = options.reply?.trim();
   const definitions = organizationPlaybooks(db, deps.organizationId);
+  const playbook = await definitions.getPlaybook(TRIAGE_TASK_ID);
   const task = await getPlaybookTask(definitions, TRIAGE_TASK_ID);
-  if (!task) throw new Error(`the built-in task ${TRIAGE_TASK_ID} is missing`);
+  if (!playbook || !task) throw new Error(`the built-in task ${TRIAGE_TASK_ID} is missing`);
   const trigger = {
     triageRunId: run.id,
     trackerProvider: run.trackerProvider,
@@ -326,7 +329,8 @@ export async function enqueueTriage(
 
   let jobId: string;
   try {
-    const { job } = await deps.dispatcher.createAndPublish({
+    // The first round of the triage loop (`./loop.ts`): it is checked and revised before it applies.
+    const job = await startTriageJob(db, deps.dispatcher, run, playbook, {
       organizationId: deps.organizationId,
       type: TRIAGE_RUN_JOB_TYPE,
       ...(await taskJobInput(definitions, task, {
@@ -342,7 +346,6 @@ export async function enqueueTriage(
       dedupeKey: `triage:${run.id}`,
     });
     jobId = job.id;
-    await setTriageRunJob(db, run.id, job.id);
   } catch (error) {
     await setTriageRunStatus(db, run.id, "failed");
     await postActivity(trackerConversation(tracker, sessionId, run.trackerIssueId), {

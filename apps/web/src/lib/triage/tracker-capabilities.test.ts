@@ -28,6 +28,10 @@ import { FakeTrackerGateway, NO_CAPABILITIES } from "@omniralph/tracker/testing"
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+// One triage job per round trip: the triage loop has its own tests (loop.test.ts).
+vi.mock("@omniralph/tasks", async (importOriginal) =>
+  (await import("./test-single-session")).singleSessionTasks(await importOriginal()),
+);
 process.env.ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
 
 const { PostgresDispatcher } = await import("@/lib/dispatch/dispatcher");

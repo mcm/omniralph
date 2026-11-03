@@ -1,4 +1,6 @@
 import "server-only";
+// Registers the triage loop's adapter (`run_iterations.run_kind` `triage`).
+import "@/lib/triage/loop";
 import { TriageAgentOutput } from "@omniralph/ralph";
 import {
   onTriageJobCompleted,
@@ -17,7 +19,9 @@ import type { Sink } from "./index";
  * - `onStarted` claims the triage run for the job, and skips it when the
  *   issue or a sub-issue went in progress or done since triage was asked for.
  * - `apply` (`applyTriageJob`) re-checks the issue isn't locked, then writes
- *   the PRD to the tracker, once: a replayed result finds the run finished.
+ *   the PRD to the tracker, once: a replayed result finds the run finished. A
+ *   round of the triage loop (`lib/triage/loop.ts`) isn't applied here: the
+ *   loop checks it and applies its draft when it ends.
  * - `onFailed`/`onCanceled` end the run and say so in the session.
  *
  * `apply`, `onFailed` and `onCanceled` then start the job a reply that

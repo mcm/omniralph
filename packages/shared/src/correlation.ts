@@ -14,12 +14,14 @@ export const MAX_CORRELATION_SUMMARY_LENGTH = 20_000;
 
 /**
  * The run that invoked a `run.invoked` run, which its `run-result` sink hands
- * the result to: a review run (its correlation) or a ralph run (its PR/MR
- * description).
+ * the result to: a review run (its correlation), a ralph run (its PR/MR
+ * description) or a triage run (the plan critic of its loop, whose answer the
+ * loop driver reads instead of the sink).
  */
 export const RunInvoker = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("review-run"), id: z.uuid() }),
   z.object({ kind: z.literal("ralph-run"), id: z.uuid() }),
+  z.object({ kind: z.literal("triage-run"), id: z.uuid() }),
 ]);
 export type RunInvoker = z.infer<typeof RunInvoker>;
 
@@ -28,6 +30,9 @@ export const ReviewRunInvoker = RunInvoker.options[0];
 
 /** A ralph run as the invoker of its PR/MR description. */
 export const RalphRunInvoker = RunInvoker.options[1];
+
+/** A triage run as the invoker of its plan critic. */
+export const TriageRunInvoker = RunInvoker.options[2];
 
 /** A stored finding of a review run's task, as the correlation sees it. */
 export const CorrelationInputFinding = z.object({

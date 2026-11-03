@@ -139,6 +139,12 @@ Someone replied in the thread on {{tracker.name}} (typically answers to the open
 {{reply}}
 
 {{/reply}}
+{{#revision}}
+## Revise your draft (round {{round}} of {{maxRounds}})
+Your previous triage above is your draft from the last round. The work item lint and the plan critic checked it, and it didn't pass yet. Revise it: fix every point below, keep what they didn't fault, and turn a point only a person can settle into an open question. Whatever still fails after the last round goes to a person as open questions.
+{{feedback}}
+
+{{/revision}}
 ${TRIAGE_METHODOLOGY}
 
 ## Triage this issue
@@ -385,6 +391,9 @@ export const TRIAGE_PLAYBOOK: PlaybookInput = {
   systemAppend: TRIAGE_SYSTEM_APPEND,
   toolSettings: { shell: false, trackerRead: true, network: false },
   outputSchema: TRIAGE_OUTPUT_SCHEMA,
+  // Each round's draft is checked by the work item lint and this critic; what still fails after
+  // the last round becomes open questions on the work item.
+  loop: { verifierPlaybookId: "builtin:critique-plan", maxIterations: 3 },
   // Ralph's story model (`DEFAULT_STORY_MODEL`), with no token budget, as before the port.
   model: "opus",
   tokenBudget: null,

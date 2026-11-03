@@ -2740,6 +2740,9 @@ export interface RunIterationMetric {
   target?: number;
 }
 
+/** What an iteration's checks recorded; its shape depends on the kind of run. */
+export type RunIterationDetails = Record<string, unknown>;
+
 /**
  * The iterations of a looped query or review run (`lib/runs/loop.ts`): each a
  * worker session then a verifier session, the verifier's findings feeding the
@@ -2772,6 +2775,11 @@ export const runIterations = pgTable(
     findings: jsonb("findings").$type<string[]>().notNull().default([]),
     /** Why the worker or verifier failed (`failed`). */
     error: text("error"),
+    /**
+     * What the iteration's checks recorded, by kind of run (a triage round's draft, lint result
+     * and critique: `TriageRound` in `@omniralph/shared`); null when its kind records none.
+     */
+    details: jsonb("details").$type<RunIterationDetails>(),
     /** Set on the run's last iteration: why the loop stopped. */
     outcome: text("outcome").$type<RunLoopOutcome>(),
     /** The run's loop: the `verifier` playbook that checks each iteration, and its limits. */

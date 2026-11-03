@@ -39,6 +39,10 @@ import { handleTriageReply, type SessionPromptedEvent } from "./reply";
 import { startTriage, type TriageDeps } from "./start";
 
 vi.mock("server-only", () => ({}));
+// One triage job per round trip: the triage loop has its own tests (loop.test.ts).
+vi.mock("@omniralph/tasks", async (importOriginal) =>
+  (await import("./test-single-session")).singleSessionTasks(await importOriginal()),
+);
 
 const databaseAvailable = testDatabaseAvailable();
 
