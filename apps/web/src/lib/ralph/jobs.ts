@@ -1,6 +1,7 @@
 import "server-only";
 import {
   findLaneByPullRequest,
+  getReview,
   getReviewRun,
   getLaneByRepository,
   getRun,
@@ -18,7 +19,11 @@ import { checkRunCi } from "./ci";
 import { applyCleanupJob, startPendingCleanups } from "./cleanup";
 import { cleanupJobLaneId, rescheduleLane, scheduleRun } from "./due";
 import { applyHiddenRefsJob } from "./hidden-refs";
-import { respondToReview } from "./pull-request-requests";
+import {
+  respondToDocumentationCheck,
+  respondToReview,
+  type DocumentationResponse,
+} from "./pull-request-requests";
 import { advanceRun, FINISHED_RUN_STATUSES, type RalphDeps } from "./run";
 
 /**
@@ -161,5 +166,32 @@ export async function onReviewForRalph(
     await respondToReview(deps ?? (await defaultDeps(db, found.run.organizationId)), reviewRunId);
   } catch (error) {
     console.error(`Handing review run ${reviewRunId} to its ralph run failed`, error);
+  }
+}
+
+/**
+ * A documentation check (review `reviewId`) ended: on a ralph PR/MR its
+ * confirmed updates may become a request on that lane
+ * (`respondToDocumentationCheck`). Returns what became of them, null when
+ * the PR/MR isn't a ralph PR/MR or handing them off failed (logged: the
+ * comment is still posted, without the hand-off).
+ */
+export async function onDocumentationCheckForRalph(
+  db: Database,
+  reviewId: string,
+  deps?: RalphDeps,
+): Promise<DocumentationResponse | null> {
+  try {
+    const review = await getReview(db, reviewId);
+    if (!review?.documentationUpdates?.length) return null;
+    const found = await findLaneByPullRequest(db, review.repositoryId, review.prNumber);
+    if (!found) return null;
+    return await respondToDocumentationCheck(
+      deps ?? (await defaultDeps(db, found.run.organizationId)),
+      reviewId,
+    );
+  } catch (error) {
+    console.error(`Handing documentation check ${reviewId} to its ralph run failed`, error);
+    return null;
   }
 }

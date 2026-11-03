@@ -1634,6 +1634,42 @@ export const stickyComments = pgTable(
   ],
 );
 
+/**
+ * A documentation check's confirmed updates handed off to be committed to
+ * the PR/MR (Update mode): one per PR/MR head at most, so a head's checks
+ * never ask twice, and at most `MAX_DOCUMENTATION_REQUESTS_PER_PULL_REQUEST`
+ * (web) per PR/MR, so docs commits can't loop.
+ */
+export const documentationRequests = pgTable(
+  "documentation_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repositoryId: uuid("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    /** PR number (GitHub) or MR IID (GitLab). */
+    prNumber: integer("pr_number").notNull(),
+    /** The head the documentation check reviewed. */
+    headSha: text("head_sha").notNull(),
+    /** The documentation check whose confirmed updates these are. */
+    reviewId: uuid("review_id").references(() => reviews.id, { onDelete: "set null" }),
+    /** The coding run the request went to. */
+    ralphRunId: uuid("ralph_run_id").references((): AnyPgColumn => ralphRuns.id, {
+      onDelete: "set null",
+    }),
+    /** The files the request asked to update. */
+    paths: jsonb("paths").$type<string[]>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("documentation_requests_repository_pr_head_uq").on(
+      t.repositoryId,
+      t.prNumber,
+      t.headSha,
+    ),
+  ],
+);
+
 export const findings = pgTable(
   "findings",
   {

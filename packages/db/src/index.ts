@@ -14,6 +14,12 @@ export {
   type RecordedChange,
 } from "./changes.js";
 export { runMigrations, migrationsFolder } from "./migrate.js";
+export {
+  insertDocumentationRequest,
+  listDocumentationRequests,
+  type DocumentationRequest,
+  type NewDocumentationRequestInput,
+} from "./documentation-requests.js";
 export { decrypt, encrypt, hashToken, parseEncryptionKey } from "./crypto.js";
 export {
   createUser,

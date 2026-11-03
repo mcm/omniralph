@@ -53,6 +53,7 @@ import {
   startDocumentationWorker,
 } from "./docs-loop";
 import { reviewPassJobKey, reviewVerifierJobKey } from "./job-review";
+import { onDocumentationCheckForRalph } from "@/lib/ralph/jobs";
 import { postStickyComment } from "@/lib/sinks/sticky-comment";
 import { fixedFindingIds, settleReviewRunOf } from "./jobs";
 import {
@@ -527,8 +528,10 @@ const reviewLoopAdapter: LoopAdapter = {
   /**
    * Makes the loop's new jobs claimable, and settles the review run once
    * the review ended (its correlation, then one posted review). A
-   * documentation check that ended is posted as its sticky comment
-   * (`postStickyComment`); a failure to post is logged, not retried.
+   * documentation check that ended first hands its confirmed updates to the
+   * PR/MR's coding run in Update mode (`onDocumentationCheckForRalph`), then
+   * is posted as its sticky comment (`postStickyComment`), which says what
+   * was handed off; a failure to post is logged, not retried.
    */
   async afterCommit(db, run) {
     const last = (await listRunIterations(db, run)).at(-1);
@@ -540,11 +543,14 @@ const reviewLoopAdapter: LoopAdapter = {
     if (!review || review.status === "queued" || review.status === "running") return;
     await settleReviewRunOf(db, review.id);
     if (review.documentationUpdates === null) return;
+    // Update mode on a ralph PR/MR: the confirmed updates go to its run first, so the comment can say so.
+    const handoff = await onDocumentationCheckForRalph(db, review.id);
     try {
       await postStickyComment(
         db,
         { taskId: review.taskId, organizationId: run.organizationId },
         review.id,
+        { handoff },
       );
     } catch (error) {
       console.error("failed to post the documentation check's comment", {
