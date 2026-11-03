@@ -1,6 +1,8 @@
 import {
   CODING_TASKS_MIN_AGENT_VERSION,
   agentVersionAtLeast,
+  DOCUMENTATION_CHECK_MIN_AGENT_VERSION,
+  EXPECTED_HEAD_MIN_AGENT_VERSION,
   QUERY_TASKS_MIN_AGENT_VERSION,
   REVIEW_TASKS_MIN_AGENT_VERSION,
   RunSpecJobPayload,
@@ -20,7 +22,11 @@ import { usesTrackerProtocol, type TaskDefinition, type TaskRequirements } from 
  * tasks with setup or teardown commands one that runs them
  * (`SETUP_COMMANDS_MIN_AGENT_VERSION`), tasks that use the tracker protocol
  * (coding tasks, and tasks with the tracker tools turned on) one that speaks it
- * (`TRACKER_PROTOCOL_MIN_AGENT_VERSION`), and a custom task the
+ * (`TRACKER_PROTOCOL_MIN_AGENT_VERSION`), a documentation check (a review
+ * run whose trigger context carries `documentation`) one that reports its
+ * updates (`DOCUMENTATION_CHECK_MIN_AGENT_VERSION`), a run bound to a checked
+ * head (trigger context `expectedHeadSha`, a `pull-request` run's requests)
+ * one that honours it (`EXPECTED_HEAD_MIN_AGENT_VERSION`), and a custom task the
  * `minAgentVersion` of the `requirements` stored with it: the highest that
  * applies. Only agents with every installable and host tool in
  * `requirements` (`deriveAgentRequirements` of the task and its agent)
@@ -46,17 +52,25 @@ export function runSpecJobInput(
     taskId: task.id,
     payload: parsed,
     repositoryId: parsed.repositoryId ?? null,
-    minAgentVersion: runSpecMinAgentVersion(task, requirements?.minAgentVersion ?? null),
+    minAgentVersion: runSpecMinAgentVersion(
+      task,
+      requirements?.minAgentVersion ?? null,
+      parsed.trigger.context,
+    ),
     requiredInstallables: [...new Set(requirements?.installables ?? [])].sort(),
     requiredHostTools: [...new Set(requirements?.hostTools ?? [])].sort(),
   };
 }
 
-/** The `min_agent_version` of a run of `task` (see `runSpecJobInput`); `stored` is a custom task's. */
+/**
+ * The `min_agent_version` of a run of `task` (see `runSpecJobInput`); `stored`
+ * is a custom task's, `context` the run's trigger context.
+ */
 export function runSpecMinAgentVersion(
   task: Pick<TaskDefinition, "taskType"> &
     Partial<Pick<TaskDefinition, "setupCommands" | "teardownCommands" | "toolSettings">>,
   stored: string | null,
+  context: Record<string, unknown> = {},
 ): string | null {
   const commands =
     (task.setupCommands?.length ?? 0) > 0 || (task.teardownCommands?.length ?? 0) > 0;
@@ -66,6 +80,10 @@ export function runSpecMinAgentVersion(
     task.taskType === "coding" ? CODING_TASKS_MIN_AGENT_VERSION : null,
     commands ? SETUP_COMMANDS_MIN_AGENT_VERSION : null,
     usesTrackerProtocol(task) ? TRACKER_PROTOCOL_MIN_AGENT_VERSION : null,
+    task.taskType === "review" && context.documentation != null
+      ? DOCUMENTATION_CHECK_MIN_AGENT_VERSION
+      : null,
+    typeof context.expectedHeadSha === "string" ? EXPECTED_HEAD_MIN_AGENT_VERSION : null,
     stored,
   ].filter((version) => version !== null);
   return needed.reduce<string | null>(

@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 import {
+  agents,
+  claimJob,
   closeDb,
   connectRepository,
   createDb,
@@ -29,7 +31,9 @@ import type {
   ScmProvider,
 } from "@omniralph/scm";
 import {
+  DOCUMENTATION_CHECK_MIN_AGENT_VERSION,
   DOCUMENTATION_DEPTHS,
+  MAX_JOB_DELIVERIES,
   reviewTriggerContext,
   type DocumentationCheckMode,
   type DocumentationDepth,
@@ -379,6 +383,40 @@ describe.skipIf(!databaseAvailable)(
           ]);
         },
       );
+
+      it("leaves the docs check to agents that report documentation updates", async () => {
+        await configure("github", "comment");
+        await db.delete(jobs);
+        const enqueued = await enqueue("github", ++prCounter);
+        const [agent] = await db
+          .insert(agents)
+          .values({ organizationId: orgId, name: `agent-${prCounter}` })
+          .returning();
+        const claimAll = async (agentVersion: string) => {
+          const claimed: (string | null)[] = [];
+          for (;;) {
+            const { claim } = await claimJob(db, {
+              organizationId: orgId,
+              agentId: agent!.id,
+              acceptedTaskTypes: ["query", "review"],
+              pools: ["short", "long"],
+              agentVersion,
+              maxDeliveries: MAX_JOB_DELIVERIES,
+            });
+            if (!claim) return claimed;
+            claimed.push(claim.job.taskId);
+          }
+        };
+
+        // The release before: the code review only.
+        expect(await claimAll("2.3.1")).toEqual(["builtin:review-pr"]);
+        expect(await claimAll(DOCUMENTATION_CHECK_MIN_AGENT_VERSION)).toEqual([
+          "builtin:check-docs",
+        ]);
+        expect((await getJob(db, docsRun(enqueued).jobId))!.minAgentVersion).toBe(
+          DOCUMENTATION_CHECK_MIN_AGENT_VERSION,
+        );
+      });
 
       it("cancels an older head's docs check on a new push", async () => {
         await configure("github", "comment");

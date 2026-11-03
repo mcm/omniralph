@@ -32,9 +32,9 @@ import {
   type TestDatabase,
 } from "@omniralph/db/testing";
 import {
+  EXPECTED_HEAD_MIN_AGENT_VERSION,
   MAX_JOB_DELIVERIES,
   RalphRequestPayload,
-  TRACKER_PROTOCOL_MIN_AGENT_VERSION,
   type RalphRequestResult,
 } from "@omniralph/shared";
 import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
@@ -227,7 +227,7 @@ describe.skipIf(!databaseAvailable)("documentation updates on people's pull requ
       agentId,
       acceptedTaskTypes: ["query", "coding"],
       pools: ["short", "long"],
-      agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
+      agentVersion: EXPECTED_HEAD_MIN_AGENT_VERSION,
       maxDeliveries: MAX_JOB_DELIVERIES,
     });
     expect(started.claim?.job.id).toBe(job!.id);
@@ -309,6 +309,18 @@ describe.skipIf(!databaseAvailable)("documentation updates on people's pull requ
       expect(request!.text).toContain("1. `README.md`: Shows the old `--fast` flag.");
       expect(request!.text).toContain("call the `ship` tool once");
       expect(request!.text).toContain("Never force-push, rewrite its history, open a");
+
+      // An agent that would ignore `expectedHeadSha` leaves the job queued.
+      expect(job!.minAgentVersion).toBe(EXPECTED_HEAD_MIN_AGENT_VERSION);
+      const older = await claimJob(db, {
+        organizationId: orgId,
+        agentId,
+        acceptedTaskTypes: ["query", "coding"],
+        pools: ["short", "long"],
+        agentVersion: "2.3.1",
+        maxDeliveries: MAX_JOB_DELIVERIES,
+      });
+      expect(older.claim).toBeNull();
 
       // The session ships one commit: the run completes, and nothing touches the PR/MR.
       await finish(

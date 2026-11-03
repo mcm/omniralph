@@ -54,6 +54,23 @@ export const CODING_TASKS_MIN_AGENT_VERSION = AGENT_VERSION_BY_TASK_TYPE.coding;
  */
 export const TRACKER_PROTOCOL_MIN_AGENT_VERSION = AGENT_VERSION_FOR_TRACKER;
 
+/**
+ * The first agent release that reports a documentation check's
+ * `documentationUpdates` (`builtin:check-docs`, a review run whose trigger
+ * context carries `documentation`); older agents drop them, so a check they
+ * ran would always say no documentation needs changing. Docs-check runs carry
+ * it as their `min_agent_version`.
+ */
+export const DOCUMENTATION_CHECK_MIN_AGENT_VERSION = "2.3.2";
+
+/**
+ * The first agent release that honours a request payload's `expectedHeadSha`
+ * (a `pull-request` run committing documentation updates to a person's PR/MR):
+ * it refuses a branch that moved and ships exactly one normal commit. Older
+ * agents ignore the field, so request runs that carry it require this version.
+ */
+export const EXPECTED_HEAD_MIN_AGENT_VERSION = "2.3.2";
+
 /** The event that started a run, with the values its prompt template renders. */
 export const RunTrigger = z.object({
   kind: TriggerKindSchema,
