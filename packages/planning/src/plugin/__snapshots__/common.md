@@ -291,7 +291,7 @@ know them, and reference existing patterns in the repo.
 When you write to Linear (the exact create-or-update actions are in
 each mode file), the target structure is one of:
 
-**Epic (L or larger):**
+**Epic:**
 
 - A parent issue whose description is the epic, plus the branch line (and a
   repo tag, if the user asked for one).
@@ -315,7 +315,7 @@ After creating them:
    up in a description.
 2. Verify every dependency you drafted exists as a blocks relation.
 
-**Single task (smaller than L):**
+**Single task (a Fix or a Story):**
 
 - One issue whose description is the task's three paragraphs, plus the branch
   line. No sub-issues. A fix gets the bug label.
@@ -324,6 +324,11 @@ After creating them:
   list, no headings (no task-style `### US-001: …` ones either), no
   `Covers:` line and no checklist section.
 - Set `blockedBy` for any work item it waits on, as for an epic.
+
+**Feature:** nothing is created. The recommendation to plan it as a feature,
+with a first cut of its epics, goes to the user (in `new`) or into one
+comment on the issue (in `triage`); the epics are filed when the feature
+is planned.
 
 Whenever removing a task in Linear, **cancel** it (do not delete).
 Never modify a sub-issue that is already completed or in progress, and never

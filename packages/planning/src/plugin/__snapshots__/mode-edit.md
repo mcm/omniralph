@@ -129,12 +129,19 @@ change summary in the conversation instead.
 Apply the Sizing rule from `common.md`, then compare against the issue's
 current structure:
 
-- Already an epic and still **L or larger**: keep the epic.
-- Currently a single task but grown to **L or larger**: recommend turning it
-  into an epic, but confirm before restructuring.
-- Currently an epic but shrunk below **L**: tell the user. Collapsing an epic
-  into a single task is a significant change that must be confirmed, and you
-  must never collapse sub-issues that are already completed or in progress.
+- Already an epic and still an **Epic**: keep the epic.
+- Currently a single task but grown to an **Epic**: recommend turning it into
+  an epic, but confirm before restructuring.
+- Currently an epic but shrunk to a **Fix** or a **Story**: tell the user.
+  Collapsing an epic into a single task is a significant change that must be
+  confirmed, and you must never collapse sub-issues that are already
+  completed or in progress.
+- Grown to a **Feature**: don't grow it into a bigger epic. Tell the user it is
+  too big for one pull request and recommend planning it as a feature, epic by
+  epic, with the reason and a first cut of the epics it splits into. Ask
+  whether to keep this edit within one epic's (or task's) scope, moving the
+  rest out to feature planning, or to stop and plan the feature first. Never
+  file the other epics from this mode.
 
 ## Step 5: Reconcile tasks (if the issue is or stays an epic)
 
@@ -186,16 +193,17 @@ number:
 
 Present a diff-style summary to the user: sections that changed; tasks kept,
 edited, added, removed or reordered; requirements added, edited or removed. If
-your re-sizing crosses the **L** threshold relative to the current structure,
-also summarize the proposed restructuring and get explicit confirmation before
-applying it.
+your re-sizing changes the structure (a single task becoming an epic, or an
+epic collapsing into a single task), also summarize the proposed restructuring
+and get explicit confirmation before applying it. A Feature is never applied:
+apply only the in-scope edit the user chose in Step 4.
 
 Have the user review and confirm before touching Linear. Only after
 they confirm, use the Linear MCP tools:
 
 - Update the issue's description with the revised epic or task.
 
-**If the issue stays (or becomes) an epic, L or larger:**
+**If the issue stays (or becomes) an Epic:**
 
 - Per task: **Keep**, no action; **Edit**, update the sub-issue's title and
   description; **Add**, create a new sub-issue (see `common.md` →
@@ -212,7 +220,7 @@ they confirm, use the Linear MCP tools:
 - If a single task is being turned into an epic, create the tasks as in the
   `new` and `triage` final steps, with no validation task.
 
-**If the issue stays (or becomes) a single task, smaller than L:**
+**If the issue stays (or becomes) a single task, a Fix or a Story:**
 
 - Keep it in the task format: its done criteria in the "Don't stop until"
   paragraph, last.
@@ -231,8 +239,9 @@ without explicit user confirmation in this session.
 - [ ] Incorporated the user's answers into the revised work item
 - [ ] Reconciled every existing task (keep / edit / add / remove / reorder)
 - [ ] Kept requirement numbers; referred to tasks by Linear identifier
-- [ ] Sized the whole body of work and chose the structure accordingly
-      (an epic only if L or larger)
+- [ ] Sized the whole body of work as a Fix, Story, Epic or Feature, stated
+      the reason, and chose the structure accordingly (an epic only for an
+      Epic; nothing filed for a Feature)
 - [ ] The epic has `## Problem`, `## Scope` (`### In` / `### Out`) and
       `## Requirements`, and nothing else besides the optional design and
       technical notes

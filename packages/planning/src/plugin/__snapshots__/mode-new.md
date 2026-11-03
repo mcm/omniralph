@@ -5,9 +5,10 @@
 You are planning a piece of software work from scratch, then saving it to
 Linear.
 
-Depending on the size, it becomes either an epic (a Linear issue with
-one sub-issue per task, when the work is **L** or larger) or a single task, a
-story or a fix (when smaller).
+Depending on its size (see the Sizing rule in `common.md`), it becomes a
+single task (a **Fix** or a **Story**), an epic (an **Epic**: a Linear
+issue with one sub-issue per task), or nothing yet (a **Feature**: too big for
+one epic, so you recommend planning it as a feature instead).
 
 If the invocation included `--project` and/or `--team` hints, use them when
 creating the issues. If a `LINEAR.md` exists, honor its conventions.
@@ -32,18 +33,25 @@ prerequisites and manual steps (see `common.md`).
 
 ## Step 2: Size the work
 
-Apply the Sizing rule from `common.md`. State the size, a one-to-two-sentence
-rationale, and the resulting structure (an epic with sub-issues, or a single
-story or fix) before continuing.
+Apply the Sizing rule from `common.md`. State the size (Fix, Story, Epic or
+Feature) with its t-shirt estimate, a one-to-two-sentence reason, and the
+resulting structure (a single fix or story, an epic with sub-issues, or a
+feature to plan) before continuing.
 
 ## Step 3: Write the work item
 
-- **L or larger:** write the epic in the epic format, with its numbered
-  requirements.
-- **Smaller than L:** write a single task in the task format: its three
+- **Fix or Story:** write a single task in the task format: its three
   paragraphs, framed as a fix for a bug and as a story otherwise.
+- **Epic:** write the epic in the epic format, with its numbered requirements.
+- **Feature:** don't write an epic. Tell the user it is too big for one pull
+  request and recommend planning it as a feature, epic by epic. Give the
+  reason and a first cut of the epics it splits into, in the order they would
+  ship: a plain title and a sentence or two on what each delivers, split by
+  what each delivers, never by development phase. Skip Step 4. If the user
+  would rather start now, offer to plan just the first epic as its own work
+  item (sized again with the Sizing rule) and continue with that.
 
-## Step 4: Tasks (L or larger only)
+## Step 4: Tasks (Epic only)
 
 Split the epic into tasks by the Splitting rule, each in the task format (a
 fix for a bug, a story otherwise). Present them as `common.md` → "Drafting
@@ -53,12 +61,12 @@ requirements before its pull request opens.
 
 ## Final step: save to Linear
 
-Once the work item (plus its tasks, if **L or larger**) is written, have the
+Once the work item (plus its tasks, if an **Epic**) is written, have the
 user review and confirm it is ready to save. Only after they confirm, use the
 Linear MCP tools to create the issues, following `common.md` →
 "Linear structure reference":
 
-**If L or larger, create an epic with sub-issues:**
+**If an Epic, create an epic with sub-issues:**
 
 - Create a new parent issue.
   - Give it a descriptive but concise title.
@@ -72,19 +80,24 @@ Linear MCP tools to create the issues, following `common.md` →
 - Do the post-creation steps: replace drafting labels with Linear
   identifiers, and verify the blocks relations.
 
-**If smaller than L, create a single task (no sub-issues):**
+**If a Fix or a Story, create a single task (no sub-issues):**
 
 - Create one new issue with a descriptive but concise title, the task's three
   paragraphs (with the branch line, if any) as its description, the bug label
   for a fix, and `blockedBy` for any work item it waits on.
 - Do **not** create any sub-issues.
 
+**If a Feature, create nothing** (unless the user chose to plan its first epic
+on its own, which is then saved as above). Leave the recommendation and the
+first cut of its epics with the user for feature planning.
+
 ## Checklist before creating the issues
 
 - [ ] Asked clarifying questions with lettered options
 - [ ] Incorporated the user's answers
-- [ ] Sized the whole body of work and chose the structure accordingly
-      (an epic only if L or larger)
+- [ ] Sized the whole body of work as a Fix, Story, Epic or Feature, stated
+      the reason, and chose the structure accordingly (an epic only for an
+      Epic; nothing filed for a Feature)
 - [ ] The epic has `## Problem`, `## Scope` (`### In` / `### Out`) and
       `## Requirements`, and nothing else besides the optional design and
       technical notes

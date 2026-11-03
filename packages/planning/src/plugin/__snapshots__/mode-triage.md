@@ -8,9 +8,10 @@ a loose collection of thoughts, a feature request with partial detail, or an
 older format. Your job is to elicit the missing context and write the full
 structure back to the **same** issue.
 
-Depending on the size, the issue becomes an epic (with one sub-issue per task,
-when the work is **L** or larger) or stays a single story or fix (when
-smaller).
+Depending on its size (see the Sizing rule in `common.md`), the issue stays a
+single task (a **Fix** or a **Story**), becomes an epic (an **Epic**, with one
+sub-issue per task), or gets a recommendation to plan it as a feature (a
+**Feature**: too big for one epic, so nothing is rewritten or filed).
 
 Follow the planning rules in `common.md`.
 
@@ -57,20 +58,26 @@ issue's existing blocking relations may already answer this.
 
 ## Step 3: Size the work
 
-Apply the Sizing rule from `common.md`. State the size, the rationale, and the
-resulting structure before continuing.
+Apply the Sizing rule from `common.md`. State the size (Fix, Story, Epic or
+Feature) with its t-shirt estimate, the reason, and the resulting structure
+before continuing.
 
 ## Step 4: Write the work item
 
-- **L or larger:** the epic format, with its numbered requirements. It
-  replaces the current description.
-- **Smaller than L:** a single task in the task format: its three paragraphs,
+- **Fix or Story:** a single task in the task format: its three paragraphs,
   framed as a fix for a bug and as a story otherwise. It replaces the current
   description, including one in an older format (a story sentence with a
   `Covers:` line, or `## Current behavior` / `## Expected behavior`
   sections).
+- **Epic:** the epic format, with its numbered requirements. It replaces the
+  current description.
+- **Feature:** don't rewrite the description. Write a comment recommending
+  feature planning: that it is too big for one epic, the reason it is a
+  feature, and a first cut of the epics it splits into, in the order they
+  would ship (a plain title and a sentence or two on what each delivers, split
+  by what each delivers, never by development phase). Skip Step 5.
 
-## Step 5: Tasks (L or larger only)
+## Step 5: Tasks (Epic only)
 
 Split the epic into tasks by the Splitting rule, each in the task format (a
 fix for a bug, a story otherwise), and present them as `common.md` →
@@ -79,12 +86,20 @@ epic against its requirements before its pull request opens.
 
 ## Final step: update the issue in Linear
 
-Once the work item (plus its tasks, if **L or larger**) is written, have the
-user review and confirm. Only after they confirm, use the Linear MCP
-tools to update the **existing** issue, following `common.md` →
-"Linear structure reference".
+Once the work item (plus its tasks, if an **Epic**) or the Feature comment is
+written, have the user review and confirm. Only after they confirm, use the
+Linear MCP tools to update the **existing** issue, following
+`common.md` → "Linear structure reference".
 
-In both cases:
+**If a Feature, only comment:**
+
+- Post the recommendation and the first cut of the epics as one comment on
+  the issue.
+- Leave its title, description, labels and relations as they are, and do
+  **not** create any sub-issues or other issues: the epics are filed when the
+  feature is planned.
+
+**For a Fix, a Story or an Epic:**
 
 - Update the title to a descriptive but concise name (keep the existing title
   if it already fits).
@@ -95,7 +110,7 @@ In both cases:
   the user asks otherwise. Add `blockedBy` for any new prerequisites.
 - Keep any existing comments.
 
-**If L or larger, turn it into an epic:**
+**If an Epic, turn it into an epic:**
 
 - Create a sub-issue for each task, in task order: plain task title, the
   task's three paragraphs, a priority, its `blockedBy` dependencies, the
@@ -103,7 +118,7 @@ In both cases:
 - Do the post-creation steps: replace drafting labels with Linear
   identifiers, and verify the blocks relations.
 
-**If smaller than L, keep it a single task:**
+**If a Fix or a Story, keep it a single task:**
 
 - The description is the task's three paragraphs. Add the bug label if it is
   a fix and doesn't have it yet.
@@ -114,8 +129,9 @@ In both cases:
 - [ ] Loaded and summarized the existing issue for the user
 - [ ] Asked clarifying questions with lettered options, targeted at actual gaps
 - [ ] Incorporated the user's answers
-- [ ] Sized the whole body of work and chose the structure accordingly
-      (an epic only if L or larger)
+- [ ] Sized the whole body of work as a Fix, Story, Epic or Feature, stated
+      the reason, and chose the structure accordingly (an epic only for an
+      Epic; nothing filed for a Feature)
 - [ ] The epic has `## Problem`, `## Scope` (`### In` / `### Out`) and
       `## Requirements`, and nothing else besides the optional design and
       technical notes
@@ -143,4 +159,5 @@ In both cases:
       `[repo=…]` tag unless the user asked for one
 - [ ] No `## Open Questions` section left in any description
 
-Once the issue is updated, tell the user you're done.
+Once the issue is updated (or, for a Feature, commented on), tell the user
+you're done.
