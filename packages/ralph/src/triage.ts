@@ -335,8 +335,8 @@ export function buildTriagePrompt(input: TriagePromptInput): string {
     "",
     TRIAGE_HEADING,
     `1. Study the issue, its comments and sub-issues, and the repo (\`${input.tracker.conventionsFile}\` first).`,
-    "2. Size the work as a Fix, a Story, an Epic or a Feature, decide the outcome, write or reformat the epic or the task in its three paragraphs (for a Feature, the recommendation and a first cut of its epics), and write the tasks or sub-issue updates the structure needs.",
+    "2. Size the work as a Fix, a Story, an Epic or a Feature, decide the outcome, write or reformat the epic or the task in its three paragraphs (for a Fix, with where the bug likely lives and how to reproduce it; for a Feature, the recommendation and a first cut of its epics), and write the tasks or sub-issue updates the structure needs.",
     "3. Turn every remaining ambiguity into an open question.",
-    "4. Report the result in your structured output: `outcome`, `sizing`, `title`, `description`, `size`, `openQuestions`, `stories`, `subIssueUpdates`, `featureEpics` and `summary`.",
+    "4. Report the result in your structured output: `outcome`, `sizing`, `title`, `description`, `size`, `openQuestions`, `stories`, `subIssueUpdates`, `featureEpics`, `bug` and `summary`.",
   ].join("\n");
 }

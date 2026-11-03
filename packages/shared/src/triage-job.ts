@@ -58,6 +58,26 @@ export const TriageFeatureEpic = z.object({
 });
 export type TriageFeatureEpic = z.infer<typeof TriageFeatureEpic>;
 
+/** Where a bug likely lives: a file of the repo and, when triage found it, the function in it. */
+export const TriageBugLocation = z.object({
+  file: z.string().trim().min(1).max(1000),
+  /** The function, method or component; empty for the file as a whole. */
+  symbol: z.string().trim().max(1000).default(""),
+});
+export type TriageBugLocation = z.infer<typeof TriageBugLocation>;
+
+/**
+ * A Fix's bug triage: where the likely cause lives (empty when triage couldn't locate it, which
+ * leaves an open question instead), how to reproduce the bug, and what happens now and should.
+ */
+export const TriageBug = z.object({
+  locations: z.array(TriageBugLocation).max(50),
+  reproduction: z.array(z.string().trim().min(1).max(4000)).min(1).max(50),
+  currentBehavior: z.string().trim().min(1).max(MAX_DOCUMENT_LENGTH),
+  expectedBehavior: z.string().trim().min(1).max(MAX_DOCUMENT_LENGTH),
+});
+export type TriageBug = z.infer<typeof TriageBug>;
+
 /** A work item's ID in the tracker. */
 const TrackerId = z.string().min(1).max(64);
 /** A work item's identifier in the tracker, e.g. `TOOL-83`. */
@@ -155,6 +175,8 @@ export const TriageOutcome = z.object({
   subIssueUpdates: z.array(TriageSubIssueUpdate).max(500).default([]),
   /** A Feature's first cut of its epics (posted in the recommendation, never filed). */
   featureEpics: z.array(TriageFeatureEpic).max(50).default([]),
+  /** A Fix's bug triage; null for every other size and for a triage from before bug triage. */
+  bug: TriageBug.nullable().default(null),
 });
 export type TriageOutcome = z.infer<typeof TriageOutcome>;
 

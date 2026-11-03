@@ -3,7 +3,7 @@
  * turn a tracker issue into an epic or a task (a Story or a Fix), composed
  * from the shared rules (each written once in `rules.ts`) and the triage-only
  * steps below. The triage-only steps name the fields of the triage result
- * (`outcome`, `sizing`, `description`, `size`, `stories`, `subIssueUpdates`,
+ * (`outcome`, `sizing`, `description`, `size`, `bug`, `stories`, `subIssueUpdates`,
  * `featureEpics`, `openQuestions`, `summary`).
  */
 import {
@@ -33,7 +33,7 @@ export const TRIAGE_UNDERSTAND_STEP: Fragment = {
   body: `- Read the title, description, comments, sub-issues and blockers below. Work out what is already decided, what you can infer about intent, and what is missing.
 - If a repo is checked out, read it targeted, not wholesale: the files the work touches, existing components and patterns to reuse. Cite real file paths in technical notes and context.
 - If the repo has a \`{{conventionsFile}}\` at its root, read it first and honour it throughout: it holds the project's conventions for {{trackerName}} issues (e.g. whether to add a \`> Branch:\` line, the manual label, standard manual tasks).
-- Decide whether the issue is a bug (a Fix) or new work (a Story).`,
+- Decide whether the issue is a bug (a Fix) or new work (a Story). For a bug, triage it as the Bug triage step says.`,
 };
 
 /** Choosing the triage outcome. */
@@ -66,6 +66,18 @@ export const TRIAGE_SIZE_STEP: Fragment = {
   id: "triage-size",
   title: "Report the size (`sizing` and `size`)",
   body: `Size the work by the Sizing rule: \`sizing.size\` is \`fix\`, \`story\`, \`epic\` or \`feature\`, \`sizing.reason\` one paragraph on why (what makes it that big and not one size up or down), and \`size\` its t-shirt estimate (XS, S or M for a Fix or a Story, L or XL for an Epic or a Feature). Mention the size in your summary. For \`reformat\` and \`unchanged\`, size the work as planned (a \`reformat\` is always an Epic).`,
+};
+
+/** Triaging a bug report: locating the cause, read-only. */
+export const TRIAGE_BUG_STEP: Fragment = {
+  id: "triage-bug",
+  title: "Triage the bug (`bug`; Fixes only)",
+  body: `A Fix starts without another round of investigation, so find where the bug likely lives before you write it. Only read the repo, with \`Read\`, \`Grep\` and \`Glob\`: never change code, run it or commit.
+- Trace the report into the code: search for the error message, the screen, command or route it names, and follow the call path to the code that decides the wrong behavior.
+- \`bug.locations\`: the likely cause, each a \`file\` (its path in the repo) and the \`symbol\` (function, method or component) in it, only ones you have read. Name them in the ${code(TASK_PARAGRAPHS.approach.opening)} paragraph too.
+- \`bug.reproduction\`: the steps, input or state that make the bug happen, in order. \`bug.currentBehavior\` and \`bug.expectedBehavior\`: what happens now and what should happen instead, said in the ${code(TASK_PARAGRAPHS.build.opening)} paragraph too.
+- When you can't locate the cause (no repo is checked out, or nothing you read explains the report), don't guess: leave \`bug.locations\` empty, say so in the ${code(TASK_PARAGRAPHS.approach.opening)} paragraph, and word in \`bug.unlocatedQuestion\` the open question that would locate it (Omniralph adds it to the open questions). Leave it empty when the cause is located.
+- \`bug\` is null for every other size.`,
 };
 
 /** Writing an epic's tasks. */
@@ -117,6 +129,7 @@ export const TRIAGE_STEPS: readonly Fragment[] = [
   TRIAGE_OUTCOME_STEP,
   TRIAGE_DESCRIPTION_STEP,
   TRIAGE_SIZE_STEP,
+  TRIAGE_BUG_STEP,
   TRIAGE_STORIES_STEP,
   TRIAGE_FEATURE_STEP,
   TRIAGE_REFORMAT_STEP,

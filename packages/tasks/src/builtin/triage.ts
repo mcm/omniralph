@@ -143,9 +143,9 @@ ${TRIAGE_METHODOLOGY}
 
 ## Triage this issue
 1. Study the issue, its comments and sub-issues, and the repo (\`{{tracker.conventionsFile}}\` first).
-2. Size the work as a Fix, a Story, an Epic or a Feature, decide the outcome, write or reformat the epic or the task in its three paragraphs (for a Feature, the recommendation and a first cut of its epics), and write the tasks or sub-issue updates the structure needs.
+2. Size the work as a Fix, a Story, an Epic or a Feature, decide the outcome, write or reformat the epic or the task in its three paragraphs (for a Fix, with where the bug likely lives and how to reproduce it; for a Feature, the recommendation and a first cut of its epics), and write the tasks or sub-issue updates the structure needs.
 3. Turn every remaining ambiguity into an open question.
-4. Report the result in your structured output: \`outcome\`, \`sizing\`, \`title\`, \`description\`, \`size\`, \`openQuestions\`, \`stories\`, \`subIssueUpdates\`, \`featureEpics\` and \`summary\`.`;
+4. Report the result in your structured output: \`outcome\`, \`sizing\`, \`title\`, \`description\`, \`size\`, \`openQuestions\`, \`stories\`, \`subIssueUpdates\`, \`featureEpics\`, \`bug\` and \`summary\`.`;
 
 /** The structured result: the shared `TriageOutcome` plus a summary (`TRIAGE_OUTPUT_SCHEMA` of `@omniralph/ralph`). */
 const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
@@ -279,6 +279,59 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
       description:
         "outcome reformat only: Backlog/Todo sub-issues rewritten as three-paragraph tasks. Empty otherwise.",
     },
+    bug: {
+      anyOf: [
+        {
+          type: "object",
+          properties: {
+            locations: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  file: {
+                    type: "string",
+                    description: "The file's path in the repo, as you read it.",
+                  },
+                  symbol: {
+                    type: "string",
+                    description:
+                      "The function, method, component or other symbol in the file where the bug likely lives; empty when it is the file as a whole.",
+                  },
+                },
+                required: ["file", "symbol"],
+                additionalProperties: false,
+              },
+              description:
+                "Where the likely cause lives, by file and function you read in the repo. Empty when you couldn't locate it: never guess.",
+            },
+            reproduction: {
+              type: "array",
+              items: { type: "string" },
+              description: "The steps, input or state that make the bug happen, in order.",
+            },
+            currentBehavior: { type: "string", description: "What happens now." },
+            expectedBehavior: { type: "string", description: "What should happen instead." },
+            unlocatedQuestion: {
+              type: "string",
+              description:
+                "With no `locations`: the open question that would locate the cause (Omniralph adds it to the open questions). Empty when the cause is located.",
+            },
+          },
+          required: [
+            "locations",
+            "reproduction",
+            "currentBehavior",
+            "expectedBehavior",
+            "unlocatedQuestion",
+          ],
+          additionalProperties: false,
+        },
+        { type: "null" },
+      ],
+      description:
+        "Fixes only: the bug triage (where the likely cause lives, how to reproduce it, what happens now and what should happen). Null for every other size.",
+    },
     featureEpics: {
       type: "array",
       items: {
@@ -314,6 +367,7 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
     "openQuestions",
     "stories",
     "subIssueUpdates",
+    "bug",
     "featureEpics",
     "summary",
   ],

@@ -83,6 +83,14 @@ const EPIC = [
 
 type Story = TriageAgentOutput["stories"][number];
 
+/** A located bug: the bug triage of a single Fix. */
+const BUG: NonNullable<TriageOutcome["bug"]> = {
+  locations: [{ file: "src/export/csv.ts", symbol: "toCsv" }],
+  reproduction: ["Export a widget named `a,b`", "Open the CSV"],
+  currentBehavior: "The name is split into two columns.",
+  expectedBehavior: "The name stays in one quoted column.",
+};
+
 const story = (title: string, overrides: Partial<Story> = {}): Story => ({
   title,
   body: `I want you to ${title.toLowerCase()}.\n\nBuild it by following the existing code.\n\nDon't stop until ${title} works.`,
@@ -111,14 +119,22 @@ const outcome = (overrides: Partial<TriageOutcome> = {}): TriageOutcome => ({
   stories: [],
   subIssueUpdates: [],
   featureEpics: [],
+  bug: overrides.kind === "fix" && !large(overrides) ? BUG : null,
   ...overrides,
 });
+
+/** A `TriageOutcome`'s bug triage as the session reports it (`TriageAgentOutput`'s `bug`). */
+const agentBug = (o: TriageOutcome) => (o.bug ? { ...o.bug, unlocatedQuestion: "" } : null);
 
 /** A `builtin:triage` run's result: the triage (`TriageAgentOutput`) is its structured output. */
 const result = (overrides: Partial<TriageOutcome> = {}): QueryRunResult => ({
   outcome: "answered",
   answer: null,
-  structured: { ...outcome(overrides), summary: "Sized it and wrote the story." },
+  structured: {
+    ...outcome(overrides),
+    bug: agentBug(outcome(overrides)),
+    summary: "Sized it and wrote the story.",
+  },
   references: [],
   usage: { inputTokens: 1, outputTokens: 1 },
   durationMs: 10,
@@ -499,6 +515,48 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     } finally {
       await db.delete(integrations);
     }
+  });
+
+  it("triages a located bug as a Fix with the Bug label and the files and functions of its cause", async () => {
+    await db.delete(integrations);
+    const bug = addIssue({ title: "csv breaks on commas", labels: [] });
+    const { job, sessionId } = await completedJob(bug, result({ kind: "fix" }));
+
+    expect(await applyTriageJob(deps(), job)).toMatchObject({
+      status: "applied",
+      readiness: "ready",
+    });
+    // No integration configures fix labels, so the default Bug label is applied.
+    const updated = await linear.getIssue(bug.id);
+    expect(updated.labels).toEqual(["Bug"]);
+    expect(updated.description).toBe(PRD);
+    const body = JSON.stringify(responses(sessionId));
+    expect(body).toContain("Likely cause:** `src/export/csv.ts` (`toCsv`)");
+    expect(body).toContain("Label added:** Bug (a Fix)");
+  });
+
+  it("leaves an open question, not a guess, for a bug whose cause triage couldn't locate", async () => {
+    await db.delete(integrations);
+    const bug = addIssue({ title: "csv breaks sometimes", labels: [] });
+    const question = "Which export shows the broken CSV: the widgets list or the report?";
+    const unlocated = {
+      ...result({ kind: "fix" }),
+      structured: {
+        ...outcome({ kind: "fix" }),
+        bug: { ...BUG, locations: [], unlocatedQuestion: question },
+        summary: "Sized it as a Fix; the cause isn't located.",
+      },
+    };
+    const { job, sessionId } = await completedJob(bug, unlocated);
+
+    expect(await applyTriageJob(deps(), job)).toMatchObject({ readiness: "needs_refining" });
+    const updated = await linear.getIssue(bug.id);
+    expect(updated.labels).toEqual(["Bug"]);
+    expect(updated.description).toBe(`${PRD}\n\n## Open Questions\n\n1. ${question}`);
+    expect(updated.stateType).toBe("backlog");
+    const body = JSON.stringify(responses(sessionId));
+    expect(body).toContain("Likely cause:** not located in the repo");
+    expect(body).toContain(question);
   });
 
   it("leaves a Story's labels alone, and labels an epic's Fix tasks only", async () => {

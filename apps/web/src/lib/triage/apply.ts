@@ -265,6 +265,18 @@ export function appliedMessage(
   return lines.join("\n");
 }
 
+/**
+ * Where a Fix's bug likely lives, for the final response: its files and functions, or that triage
+ * couldn't locate it (which left an open question instead).
+ */
+export function likelyCauseNote(bug: NonNullable<TriageResult["bug"]>): string {
+  if (bug.locations.length === 0) {
+    return "**Likely cause:** not located in the repo (asked in the open questions)";
+  }
+  const where = bug.locations.map((l) => `\`${l.file}\`${l.symbol ? ` (\`${l.symbol}\`)` : ""}`);
+  return `**Likely cause:** ${where.join(", ")}`;
+}
+
 /** The comment asking the issue's creator to answer its open questions. */
 export function openQuestionsComment(
   issue: Pick<IssueSummary, "creator">,
@@ -533,6 +545,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
     if (triage.kind === "fix") {
       const added = await addFixLabel(gateway, issue, await fixLabels());
       if (added) notes.push(`**Label added:** ${added} (a Fix)`);
+      if (triage.bug) notes.push(likelyCauseNote(triage.bug));
     }
 
     if (triage.outcome === "prd" && triage.sizing.size === "epic" && triage.stories.length > 0) {

@@ -61,6 +61,7 @@ const outcome = (overrides: Partial<TriageOutcome> = {}): TriageOutcome => ({
   stories: [],
   subIssueUpdates: [],
   featureEpics: [],
+  bug: null,
   ...overrides,
 });
 

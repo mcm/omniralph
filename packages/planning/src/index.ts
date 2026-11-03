@@ -43,6 +43,7 @@ export {
 } from "./methodology/rules.js";
 export type { Fragment, MethodologyContext } from "./methodology/rules.js";
 export {
+  TRIAGE_BUG_STEP,
   TRIAGE_DESCRIPTION_STEP,
   TRIAGE_FEATURE_STEP,
   TRIAGE_OPEN_QUESTIONS_STEP,

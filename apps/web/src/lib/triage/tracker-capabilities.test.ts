@@ -59,6 +59,7 @@ const RESULT: QueryRunResult = {
     stories: [],
     subIssueUpdates: [],
     featureEpics: [],
+    bug: null,
     summary: "Wrote the PRD.",
   },
   references: [],

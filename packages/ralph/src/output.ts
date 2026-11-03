@@ -435,6 +435,37 @@ export const TriageAgentOutput = z.object({
     .describe(
       "outcome reformat only: Backlog/Todo sub-issues rewritten as three-paragraph tasks. Empty otherwise.",
     ),
+  bug: z
+    .object({
+      locations: z
+        .array(
+          z.object({
+            file: z.string().describe("The file's path in the repo, as you read it."),
+            symbol: z
+              .string()
+              .describe(
+                "The function, method, component or other symbol in the file where the bug likely lives; empty when it is the file as a whole.",
+              ),
+          }),
+        )
+        .describe(
+          "Where the likely cause lives, by file and function you read in the repo. Empty when you couldn't locate it: never guess.",
+        ),
+      reproduction: z
+        .array(z.string())
+        .describe("The steps, input or state that make the bug happen, in order."),
+      currentBehavior: z.string().describe("What happens now."),
+      expectedBehavior: z.string().describe("What should happen instead."),
+      unlocatedQuestion: z
+        .string()
+        .describe(
+          "With no `locations`: the open question that would locate the cause (Omniralph adds it to the open questions). Empty when the cause is located.",
+        ),
+    })
+    .nullable()
+    .describe(
+      "Fixes only: the bug triage (where the likely cause lives, how to reproduce it, what happens now and what should happen). Null for every other size.",
+    ),
   featureEpics: z
     .array(
       z.object({
@@ -453,8 +484,47 @@ export const TriageAgentOutput = z.object({
 });
 export type TriageAgentOutput = z.infer<typeof TriageAgentOutput>;
 
+/** A Fix's bug triage, as `validateTriageOutput` keeps it. */
+export type TriageBugResult = Omit<NonNullable<TriageAgentOutput["bug"]>, "unlocatedQuestion">;
+
+/**
+ * The open question a Fix whose cause triage couldn't locate gets when the session didn't word
+ * one (`bug.unlocatedQuestion`).
+ */
+export const UNLOCATED_BUG_QUESTION =
+  "Triage couldn't locate the cause of this bug in the repo. Where does it happen (the file, function or screen), and what does it take to reproduce it?";
+
+/**
+ * A Fix's bug triage, trimmed (blank steps dropped, duplicate locations dropped), plus the open
+ * question to add when the cause isn't located, or the problem with it.
+ */
+function readBugTriage(
+  bug: NonNullable<TriageAgentOutput["bug"]>,
+): { bug: TriageBugResult; question: string | null } | { problem: string } {
+  const currentBehavior = bug.currentBehavior.trim();
+  const expectedBehavior = bug.expectedBehavior.trim();
+  const reproduction = bug.reproduction.map((step) => step.trim()).filter(Boolean);
+  if (!currentBehavior) return { problem: "the bug triage doesn't say what happens now" };
+  if (!expectedBehavior) return { problem: "the bug triage doesn't say what should happen" };
+  if (reproduction.length === 0) return { problem: "the bug triage has no reproduction steps" };
+  const locations: TriageBugResult["locations"] = [];
+  for (const location of bug.locations) {
+    const file = location.file.trim();
+    const symbol = location.symbol.trim();
+    if (!file) return { problem: "a location of the bug has no file" };
+    if (!locations.some((l) => l.file === file && l.symbol === symbol)) {
+      locations.push({ file, symbol });
+    }
+  }
+  const question =
+    locations.length > 0 ? null : bug.unlocatedQuestion.trim() || UNLOCATED_BUG_QUESTION;
+  return { bug: { locations, reproduction, currentBehavior, expectedBehavior }, question };
+}
+
 /** A validated triage (`validateTriageOutput`): the result plus the kind its sizing gives a single task. */
-export type TriageResult = TriageAgentOutput & {
+export type TriageResult = Omit<TriageAgentOutput, "bug"> & {
+  /** A Fix's bug triage; null for every other size. */
+  bug: TriageBugResult | null;
   /** `fix` for a Fix (it gets the integration's fix label), else `story`. */
   kind: (typeof TRIAGE_TASK_KINDS)[number];
 };
@@ -667,8 +737,22 @@ export function validateTriageOutput(
     subIssueUpdates.push({ id, title: updateTitle, body, priority: u.priority, blockedBy });
   }
 
+  let bug: TriageBugResult | null = null;
+  const questions = [...data.openQuestions];
+  if (sizing.size === "fix") {
+    if (!data.bug) {
+      return { problem: "a fix needs its bug triage in `bug` (cause, reproduction, behavior)" };
+    }
+    const read = readBugTriage(data.bug);
+    if ("problem" in read) return read;
+    bug = read.bug;
+    if (read.question) questions.push(read.question);
+  } else if (data.bug) {
+    return { problem: `${aSize} has no \`bug\`: only a fix does` };
+  }
+
   const openQuestions: string[] = [];
-  for (const q of data.openQuestions) {
+  for (const q of questions) {
     const question = q.trim();
     if (question && !openQuestions.includes(question)) openQuestions.push(question);
   }
@@ -686,6 +770,7 @@ export function validateTriageOutput(
       stories,
       subIssueUpdates,
       featureEpics,
+      bug,
       summary,
     },
   };
