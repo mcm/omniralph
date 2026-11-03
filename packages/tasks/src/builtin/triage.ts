@@ -13,7 +13,7 @@ import type { PlaybookInput, PlaybookPersona } from "../playbooks.js";
 
 /** Plans work: reads the tracker and a read-only checkout, and writes epics, stories and fixes. */
 export const PLANNER_PERSONA = {
-  systemPrompt: `You are "Omniralph", a product manager triaging an issue into an epic or a task (a Story or a Fix), unattended.`,
+  systemPrompt: `You are "Omniralph", a product manager triaging an issue into an epic or a task (a Story or a Fix), or recommending a Feature be planned as one, unattended.`,
   tools: {
     builtin: ["Read", "Grep", "Glob"],
     agent: [],
@@ -103,8 +103,11 @@ No repository is routed to this issue, so there is no checkout: keep file paths 
 
 {{#previousResult}}
 ## Your previous triage of this issue
-This session triaged the issue before (outcome \`{{outcome}}\`, size {{size}}). Build on it rather than starting over: keep what still holds and change only what the reply and any new information call for.
+This session triaged the issue before (outcome \`{{outcome}}\`, size {{size}}{{#sizing}}, sized as \`{{size}}\`{{/sizing}}). Build on it rather than starting over: keep what still holds and change only what the reply and any new information call for.
 
+{{#sizing}}
+{{reason}}
+{{/sizing}}
 {{title}}
 {{description}}
 {{#stories}}
@@ -140,9 +143,9 @@ ${TRIAGE_METHODOLOGY}
 
 ## Triage this issue
 1. Study the issue, its comments and sub-issues, and the repo (\`{{tracker.conventionsFile}}\` first).
-2. Decide the outcome and the kind (a Story or a Fix), size the work, write or reformat the epic or the task in its three paragraphs, and write the tasks or sub-issue updates the structure needs.
+2. Size the work as a Fix, a Story, an Epic or a Feature, decide the outcome, write or reformat the epic or the task in its three paragraphs (for a Feature, the recommendation and a first cut of its epics), and write the tasks or sub-issue updates the structure needs.
 3. Turn every remaining ambiguity into an open question.
-4. Report the result in your structured output: \`outcome\`, \`title\`, \`kind\`, \`description\`, \`size\`, \`openQuestions\`, \`stories\`, \`subIssueUpdates\` and \`summary\`.`;
+4. Report the result in your structured output: \`outcome\`, \`sizing\`, \`title\`, \`description\`, \`size\`, \`openQuestions\`, \`stories\`, \`subIssueUpdates\`, \`featureEpics\` and \`summary\`.`;
 
 /** The structured result: the shared `TriageOutcome` plus a summary (`TRIAGE_OUTPUT_SCHEMA` of `@omniralph/ralph`). */
 const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
@@ -152,29 +155,40 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
       type: "string",
       enum: ["prd", "reformat", "unchanged"],
       description:
-        "prd: the issue (with no sub-issues) is rewritten as an epic, a story or a fix. reformat: an issue already planned with sub-issues is put into the epic format, sub-issues included. unchanged: it already is in the formats.",
+        "prd: the issue (with no sub-issues) is rewritten as an epic, a story or a fix. reformat: an issue already planned with sub-issues is put into the epic format, sub-issues included. unchanged: it already is in the formats. Always unchanged for a feature: the issue is left as it is.",
+    },
+    sizing: {
+      type: "object",
+      properties: {
+        size: {
+          type: "string",
+          enum: ["fix", "story", "epic", "feature"],
+          description:
+            "fix: a single task fixing a bug. story: a single task of new work. epic: a set of tasks shipped in one pull request. feature: a set of epics, to plan as a feature instead.",
+        },
+        reason: {
+          type: "string",
+          description: "One paragraph on why the work is this size.",
+        },
+      },
+      required: ["size", "reason"],
+      additionalProperties: false,
+      description: "How big the work is, which decides the shape of the result, and why.",
     },
     title: {
       type: "string",
       description: "The issue's title: descriptive but concise.",
     },
-    kind: {
-      default: "story",
-      description:
-        "fix when the description is a single task fixing a bug (Omniralph adds the bug label), else story. Always story for an epic.",
-      type: "string",
-      enum: ["story", "fix"],
-    },
     description: {
       type: "string",
       description:
-        "The issue's new description in markdown: an epic (L or larger), else a task of three paragraphs, without a `## Open Questions` section.",
+        "The issue's new description in markdown, without a `## Open Questions` section: a task of three paragraphs for a fix or a story, the epic format for an epic. For a feature, the recommendation to plan it as a feature (why, and how to approach it), posted as a comment: the issue's description is left as it is.",
     },
     size: {
       type: "string",
       enum: ["XS", "S", "M", "L", "XL"],
       description:
-        "T-shirt size of the whole body of work. L or larger is an epic with sub-issues.",
+        "T-shirt size of the whole body of work: XS, S or M for a fix or a story, L or XL for an epic or a feature.",
     },
     openQuestions: {
       type: "array",
@@ -225,7 +239,7 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
         additionalProperties: false,
       },
       description:
-        "outcome prd, L or larger only: the tasks to create as sub-issues, in order, with no validation task (Omniralph audits the epic before its pull request). Empty otherwise.",
+        "Epics with outcome prd only: the tasks to create as sub-issues, in order, with no validation task (Omniralph audits the epic before its pull request). Empty otherwise.",
     },
     subIssueUpdates: {
       type: "array",
@@ -265,21 +279,42 @@ const TRIAGE_OUTPUT_SCHEMA: Record<string, unknown> = {
       description:
         "outcome reformat only: Backlog/Todo sub-issues rewritten as three-paragraph tasks. Empty otherwise.",
     },
+    featureEpics: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            description: "The plain epic title, without IDs.",
+          },
+          summary: {
+            type: "string",
+            description: "What the epic delivers, in a sentence or two.",
+          },
+        },
+        required: ["title", "summary"],
+        additionalProperties: false,
+      },
+      description:
+        "Features only: a first cut of the epics to plan the feature as, in order. Nothing is filed: they are posted with the recommendation. Empty otherwise.",
+    },
     summary: {
       type: "string",
       description:
-        "Posted to the tracker thread: the outcome, size and why, the structure, and how many open questions remain.",
+        "Posted to the tracker thread: the outcome, the size and why, the structure, and how many open questions remain.",
     },
   },
   required: [
     "outcome",
+    "sizing",
     "title",
-    "kind",
     "description",
     "size",
     "openQuestions",
     "stories",
     "subIssueUpdates",
+    "featureEpics",
     "summary",
   ],
   additionalProperties: false,

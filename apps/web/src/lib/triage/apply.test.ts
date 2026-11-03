@@ -93,15 +93,24 @@ const story = (title: string, overrides: Partial<Story> = {}): Story => ({
   ...overrides,
 });
 
+const large = (overrides: Partial<TriageOutcome>) =>
+  overrides.size === "L" || overrides.size === "XL";
+
 const outcome = (overrides: Partial<TriageOutcome> = {}): TriageOutcome => ({
   outcome: "prd",
   size: "S",
+  // The size a test's t-shirt size and kind imply: L or XL an epic, a fix kind a Fix.
+  sizing: {
+    size: large(overrides) ? "epic" : overrides.kind === "fix" ? "fix" : "story",
+    reason: "One focused session builds it.",
+  },
   title: "Export widgets as CSV",
   kind: "story",
-  description: overrides.size === "L" || overrides.size === "XL" ? EPIC : PRD,
+  description: large(overrides) ? EPIC : PRD,
   openQuestions: [],
   stories: [],
   subIssueUpdates: [],
+  featureEpics: [],
   ...overrides,
 });
 
@@ -254,9 +263,16 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     expect(response && "body" in response && response.body).toMatch(
       /Size:\*\* S[\s\S]*Structure:\*\* single task[\s\S]*Status:\*\* Ready to start[\s\S]*ENG-\d+ is ready to start\. Start it from the Backlog, or delegate it to Om again\.$/,
     );
+    expect(response && "body" in response && response.body).toContain(
+      "- **Size:** Story (S): One focused session builds it.",
+    );
+    // The size and its reason are kept with the run.
     expect(await getTriageRun(db, run.id)).toMatchObject({
       status: "completed",
-      lastResult: { summary: "Sized it and wrote the story." },
+      lastResult: {
+        summary: "Sized it and wrote the story.",
+        outcome: { sizing: { size: "story", reason: "One focused session builds it." } },
+      },
     });
 
     // A replayed result is applied once.
@@ -372,10 +388,80 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     );
     expect((await linear.getIssue(issue.id)).stateType).toBe("unstarted");
     const body = JSON.stringify(responses(sessionId));
-    expect(body).toContain("Size:** XL");
+    expect(body).toContain("Size:** Epic (XL)");
     expect(body).toContain(
       `epic with 3 new sub-issues: ${children.map((c) => c.identifier).join(", ")}`,
     );
+  });
+
+  it("posts one comment recommending feature planning for a Feature, and files nothing", async () => {
+    const issue = addIssue({ description: "we need csv, pdf, scheduled reports and an API" });
+    const featureEpics = [
+      { title: "CSV export", summary: "Export widgets as CSV from the list." },
+      { title: "Scheduled reports", summary: "Email an export on a schedule." },
+    ];
+    const { run, job, sessionId } = await completedJob(
+      issue,
+      result({
+        outcome: "prd",
+        size: "XL",
+        sizing: { size: "feature", reason: "Four independent outputs, each a pull request." },
+        title: "Reporting",
+        description: "Plan reporting as a feature: exports first, then schedules.",
+        openQuestions: ["Which formats come first?"],
+        featureEpics,
+      }),
+    );
+
+    expect(await applyTriageJob(deps(), job)).toMatchObject({
+      status: "applied",
+      created: [],
+      // Nobody starts a feature as it is: it is planned epic by epic.
+      readiness: "needs_refining",
+    });
+    // The issue keeps its title and description, gets no label and no sub-issues.
+    expect(await linear.getIssue(issue.id)).toMatchObject({
+      title: "csv export",
+      description: "we need csv, pdf, scheduled reports and an API",
+      labels: [],
+      stateType: "backlog",
+    });
+    expect(linear.issueUpdates).toEqual([]);
+    expect(await linear.getChildren(issue.id)).toEqual([]);
+    // One comment: the recommendation, its epics and its open questions.
+    expect(linear.comments).toHaveLength(1);
+    expect(linear.comments[0]).toMatchObject({ issueId: issue.id });
+    expect(linear.comments[0]!.body).toBe(
+      [
+        "**Plan this as a feature.** It is too big for one epic, so triage rewrote nothing and filed no sub-issues.",
+        "",
+        "**Why it's a feature:** Four independent outputs, each a pull request.",
+        "",
+        "Plan reporting as a feature: exports first, then schedules.",
+        "",
+        "**A first cut of its epics:**",
+        "",
+        "1. **CSV export**: Export widgets as CSV from the list.",
+        "2. **Scheduled reports**: Email an export on a schedule.",
+        "",
+        "**Open questions:**",
+        "",
+        "1. Which formats come first?",
+      ].join("\n"),
+    );
+    const body = JSON.stringify(responses(sessionId));
+    expect(body).toContain("Size:** Feature (XL)");
+    expect(body).toContain("feature of 2 epics to plan as a feature (nothing filed)");
+    expect(await getTriageRun(db, run.id)).toMatchObject({
+      lastResult: {
+        outcome: {
+          outcome: "unchanged",
+          sizing: { size: "feature" },
+          stories: [],
+          featureEpics,
+        },
+      },
+    });
   });
 
   it("labels a single Fix with the integration's first fix label, once", async () => {
@@ -403,6 +489,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
       expect(await applyTriageJob(deps(), first.job)).toMatchObject({ status: "applied" });
       expect((await linear.getIssue(bug.id)).labels).toEqual(["frontend", "Defect"]);
       expect(JSON.stringify(responses(first.sessionId))).toContain("Label added:** Defect");
+      expect(JSON.stringify(responses(first.sessionId))).toContain("Size:** Fix (S)");
 
       // Already a Fix by one of the fix labels: nothing is added.
       const labelled = addIssue({ labels: ["bug"] });
@@ -805,7 +892,7 @@ describe.skipIf(!databaseAvailable)("applying triage results to Linear", () => {
     expect(linear.issues.size).toBe(1);
     const [error] = responses(sessionId);
     expect(error).toMatchObject({ type: "error" });
-    expect(JSON.stringify(error)).toContain("size XL is an epic");
+    expect(JSON.stringify(error)).toContain("an epic rewritten from the issue needs its tasks");
     expect((await getTriageRun(db, run.id))?.status).toBe("failed");
     expect(await getJob(db, job.id)).toMatchObject({ status: "failed" });
 

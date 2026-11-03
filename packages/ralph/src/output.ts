@@ -341,9 +341,17 @@ export function readRequestResult(
   };
 }
 
-/** The t-shirt sizes of a triage; L and larger become epics. */
+/** The t-shirt sizes of a triage: L and larger are an epic or a feature, smaller a single task. */
 export const TRIAGE_OUTPUT_SIZES = ["XS", "S", "M", "L", "XL"] as const;
-const EPIC_SIZES = new Set<string>(["L", "XL"]);
+const LARGE_SIZES = new Set<string>(["L", "XL"]);
+
+/**
+ * What triage sizes the work as (`TRIAGE_WORK_SIZES` of `@omniralph/shared`): a Fix or a Story is
+ * a single task, an Epic a set of tasks filed as sub-issues, a Feature a set of epics to plan as a
+ * feature (nothing is filed).
+ */
+export const TRIAGE_WORK_SIZES = ["fix", "story", "epic", "feature"] as const;
+export type TriageWorkSize = (typeof TRIAGE_WORK_SIZES)[number];
 
 const TrackerPriority = z
   .literal([1, 2, 3, 4])
@@ -357,23 +365,29 @@ export const TriageAgentOutput = z.object({
   outcome: z
     .enum(["prd", "reformat", "unchanged"])
     .describe(
-      "prd: the issue (with no sub-issues) is rewritten as an epic, a story or a fix. reformat: an issue already planned with sub-issues is put into the epic format, sub-issues included. unchanged: it already is in the formats.",
+      "prd: the issue (with no sub-issues) is rewritten as an epic, a story or a fix. reformat: an issue already planned with sub-issues is put into the epic format, sub-issues included. unchanged: it already is in the formats. Always unchanged for a feature: the issue is left as it is.",
     ),
+  sizing: z
+    .object({
+      size: z
+        .enum(TRIAGE_WORK_SIZES)
+        .describe(
+          "fix: a single task fixing a bug. story: a single task of new work. epic: a set of tasks shipped in one pull request. feature: a set of epics, to plan as a feature instead.",
+        ),
+      reason: z.string().describe("One paragraph on why the work is this size."),
+    })
+    .describe("How big the work is, which decides the shape of the result, and why."),
   title: z.string().describe("The issue's title: descriptive but concise."),
-  kind: z
-    .enum(TRIAGE_TASK_KINDS)
-    .default("story")
-    .describe(
-      "fix when the description is a single task fixing a bug (Omniralph adds the bug label), else story. Always story for an epic.",
-    ),
   description: z
     .string()
     .describe(
-      "The issue's new description in markdown: an epic (L or larger), else a task of three paragraphs, without a `## Open Questions` section.",
+      "The issue's new description in markdown, without a `## Open Questions` section: a task of three paragraphs for a fix or a story, the epic format for an epic. For a feature, the recommendation to plan it as a feature (why, and how to approach it), posted as a comment: the issue's description is left as it is.",
     ),
   size: z
     .enum(TRIAGE_OUTPUT_SIZES)
-    .describe("T-shirt size of the whole body of work. L or larger is an epic with sub-issues."),
+    .describe(
+      "T-shirt size of the whole body of work: XS, S or M for a fix or a story, L or XL for an epic or a feature.",
+    ),
   openQuestions: z
     .array(z.string())
     .describe("Every ambiguity you couldn't resolve, one question each. Empty when none remain."),
@@ -398,7 +412,7 @@ export const TriageAgentOutput = z.object({
       }),
     )
     .describe(
-      "outcome prd, L or larger only: the tasks to create as sub-issues, in order, with no validation task (Omniralph audits the epic before its pull request). Empty otherwise.",
+      "Epics with outcome prd only: the tasks to create as sub-issues, in order, with no validation task (Omniralph audits the epic before its pull request). Empty otherwise.",
     ),
   subIssueUpdates: z
     .array(
@@ -421,13 +435,29 @@ export const TriageAgentOutput = z.object({
     .describe(
       "outcome reformat only: Backlog/Todo sub-issues rewritten as three-paragraph tasks. Empty otherwise.",
     ),
+  featureEpics: z
+    .array(
+      z.object({
+        title: z.string().describe("The plain epic title, without IDs."),
+        summary: z.string().describe("What the epic delivers, in a sentence or two."),
+      }),
+    )
+    .describe(
+      "Features only: a first cut of the epics to plan the feature as, in order. Nothing is filed: they are posted with the recommendation. Empty otherwise.",
+    ),
   summary: z
     .string()
     .describe(
-      "Posted to the tracker thread: the outcome, size and why, the structure, and how many open questions remain.",
+      "Posted to the tracker thread: the outcome, the size and why, the structure, and how many open questions remain.",
     ),
 });
 export type TriageAgentOutput = z.infer<typeof TriageAgentOutput>;
+
+/** A validated triage (`validateTriageOutput`): the result plus the kind its sizing gives a single task. */
+export type TriageResult = TriageAgentOutput & {
+  /** `fix` for a Fix (it gets the integration's fix label), else `story`. */
+  kind: (typeof TRIAGE_TASK_KINDS)[number];
+};
 
 /** `outputFormat` schema of a triage session. */
 export const TRIAGE_OUTPUT_SCHEMA = jsonSchema(TriageAgentOutput);
@@ -493,26 +523,41 @@ function formatProblem(text: string, formats: readonly WorkItemFormat[]): string
 /**
  * A triage session's result, trimmed (blank and duplicate open questions dropped, a legacy
  * validation task dropped from the stories, dependency indexes limited to the other stories kept), or
- * the problem with it: a result that doesn't match the schema, a description with
- * `## Success Metrics`, `## Quality Gates` or `## Open Questions`, a description not in the format
- * its outcome and size call for (an epic for L or larger, else a task), an epic without stories, a
- * smaller issue with stories, a description ralph would split into stories, a story or sub-issue
- * update that isn't a three-paragraph task, or stories/updates that don't fit the outcome.
+ * the problem with it: a result that doesn't match the schema, a sizing without a reason or
+ * whose t-shirt size disagrees with it (XS–M for a Fix or a Story, L–XL for an Epic or a Feature),
+ * a description with `## Success Metrics`, `## Quality Gates` or `## Open Questions`, a
+ * description not in the format its outcome and size call for (an epic for an Epic, else a
+ * task), an epic without stories, a single task with stories, a description ralph would split
+ * into stories, a story or sub-issue update that isn't a three-paragraph task, stories/updates
+ * that don't fit the outcome, or a Feature without its first cut of epics (or anything to file).
+ * A Feature's outcome is always `unchanged`: triage leaves the issue as it is.
  */
 export function validateTriageOutput(
   structured: unknown,
-): { result: TriageAgentOutput } | { problem: string } {
+): { result: TriageResult } | { problem: string } {
   const parsed = structured === undefined ? undefined : TriageAgentOutput.safeParse(structured);
   if (!parsed?.success) return { problem: problemWith(parsed?.error) };
   const data = parsed.data;
   const title = oneLine(data.title);
   const description = data.description.trim();
   const summary = data.summary.trim();
+  const sizing = { size: data.sizing.size, reason: data.sizing.reason.trim() };
   if (!title) return { problem: "the title is empty" };
   if (!description) return { problem: "the description is empty" };
   if (!summary) return { problem: "the summary is empty" };
+  if (!sizing.reason) return { problem: "the sizing has no reason" };
+  const large = sizing.size === "epic" || sizing.size === "feature";
+  if (large !== LARGE_SIZES.has(data.size)) {
+    return {
+      problem: `${sizing.size === "epic" ? "an" : "a"} ${sizing.size} is ${large ? "L or XL" : "XS, S or M"}, but the size is ${data.size}`,
+    };
+  }
+  const feature = sizing.size === "feature";
+  const epic = sizing.size === "epic";
+  /** The size with its article ("an epic", "a story"). */
+  const aSize = `${epic ? "an" : "a"} ${sizing.size}`;
   const legacy = legacyOnlySection(description);
-  if (legacy) {
+  if (legacy && !feature) {
     return { problem: `the description has a \`${legacy}\` section: no work item has one` };
   }
   if (hasOpenQuestionsHeading(description)) {
@@ -520,23 +565,28 @@ export function validateTriageOutput(
       problem: "the description contains `## Open Questions`: report them in `openQuestions`",
     };
   }
-  if (parsePrd(description)) {
+  if (!feature && parsePrd(description)) {
     return {
       problem:
         "a coding task would split the description into stories: no story-style headings or `userStories` JSON",
     };
   }
-  const epic = EPIC_SIZES.has(data.size);
-  const formats: readonly WorkItemFormat[] =
-    data.outcome === "reformat" || (data.outcome === "prd" && epic)
-      ? ["epic"]
-      : data.outcome === "prd"
-        ? ["task"]
-        : ["epic", "task"];
-  const descriptionProblem = formatProblem(description, formats);
-  if (descriptionProblem) return { problem: `the description: ${descriptionProblem}` };
+  if (data.outcome === "reformat" && !epic) {
+    return {
+      problem: `outcome reformat puts an epic into the format, but the work is a ${sizing.size}`,
+    };
+  }
+  if (!feature) {
+    const formats: readonly WorkItemFormat[] = epic ? ["epic"] : ["task"];
+    const descriptionProblem = formatProblem(description, formats);
+    if (descriptionProblem) return { problem: `the description: ${descriptionProblem}` };
+  }
   if (!epic && data.stories.length > 0) {
-    return { problem: `size ${data.size} is a single issue but there are \`stories\`` };
+    return {
+      problem: feature
+        ? "a feature files nothing, but there are `stories`: list its epics in `featureEpics`"
+        : `${aSize} is a single task, but there are \`stories\``,
+    };
   }
   if (data.outcome !== "prd" && data.stories.length > 0) {
     return { problem: `outcome ${data.outcome} can't create \`stories\`` };
@@ -545,13 +595,28 @@ export function validateTriageOutput(
     return { problem: `outcome ${data.outcome} can't have \`subIssueUpdates\`` };
   }
 
+  const featureEpics: TriageAgentOutput["featureEpics"] = [];
+  for (const [i, e] of data.featureEpics.entries()) {
+    const epicTitle = oneLine(e.title);
+    const epicSummary = e.summary.trim();
+    if (!epicTitle) return { problem: `feature epic ${i} has no title` };
+    if (!epicSummary) return { problem: `feature epic ${i} ("${epicTitle}") has no summary` };
+    featureEpics.push({ title: epicTitle, summary: epicSummary });
+  }
+  if (feature && featureEpics.length === 0) {
+    return { problem: "a feature needs a first cut of its epics in `featureEpics`" };
+  }
+  if (!feature && featureEpics.length > 0) {
+    return { problem: `${aSize} has no \`featureEpics\`: only a feature does` };
+  }
+
   // The indexes, in `data.stories`, of the stories kept, and each one's index in `stories`.
   const kept = [...data.stories.keys()].filter(
     (i) => !isLegacyValidationTask(oneLine(data.stories[i]!.title)),
   );
   const keptIndex = new Map(kept.map((from, to) => [from, to]));
   if (data.outcome === "prd" && epic && kept.length === 0) {
-    return { problem: `size ${data.size} is an epic but there are no \`stories\`` };
+    return { problem: "an epic rewritten from the issue needs its tasks in `stories`" };
   }
   const stories: TriageAgentOutput["stories"] = [];
   for (const [i, from] of kept.entries()) {
@@ -610,15 +675,17 @@ export function validateTriageOutput(
 
   return {
     result: {
-      outcome: data.outcome,
+      outcome: feature ? "unchanged" : data.outcome,
+      sizing,
       title,
       // Only a single task is a Fix: an epic's kind comes from its tasks.
-      kind: workItemFormat(description) === "task" ? data.kind : "story",
+      kind: sizing.size === "fix" ? "fix" : "story",
       description,
       size: data.size,
       openQuestions,
       stories,
       subIssueUpdates,
+      featureEpics,
       summary,
     },
   };

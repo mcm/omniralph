@@ -87,12 +87,14 @@ const QUESTIONS = ["Which currency do invoices use?", "Who can export?", "Which 
 const outcome = (openQuestions: string[]): TriageOutcome => ({
   outcome: "prd",
   size: "S",
+  sizing: { size: "story", reason: "One focused session builds it." },
   title: "Billing export",
   kind: "story",
   description: "## Introduction\n\nExport invoices.",
   openQuestions,
   stories: [],
   subIssueUpdates: [],
+  featureEpics: [],
 });
 
 const result = (openQuestions: string[]): TriageRunResult => ({

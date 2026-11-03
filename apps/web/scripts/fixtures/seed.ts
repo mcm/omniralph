@@ -1317,6 +1317,11 @@ async function seedTriage(tx: Tx, now: Date): Promise<void> {
         outcome: {
           outcome: "prd",
           size: "L",
+          sizing: {
+            size: "epic",
+            reason:
+              "The export touches the review API, the review page and the CSV writer: three tasks that ship together in one pull request.",
+          },
           title: "Export review findings as CSV",
           description: [
             "## Problem",

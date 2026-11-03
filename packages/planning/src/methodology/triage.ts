@@ -3,8 +3,8 @@
  * turn a tracker issue into an epic or a task (a Story or a Fix), composed
  * from the shared rules (each written once in `rules.ts`) and the triage-only
  * steps below. The triage-only steps name the fields of the triage result
- * (`outcome`, `kind`, `description`, `size`, `stories`, `subIssueUpdates`,
- * `openQuestions`, `summary`).
+ * (`outcome`, `sizing`, `description`, `size`, `stories`, `subIssueUpdates`,
+ * `featureEpics`, `openQuestions`, `summary`).
  */
 import {
   type Fragment,
@@ -40,10 +40,10 @@ export const TRIAGE_UNDERSTAND_STEP: Fragment = {
 export const TRIAGE_OUTCOME_STEP: Fragment = {
   id: "triage-outcome",
   title: "Decide what kind of triage this is (`outcome`)",
-  body: `- \`prd\`: the issue has no sub-issues and isn't yet written in the formats below (a one-liner, a bug report, loose notes, a partial spec, or an older format, such as a story sentence with a \`Covers:\` line, \`## Current behavior\` / \`## Expected behavior\` sections or an \`## Acceptance Criteria\` checklist). Write it out; if it is L or larger, also write its tasks.
+  body: `- \`prd\`: the issue has no sub-issues and isn't yet written in the formats below (a one-liner, a bug report, loose notes, a partial spec, or an older format, such as a story sentence with a \`Covers:\` line, \`## Current behavior\` / \`## Expected behavior\` sections or an \`## Acceptance Criteria\` checklist). Write it out; if it is an Epic, also write its tasks.
 - \`reformat\`: the issue is already planned (it has sub-issues) but isn't in the formats below. Reformat it, don't replan it: keep its scope, decisions, tasks and their order, and fix the format of the description and of every Backlog or Todo sub-issue (\`subIssueUpdates\`). Never add tasks beside existing sub-issues (\`stories\` stays empty), and never drop, merge or cancel sub-issues; if work seems missing, or a sub-issue seems wrong or redundant, say so in an open question.
-- \`unchanged\`: the issue is already in the formats below and needs no rewrite. Return its current title and description as they are (without any \`## Open Questions\` section), with no tasks or sub-issue updates.
-- An issue whose description holds user stories but has no sub-issues (e.g. a \`### US-001: …\` list) is \`prd\`: rewrite it, with its stories as tasks when it is L or larger.
+- \`unchanged\`: the issue is already in the formats below and needs no rewrite. Return its current title and description as they are (without any \`## Open Questions\` section), with no tasks or sub-issue updates. A Feature is always \`unchanged\`: Omniralph leaves the issue as it is.
+- An issue whose description holds user stories but has no sub-issues (e.g. a \`### US-001: …\` list) is \`prd\`: rewrite it, with its stories as tasks when it is an Epic.
 - Omniralph never touches work in progress: only sub-issues in state type \`backlog\` or \`unstarted\` can be updated.`,
 };
 
@@ -52,10 +52,9 @@ export const TRIAGE_DESCRIPTION_STEP: Fragment = {
   id: "triage-description",
   title: "Write the description (`description`)",
   body: `The description becomes the issue's description, and Omniralph shows it to the agent working each task. Size the work first (see Sizing), then write:
-- **L or larger:** the epic format. The tasks go in \`stories\`, never into the description.
-- **Smaller than L:** a single task in the task format: its three paragraphs (${OPENINGS}) and nothing else. Omniralph builds the whole description as one task, so it has no headings, no requirement list, no \`Covers:\` line, no story sentence ("As a … I want … so that …"), no current, expected or unchanged behavior sections and no checklist section. Its done criteria and constraints are the ${code(TASK_PARAGRAPHS.done.opening)} paragraph.
-
-Set \`kind\` to \`fix\` when that single task fixes a bug, and to \`story\` otherwise (always \`story\` for an epic): Omniralph gives a Fix the bug label, which is how it knows a Fix.
+- **An Epic:** the epic format. The tasks go in \`stories\`, never into the description.
+- **A Fix or a Story:** a single task in the task format: its three paragraphs (${OPENINGS}) and nothing else. Omniralph builds the whole description as one task, so it has no headings, no requirement list, no \`Covers:\` line, no story sentence ("As a … I want … so that …"), no current, expected or unchanged behavior sections and no checklist section. Its done criteria and constraints are the ${code(TASK_PARAGRAPHS.done.opening)} paragraph. Omniralph gives a Fix the bug label, which is how it knows a Fix.
+- **A Feature:** the recommendation to plan it as a feature: why it is too big for one epic and how to approach it. Omniralph posts it as a comment, with your first cut of its epics (\`featureEpics\`), and leaves the issue's title and description as they are.
 
 Never write a \`## Open Questions\` section yourself: report open questions in \`openQuestions\` and Omniralph adds the section at the end.
 
@@ -65,14 +64,14 @@ Branch line: by default add none. Add \`\`> Branch: \`name\` \`\` on its own lin
 /** Reporting the size. */
 export const TRIAGE_SIZE_STEP: Fragment = {
   id: "triage-size",
-  title: "Report the size (`size`)",
-  body: `Report the size by the Sizing rule, and mention it with a one-line rationale in your summary. For \`reformat\` and \`unchanged\`, size the work as planned.`,
+  title: "Report the size (`sizing` and `size`)",
+  body: `Size the work by the Sizing rule: \`sizing.size\` is \`fix\`, \`story\`, \`epic\` or \`feature\`, \`sizing.reason\` one paragraph on why (what makes it that big and not one size up or down), and \`size\` its t-shirt estimate (XS, S or M for a Fix or a Story, L or XL for an Epic or a Feature). Mention the size in your summary. For \`reformat\` and \`unchanged\`, size the work as planned (a \`reformat\` is always an Epic).`,
 };
 
 /** Writing an epic's tasks. */
 export const TRIAGE_STORIES_STEP: Fragment = {
   id: "triage-stories",
-  title: "Write the tasks (`stories`; `prd` epics only, L or larger)",
+  title: "Write the tasks (`stories`; `prd` Epics only)",
   body: `Each entry becomes one sub-issue of the epic, in the task format, split by the Splitting rule.
 - \`title\`: the plain task title, with no \`US-001:\` prefix or other identifiers.
 - \`body\`: the task's three paragraphs (${OPENINGS}) and nothing else: no \`Covers:\` line, story sentence or behavior sections.
@@ -81,6 +80,13 @@ export const TRIAGE_STORIES_STEP: Fragment = {
 - \`dependsOn\`: the 0-based indexes, in \`stories\`, of the tasks it really depends on. These become "blocks" relations.
 - \`manual\`: true for a step only a person can do.
 - No validation or audit entry (no \`${VALIDATION_AUDIT_TITLE}\` task): Omniralph audits the epic against its requirements before its pull request opens, so every entry is real work.`,
+};
+
+/** A Feature's first cut of epics. */
+export const TRIAGE_FEATURE_STEP: Fragment = {
+  id: "triage-feature",
+  title: "Sketch the epics (`featureEpics`; Features only)",
+  body: `A first cut of the epics the feature splits into, in the order they would ship, each with a \`title\` (plain, no identifiers) and a \`summary\` of what it delivers in a sentence or two. Split them as the Splitting rule splits tasks: by what each delivers, never by development phase. Nothing is filed from them: they are posted with the recommendation for feature planning. Leave \`featureEpics\` empty for every other size.`,
 };
 
 /** Reformatting existing sub-issues. */
@@ -102,7 +108,7 @@ export const TRIAGE_OPEN_QUESTIONS_STEP: Fragment = {
 export const TRIAGE_SUMMARY_STEP: Fragment = {
   id: "triage-summary",
   title: "Summary (`summary`)",
-  body: `A few lines for the thread on {{trackerName}}: the outcome, the size and why, the structure (a single Story or Fix, an epic with N tasks, or which sub-issues were reformatted), and how many open questions remain.`,
+  body: `A few lines for the thread on {{trackerName}}: the outcome, the size and why, the structure (a single Story or Fix, an epic with N tasks, which sub-issues were reformatted, or a Feature with N epics to plan), and how many open questions remain.`,
 };
 
 /** The triage-only steps, in order. */
@@ -112,6 +118,7 @@ export const TRIAGE_STEPS: readonly Fragment[] = [
   TRIAGE_DESCRIPTION_STEP,
   TRIAGE_SIZE_STEP,
   TRIAGE_STORIES_STEP,
+  TRIAGE_FEATURE_STEP,
   TRIAGE_REFORMAT_STEP,
   TRIAGE_OPEN_QUESTIONS_STEP,
   TRIAGE_SUMMARY_STEP,
