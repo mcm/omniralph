@@ -9,6 +9,7 @@ import {
   type RalphRunListEntry,
   type ScmProvider,
 } from "@omniralph/db";
+import { changeRequestNumberFromUrl } from "@omniralph/shared";
 import type { PlaybookSource } from "@/lib/playbooks";
 import { roundLimits, storyLimits } from "./coding";
 import {
@@ -25,8 +26,11 @@ function pullRequest(
   number: number | null,
   url: string | null,
 ): RalphPullRequest | null {
-  if (number === null || !url || !provider) return null;
-  return { number, url, label: `${provider === "gitlab" ? "!" : "#"}${number}` };
+  if (!url || !provider) return null;
+  // A pull-request run's lane keeps its number null (it isn't Om's PR/MR): its URL names it.
+  const prNumber = number ?? changeRequestNumberFromUrl(url);
+  if (prNumber === null) return null;
+  return { number: prNumber, url, label: `${provider === "gitlab" ? "!" : "#"}${prNumber}` };
 }
 
 function chatThreadRef(thread: RalphRunChatThread | null): RalphChatThreadRef | null {

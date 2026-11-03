@@ -7,7 +7,7 @@ import { sql, type SQL } from "drizzle-orm";
 import type { Database } from "./client.js";
 import type { RunIndexEntry } from "./run-index.js";
 import type { IntegrationProvider } from "./integrations.js";
-import type { ReviewPassRecord } from "@omniralph/shared";
+import { changeRequestNumberFromUrl, type ReviewPassRecord } from "@omniralph/shared";
 import type {
   JobWaitingReason,
   RalphEpicAudit,
@@ -293,29 +293,33 @@ export async function getRalphRunDetailFacts(
       elsewhere: s.elsewhere,
       verifications: s.verifications ?? [],
     })),
-    lanes: lanes.rows.map((l) => ({
-      id: l.id,
-      repository: {
-        id: l.repository_id,
-        provider: l.provider,
-        fullPath: l.full_path,
-        baseUrl: l.base_url,
-      },
-      branch: l.branch,
-      baseBranch: l.base_branch,
-      pullRequest:
-        l.pr_number !== null
-          ? {
-              number: l.pr_number,
-              url: l.pr_url,
-              merged: l.pr_merged,
-              closed: l.pr_closed,
-              draft: l.pr_draft,
-              reviewState: l.pr_review_state,
-            }
-          : null,
-      main: Boolean(l.main),
-    })),
+    lanes: lanes.rows.map((l) => {
+      // A pull-request run's lane keeps pr_number null (it isn't Om's PR/MR): its URL names it.
+      const prNumber = l.pr_number ?? changeRequestNumberFromUrl(l.pr_url);
+      return {
+        id: l.id,
+        repository: {
+          id: l.repository_id,
+          provider: l.provider,
+          fullPath: l.full_path,
+          baseUrl: l.base_url,
+        },
+        branch: l.branch,
+        baseBranch: l.base_branch,
+        pullRequest:
+          prNumber !== null
+            ? {
+                number: prNumber,
+                url: l.pr_url,
+                merged: l.pr_merged,
+                closed: l.pr_closed,
+                draft: l.pr_draft,
+                reviewState: l.pr_review_state,
+              }
+            : null,
+        main: Boolean(l.main),
+      };
+    }),
   };
 }
 

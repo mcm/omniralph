@@ -6,6 +6,7 @@
  * `review_run_id`, `triage_run_id`, `chat_thread_run_id`).
  */
 import { sql, type SQL } from "drizzle-orm";
+import { changeRequestNumberFromUrl } from "@omniralph/shared";
 import type { IntegrationProvider } from "./integrations.js";
 import type { Database } from "./client.js";
 import type {
@@ -484,6 +485,8 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
   ]);
   for (const row of result.rows) {
     const stat = stats.get(row.id);
+    // A pull-request run's lane keeps pr_number null (it isn't Om's PR/MR): its URL names it.
+    const prNumber = row.pr_number ?? changeRequestNumberFromUrl(row.pr_url);
     facts.set(row.id, {
       // A chat run has no issue: what it was asked to do.
       title: row.tracker_title ?? row.first_request ?? row.tracker_identifier,
@@ -498,7 +501,7 @@ async function ralphFacts(db: Queryable, ids: string[]): Promise<Map<string, Fac
           }
         : null,
       branch: row.branch,
-      pullRequest: row.pr_number !== null ? { number: row.pr_number, url: row.pr_url } : null,
+      pullRequest: prNumber !== null ? { number: prNumber, url: row.pr_url } : null,
       // A request does what it was asked in one step; an epic builds its stories.
       progress:
         row.mode === "epic"
