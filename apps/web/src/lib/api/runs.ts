@@ -8,7 +8,12 @@ import type {
   RunOrigin,
   RunStatus,
 } from "@omniralph/db";
-import { FEEDBACK_REASONS, REVIEW_CHECK_TYPES } from "@omniralph/shared";
+import {
+  FEEDBACK_REASONS,
+  PLAN_CRITIQUE_VERDICTS,
+  REVIEW_CHECK_TYPES,
+  TRIAGE_WORK_SIZES,
+} from "@omniralph/shared";
 import { z } from "zod";
 import { isoDate } from "./schemas";
 import { WORK_ITEM_TRACKERS } from "./work-item-matches";
@@ -505,6 +510,42 @@ export type RunChat = z.infer<typeof runChatSchema>;
 export const reasonLinkSchema = z.object({ label: z.string(), href: z.string() });
 export type ReasonLink = z.infer<typeof reasonLinkSchema>;
 
+/** Triage's sizing of the work (Fix, Story, Epic or Feature) and, in a paragraph, why. */
+export const triageSizingSchema = z.object({
+  size: z.enum(TRIAGE_WORK_SIZES),
+  reason: z.string(),
+});
+export type TriageSizingView = z.infer<typeof triageSizingSchema>;
+
+/**
+ * A triage round (a triage run's iteration, from its `TriageRound` record): the draft's sizing
+ * and title (null when the worker's output wasn't a usable triage), the work item lint's
+ * result, the plan critic's judgement (null while it runs, and for a draft it doesn't judge),
+ * and what changed in the draft since the previous round's (null for the first draft, and
+ * without one: `patch` null for an unchanged draft).
+ */
+export const triageRoundViewSchema = z.object({
+  sizing: triageSizingSchema.nullable(),
+  title: z.string().nullable(),
+  lint: z.object({ passed: z.boolean(), problems: z.array(z.string()) }),
+  critique: z
+    .object({
+      verdict: z.enum(PLAN_CRITIQUE_VERDICTS),
+      notes: z.array(z.object({ item: z.string(), ok: z.boolean(), note: z.string() })),
+      openQuestions: z.array(z.string()),
+    })
+    .nullable(),
+  changes: z
+    .object({
+      additions: z.number(),
+      deletions: z.number(),
+      patch: z.string().nullable(),
+      truncated: z.boolean(),
+    })
+    .nullable(),
+});
+export type TriageRoundView = z.infer<typeof triageRoundViewSchema>;
+
 /**
  * One iteration of a looped run (`run_iterations`): a worker session then a verifier
  * session. `verdict` is null until the verifier answered (and for a failed iteration);
@@ -550,6 +591,8 @@ export const runIterationSchema = z.object({
   createdAt: isoDate,
   verifyingAt: isoDate.nullable(),
   finishedAt: isoDate.nullable(),
+  /** A triage run's round: its draft, lint, critique and changes; null for any other run's, and before the round's checks ran. */
+  triage: triageRoundViewSchema.nullable(),
 });
 export type RunIterationView = z.infer<typeof runIterationSchema>;
 
@@ -871,6 +914,8 @@ export const runTriageSummarySchema = z.object({
   error: z.string().nullable(),
   change: z.enum(TRIAGE_CHANGES).nullable(),
   size: z.enum(["XS", "S", "M", "L", "XL"]).nullable(),
+  /** The last triage's sizing of the work and why; null before a result, and for older triages. */
+  sizing: triageSizingSchema.nullable(),
   /** Story sub-issues the last triage planned (a new epic's). */
   storyCount: z.number(),
   /** What the last triage couldn't decide: the PRD's `## Open Questions`. */

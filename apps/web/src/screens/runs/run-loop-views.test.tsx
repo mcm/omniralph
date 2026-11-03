@@ -159,6 +159,7 @@ function iteration(number: number, overrides: Partial<RunIterationView> = {}): R
     createdAt: NOW_AT(-30 + number),
     verifyingAt: NOW_AT(-29 + number),
     finishedAt: NOW_AT(-28 + number),
+    triage: null,
     ...overrides,
   };
 }

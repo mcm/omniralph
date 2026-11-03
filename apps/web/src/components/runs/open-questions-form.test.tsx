@@ -46,6 +46,7 @@ function summary(): RunTriageSummary {
     error: null,
     change: "prd",
     size: "M",
+    sizing: null,
     storyCount: 2,
     openQuestions: QUESTIONS,
     answerQuestions: true,

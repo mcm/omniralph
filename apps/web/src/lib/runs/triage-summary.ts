@@ -65,6 +65,7 @@ export function triageSummary({ run, jobs }: TriageRunWithJobs, role: Role): Run
     error: result?.error ?? null,
     change: result?.outcome?.outcome ?? null,
     size: result?.outcome?.size ?? null,
+    sizing: result?.outcome?.sizing ?? null,
     storyCount: result?.outcome?.stories.length ?? 0,
     openQuestions: result?.outcome?.openQuestions ?? [],
     answerQuestions: canAnswerTriageQuestions(outcome, role),

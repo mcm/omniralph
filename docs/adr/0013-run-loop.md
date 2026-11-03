@@ -172,7 +172,11 @@ criterion, shown on the attempt in the Attempts tab and above its transcript. Ea
 audit", with its round from the second on); its Requirements tab, open by default, lists each
 requirement's evidence or gap and links the tasks it filed, and the audit job's attempt belongs
 to it. A looped run's `iterations` show in an Iterations card: each one's state, the verifier's
-summary, metric and findings, then how the loop ended.
+summary, metric and findings, then how the loop ended. A triage run's rounds show in its Triage
+card instead, under its size and why: each round's lint result, the critic's verdict and notes,
+and a diff of its draft against the previous round's (`RunIterationView.triage`, from the
+round's `details`); a loop that stopped at its cap lists the open questions it left, linked to
+the form that answers them.
 
 ## Consequences
 

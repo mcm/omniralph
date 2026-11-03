@@ -488,6 +488,7 @@ describe("a ready PRD", () => {
       error: null,
       change: "prd",
       size: "M",
+      sizing: null,
       storyCount: 2,
       openQuestions: ["Which currency do invoices use?", "Who can export?"],
       answerQuestions,

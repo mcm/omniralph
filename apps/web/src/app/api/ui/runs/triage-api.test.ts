@@ -70,6 +70,7 @@ function result(openQuestions: string[]) {
     error: null,
     outcome: {
       outcome: "prd",
+      sizing: { size: "epic", reason: "Three stories: export, schedule, email." },
       size: "L",
       title: "Billing export",
       description: "## Introduction\n\nExport invoices.",
@@ -167,6 +168,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/runs/{id}/triage", () => {
       error: null,
       change: "prd",
       size: "L",
+      sizing: { size: "epic", reason: "Three stories: export, schedule, email." },
       storyCount: 3,
       openQuestions: ["Which currency?"],
       answerQuestions: true,

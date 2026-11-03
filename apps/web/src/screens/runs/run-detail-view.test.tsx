@@ -35,7 +35,14 @@ import {
   runSession,
   storyStep,
 } from "@/components/runs/test-fixtures";
-import type { RunDetail, RunList, RunRetryResult, RunTriageSummary } from "@/lib/api/runs";
+import type {
+  RunDetail,
+  RunIterationView,
+  RunList,
+  RunRetryResult,
+  RunTriageSummary,
+  TriageRoundView,
+} from "@/lib/api/runs";
 import { RUN_NOT_FOUND, RunDetailView, type RunMenuExtension } from "./run-detail-view";
 import { RunsView } from "./runs-view";
 import { askRow, BETA_ID, FILTER_OPTIONS, NOW, reviewRow, runRow } from "./test-fixtures";
@@ -115,6 +122,7 @@ function triageSummary(overrides: Partial<RunTriageSummary> = {}): RunTriageSumm
     error: null,
     change: "prd",
     size: "L",
+    sizing: null,
     storyCount: 3,
     openQuestions: ["Which currency do invoices use?", "Who can export?"],
     answerQuestions: false,
@@ -123,15 +131,70 @@ function triageSummary(overrides: Partial<RunTriageSummary> = {}): RunTriageSumm
   };
 }
 
-/** A triage run of TOOL-42. */
-function triageRun(status: RunDetail["status"]): RunDetail {
-  return runDetail(null, {
-    id: RUN_ID,
-    kind: "triage",
-    status,
-    title: "Triage TOOL-42",
-    progress: null,
-  });
+/** A triage round's record: a Story draft that passed both checks, unless overridden. */
+function round(overrides: Partial<TriageRoundView> = {}): TriageRoundView {
+  return {
+    sizing: { size: "story", reason: "One change a session can finish." },
+    title: "Export invoices as CSV",
+    lint: { passed: true, problems: [] },
+    critique: {
+      verdict: "pass",
+      notes: [{ item: "acceptance-criteria", ok: true, note: "Each criterion is checkable." }],
+      openQuestions: [],
+    },
+    changes: null,
+    ...overrides,
+  };
+}
+
+/** Round `number` of a triage loop capped at 3: done and passed, unless overridden. */
+function triageIteration(
+  number: number,
+  overrides: Partial<RunIterationView> = {},
+): RunIterationView {
+  return {
+    id: `it-${number}`,
+    number,
+    status: "done",
+    verdict: "converged",
+    summary: null,
+    findings: [],
+    metric: null,
+    error: null,
+    outcome: null,
+    maxIterations: 3,
+    workerAttemptId: `w${number}`,
+    verifierAttemptId: `c${number}`,
+    createdAt: NOW_AT(-30 + number),
+    verifyingAt: NOW_AT(-29 + number),
+    finishedAt: NOW_AT(-28 + number),
+    triage: round(),
+    ...overrides,
+  };
+}
+
+/** A round sent back: the lint and the critic both failed it. */
+const FAILED_ROUND = round({
+  lint: { passed: false, problems: ["Missing section: Acceptance criteria"] },
+  critique: {
+    verdict: "fail",
+    notes: [{ item: "acceptance-criteria", ok: false, note: "No criterion the loop can check." }],
+    openQuestions: ["Which currency do invoices use?"],
+  },
+});
+
+/** A triage run of TOOL-42, with its rounds. */
+function triageRun(status: RunDetail["status"], iterations: RunIterationView[] = []): RunDetail {
+  return {
+    ...runDetail(null, {
+      id: RUN_ID,
+      kind: "triage",
+      status,
+      title: "Triage TOOL-42",
+      progress: null,
+    }),
+    iterations,
+  };
 }
 
 /** A stopped epic that Retry run can resume. */
@@ -561,6 +624,221 @@ describe("a triage run", () => {
     await loaded();
     expect(within(pane()).queryByRole("region", { name: "Triage" })).toBeNull();
     expect(seen.some((r) => r.path.split("/").at(-1) === "triage")).toBe(false);
+  });
+});
+
+describe("a triage run's iterations", () => {
+  const card = () => within(pane()).getByRole("region", { name: "Triage" });
+  const iterations = () => within(card()).getByRole("region", { name: "Iterations" });
+  const rounds = () => within(within(iterations()).getByRole("list", { name: "Iterations" }));
+  const roundItems = () =>
+    within(iterations()).getByRole("list", { name: "Iterations" }).querySelectorAll(":scope > li");
+
+  it("shows the size and its reason at the top of the card", async () => {
+    detail = triageRun("completed", [triageIteration(1, { outcome: "converged" })]);
+    triage = triageSummary({
+      outcome: "ready",
+      openQuestions: [],
+      sizing: { size: "epic", reason: "Three stories across the API and the UI." },
+    });
+    renderRun();
+    await loaded();
+    const summary = await waitFor(card);
+    const sizing = summary.querySelector(".or-triage-summary__sizing")!;
+    expect(sizing.textContent).toBe("Epic Three stories across the API and the UI.");
+    // It comes before the summary, the questions and the iterations.
+    expect(
+      sizing.compareDocumentPosition(within(summary).getByRole("region", { name: "Iterations" })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("shows a single-round run: the lint passed, the critic's notes and the first draft", async () => {
+    detail = triageRun("completed", [triageIteration(1, { outcome: "converged" })]);
+    triage = triageSummary({ outcome: "ready", openQuestions: [] });
+    renderRun();
+    await loaded();
+    await waitFor(card);
+    expect(roundItems()).toHaveLength(1);
+    const first = within(roundItems()[0] as HTMLElement);
+    expect(first.getByText("Round 1 of 3")).toBeTruthy();
+    expect(first.getByRole("img", { name: "Passed" })).toBeTruthy();
+    expect(first.getByText("Story")).toBeTruthy();
+    expect(first.getByText(/^passed$/)).toBeTruthy();
+    expect(
+      first
+        .getByRole("list", { name: "Critic notes" })
+        .textContent!.includes("acceptance-criteria (met): Each criterion is checkable."),
+    ).toBe(true);
+    expect(first.getByText("First draft.")).toBeTruthy();
+    expect(first.queryByRole("list", { name: "Draft changes" })).toBeNull();
+    expect(
+      within(iterations()).getByText("The lint and the critic passed after 1 round."),
+    ).toBeTruthy();
+    expect(
+      within(iterations()).queryByRole("list", { name: "Open questions left at the cap" }),
+    ).toBeNull();
+  });
+
+  it("shows a multi-round run: what each check sent back and the draft's changes", async () => {
+    detail = triageRun("completed", [
+      triageIteration(1, { verdict: "continue", triage: FAILED_ROUND }),
+      triageIteration(2, {
+        outcome: "converged",
+        triage: round({
+          changes: {
+            additions: 1,
+            deletions: 0,
+            patch:
+              "@@ -1,1 +1,2 @@\n # Export invoices as CSV\n+- [ ] The CSV has one row per invoice",
+            truncated: false,
+          },
+        }),
+      }),
+    ]);
+    triage = triageSummary({ outcome: "ready", openQuestions: [] });
+    renderRun();
+    await loaded();
+    await waitFor(card);
+    expect(roundItems()).toHaveLength(2);
+    const [one, two] = [...roundItems()].map((item) => within(item as HTMLElement));
+    expect(one!.getByRole("img", { name: "Sent back" })).toBeTruthy();
+    expect(one!.getByText(/^failed$/)).toBeTruthy();
+    expect(one!.getByRole("list", { name: "Lint problems" }).textContent).toBe(
+      "Missing section: Acceptance criteria",
+    );
+    expect(one!.getByRole("list", { name: "Critic notes" }).textContent).toContain(
+      "acceptance-criteria (not met): No criterion the loop can check.",
+    );
+    expect(one!.getByRole("list", { name: "Critic questions" }).textContent).toBe(
+      "Which currency do invoices use?",
+    );
+    expect(two!.getByRole("img", { name: "Passed" })).toBeTruthy();
+    const diff = two!.getByRole("list", { name: "Draft changes" });
+    expect(diff.textContent).toContain("+1");
+    expect(diff.querySelector(".or-diff__line--add")!.textContent).toBe(
+      "+- [ ] The CSV has one row per invoice",
+    );
+    expect(
+      within(iterations()).getByText("The lint and the critic passed after 2 rounds."),
+    ).toBeTruthy();
+    expect(rounds().getAllByText(/^Round \d of 3$/)).toHaveLength(2);
+  });
+
+  it("lists the open questions a capped run left, with a link to answer them", async () => {
+    detail = triageRun("completed", [
+      triageIteration(1, { verdict: "continue", triage: FAILED_ROUND }),
+      triageIteration(2, {
+        verdict: "continue",
+        triage: {
+          ...FAILED_ROUND,
+          changes: { additions: 0, deletions: 0, patch: null, truncated: false },
+        },
+      }),
+      triageIteration(3, { verdict: "continue", outcome: "max-iterations", triage: FAILED_ROUND }),
+    ]);
+    triage = triageSummary({
+      answerQuestions: true,
+      openQuestions: ["Missing section: Acceptance criteria", "Which currency do invoices use?"],
+    });
+    renderRun();
+    await loaded();
+    await waitFor(card);
+    expect(roundItems()).toHaveLength(3);
+    expect(
+      within(roundItems()[1] as HTMLElement).getByText("The draft didn't change."),
+    ).toBeTruthy();
+    expect(
+      within(roundItems()[2] as HTMLElement).getByRole("img", { name: "Still failing" }),
+    ).toBeTruthy();
+    expect(
+      within(iterations()).getByText(
+        "It stopped after 3 rounds, its cap, before the lint and the critic both passed.",
+      ),
+    ).toBeTruthy();
+    const left = within(iterations()).getByRole("list", { name: "Open questions left at the cap" });
+    expect(
+      within(left)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Missing section: Acceptance criteria", "Which currency do invoices use?"]);
+    const link = within(iterations()).getByRole("link", { name: "Answer them" });
+    const target = link.getAttribute("href")!.slice(1);
+    // The link goes to the answer form's section.
+    const questions = within(card()).getByRole("region", { name: "Open questions" });
+    expect(questions.getAttribute("aria-labelledby")).toBe(target);
+    expect(within(questions).getByRole("form", { name: OPEN_QUESTIONS_FORM })).toBeTruthy();
+  });
+
+  it("lists a capped run's questions without a link when the user may not answer", async () => {
+    detail = triageRun("completed", [
+      triageIteration(1, {
+        verdict: "continue",
+        outcome: "max-iterations",
+        maxIterations: 1,
+        triage: FAILED_ROUND,
+      }),
+    ]);
+    triage = triageSummary({ answerQuestions: false });
+    renderRun();
+    await loaded();
+    await waitFor(card);
+    expect(
+      within(iterations()).getByRole("list", { name: "Open questions left at the cap" }),
+    ).toBeTruthy();
+    expect(within(iterations()).queryByRole("link", { name: "Answer them" })).toBeNull();
+  });
+
+  it("updates live: a round's checks and the next round appear on the run's change event", async () => {
+    const live = fakeAbly();
+    detail = triageRun("running", [
+      triageIteration(1, {
+        status: "verifying",
+        verdict: null,
+        finishedAt: null,
+        triage: round({ critique: null }),
+      }),
+    ]);
+    triage = triageSummary({ outcome: "triaging" });
+    renderRun({ live });
+    await loaded();
+    await waitFor(card);
+    await waitFor(() =>
+      expect(live.current().subscribed()).toContain(`org:${TEST_ORGANIZATION_ID}:changes`),
+    );
+    const first = within(roundItems()[0] as HTMLElement);
+    expect(first.getByRole("img", { name: "Checking" })).toBeTruthy();
+    expect(first.getByText("checking…")).toBeTruthy();
+
+    detail = triageRun("running", [
+      triageIteration(1, { verdict: "continue", triage: FAILED_ROUND }),
+      triageIteration(2, {
+        status: "working",
+        verdict: null,
+        verifyingAt: null,
+        finishedAt: null,
+        triage: null,
+      }),
+    ]);
+    act(() =>
+      live
+        .current()
+        .deliver(
+          `org:${TEST_ORGANIZATION_ID}:changes`,
+          changeEvent(TEST_ORGANIZATION_ID, { resource: "run", runId: RUN_ID }),
+        ),
+    );
+    await waitFor(() => expect(roundItems()).toHaveLength(2));
+    expect(
+      within(roundItems()[0] as HTMLElement).getByRole("img", { name: "Sent back" }),
+    ).toBeTruthy();
+    expect(
+      within(roundItems()[1] as HTMLElement).getByRole("img", { name: "Revising" }),
+    ).toBeTruthy();
+    // The generic Iterations card isn't shown for a triage run.
+    expect(within(pane()).queryByRole("region", { name: "Iterations", hidden: false })).toBe(
+      iterations(),
+    );
   });
 });
 

@@ -42,6 +42,7 @@ import { changeRequestWebUrl } from "@/lib/repositories/web-url";
 import { describeAttempt, REVIEW_CHECK_TYPES, type AttemptLabelContext } from "@omniralph/shared";
 import { runActions } from "./actions";
 import { runRow } from "./list";
+import { triageRoundViews } from "./triage-rounds";
 import { loadRunQuestion } from "./question";
 import {
   changeRequestName,
@@ -52,7 +53,10 @@ import {
 } from "./reason";
 
 /** A looped run's iteration as the run detail shows it. */
-export function iterationView(iteration: RunIteration): RunIterationView {
+export function iterationView(
+  iteration: RunIteration,
+  triage: RunIterationView["triage"] = null,
+): RunIterationView {
   return {
     id: iteration.id,
     number: iteration.number,
@@ -69,7 +73,18 @@ export function iterationView(iteration: RunIteration): RunIterationView {
     createdAt: iteration.createdAt.toISOString(),
     verifyingAt: iteration.verifyingAt?.toISOString() ?? null,
     finishedAt: iteration.finishedAt?.toISOString() ?? null,
+    triage,
   };
+}
+
+/** A run's iterations as its page shows them: a triage run's with each round's record. */
+function iterationViews(
+  kind: RunIndexEntry["kind"],
+  iterations: RunIteration[],
+): RunIterationView[] {
+  if (kind !== "triage") return iterations.map((iteration) => iterationView(iteration));
+  const rounds = triageRoundViews(iterations);
+  return iterations.map((iteration, index) => iterationView(iteration, rounds[index] ?? null));
 }
 
 const ms = (from: Date | null, to: Date | null) =>
@@ -597,7 +612,7 @@ export async function loadRunDetail(
     reasonLink: reasonFacts && runReasonLink(reasonFacts),
     steps: facts.steps,
     attempts: attemptViews,
-    iterations: iterations.map(iterationView),
+    iterations: iterationViews(run.kind, iterations),
     details: {
       ...details,
       repository: row.repository,
