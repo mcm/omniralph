@@ -152,3 +152,48 @@ export function buildPullRequestCommentRequest(args: {
   }
   return lines.join("\n").trim();
 }
+
+/** A documentation update a documentation check confirmed, as listed in a request. */
+export interface DocumentationUpdateText {
+  path: string;
+  reason: string;
+  suggestion?: string | null;
+}
+
+/**
+ * The request handed to the agent for a documentation check's confirmed
+ * updates on a ralph PR/MR: update exactly those files and push a normal
+ * commit to `branch`.
+ */
+export function buildDocumentationRequest(args: {
+  updates: readonly DocumentationUpdateText[];
+  prNumber: number;
+  prUrl: string;
+  branch: string;
+  term?: ChangeRequestWord;
+}): string {
+  const { updates, prNumber, prUrl, branch } = args;
+  const term = args.term ?? "pull request";
+  const ref = term === "merge request" ? `!${prNumber}` : `#${prNumber}`;
+  const lines = [
+    `Omniralph's documentation check found ${plural(updates.length, "documentation file")} that ${term} ${ref} (${prUrl}) makes wrong or incomplete. Update them on \`${branch}\`:`,
+    "- Update each file listed below so it matches the change. Change only these files, and only what the reason describes; skip any update that is wrong, and say why in your summary.",
+    `- Commit and push \`${branch}\` as a normal commit so the ${term} updates. Don't force-push or rewrite its history.`,
+    "",
+    "Files:",
+  ];
+  updates.slice(0, MAX_REQUEST_FINDINGS).forEach((update, i) => {
+    lines.push(`${i + 1}. \`${update.path}\`: ${clip(update.reason, MAX_FINDING_BODY)}`);
+    const suggestion = update.suggestion?.trim();
+    if (suggestion) {
+      lines.push("Suggested text:", "```", clip(suggestion, MAX_FINDING_BODY), "```");
+    }
+    lines.push("");
+  });
+  if (updates.length > MAX_REQUEST_FINDINGS) {
+    lines.push(
+      `(${updates.length - MAX_REQUEST_FINDINGS} more files not shown; see the documentation comment on the ${term}.)`,
+    );
+  }
+  return lines.join("\n").trim();
+}

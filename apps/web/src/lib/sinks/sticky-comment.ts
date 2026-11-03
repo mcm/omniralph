@@ -34,6 +34,7 @@ import {
   sanitizeCapped,
   type SanitizeContext,
 } from "@/lib/review/sanitize";
+import type { DocumentationResponse } from "@/lib/ralph/pull-request-requests";
 import type { Sink } from "./index";
 
 /**
@@ -86,13 +87,15 @@ export const stickyCommentSink: Sink<never, ReviewTaskResult> = {
  * its summary; a documentation check's (a review with
  * `documentationUpdates`) lists each file to update
  * (`documentationCommentBody`), and is posted only while the review's head
- * is still the PR/MR's current head. A review whose run was superseded by a
- * newer push is left alone. Returns whether it posted.
+ * is still the PR/MR's current head, and says what became of the updates
+ * (`options.handoff`). A review whose run was superseded by a newer push is
+ * left alone. Returns whether it posted.
  */
 export async function postStickyComment(
   db: Database,
   job: Pick<Job, "taskId" | "organizationId">,
   reviewId: string,
+  options: { handoff?: DocumentationResponse | null } = {},
 ): Promise<boolean> {
   const review = await getReview(db, reviewId);
   if (!review || (review.status !== "completed" && review.status !== "budget_exhausted"))
@@ -116,6 +119,7 @@ export async function postStickyComment(
     documentation !== null
       ? documentationCommentBody(documentation, sanitize, {
           budgetExhausted: review.status === "budget_exhausted",
+          handoff: options.handoff ?? null,
         })
       : review.summary
         ? sanitizeCapped(review.summary, sanitize, MAX_SUMMARY_CHARS)
@@ -167,12 +171,14 @@ export const NO_DOCUMENTATION_CHANGES = "No documentation changes needed for thi
 export function documentationCommentBody(
   updates: readonly DocumentationUpdate[],
   sanitize: SanitizeContext,
-  options: { budgetExhausted?: boolean } = {},
+  options: { budgetExhausted?: boolean; handoff?: DocumentationResponse | null } = {},
 ): string {
-  const note = options.budgetExhausted
+  const budgetNote = options.budgetExhausted
     ? "\n\n_The check reached its token cap, so it may have missed some documentation._"
     : "";
-  if (updates.length === 0) return `${NO_DOCUMENTATION_CHANGES}${note}`;
+  if (updates.length === 0) return `${NO_DOCUMENTATION_CHANGES}${budgetNote}`;
+  const handoff = handoffNote(options.handoff ?? null);
+  const note = `${handoff ? `\n\n${handoff}` : ""}${budgetNote}`;
   const count = updates.length;
   const lines = [
     `${count} documentation ${count === 1 ? "file needs" : "files need"} updating for this change:`,
@@ -191,6 +197,25 @@ export function documentationCommentBody(
     lines.push(`_…and ${rest} more ${rest === 1 ? "file" : "files"}: see the run._`);
   }
   return `${lines.join("\n\n")}${note}`;
+}
+
+/**
+ * What became of the updates in Update mode: handed off to Om (naming the
+ * files), or left for a person past the request limit or when Om's commit
+ * for the previous request didn't settle them. Null otherwise.
+ */
+export function handoffNote(handoff: DocumentationResponse | null): string | null {
+  if (!handoff) return null;
+  switch (handoff.status) {
+    case "handed_off":
+      return `Om is committing these updates to this change: ${handoff.paths.map(inlineCode).join(", ")}.`;
+    case "limit":
+      return `Om has already updated the documentation of this change ${handoff.requests} times, so a person needs to finish these updates.`;
+    case "repeated":
+      return "Om already updated these files for an earlier commit and the check still finds them out of date, so a person needs to finish these updates.";
+    default:
+      return null;
+  }
 }
 
 /** One file's list entry: Markdown, its continuation lines indented under the item. */

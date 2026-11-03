@@ -305,6 +305,21 @@ wrong or missing, the suggested text as a code block), or "No documentation chan
 change." Before posting it asks the code host for the PR/MR's head, and a result for a head that is
 no longer current isn't posted. Repos with the check off enqueue the same jobs as before.
 
+#### Updating the documentation of Om's PRs
+
+In Update mode, before the comment is posted, a check that confirmed updates on one of Om's PRs/MRs
+(a coding run's lane, `findLaneByPullRequest`) is handed to that run (`respondToDocumentationCheck`
+in `apps/web/src/lib/ralph/pull-request-requests.ts`): its confirmed updates become one request on
+the lane (`addLaneRequest`, trigger `pr.review-findings`, text from `buildDocumentationRequest`),
+which the request session ships as a normal commit to the branch. Each request is recorded in
+`documentation_requests`, unique per (repo, PR/MR number, head SHA). Nothing is requested when the
+coding run is stopped or failed, Coding is off, the check was superseded, the PR/MR is closed or has
+moved past the checked head, or the head already has a request (the comment still names the files
+handed off for it). Past three requests on a PR/MR (`MAX_DOCUMENTATION_REQUESTS_PER_PULL_REQUEST`),
+or when every file was already in the PR/MR's previous request (so Om's docs commit never starts
+another request for the same files), nothing is requested and the comment says a person needs to
+finish. When the updates were handed off, the comment says so and names the files.
+
 #### Repo settings
 
 Each repo sets its check on the Repos page's Reviews card (Documentation section), saved with the

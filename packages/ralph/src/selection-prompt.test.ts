@@ -286,6 +286,8 @@ describe("prompt", () => {
         progressFile: "/tmp/p.md",
         attempt: 1,
         maxAttempts: 3,
+        // The snapshots' progress heading carries this date.
+        now: new Date("2026-11-02T12:00:00Z"),
       });
 
     it("shows the epic as context, not as a PRD", () => {
