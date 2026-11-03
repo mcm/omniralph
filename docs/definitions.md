@@ -284,6 +284,16 @@ iteration's trigger context (`documentation.earlier`) lists what was confirmed (
 again) and dropped. The loop converges once an iteration confirms no update of a file no earlier
 iteration confirmed (`documentationLoopVerdict`), or stops at the depth's iteration cap.
 
+A check is one `reviews` row (summary-only) whose loop runs on the review loop driver
+(`apps/web/src/lib/review/loop.ts`, run kind `review`), started by `startDocumentationCheckLoop`
+with the depth's iteration cap. Its iterations are handed to `apps/web/src/lib/review/docs-loop.ts`:
+the `sticky-comment` sink leaves each worker's result to the loop, an iteration that reports no
+update needs no verifier, and a verifier that isn't a `run.invoked` query playbook confirms nothing.
+When the loop ends, the review is saved with no findings and every confirmed update, one per file,
+in `reviews.documentation_updates` (null for every other review); its summary names the files, or
+says "No documentation changes needed for this change." A later iteration that fails keeps what
+the earlier ones confirmed; a first one that fails fails the review.
+
 #### Documentation depth
 
 `DOCUMENTATION_DEPTHS` in `@omniralph/shared` (`documentation-check.ts`), beside the review depths,
