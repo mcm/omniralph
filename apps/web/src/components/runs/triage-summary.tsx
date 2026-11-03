@@ -13,8 +13,9 @@ import {
 } from "@omniralph/ui";
 import { IconFileText, IconListCheck } from "@tabler/icons-react";
 import { useId } from "react";
-import type { RunTriageSummary, TriageSummaryOutcome } from "@/lib/api/runs";
+import type { RunIterationView, RunTriageSummary, TriageSummaryOutcome } from "@/lib/api/runs";
 import { OpenQuestionsForm } from "./open-questions-form";
+import { TRIAGE_SIZE_WORDS, TriageIterations } from "./triage-iterations";
 import { useRunTriage } from "./use-run-triage";
 import "./triage-summary.css";
 
@@ -45,17 +46,26 @@ export interface TriageSummaryProps {
   /** Opens the work item's PRD in a sheet; no View PRD button without it. */
   onViewPrd?: () => void;
   headingLevel?: HeadingLevel;
+  /** The run's iterations (a looped triage's rounds), shown in its Iterations section. */
+  iterations?: readonly RunIterationView[];
 }
 
 /**
  * A triage run's card in its detail: the outcome (still triaging, Ready to start, Needs
  * answers, Needs feature planning, failed or stopped) with what triage did (a new PRD, a reformatted epic or none),
- * the size and planned stories; Om's summary or why it failed; the open questions it left
- * (a form to answer them when the run needs answers and the user may answer); and,
- * collapsed, the issue as it read before triage. View PRD opens the PRD in a sheet.
- * Nothing while it loads or when it can't be loaded (the run's Activity still shows it).
+ * the size and planned stories; its sizing (Fix, Story, Epic or Feature) and why; Om's
+ * summary or why it failed; the open questions it left (a form to answer them when the run
+ * needs answers and the user may answer); its rounds (`TriageIterations`, from `iterations`);
+ * and, collapsed, the issue as it read before triage. View PRD opens the PRD in a sheet.
+ * Nothing while it loads or when it can't be loaded (the run's Activity still shows it). Live:
+ * the run's change events refetch the summary and the run's iterations.
  */
-export function TriageSummary({ runId, onViewPrd, headingLevel = 3 }: TriageSummaryProps) {
+export function TriageSummary({
+  runId,
+  onViewPrd,
+  headingLevel = 3,
+  iterations = [],
+}: TriageSummaryProps) {
   const triage = useRunTriage(runId);
   const questionsId = useId();
   if (!triage.data) return null;
@@ -85,6 +95,12 @@ export function TriageSummary({ runId, onViewPrd, headingLevel = 3 }: TriageSumm
           <MetaBadge icon={IconListCheck} text={storiesText(summary.storyCount)} />
         ) : null}
       </div>
+      {summary.sizing ? (
+        <p className="or-triage-summary__sizing">
+          <span className="or-triage-summary__size">{TRIAGE_SIZE_WORDS[summary.sizing.size]}</span>{" "}
+          {summary.sizing.reason}
+        </p>
+      ) : null}
       {summary.error ? (
         <pre className="or-triage-summary__error">{summary.error}</pre>
       ) : summary.summary && summary.outcome !== "triaging" ? (
@@ -106,6 +122,12 @@ export function TriageSummary({ runId, onViewPrd, headingLevel = 3 }: TriageSumm
           )}
         </section>
       ) : null}
+      <TriageIterations
+        iterations={iterations}
+        openQuestions={summary.outcome === "triaging" ? [] : summary.openQuestions}
+        answerHref={summary.answerQuestions ? `#${questionsId}` : undefined}
+        heading={SubHeading}
+      />
       {summary.originalIssue ? (
         <DetailsSection title="Original issue" className="or-triage-summary__original">
           <p className="or-triage-summary__original-title">{summary.originalIssue.title}</p>

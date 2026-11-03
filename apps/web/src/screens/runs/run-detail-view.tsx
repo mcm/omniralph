@@ -251,7 +251,9 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
         />
       ) : null}
       <div className="or-run-detail__cards">
-        {run.kind === "triage" ? <TriageSummary runId={run.id} onViewPrd={openPrd} /> : null}
+        {run.kind === "triage" ? (
+          <TriageSummary runId={run.id} onViewPrd={openPrd} iterations={run.iterations} />
+        ) : null}
         <ReviewPlanCard run={run} headingLevel={3} />
         {run.steps.length > 0 ? (
           <RunProgress
@@ -296,7 +298,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
             }
           />
         ) : null}
-        <RunIterations run={run} headingLevel={3} />
+        {run.kind === "triage" ? null : <RunIterations run={run} headingLevel={3} />}
         <RunSession run={run} />
         <RunActivity run={run} reason={reason} headingLevel={3} />
       </div>
@@ -318,7 +320,7 @@ function RunDetailContent({ run, menuItems }: { run: RunDetail; menuItems?: RunM
  * (Design rule 5, with View PRD for a run with a work item), its status line, title, a
  * multi-repo epic's lanes and, for a waiting, stopped or failed run, why;
  * an open question's form; a looped review's Plan; the progress card with the selected step (`?step=`, else
- * `defaultStep`) and its `StepPanel`; a triage run's summary; a looped run's iterations; an
+ * `defaultStep`) and its `StepPanel`; a triage run's summary (with its rounds); another looped run's iterations; an
  * epic's or request's collapsed
  * Session; and the run's Activity. A live query: the run's
  * change events refetch it. `menuItems` adds entries to the ⋯ menu, which may open an

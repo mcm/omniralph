@@ -1689,6 +1689,72 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     });
   });
 
+  it("shows a triage run's rounds: each draft's lint, critique and changes since the last", async () => {
+    session += 1;
+    const { run } = await createTriageRun(db, {
+      organizationId: orgId,
+      trackerIssueId: `issue-rounds-${session}`,
+      trackerSessionId: `session-rounds-${session}`,
+      trigger: "label",
+    });
+    const draft = (title: string) => ({
+      outcome: "prd",
+      sizing: { size: "story", reason: "One session." },
+      size: "M",
+      title,
+      description: "## Goal\n\nExport invoices.",
+      openQuestions: [],
+      stories: [],
+    });
+    const iteration = async (number: number, details: Record<string, unknown> | null) => {
+      const row = await insertRunIteration(db, {
+        run: { kind: "triage", id: run.id, organizationId: orgId },
+        number,
+        feedback: number === 1 ? null : "Add acceptance criteria.",
+        verifierPlaybookId: "builtin:critique-plan",
+        maxIterations: 3,
+        stallRounds: 0,
+      });
+      await updateRunIteration(db, row!.id, { details });
+    };
+    await iteration(1, {
+      draft: draft("Export"),
+      lint: { passed: false, problems: ["Missing section: Acceptance criteria"] },
+      critique: {
+        verdict: "fail",
+        notes: [{ item: "criteria", ok: false, note: "None." }],
+        openQuestions: [],
+      },
+    });
+    await iteration(2, {
+      draft: draft("Export invoices"),
+      lint: { passed: true, problems: [] },
+      critique: null,
+    });
+    await iteration(3, null);
+
+    const [one, two, three] = (await detailPage(run.id)).iterations.map((it) => it.triage);
+    expect(one).toEqual({
+      sizing: { size: "story", reason: "One session." },
+      title: "Export",
+      lint: { passed: false, problems: ["Missing section: Acceptance criteria"] },
+      critique: {
+        verdict: "fail",
+        notes: [{ item: "criteria", ok: false, note: "None." }],
+        openQuestions: [],
+      },
+      changes: null,
+    });
+    expect(two).toMatchObject({
+      title: "Export invoices",
+      critique: null,
+      changes: { additions: 1, deletions: 1, truncated: false },
+    });
+    expect(two!.changes!.patch).toContain("-# Export\n+# Export invoices");
+    // A round still drafting has no record yet.
+    expect(three).toBeNull();
+  });
+
   it("matches a legacy review.run job to its pass by the payload's top-level review ID", async () => {
     // As migration 0084 made them: the review's run has the review's own ID.
     const review = await createReview(db, {
