@@ -42,6 +42,11 @@ import {
   type RalphPullRequestAction,
 } from "@omniralph/shared";
 import { notifyRunThread } from "./chat-notify";
+import {
+  documentationRunNotApplied,
+  notAppliedError,
+  pullRequestRunOutcome,
+} from "./documentation-runs";
 import { ralphJobPayload } from "./coding";
 import { conversationFor } from "./conversation";
 import { settleFindingThreads } from "./finding-threads";
@@ -273,11 +278,12 @@ export async function applyRequestJob(
         }),
         ...(!isTrackerRun(run) && { fromChat: true }),
       };
-      if (result.pullRequest) {
+      // A pull-request run's PR/MR is a person's: it's never changed.
+      if (result.pullRequest && run.origin !== "pull-request") {
         const note = await applyPullRequestAction(deps, tx, run, lane, result.pullRequest, epic);
         if (note) notes.push(note);
       }
-      await adoptPullRequest(deps, tx, run, lane);
+      if (run.origin !== "pull-request") await adoptPullRequest(deps, tx, run, lane);
       // A failed session's "fixed" is only its own claim (e.g. the push may
       // have failed), so its findings stay open.
       if (result.findings?.length && !result.error) {
@@ -306,6 +312,24 @@ export async function applyRequestJob(
   await updateRun(tx, run.id, {
     requestOutput: [run.requestOutput?.trim(), prefixed].filter(Boolean).join("\n\n"),
   });
+  // A pull-request run that didn't commit its updates fails (no retry), and its comment says so.
+  if (run.origin === "pull-request") {
+    const outcome = await pullRequestRunOutcome(deps, {
+      job,
+      result: parsed?.success ? parsed.data : null,
+      lane,
+      found: lane ? await getRepositoryWithConnection(deps.db, lane.repositoryId) : null,
+      expectedHeadSha: payload.data.expectedHeadSha,
+    });
+    if (!outcome.applied) {
+      await updateRun(tx, run.id, {
+        status: "failed",
+        waitingOn: null,
+        error: notAppliedError(outcome.reason),
+      });
+      await documentationRunNotApplied(deps, run, outcome.reason);
+    }
+  }
   return { busy: false };
 }
 

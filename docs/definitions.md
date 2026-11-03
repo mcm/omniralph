@@ -320,6 +320,27 @@ or when every file was already in the PR/MR's previous request (so Om's docs com
 another request for the same files), nothing is requested and the comment says a person needs to
 finish. When the updates were handed off, the comment says so and names the files.
 
+#### Updating the documentation of people's PRs
+
+When the repo's update targets are `same-repo`, a check on a PR/MR that isn't Om's starts a coding
+run of origin `pull-request` instead (`startPullRequestDocumentationRun`, same file), if the PR/MR is
+open at the checked head and its branch is in the repo (`ChangeRequest.sameRepository`). The run's
+one lane is the PR/MR's existing head branch, linked to the PR/MR by URL only (`prNumber` stays
+null, so review findings, CI fixes and cleanup never take it for one of Om's), and its first request
+is the docs request (`buildDocumentationRequest` with `personsBranch`). The request, recorded in
+`documentation_requests` with the run, binds the run to the checked head
+(`apps/web/src/lib/ralph/documentation-runs.ts`): before its job is enqueued the code host is asked
+for the branch's head (`ScmAdapter.getBranchHead`), and the job's payload carries it as
+`expectedHeadSha` with history rewrites off. The agent then does nothing if the branch moved, and
+`ship` pushes exactly one normal commit on top of the checked head: it refuses `forceWithLease`, a
+second commit, and a branch someone pushed to meanwhile. PR/MR changes the session asks for are never
+made. A run that didn't push its commit (the branch moved, the job failed or committed nothing) fails
+without a retry, and the comment says the updates weren't applied and why (unless a newer check of
+the PR/MR already replaced it). Fork PRs/MRs, update targets `omniralph` and repos with Coding off
+get the comment only. The per-head and per-PR/MR limits are the same as on Om's PRs/MRs, counted
+under one lock per PR/MR (`lockDocumentationRequests`) whichever run a request goes to. The Runs page
+lists these runs as started by a change to the PR/MR.
+
 #### Repo settings
 
 Each repo sets its check on the Repos page's Reviews card (Documentation section), saved with the

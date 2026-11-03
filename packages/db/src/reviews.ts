@@ -8,7 +8,7 @@
  * failure note) was posted to the code host, which makes posting idempotent
  * per review.
  */
-import { and, asc, desc, eq, inArray, isNull, lt, ne, notInArray } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, notInArray } from "drizzle-orm";
 import type { DocumentationUpdate, ReviewDepth, ReviewPassRecord } from "@omniralph/shared";
 import { currentChangeCollector, recordChange } from "./changes.js";
 import type { Database } from "./client.js";
@@ -141,6 +141,32 @@ export async function markReviewRunRunning(db: Database, reviewRunId: string): P
  */
 export function reviewRunSuperseded(run: Pick<ReviewRun, "status" | "error">): boolean {
   return run.status === "skipped" && run.error !== null;
+}
+
+/**
+ * Whether a review of the same task on the same PR/MR started after `review`
+ * and ended (completed or out of budget): its comment replaced this one's.
+ */
+export async function hasNewerEndedReview(
+  db: Database,
+  review: Pick<Review, "id" | "repositoryId" | "prNumber" | "taskId" | "createdAt">,
+): Promise<boolean> {
+  if (!review.taskId) return false;
+  const [row] = await db
+    .select({ id: reviews.id })
+    .from(reviews)
+    .where(
+      and(
+        eq(reviews.repositoryId, review.repositoryId),
+        eq(reviews.prNumber, review.prNumber),
+        eq(reviews.taskId, review.taskId),
+        ne(reviews.id, review.id),
+        gt(reviews.createdAt, review.createdAt),
+        inArray(reviews.status, ["completed", "budget_exhausted"]),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
 }
 
 export async function skipReviewRuns(

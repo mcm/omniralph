@@ -159,7 +159,12 @@ export const ralphMessageKind = pgEnum("ralph_message_kind", ["guidance", "reque
  */
 export const ralphRunMode = pgEnum("ralph_run_mode", ["epic", "request"]);
 /** Where a run came from: a tracker delegation or mention, or a chat thread (`chat_thread_id`). */
-export const ralphRunOrigin = pgEnum("ralph_run_origin", ["tracker", "chat"]);
+/**
+ * Where a ralph run came from: a tracker delegation or mention, a chat
+ * thread, or a pull request (`pull-request`: a documentation check's
+ * confirmed updates committed to a person's PR/MR on its own head branch).
+ */
+export const ralphRunOrigin = pgEnum("ralph_run_origin", ["tracker", "chat", "pull-request"]);
 /** A chat thread's run: a query task's job, or a coding run. */
 export const chatThreadRunKind = pgEnum("chat_thread_run_kind", ["query", "coding"]);
 export const chatRunEventKind = pgEnum("chat_run_event_kind", [
@@ -2152,7 +2157,8 @@ export interface RalphAttachmentLink {
 /**
  * A delegated work item being built story by story (the ralph loop), or a
  * request-mode run started from a chat thread (`origin` `chat`: no tracker
- * issue, session or stories). The control panel owns this state; every change goes through a row lock
+ * issue, session or stories) or for a person's PR/MR (`origin`
+ * `pull-request`: a documentation check's updates, on the PR/MR's head branch). The control panel owns this state; every change goes through a row lock
  * (`lockRun`) because webhooks and job outcomes race.
  */
 export const ralphRuns = pgTable(
@@ -2242,15 +2248,16 @@ export const ralphRuns = pgTable(
       .where(sql`origin = 'chat' and status in ('pending', 'running', 'waiting')`),
     index("ralph_runs_chat_thread_id_idx").on(t.chatThreadId, t.createdAt),
     /**
-     * A tracker run has its issue and agent session; a chat run only does what
-     * it was asked. A chat run starts with its thread (`createRun` requires
+     * A tracker run has its issue and agent session; a chat or pull-request
+     * run only does what it was asked (the new enum value isn't named here, so
+     * this check doesn't depend on it). A chat run starts with its thread (`createRun` requires
      * it), but loses it when the thread goes (e.g. the chat connection is
      * removed), so the thread can't be required here.
      */
     check(
       "ralph_runs_origin_check",
       sql`(origin = 'tracker' and tracker_issue_id is not null and tracker_identifier is not null and tracker_session_id is not null)
-        or (origin = 'chat' and mode = 'request')`,
+        or (origin <> 'tracker' and mode = 'request')`,
     ),
     index("ralph_runs_tracker_issue_id_idx").on(t.trackerIssueId, t.createdAt),
     index("ralph_runs_status_created_at_idx").on(t.status, t.createdAt),

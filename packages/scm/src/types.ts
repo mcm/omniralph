@@ -37,6 +37,11 @@ export interface ChangeRequest {
   baseRef: string;
   headRef: string;
   url: string;
+  /**
+   * Whether the head branch is in this repository (false for a PR/MR from a
+   * fork). Absent when unknown: treat it as a fork.
+   */
+  sameRepository?: boolean;
 }
 
 /**
@@ -237,6 +242,8 @@ export interface ScmAdapter {
   hasWriteAccess(repo: RepoRef, username: string): Promise<boolean>;
   /** The repository's default branch (the base of ralph runs). */
   getDefaultBranch(repo: RepoRef): Promise<string>;
+  /** The commit branch `branch` of the repository points at; null when it doesn't exist. */
+  getBranchHead(repo: RepoRef, branch: string): Promise<string | null>;
   /** The open PR/MR whose source is `sourceBranch` (in this repository), if any. */
   findOpenChangeRequest(repo: RepoRef, sourceBranch: string): Promise<OpenChangeRequest | null>;
   /**

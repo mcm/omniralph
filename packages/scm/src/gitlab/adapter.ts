@@ -250,6 +250,8 @@ export class GitLabAdapter implements ScmAdapter {
       baseRef: mr.target_branch,
       headRef: mr.source_branch,
       url: mr.web_url,
+      // An MR from a fork has its source branch in another project.
+      sameRepository: mr.source_project_id === mr.target_project_id,
     };
   }
 
@@ -399,6 +401,16 @@ export class GitLabAdapter implements ScmAdapter {
     if (!project.default_branch)
       throw new Error(`GitLab project ${repo.fullPath} has no default branch`);
     return project.default_branch;
+  }
+
+  async getBranchHead(repo: RepoRef, branch: string): Promise<string | null> {
+    try {
+      const found = await this.api.Branches.show(projectId(repo), branch);
+      return found.commit.id as string;
+    } catch (error) {
+      if (statusOf(error) === 404) return null;
+      throw error;
+    }
   }
 
   async findOpenChangeRequest(

@@ -117,6 +117,9 @@ export const RUN_ORIGIN_MAP = {
     "tracker:request": "tracker_mention",
     "chat:epic": "chat",
     "chat:request": "chat",
+    // A documentation check's updates to a person's PR/MR: started by a push to it.
+    "pull-request:epic": "pr_webhook",
+    "pull-request:request": "pr_webhook",
   } satisfies Record<
     `${EnumValue<typeof ralphRunOrigin>}:${EnumValue<typeof ralphRunMode>}`,
     RunOrigin
@@ -134,7 +137,7 @@ export const RUN_ORIGIN_MAP = {
 
 /** A SQL literal of one of the mapping tables' keys or values (known identifiers only). */
 function literal(value: string): SQL {
-  if (!/^[a-z_:]+$/.test(value)) throw new Error(`Not a mapping value: ${value}`);
+  if (!/^[a-z_:-]+$/.test(value)) throw new Error(`Not a mapping value: ${value}`);
   return sql.raw(`'${value}'`);
 }
 

@@ -559,6 +559,66 @@ describe("coding runs of a request task", { timeout: 60_000 }, () => {
     expect(remoteHead()).not.toBe(pushedOnce);
   });
 
+  describe("bound to a person's PR/MR head (`expectedHeadSha`)", () => {
+    it("fails without a session when the branch moved since the checked head", async () => {
+      const checked = await remote.commit({ "README.md": "v1\n" }, branch);
+      const moved = await remote.commit({ "README.md": "v2\n" }, branch);
+      const { query, calls } = fakeQuery(async function* () {
+        yield result({ summary: "Should not run." });
+      });
+      const out = await run(spec(payload({ expectedHeadSha: checked })), query);
+
+      expect(calls).toHaveLength(0);
+      expect(out.error).toContain(`moved since the checked commit \`${checked.slice(0, 12)}\``);
+      expect(out.error).toContain(moved.slice(0, 12));
+      expect(out.pushed).toBeUndefined();
+      expect(remoteHead()).toBe(moved);
+    });
+
+    it("ships one normal commit on top of the checked head, and refuses a second one or a force push", async () => {
+      const checked = await remote.commit({ "README.md": "v1\n" }, branch);
+      const outcomes: Awaited<ReturnType<typeof ship>>[] = [];
+      const { query } = fakeQuery(async function* (call) {
+        const cwd = call.options.cwd!;
+        await writeFile(path.join(cwd, "README.md"), "v1, documented\n");
+        outcomes.push(await ship(call, { message: "Update the README" }));
+        await writeFile(path.join(cwd, "README.md"), "v1, documented twice\n");
+        outcomes.push(await ship(call, { message: "Again" }));
+        outcomes.push(await ship(call, { forceWithLease: true }));
+        git(cwd, "checkout", "--quiet", "--", ".");
+        yield result({ summary: "Updated the README." });
+      });
+      const out = await run(spec(payload({ expectedHeadSha: checked })), query);
+
+      const head = remoteHead();
+      expect(outcomes[0]).toEqual({
+        isError: false,
+        outcome: { commitSha: head, pushed: true, error: null },
+      });
+      expect(git(remote.bare, "rev-parse", `${head}^`)).toBe(checked);
+      expect(outcomes[1]!.outcome.error).toContain("no longer at the checked commit");
+      expect(outcomes[2]!.outcome.error).toContain("`forceWithLease` was refused");
+      expect(git(remote.bare, "rev-list", "--count", `${checked}..${branch}`)).toBe("1");
+      expect(out).toMatchObject({ error: null, commitSha: head, pushed: true });
+    });
+
+    it("doesn't push when someone pushed to the branch during the session", async () => {
+      const checked = await remote.commit({ "README.md": "v1\n" }, branch);
+      let theirs = "";
+      const { query } = fakeQuery(async function* (call) {
+        theirs = await remote.commit({ "other.txt": "theirs\n" }, branch);
+        await writeFile(path.join(call.options.cwd!, "README.md"), "v1, documented\n");
+        const out = await ship(call, { message: "Update the README" });
+        yield result({ summary: out.outcome.error ?? "pushed" });
+      });
+      const out = await run(spec(payload({ expectedHeadSha: checked })), query);
+
+      expect(out.summary).toContain("moved since the checked commit");
+      expect(remoteHead()).toBe(theirs);
+      expect(out.pushed).toBe(false);
+    });
+  });
+
   it("only ever ships the run's branch", async () => {
     const { query } = fakeQuery(async function* (call) {
       const cwd = call.options.cwd!;

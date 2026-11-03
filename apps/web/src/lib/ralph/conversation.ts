@@ -398,7 +398,21 @@ export function trackerConversation(
   return new TrackerConversation(tracker, sessionId, issueId);
 }
 
-/** The conversation a run posts to: its tracker session (or work item), or its chat thread. */
+/**
+ * A pull-request run's conversation: it has no thread. What it did shows in
+ * the PR/MR's documentation comment and on its run page; posts are dropped.
+ */
+export class PullRequestConversation implements RunConversation {
+  readonly name = "the pull request";
+  async post(): Promise<void> {}
+  async updatePlan(): Promise<void> {}
+  async addLink(): Promise<void> {}
+}
+
+/**
+ * The conversation a run posts to: its tracker session (or work item), its
+ * chat thread, or none for a pull-request run (`PullRequestConversation`).
+ */
 export function conversationFor(
   run: Pick<
     RalphRun,
@@ -416,5 +430,6 @@ export function conversationFor(
   if (isTrackerRun(run)) {
     return new TrackerConversation(deps.tracker, run.trackerSessionId, run.trackerIssueId);
   }
+  if (run.origin === "pull-request") return new PullRequestConversation();
   return new ChatConversation(run, deps.chat);
 }

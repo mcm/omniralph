@@ -2,6 +2,7 @@ import "server-only";
 import {
   getReview,
   getReviewRun,
+  hasNewerEndedReview,
   reviewRunSuperseded,
   writeStickyComment,
   type Database,
@@ -88,14 +89,17 @@ export const stickyCommentSink: Sink<never, ReviewTaskResult> = {
  * `documentationUpdates`) lists each file to update
  * (`documentationCommentBody`), and is posted only while the review's head
  * is still the PR/MR's current head, and says what became of the updates
- * (`options.handoff`). A review whose run was superseded by a newer push is
- * left alone. Returns whether it posted.
+ * (`options.handoff`). A later note on a documentation check
+ * (`options.later`, e.g. that its updates weren't applied because the branch
+ * moved) is posted whatever the head, unless a newer check of the PR/MR
+ * already ended (its comment replaced this one's). A review whose run was
+ * superseded by a newer push is left alone. Returns whether it posted.
  */
 export async function postStickyComment(
   db: Database,
   job: Pick<Job, "taskId" | "organizationId">,
   reviewId: string,
-  options: { handoff?: DocumentationResponse | null } = {},
+  options: { handoff?: DocumentationResponse | null; later?: boolean } = {},
 ): Promise<boolean> {
   const review = await getReview(db, reviewId);
   if (!review || (review.status !== "completed" && review.status !== "budget_exhausted"))
@@ -106,7 +110,9 @@ export async function postStickyComment(
   if (!taskId) return false;
   const { adapter, repo, sanitize } = await repositoryTarget(db, review, run?.prAuthor ?? null);
   const documentation = review.documentationUpdates;
-  if (documentation !== null && !(await isCurrentHead(adapter, repo, review))) {
+  if (documentation !== null && options.later) {
+    if (await hasNewerEndedReview(db, { ...review, taskId })) return false;
+  } else if (documentation !== null && !(await isCurrentHead(adapter, repo, review))) {
     console.info("not posting the documentation check of a head that is no longer current", {
       reviewId: review.id,
       prNumber: review.prNumber,
@@ -201,8 +207,9 @@ export function documentationCommentBody(
 
 /**
  * What became of the updates in Update mode: handed off to Om (naming the
- * files), or left for a person past the request limit or when Om's commit
- * for the previous request didn't settle them. Null otherwise.
+ * files), left for a person past the request limit or when Om's commit for
+ * the previous request didn't settle them, or not applied (e.g. the branch
+ * moved before Om could commit them). Null otherwise.
  */
 export function handoffNote(handoff: DocumentationResponse | null): string | null {
   if (!handoff) return null;
@@ -213,6 +220,8 @@ export function handoffNote(handoff: DocumentationResponse | null): string | nul
       return `Om has already updated the documentation of this change ${handoff.requests} times, so a person needs to finish these updates.`;
     case "repeated":
       return "Om already updated these files for an earlier commit and the check still finds them out of date, so a person needs to finish these updates.";
+    case "not_applied":
+      return `Om couldn't commit these updates to this change, so they weren't applied: ${handoff.reason}.`;
     default:
       return null;
   }

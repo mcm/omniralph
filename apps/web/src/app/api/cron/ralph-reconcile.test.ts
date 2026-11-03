@@ -110,10 +110,10 @@ describe("GET /api/cron/ralph-reconcile", () => {
     ]);
   });
 
-  it("reconciles the chat runs of organizations without Linear, with a disconnected gateway", async () => {
+  it("reconciles the chat and pull-request runs of organizations without Linear, with a disconnected gateway", async () => {
     state.organizations = ["org-a"];
     state.chatOrganizations = ["org-a", "org-chat"];
-    expect(await (await cron()).json()).toMatchObject({ organizations: 2, reconciled: 4 });
+    expect(await (await cron()).json()).toMatchObject({ organizations: 2, reconciled: 6 });
     expect(state.passes).toEqual([
       ["runs", "org-a", "org-a"],
       ["cleanup", "org-a", "org-a"],
@@ -121,6 +121,9 @@ describe("GET /api/cron/ralph-reconcile", () => {
       ["runs", "org-chat", "disconnected", "chat"],
       ["cleanup", "org-chat", "disconnected", "chat"],
       ["ci", "org-chat", "disconnected", "chat"],
+      ["runs", "org-chat", "disconnected", "pull-request"],
+      ["cleanup", "org-chat", "disconnected", "pull-request"],
+      ["ci", "org-chat", "disconnected", "pull-request"],
     ]);
   });
 

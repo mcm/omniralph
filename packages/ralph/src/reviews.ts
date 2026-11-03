@@ -162,8 +162,9 @@ export interface DocumentationUpdateText {
 
 /**
  * The request handed to the agent for a documentation check's confirmed
- * updates on a ralph PR/MR: update exactly those files and push a normal
- * commit to `branch`.
+ * updates on a PR/MR: update exactly those files and push a normal commit to
+ * `branch`. On a person's PR/MR (`personsBranch`), the branch isn't Om's:
+ * one commit through `ship`, nothing else touched.
  */
 export function buildDocumentationRequest(args: {
   updates: readonly DocumentationUpdateText[];
@@ -171,14 +172,22 @@ export function buildDocumentationRequest(args: {
   prUrl: string;
   branch: string;
   term?: ChangeRequestWord;
+  personsBranch?: boolean;
 }): string {
   const { updates, prNumber, prUrl, branch } = args;
   const term = args.term ?? "pull request";
   const ref = term === "merge request" ? `!${prNumber}` : `#${prNumber}`;
+  const commit = args.personsBranch
+    ? [
+        `- \`${branch}\` is a person's branch. Don't commit yourself: call the \`ship\` tool once, with a commit message, to commit your changes and push them as one normal commit. Never force-push, rewrite its history, open a ${term} or change this one.`,
+      ]
+    : [
+        `- Commit and push \`${branch}\` as a normal commit so the ${term} updates. Don't force-push or rewrite its history.`,
+      ];
   const lines = [
     `Omniralph's documentation check found ${plural(updates.length, "documentation file")} that ${term} ${ref} (${prUrl}) makes wrong or incomplete. Update them on \`${branch}\`:`,
     "- Update each file listed below so it matches the change. Change only these files, and only what the reason describes; skip any update that is wrong, and say why in your summary.",
-    `- Commit and push \`${branch}\` as a normal commit so the ${term} updates. Don't force-push or rewrite its history.`,
+    ...commit,
     "",
     "Files:",
   ];
