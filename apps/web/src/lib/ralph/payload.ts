@@ -319,12 +319,17 @@ export interface RequestPayloadInput {
   attachments?: readonly RalphAttachment[];
   /** The run's hidden ref, when the lane's story commits may only be there (`pushTiming: end`). */
   hiddenRef?: string;
+  /** The head a pull-request run is bound to (`lib/ralph/documentation-runs.ts`). */
+  expectedHeadSha?: string;
 }
 
 /**
  * The payload of a `ralph.request` job: a lane's pending requests with the
  * epic as context (status, stories, PR/MR, progress log, quality gates) and
  * the repository's `historyRewrite`. A `/ship` among them makes it a ship job.
+ * A pull-request run (a person's PR/MR) never rewrites history and is bound
+ * to its checked head (`expectedHeadSha`); its prompt is a chat request's
+ * (no tracker, no stories), which agents of every version know.
  */
 export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPayload {
   const { run, lane, repository, connection, epic } = input;
@@ -336,7 +341,7 @@ export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPay
     branch: lane.branch,
     baseBranch: lane.baseBranch,
     settings: jobSettings(repository, input.coding),
-    source: run.origin === "chat" ? "chat" : "tracker",
+    source: run.origin === "tracker" ? "tracker" : "chat",
     trackerProvider: run.trackerProvider,
     trackerName: trackerName(run.trackerProvider),
     epic: {
@@ -351,10 +356,11 @@ export function buildRequestPayload(input: RequestPayloadInput): RalphRequestPay
     prUrl: url(lane.prUrl ?? undefined),
     progress: tailOf(run.progress || initialProgress(`${epic.identifier}: ${epic.title}`)),
     qualityGates: storyQualityGates(run.kind, epic, repository, input.coding),
-    historyRewrite: repository.historyRewrite,
+    historyRewrite: run.origin === "pull-request" ? "never" : repository.historyRewrite,
     resumeSessionId: input.resumeSessionId,
     attachments: input.attachments ?? [],
     ship: requests.some((r) => r.ship === true),
     ...(input.hiddenRef && { hiddenRef: input.hiddenRef }),
+    ...(input.expectedHeadSha && { expectedHeadSha: input.expectedHeadSha }),
   });
 }

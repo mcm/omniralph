@@ -12,6 +12,7 @@ import {
 import {
   MAX_LEASE_SECONDS,
   ralphStashPrefix,
+  ZERO_USAGE,
   type RalphPullRequestAction,
   type RalphRequestPayload,
   type RalphRequestResult,
@@ -198,6 +199,22 @@ export async function runRequestAttempt(args: RequestAttemptArgs): Promise<Ralph
         signal: ctx.signal,
       },
       async (worktree) => {
+        // A run bound to a checked head (a person's PR/MR) does nothing once the branch moved.
+        if (payload.expectedHeadSha) {
+          const head = (await worktree.git(["rev-parse", "HEAD"])).trim();
+          if (head !== payload.expectedHeadSha) {
+            const error = branchMovedError(payload, head);
+            log.warn({ head, expected: payload.expectedHeadSha }, "the branch moved; not running");
+            relay.post({ type: "thought", body: error, ephemeral: false });
+            return {
+              summary: "",
+              error,
+              sessionId: null,
+              usage: ZERO_USAGE,
+              durationMs: Date.now() - started,
+            };
+          }
+        }
         // Whatever an earlier session left behind is set aside first (`/ship` ships it instead).
         const leftover = payload.ship ? null : await worktree.stashWork(label("pre-run"));
         if (leftover) {
@@ -481,6 +498,11 @@ async function shipSteps(
       error: `the worktree is on ${current ? `\`${current}\`` : "a detached HEAD"}, not \`${payload.branch}\`: only \`${payload.branch}\` is shipped, so nothing was committed or pushed`,
     };
   }
+  // Bound to a checked head: one normal commit on top of it, and only while `origin` is still there.
+  if (payload.expectedHeadSha) {
+    const refused = await expectedHeadRefusal(worktree, payload, args);
+    if (refused) return { pushed: false, error: refused };
+  }
 
   let commitSha: string | undefined;
   await git(["add", "-A"]);
@@ -546,6 +568,42 @@ async function shipSteps(
     }
   }
   return { ...(commitSha && { commitSha }), pushed, ...(pullRequest && { pullRequest }) };
+}
+
+/** Why a run bound to `payload.expectedHeadSha` doesn't work on the branch at `head`. */
+function branchMovedError(payload: RalphRequestPayload, head: string): string {
+  return `the branch \`${payload.branch}\` moved since the checked commit \`${payload.expectedHeadSha?.slice(0, 12)}\` (it is at \`${head.slice(0, 12)}\` now), so nothing was committed or pushed`;
+}
+
+/**
+ * Why `ship` refuses on a run bound to `payload.expectedHeadSha`, or null:
+ * it never force-pushes, the worktree must still be at the checked head (so
+ * the one commit `ship` makes is the only one pushed, and a second `ship`
+ * is refused), and `origin` must still have the branch there.
+ */
+async function expectedHeadRefusal(
+  worktree: BranchWorktree,
+  payload: RalphRequestPayload,
+  args: ShipArgs,
+): Promise<string | null> {
+  const expected = payload.expectedHeadSha!;
+  if (args.forceWithLease) {
+    return "this branch isn't Omniralph's, so `forceWithLease` was refused: nothing was committed or pushed";
+  }
+  const head = (await worktree.git(["rev-parse", "HEAD"])).trim();
+  if (head !== expected) {
+    return `\`${payload.branch}\` is no longer at the checked commit \`${expected.slice(0, 12)}\` in the worktree (commit nothing yourself, and ship once): only one commit on top of it is shipped, so nothing was committed or pushed`;
+  }
+  await worktree.git(["fetch", "--quiet", "origin", payload.branch]);
+  const remote = (
+    await worktree.git([
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `refs/remotes/origin/${payload.branch}`,
+    ])
+  ).trim();
+  return remote === expected ? null : branchMovedError(payload, remote);
 }
 
 /** An error's message (a git failure's includes its output). */

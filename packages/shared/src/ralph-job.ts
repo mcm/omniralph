@@ -557,6 +557,13 @@ export const RalphRequestPayload = RalphJobBase.extend({
    * `origin` may not have them yet). Absent: the branch has them.
    */
   hiddenRef: RalphHiddenRef.optional(),
+  /**
+   * The head the branch must still be at (a run committing a documentation
+   * check's updates to a person's PR/MR): the attempt fails without a session
+   * when the branch moved, and `ship` only commits and pushes one normal
+   * commit on top of it. Absent: no such check.
+   */
+  expectedHeadSha: CommitSha.optional(),
 });
 export type RalphRequestPayload = z.infer<typeof RalphRequestPayload>;
 

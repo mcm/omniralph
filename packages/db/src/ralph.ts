@@ -17,6 +17,7 @@ import {
   isNull,
   lt,
   lte,
+  ne,
   notExists,
   notInArray,
   or,
@@ -90,10 +91,12 @@ export function isTrackerRun<T extends RunTrackerFields>(run: T): run is Tracker
 
 /**
  * How a run is referred to in job payloads, branch names and messages: its
- * tracker issue's identifier, or `chat-` and the start of its ID for a chat run.
+ * tracker issue's identifier, or `chat-` (`pr-` for a pull-request run) and
+ * the start of its ID.
  */
 export function runReference(run: RunTrackerFields & Pick<RalphRun, "id">): string {
-  return isTrackerRun(run) ? run.trackerIdentifier : `chat-${run.id.slice(0, 8)}`;
+  if (isTrackerRun(run)) return run.trackerIdentifier;
+  return `${run.origin === "pull-request" ? "pr" : "chat"}-${run.id.slice(0, 8)}`;
 }
 
 /** The agent session of a run that came from a tracker; null for a chat run. */
@@ -239,19 +242,39 @@ export interface NewChatRalphRunInput extends NewRalphRunBase {
   codingTaskId?: string | null;
 }
 
-export type NewRalphRunInput = NewTrackerRalphRunInput | NewChatRalphRunInput;
+/**
+ * A request-mode run for a person's PR/MR (a documentation check's updates):
+ * its main lane is the PR/MR's existing head branch (`branch`, into
+ * `baseBranch`), linked to the PR/MR by `prUrl` only, so the run is never
+ * taken for one of Om's own PRs/MRs (review findings, CI fixes, cleanup).
+ */
+export interface NewPullRequestRalphRunInput extends NewRalphRunBase {
+  origin: "pull-request";
+  repositoryId: string;
+  branch: string;
+  baseBranch: string;
+  prUrl: string;
+}
+
+export type NewRalphRunInput =
+  | NewTrackerRalphRunInput
+  | NewChatRalphRunInput
+  | NewPullRequestRalphRunInput;
 
 /**
  * Creates a `pending` run (and, given a repository and branch, its main lane),
  * unless the agent session already has a run or the issue already has an
  * unfinished one (for a chat run: the thread already has an unfinished one):
  * then that run is returned with `created: false`. A chat run is always a
- * `single` request-mode run.
+ * `single` request-mode run; so is a pull-request run, which is always created.
  */
 export async function createRun(
   db: Executor,
   newRun: NewRalphRunInput,
 ): Promise<{ run: RalphRun; created: boolean }> {
+  if (newRun.origin === "pull-request") {
+    return { run: await createPullRequestRun(db, newRun), created: true };
+  }
   const { branch, baseBranch, ...input } = newRun;
   const values: typeof ralphRuns.$inferInsert =
     input.origin === "chat"
@@ -316,6 +339,37 @@ export async function createRun(
       ? `Failed to create a ralph run for chat thread ${input.chatThreadId}`
       : `Failed to create a ralph run for ${input.trackerIdentifier}`,
   );
+}
+
+/** Creates a pull-request run and its main lane on the PR/MR's head branch (see `NewPullRequestRalphRunInput`). */
+async function createPullRequestRun(
+  db: Executor,
+  input: NewPullRequestRalphRunInput,
+): Promise<RalphRun> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(ralphRuns)
+      .values({
+        organizationId: input.organizationId,
+        origin: "pull-request",
+        kind: "single",
+        mode: "request",
+        repositoryId: input.repositoryId,
+        routedBy: input.routedBy,
+        status: input.status,
+      })
+      .returning();
+    if (!row) throw new Error("Failed to create a pull-request ralph run");
+    await ensureLane(tx, {
+      runId: row.id,
+      repositoryId: input.repositoryId,
+      branch: input.branch,
+      baseBranch: input.baseBranch,
+      prUrl: input.prUrl,
+    });
+    recordRunChange(tx, row);
+    return row;
+  });
 }
 
 export async function getRun(db: Executor, id: string): Promise<RalphRun | null> {
@@ -942,12 +996,15 @@ export async function listRunsToReconcile(
     .orderBy(asc(ralphRuns.updatedAt), asc(ralphRuns.id));
 }
 
-/** Organizations with at least one chat-origin run, for the reconcile cron. */
+/**
+ * Organizations with at least one run that needs no tracker (chat and
+ * pull-request runs), for the reconcile cron.
+ */
 export async function listChatRunOrganizationIds(db: Executor): Promise<string[]> {
   const rows = await db
     .selectDistinct({ organizationId: ralphRuns.organizationId })
     .from(ralphRuns)
-    .where(eq(ralphRuns.origin, "chat"))
+    .where(ne(ralphRuns.origin, "tracker"))
     .orderBy(asc(ralphRuns.organizationId));
   return rows.map((r) => r.organizationId);
 }
@@ -966,6 +1023,8 @@ export interface NewRalphLaneInput {
   baseBranch: string;
   /** Its sticky agent (none until one of its jobs starts). */
   agentId?: string | null;
+  /** The PR/MR it works on, when it has one from the start (a pull-request run's). */
+  prUrl?: string | null;
 }
 
 /** The run's lane in `repositoryId`, created with `input`'s branches if it has none yet. */

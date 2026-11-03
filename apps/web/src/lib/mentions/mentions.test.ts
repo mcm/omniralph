@@ -105,6 +105,9 @@ function fakeAdapter() {
     async getDefaultBranch() {
       throw new Error("not used");
     },
+    async getBranchHead() {
+      throw new Error("not used");
+    },
     async findOpenChangeRequest() {
       throw new Error("not used");
     },

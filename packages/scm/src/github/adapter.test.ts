@@ -81,8 +81,8 @@ function pullHandler() {
       body: null,
       user: { login: "octocat" },
       draft: true,
-      base: { sha: BASE, ref: "main" },
-      head: { sha: HEAD, ref: "feature" },
+      base: { sha: BASE, ref: "main", repo: { id: 1 } },
+      head: { sha: HEAD, ref: "feature", repo: { id: 1 } },
       html_url: "https://github.com/acme/widgets/pull/7",
     }),
   );
@@ -329,7 +329,28 @@ describe("getChangeRequest", () => {
       baseRef: "main",
       headRef: "feature",
       url: "https://github.com/acme/widgets/pull/7",
+      sameRepository: true,
     });
+  });
+
+  it("tells a fork's pull request apart, a deleted fork's too", async () => {
+    for (const head of [{ id: 2 }, null]) {
+      server.use(
+        http.get(`${API}/repos/acme/widgets/pulls/7`, () =>
+          HttpResponse.json({
+            number: 7,
+            title: "Add widgets",
+            body: null,
+            user: { login: "octocat" },
+            state: "open",
+            base: { sha: BASE, ref: "main", repo: { id: 1 } },
+            head: { sha: HEAD, ref: "feature", repo: head },
+            html_url: "https://github.com/acme/widgets/pull/7",
+          }),
+        ),
+      );
+      expect((await makeAdapter().getChangeRequest(REPO, 7)).sameRepository).toBe(false);
+    }
   });
 
   it("maps closed and merged pull requests", async () => {
@@ -346,8 +367,8 @@ describe("getChangeRequest", () => {
             body: null,
             user: { login: "octocat" },
             ...fields,
-            base: { sha: BASE, ref: "main" },
-            head: { sha: HEAD, ref: "feature" },
+            base: { sha: BASE, ref: "main", repo: { id: 1 } },
+            head: { sha: HEAD, ref: "feature", repo: { id: 1 } },
             html_url: "https://github.com/acme/widgets/pull/7",
           }),
         ),
@@ -664,6 +685,19 @@ describe("pull request operations", () => {
     });
     expect(queries[0]?.get("state")).toBe("open");
     await expect(adapter.findOpenChangeRequest(REPO, "other")).resolves.toBeNull();
+  });
+
+  it("reads a branch's head commit, null for a missing branch", async () => {
+    server.use(
+      http.get(`${API}/repos/acme/widgets/branches/:branch`, ({ params }) =>
+        params.branch === "feature/docs"
+          ? HttpResponse.json({ name: "feature/docs", commit: { sha: HEAD } })
+          : HttpResponse.json({ message: "Branch not found" }, { status: 404 }),
+      ),
+    );
+    const adapter = makeAdapter();
+    await expect(adapter.getBranchHead(REPO, "feature/docs")).resolves.toBe(HEAD);
+    await expect(adapter.getBranchHead(REPO, "gone")).resolves.toBeNull();
   });
 
   it("creates a draft pull request", async () => {

@@ -58,8 +58,8 @@ export const CHAT_PLATFORM_NAMES: Record<RalphChatThreadRef["platform"], string>
 
 export interface RalphRunRow {
   id: string;
-  /** Where the run came from: a tracker issue, or a chat thread. */
-  origin: "tracker" | "chat";
+  /** Where the run came from: a tracker issue, a chat thread, or a person's PR/MR (documentation updates). */
+  origin: "tracker" | "chat" | "pull-request";
   /** The tracker issue's (null for a chat run). */
   trackerIdentifier: string | null;
   trackerTitle: string | null;
@@ -242,12 +242,14 @@ export function chatChannelLabel(channelId: string): string {
 
 /**
  * What the pages call a run: its tracker identifier, or for a chat run its
- * platform and channel (`Slack C0123`), or `Ask` for a web chat's.
+ * platform and channel (`Slack C0123`), or `Ask` for a web chat's;
+ * `Documentation update` for a pull-request run.
  */
 export function runSourceLabel(
   run: Pick<RalphRunRow, "origin" | "trackerIdentifier" | "chatThread">,
 ): string {
   if (run.origin === "tracker") return run.trackerIdentifier ?? "Work item";
+  if (run.origin === "pull-request") return "Documentation update";
   if (!run.chatThread) return "Chat";
   const { platform, channelId } = run.chatThread;
   // A web chat's channel is its organization: nothing to show.
@@ -344,12 +346,16 @@ export function ralphRunFailure(
     ? "Check the story's last feedback and the job, fix what blocked it"
     : "Fix the cause";
   const restart =
-    run.origin === "chat"
-      ? "ask Omniralph again in the chat thread to start a new run"
-      : `delegate ${run.trackerIdentifier ?? "the issue"} to Omniralph again in ${tracker} to start a new run`;
+    run.origin === "pull-request"
+      ? `push to the ${change} again: its next documentation check can start a new run`
+      : run.origin === "chat"
+        ? "ask Omniralph again in the chat thread to start a new run"
+        : `delegate ${run.trackerIdentifier ?? "the issue"} to Omniralph again in ${tracker} to start a new run`;
   const resume =
     run.status === "failed"
-      ? `A failed run can't be resumed. ${fix}, then ${restart}: it picks up this run's branches, ${change}s, guidance and progress.`
+      ? run.origin === "pull-request"
+        ? `A failed run can't be resumed. Its documentation updates weren't applied; ${restart}.`
+        : `A failed run can't be resumed. ${fix}, then ${restart}: it picks up this run's branches, ${change}s, guidance and progress.`
       : run.status === "stopped"
         ? `${fix}, then reply in the ${run.origin === "chat" ? "chat thread" : `${tracker} agent session`} to resume the run.`
         : `${fix}; the run goes on by itself.`;

@@ -127,15 +127,15 @@ export async function reconcileDueLanes(
 
 /**
  * The tracker gateway for an organization's due runs, and the runs it can advance: the
- * connected workspace's for all of them, else a disconnected one for the chat runs (the
- * tracker runs leave the schedule).
+ * connected workspace's for all of them, else a disconnected one for the chat and
+ * pull-request runs (the tracker runs leave the schedule).
  */
 async function dueRunsGateway(
   deps: Pick<RalphDeps, "db">,
   organizationId: string,
   runs: RalphRun[],
 ): Promise<{ tracker: TrackerGateway; runs: RalphRun[] }> {
-  if (runs.every((run) => run.origin === "chat")) {
+  if (runs.every((run) => run.origin !== "tracker")) {
     return {
       tracker: await getTrackerGatewayOrDisconnected({ db: deps.db, organizationId }),
       runs,
@@ -146,18 +146,18 @@ async function dueRunsGateway(
   } catch (error) {
     if (!(error instanceof TrackerNotConnectedError)) throw error;
   }
-  const trackerRuns = runs.filter((run) => run.origin !== "chat");
+  const trackerRuns = runs.filter((run) => run.origin === "tracker");
   for (const run of trackerRuns) await scheduleRun(run.id, null);
   return {
     tracker: disconnectedTrackerGateway(),
-    runs: runs.filter((run) => run.origin === "chat"),
+    runs: runs.filter((run) => run.origin !== "tracker"),
   };
 }
 
 /**
  * Reconciles every organization with a tracker connected (all its
- * runs, with that workspace's gateway), then the chat runs of organizations
- * without one (with a disconnected gateway: chat runs don't need a tracker).
+ * runs, with that workspace's gateway), then the chat and pull-request runs of
+ * organizations without one (with a disconnected gateway: they don't need a tracker).
  * The counts are summed over the organizations.
  */
 export async function reconcileAllOrganizations(
@@ -172,8 +172,11 @@ export async function reconcileAllOrganizations(
     cleanup: { checked: 0, started: 0, expired: 0, failed: 0 },
     ci: { checked: 0, failed: 0 },
   };
-  const reconcile = async (ralph: RalphDeps, origin?: RalphRunOrigin) => {
+  const reconcile = async (ralph: RalphDeps, origins: readonly (RalphRunOrigin | undefined)[]) => {
     totals.organizations += 1;
+    for (const origin of origins) await reconcileOrigin(ralph, origin);
+  };
+  const reconcileOrigin = async (ralph: RalphDeps, origin?: RalphRunOrigin) => {
     const runs = await reconcileRuns(ralph, now, origin);
     // Before CI: PRs/MRs found merged here aren't checked for CI again.
     const cleanup = await reconcileCleanup(ralph, now, origin);
@@ -199,7 +202,7 @@ export async function reconcileAllOrganizations(
       totals.failed += 1;
       continue;
     }
-    await reconcile({ ...deps, organizationId, tracker });
+    await reconcile({ ...deps, organizationId, tracker }, [undefined]);
   }
 
   const trackerOrganizations = new Set(withTracker);
@@ -216,7 +219,8 @@ export async function reconcileAllOrganizations(
       totals.failed += 1;
       continue;
     }
-    await reconcile({ ...deps, organizationId, tracker }, "chat");
+    // Without a tracker, only the runs that need none: chat and pull-request runs.
+    await reconcile({ ...deps, organizationId, tracker }, ["chat", "pull-request"]);
   }
   return totals;
 }

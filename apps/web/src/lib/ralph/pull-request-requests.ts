@@ -12,15 +12,20 @@
  *   nothing; after its request playbook's `maxReviewRounds` the run leaves it for a person.
  * - A documentation check's confirmed updates (Update mode) become one
  *   request too (`respondToDocumentationCheck`), at most one per PR/MR head
- *   and `MAX_DOCUMENTATION_REQUESTS_PER_PULL_REQUEST` per PR/MR.
+ *   and `MAX_DOCUMENTATION_REQUESTS_PER_PULL_REQUEST` per PR/MR. On a
+ *   person's PR/MR whose branch is in the repo (update targets `same-repo`),
+ *   the request starts a coding run of origin `pull-request` on that branch
+ *   instead (`lib/ralph/documentation-runs.ts` binds it to the checked head).
  * - Delivery is a reply's: into the running `ralph.request` job working in
  *   that lane (the heartbeat's live messages), else a pending request, run as
  *   a `ralph.request` job once nothing else runs (a finished run reopens). A
  *   running story agent never gets one: it may not push (FR-7).
  */
 import {
+  createRun,
   findLaneByPullRequest,
   getLane,
+  getRun,
   getRepositoryWithConnection,
   getReviewRun,
   getRunningRunJob,
@@ -38,7 +43,12 @@ import {
   getReview,
   insertDocumentationRequest,
   listDocumentationRequests,
+  lockDocumentationRequests,
   reviewRunSuperseded,
+  type DocumentationRequest,
+  type Repository,
+  type Review,
+  type ScmConnection,
 } from "@omniralph/db";
 import {
   buildDocumentationRequest,
@@ -49,6 +59,8 @@ import { RALPH_REQUEST_JOB_TYPE } from "@omniralph/shared";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { roundLimits } from "./coding";
 import { conversationFor } from "./conversation";
+import { notAppliedReason } from "./documentation-runs";
+import { scheduleRunSafetyCheck } from "./due";
 import { recordClosedPullRequest } from "./cleanup";
 import { postActivity } from "./notify";
 import { changeRequestTerm } from "./publish";
@@ -325,19 +337,29 @@ export type DocumentationResponse =
         | "not_update_mode"
         | "run_over"
         | "closed"
-        | "stale";
+        | "stale"
+        /** A person's PR/MR, and the repo's update targets are Om's PRs/MRs only. */
+        | "targets"
+        /** A person's PR/MR from a fork: never committed to. */
+        | "fork";
     }
-  /** Handed off as a request on the run's lane (now, or by an earlier check of the same head). */
+  /**
+   * Handed off as a request on the run's lane, or as the first request of a
+   * new pull-request run on a person's PR/MR (now, or by an earlier check of
+   * the same head; `runId` null when that run is gone).
+   */
   | {
       status: "handed_off";
       paths: string[];
       delivery: PullRequestRequestDelivery | "earlier";
-      runId: string;
+      runId: string | null;
     }
   /** The PR/MR already had `MAX_DOCUMENTATION_REQUESTS_PER_PULL_REQUEST` requests. */
   | { status: "limit"; requests: number }
   /** The files were all in the previous request: Om's commit for it didn't settle them. */
-  | { status: "repeated"; paths: string[] };
+  | { status: "repeated"; paths: string[] }
+  /** Handed off, but the coding run couldn't commit them (e.g. the branch moved): `reason` says why. */
+  | { status: "not_applied"; paths: string[]; reason: string };
 
 /** Whether a documentation response leaves the rest to a person. */
 export const documentationNeedsPerson = (response: DocumentationResponse | null): boolean =>
@@ -345,9 +367,12 @@ export const documentationNeedsPerson = (response: DocumentationResponse | null)
 
 /**
  * Hands a finished documentation check's confirmed updates (review
- * `reviewId`) on a ralph PR/MR to its run, when the repo's documentation
- * check is in Update mode: one request on the run's lane (shipped by its
+ * `reviewId`) to a coding run, when the repo's documentation check is in
+ * Update mode. On a ralph PR/MR: one request on the run's lane (shipped by its
  * request session as a normal commit), recorded in `documentation_requests`.
+ * On a person's PR/MR: a new pull-request run, when the repo's update targets
+ * are `same-repo` and the PR/MR's branch is in the repo
+ * (`startPullRequestDocumentationRun`); otherwise nothing (the comment only).
  * Nothing is requested for a stopped or failed run, a superseded check, a
  * head that is no longer the PR/MR's current head, a head that already has
  * a request (`handed_off` with delivery `earlier`), past
@@ -375,7 +400,7 @@ export async function respondToDocumentationCheck(
   }
   if (target.repository.documentationCheck !== "update") return ignored("not_update_mode");
   const found = await findLaneByPullRequest(deps.db, review.repositoryId, review.prNumber);
-  if (!found) return ignored("not_ralph");
+  if (!found) return startPullRequestDocumentationRun(deps, review, target);
   if (OVER.has(found.run.status)) return ignored("run_over");
 
   const { repository, connection } = target;
@@ -393,22 +418,13 @@ export async function respondToDocumentationCheck(
     const lane = await getLane(tx, found.lane.id);
     if (!lane || lane.prClosed) return ignored("not_ralph");
     if (OVER.has(run.status)) return ignored("run_over");
+    await lockDocumentationRequests(tx, review.repositoryId, review.prNumber);
     const requests = await listDocumentationRequests(tx, review.repositoryId, review.prNumber);
-    const earlier = requests.find((request) => request.headSha === review.headSha);
-    if (earlier) {
-      return {
-        status: "handed_off",
-        paths: earlier.paths,
-        delivery: "earlier",
-        runId: earlier.ralphRunId ?? run.id,
-      } as const;
-    }
-    if (requests.length >= MAX_DOCUMENTATION_REQUESTS_PER_PULL_REQUEST) {
-      return { status: "limit", requests: requests.length } as const;
-    }
-    const previous = requests.at(-1);
-    if (previous && paths.every((path) => previous.paths.includes(path))) {
-      return { status: "repeated", paths } as const;
+    const limited = documentationRequestLimit(requests, review.headSha, paths);
+    if (limited) {
+      return limited.status === "handed_off"
+        ? { ...limited, runId: limited.runId ?? run.id }
+        : limited;
     }
     const added = await addLaneRequest(tx, run, lane, {
       text: buildDocumentationRequest({
@@ -443,8 +459,124 @@ export async function respondToDocumentationCheck(
     return { status: "handed_off", paths, delivery: added.delivery, runId: added.run.id } as const;
   });
   if (!outcome) return ignored("not_ralph");
-  if (outcome.status === "handed_off" && outcome.delivery === "started") {
+  if (outcome.status === "handed_off" && outcome.delivery === "started" && outcome.runId) {
     await advanceQuietly(deps, outcome.runId);
+  }
+  return outcome;
+}
+
+/**
+ * What the PR/MR's earlier documentation requests (`requests`) leave for a
+ * check of `headSha` that confirmed `paths`, or null when it gets a request:
+ * the head's earlier request (`handed_off`, delivery `earlier`), the limit of
+ * `MAX_DOCUMENTATION_REQUESTS_PER_PULL_REQUEST` (`limit`), or every file
+ * already in the previous request (`repeated`).
+ */
+function documentationRequestLimit(
+  requests: readonly DocumentationRequest[],
+  headSha: string,
+  paths: readonly string[],
+): Extract<DocumentationResponse, { status: "handed_off" | "limit" | "repeated" }> | null {
+  const earlier = requests.find((request) => request.headSha === headSha);
+  if (earlier) {
+    return {
+      status: "handed_off",
+      paths: earlier.paths,
+      delivery: "earlier",
+      runId: earlier.ralphRunId,
+    };
+  }
+  if (requests.length >= MAX_DOCUMENTATION_REQUESTS_PER_PULL_REQUEST) {
+    return { status: "limit", requests: requests.length };
+  }
+  const previous = requests.at(-1);
+  if (previous && paths.every((path) => previous.paths.includes(path))) {
+    return { status: "repeated", paths: [...paths] };
+  }
+  return null;
+}
+
+/** How a pull-request run says it was routed. */
+export const ROUTED_BY_DOCUMENTATION_CHECK = "the documentation check";
+
+/**
+ * Commits a documentation check's confirmed updates to a person's PR/MR
+ * (review `review`, a completed check in Update mode of a repo with Coding
+ * on): when the repo's update targets are `same-repo`, the PR/MR is open at
+ * the checked head and its branch is in the repo (not a fork), a new coding
+ * run of origin `pull-request` on the PR/MR's head branch, whose first
+ * request is the docs request, recorded in `documentation_requests` with the
+ * checked head (the run is bound to it: `lib/ralph/documentation-runs.ts`).
+ * The per-head and per-PR/MR limits are those of Om's PRs/MRs, under the
+ * PR/MR's documentation-request lock.
+ */
+async function startPullRequestDocumentationRun(
+  deps: RalphDeps,
+  review: Review,
+  target: { repository: Repository; connection: ScmConnection },
+): Promise<DocumentationResponse> {
+  const { repository, connection } = target;
+  if (repository.documentationUpdateTargets !== "same-repo") {
+    return { status: "ignored", reason: "targets" };
+  }
+  const repo = { fullPath: repository.fullPath, externalId: repository.externalId };
+  const pr = await deps.adapterFor(deps.db, connection).getChangeRequest(repo, review.prNumber);
+  if (pr.state !== "open") return { status: "ignored", reason: "closed" };
+  if (pr.headSha !== review.headSha) return { status: "ignored", reason: "stale" };
+  if (pr.sameRepository !== true) return { status: "ignored", reason: "fork" };
+  const updates = review.documentationUpdates ?? [];
+  const paths = updates.map((update) => update.path);
+  const term = changeRequestTerm(repository.provider) as ChangeRequestWord;
+
+  const outcome = await deps.db.transaction(async (tx): Promise<DocumentationResponse> => {
+    await lockDocumentationRequests(tx, review.repositoryId, review.prNumber);
+    const requests = await listDocumentationRequests(tx, review.repositoryId, review.prNumber);
+    const limited = documentationRequestLimit(requests, review.headSha, paths);
+    if (limited) return limited;
+    const { run } = await createRun(tx, {
+      origin: "pull-request",
+      organizationId: repository.organizationId,
+      repositoryId: repository.id,
+      routedBy: ROUTED_BY_DOCUMENTATION_CHECK,
+      branch: pr.headRef,
+      baseBranch: pr.baseRef,
+      prUrl: pr.url,
+    });
+    await insertMessage(tx, {
+      runId: run.id,
+      kind: "request",
+      text: buildDocumentationRequest({
+        updates,
+        prNumber: review.prNumber,
+        prUrl: pr.url,
+        branch: pr.headRef,
+        term,
+        personsBranch: true,
+      }),
+      author: null,
+      trigger: "pr.review-findings",
+    });
+    const recorded = await insertDocumentationRequest(tx, {
+      repositoryId: review.repositoryId,
+      prNumber: review.prNumber,
+      headSha: review.headSha,
+      reviewId: review.id,
+      ralphRunId: run.id,
+      paths,
+    });
+    // The PR/MR's lock serializes its requests: a conflict here can't happen.
+    if (!recorded) throw new Error("documentation request recorded concurrently");
+    await scheduleRunSafetyCheck(run.id);
+    return { status: "handed_off", paths, delivery: "started", runId: run.id };
+  });
+  if (outcome.status !== "handed_off" || outcome.delivery !== "started" || !outcome.runId) {
+    return outcome;
+  }
+  await advanceQuietly(deps, outcome.runId);
+  // It failed right away (e.g. the branch moved): the comment says so, not that Om is committing.
+  const run = await getRun(deps.db, outcome.runId);
+  if (run?.status === "failed") {
+    return { status: "not_applied", paths, reason: notAppliedReason(run.error) };
   }
   return outcome;
 }

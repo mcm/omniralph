@@ -80,6 +80,11 @@ import { organizationPlaybooks } from "@/lib/playbooks";
 import type { JobDispatcher } from "@/lib/dispatch/dispatcher";
 import { notifyRunThread } from "./chat-notify";
 import {
+  documentationRunNotApplied,
+  notAppliedError,
+  pullRequestRunHead,
+} from "./documentation-runs";
+import {
   conversationFor,
   runCompletedEvent,
   runFailedEvent,
@@ -876,6 +881,16 @@ async function enqueueRequest(
   const found = await usableRepository(deps, tx, run, input.lane);
   if ("action" in found) return found;
   const { lane, repository, connection } = found;
+  // A person's PR/MR: only while its branch is still at the checked head.
+  let expectedHeadSha: string | undefined;
+  if (run.origin === "pull-request") {
+    const bound = await pullRequestRunHead(deps, run, found);
+    if ("failed" in bound) {
+      await documentationRunNotApplied(deps, run, bound.failed);
+      return failRun(deps, tx, run, notAppliedError(bound.failed));
+    }
+    expectedHeadSha = bound.headSha;
+  }
   const targetAgentId = await laneAgentId(deps.db, run, lane);
   const resume =
     lane.requestClaudeSessionId && targetAgentId && lane.requestAgentId === targetAgentId
@@ -898,9 +913,11 @@ async function enqueueRequest(
     resumeSessionId: resume,
     attachments: payloadAttachments(attachments),
     // Story commits may only be on the run's hidden ref yet: the request starts from them.
-    ...((await pushTimingFor(repository, playbooks)) === "end" && {
-      hiddenRef: ralphHiddenRef(run.id),
-    }),
+    ...(run.origin !== "pull-request" &&
+      (await pushTimingFor(repository, playbooks)) === "end" && {
+        hiddenRef: ralphHiddenRef(run.id),
+      }),
+    ...(expectedHeadSha && { expectedHeadSha }),
   });
   const taskId = requestTaskFor(run, repository);
   const routed = await codingJobInput(

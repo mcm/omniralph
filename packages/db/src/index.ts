@@ -15,8 +15,10 @@ export {
 } from "./changes.js";
 export { runMigrations, migrationsFolder } from "./migrate.js";
 export {
+  getDocumentationRequestByRun,
   insertDocumentationRequest,
   listDocumentationRequests,
+  lockDocumentationRequests,
   type DocumentationRequest,
   type NewDocumentationRequestInput,
 } from "./documentation-requests.js";
@@ -358,6 +360,7 @@ export {
   getStickyComment,
   writeStickyComment,
   reviewRunSuperseded,
+  hasNewerEndedReview,
   type StickyComment,
   type StickyCommentKey,
   applyCorrelation,
@@ -718,6 +721,7 @@ export {
   type RalphLaneDetail,
   type RalphLaneUpdate,
   type NewRalphMessageInput,
+  type NewPullRequestRalphRunInput,
   type NewChatRalphRunInput,
   type NewTrackerRalphRunInput,
   type NewRalphRunInput,

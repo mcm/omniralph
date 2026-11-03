@@ -28,6 +28,8 @@ export interface FakeChangeRequest {
   state: "open" | "closed" | "merged";
   /** Head commit reported by `getChangeRequestState` (default `"head"`). */
   headSha?: string;
+  /** Whether its branch is in the repository (default true; false: a fork's). */
+  sameRepository?: boolean;
   mergeSha?: string | null;
 }
 
@@ -104,6 +106,22 @@ export class FakeScmAdapter {
     return this.defaultBranch;
   }
 
+  /**
+   * Branch heads by `fullPath:branch` (`getBranchHead`); a missing one is the
+   * head of the open PR/MR from that branch, else the branch doesn't exist.
+   */
+  readonly branchHeads = new Map<string, string>();
+
+  async getBranchHead(repo: RepoRef, branch: string): Promise<string | null> {
+    this.call("getBranchHead");
+    const head = this.branchHeads.get(`${repo.fullPath}:${branch}`);
+    if (head !== undefined) return head;
+    const open = this.changeRequests.find(
+      (c) => c.fullPath === repo.fullPath && c.sourceBranch === branch && c.state === "open",
+    );
+    return open ? (open.headSha ?? "head") : null;
+  }
+
   async hasWriteAccess(_repo: RepoRef, username: string): Promise<boolean> {
     return this.members.has(username);
   }
@@ -123,6 +141,7 @@ export class FakeScmAdapter {
       baseRef: request.targetBranch,
       headRef: request.sourceBranch,
       url: request.url,
+      sameRepository: request.sameRepository ?? true,
     };
   }
 

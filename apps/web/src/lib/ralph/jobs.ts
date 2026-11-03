@@ -1,6 +1,7 @@
 import "server-only";
 import {
   findLaneByPullRequest,
+  getRepository,
   getReview,
   getReviewRun,
   getLaneByRepository,
@@ -170,11 +171,11 @@ export async function onReviewForRalph(
 }
 
 /**
- * A documentation check (review `reviewId`) ended: on a ralph PR/MR its
- * confirmed updates may become a request on that lane
- * (`respondToDocumentationCheck`). Returns what became of them, null when
- * the PR/MR isn't a ralph PR/MR or handing them off failed (logged: the
- * comment is still posted, without the hand-off).
+ * A documentation check (review `reviewId`) ended: in Update mode its
+ * confirmed updates may become a request on a ralph PR/MR's lane, or a
+ * pull-request run on a person's PR/MR (`respondToDocumentationCheck`).
+ * Returns what became of them, null when there were none or handing them
+ * off failed (logged: the comment is still posted, without the hand-off).
  */
 export async function onDocumentationCheckForRalph(
   db: Database,
@@ -184,10 +185,10 @@ export async function onDocumentationCheckForRalph(
   try {
     const review = await getReview(db, reviewId);
     if (!review?.documentationUpdates?.length) return null;
-    const found = await findLaneByPullRequest(db, review.repositoryId, review.prNumber);
-    if (!found) return null;
+    const repository = await getRepository(db, review.repositoryId);
+    if (!repository) return null;
     return await respondToDocumentationCheck(
-      deps ?? (await defaultDeps(db, found.run.organizationId)),
+      deps ?? (await defaultDeps(db, repository.organizationId)),
       reviewId,
     );
   } catch (error) {

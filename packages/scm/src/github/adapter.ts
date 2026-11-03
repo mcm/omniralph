@@ -243,6 +243,8 @@ export class GitHubAdapter implements ScmAdapter {
       baseRef: data.base.ref,
       headRef: data.head.ref,
       url: data.html_url,
+      // A fork's head repository differs (and is null once the fork was deleted).
+      sameRepository: data.head.repo?.id === data.base.repo.id,
     };
   }
 
@@ -507,6 +509,18 @@ export class GitHubAdapter implements ScmAdapter {
     const octokit = await this.client(repo);
     const { data } = await octokit.repos.get({ owner, repo: name });
     return data.default_branch;
+  }
+
+  async getBranchHead(repo: RepoRef, branch: string): Promise<string | null> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const octokit = await this.client(repo);
+    try {
+      const { data } = await octokit.repos.getBranch({ owner, repo: name, branch });
+      return data.commit.sha;
+    } catch (error) {
+      if (hasStatus(error, 404)) return null;
+      throw error;
+    }
   }
 
   async findOpenChangeRequest(

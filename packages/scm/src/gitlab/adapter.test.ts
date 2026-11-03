@@ -44,6 +44,8 @@ const mrJson = {
   sha: HEAD,
   source_branch: "feature",
   target_branch: "main",
+  source_project_id: 99,
+  target_project_id: 99,
   web_url: `${HOST}/acme/tools/widgets/-/merge_requests/7`,
 };
 
@@ -150,8 +152,14 @@ describe("getChangeRequest", () => {
       baseRef: "main",
       headRef: "feature",
       url: `${HOST}/acme/tools/widgets/-/merge_requests/7`,
+      sameRepository: true,
     });
     expect(requests[0]?.auth).toBe(TOKEN);
+  });
+
+  it("tells an MR from a fork apart", async () => {
+    server.use(http.get(MR, () => HttpResponse.json({ ...mrJson, source_project_id: 5 })));
+    expect((await makeAdapter().getChangeRequest(REPO, 7)).sameRepository).toBe(false);
   });
 
   it("falls back to work_in_progress and URL-encodes the path without a project ID", async () => {
@@ -677,6 +685,18 @@ describe("merge request operations", () => {
     });
     expect(query?.get("source_branch")).toBe("ralph/epic");
     expect(query?.get("state")).toBe("opened");
+  });
+
+  it("reads a branch's head commit, null for a missing branch", async () => {
+    server.use(
+      http.get(`${API}/repository/branches/:branch`, ({ params }) =>
+        params.branch === "feature/docs"
+          ? HttpResponse.json({ name: "feature/docs", commit: { id: HEAD } })
+          : HttpResponse.json({ message: "404 Branch Not Found" }, { status: 404 }),
+      ),
+    );
+    await expect(makeAdapter().getBranchHead(REPO, "feature/docs")).resolves.toBe(HEAD);
+    await expect(makeAdapter().getBranchHead(REPO, "gone")).resolves.toBeNull();
   });
 
   it("returns null when no MR is open for the branch", async () => {
