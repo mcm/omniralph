@@ -15,8 +15,9 @@ export interface PluginMode {
 }
 
 /** The checks shared by every mode's checklist, before it writes to the tracker. */
-const PLAN_CHECKLIST = `- [ ] Sized the whole body of work and chose the structure accordingly
-      (an epic only if L or larger)
+const PLAN_CHECKLIST = `- [ ] Sized the whole body of work as a Fix, Story, Epic or Feature, stated
+      the reason, and chose the structure accordingly (an epic only for an
+      Epic; nothing filed for a Feature)
 - [ ] The epic has \`## Problem\`, \`## Scope\` (\`### In\` / \`### Out\`) and
       \`## Requirements\`, and nothing else besides the optional design and
       technical notes
@@ -53,9 +54,10 @@ export const MODE_NEW: PluginMode = {
 You are planning a piece of software work from scratch, then saving it to
 {{trackerName}}.
 
-Depending on the size, it becomes either an epic (a {{trackerName}} issue with
-one sub-issue per task, when the work is **L** or larger) or a single task, a
-story or a fix (when smaller).
+Depending on its size (see the Sizing rule in \`common.md\`), it becomes a
+single task (a **Fix** or a **Story**), an epic (an **Epic**: a {{trackerName}}
+issue with one sub-issue per task), or nothing yet (a **Feature**: too big for
+one epic, so you recommend planning it as a feature instead).
 
 If the invocation included \`--project\` and/or \`--team\` hints, use them when
 creating the issues. If a \`{{conventionsFile}}\` exists, honor its conventions.
@@ -80,18 +82,25 @@ prerequisites and manual steps (see \`common.md\`).
 
 ## Step 2: Size the work
 
-Apply the Sizing rule from \`common.md\`. State the size, a one-to-two-sentence
-rationale, and the resulting structure (an epic with sub-issues, or a single
-story or fix) before continuing.
+Apply the Sizing rule from \`common.md\`. State the size (Fix, Story, Epic or
+Feature) with its t-shirt estimate, a one-to-two-sentence reason, and the
+resulting structure (a single fix or story, an epic with sub-issues, or a
+feature to plan) before continuing.
 
 ## Step 3: Write the work item
 
-- **L or larger:** write the epic in the epic format, with its numbered
-  requirements.
-- **Smaller than L:** write a single task in the task format: its three
+- **Fix or Story:** write a single task in the task format: its three
   paragraphs, framed as a fix for a bug and as a story otherwise.
+- **Epic:** write the epic in the epic format, with its numbered requirements.
+- **Feature:** don't write an epic. Tell the user it is too big for one pull
+  request and recommend planning it as a feature, epic by epic. Give the
+  reason and a first cut of the epics it splits into, in the order they would
+  ship: a plain title and a sentence or two on what each delivers, split by
+  what each delivers, never by development phase. Skip Step 4. If the user
+  would rather start now, offer to plan just the first epic as its own work
+  item (sized again with the Sizing rule) and continue with that.
 
-## Step 4: Tasks (L or larger only)
+## Step 4: Tasks (Epic only)
 
 Split the epic into tasks by the Splitting rule, each in the task format (a
 fix for a bug, a story otherwise). Present them as \`common.md\` → "Drafting
@@ -101,12 +110,12 @@ requirements before its pull request opens.
 
 ## Final step: save to {{trackerName}}
 
-Once the work item (plus its tasks, if **L or larger**) is written, have the
+Once the work item (plus its tasks, if an **Epic**) is written, have the
 user review and confirm it is ready to save. Only after they confirm, use the
 {{trackerName}} MCP tools to create the issues, following \`common.md\` →
 "{{trackerName}} structure reference":
 
-**If L or larger, create an epic with sub-issues:**
+**If an Epic, create an epic with sub-issues:**
 
 - Create a new parent issue.
   - Give it a descriptive but concise title.
@@ -120,12 +129,16 @@ user review and confirm it is ready to save. Only after they confirm, use the
 - Do the post-creation steps: replace drafting labels with {{trackerName}}
   identifiers, and verify the blocks relations.
 
-**If smaller than L, create a single task (no sub-issues):**
+**If a Fix or a Story, create a single task (no sub-issues):**
 
 - Create one new issue with a descriptive but concise title, the task's three
   paragraphs (with the branch line, if any) as its description, the bug label
   for a fix, and \`blockedBy\` for any work item it waits on.
 - Do **not** create any sub-issues.
+
+**If a Feature, create nothing** (unless the user chose to plan its first epic
+on its own, which is then saved as above). Leave the recommendation and the
+first cut of its epics with the user for feature planning.
 
 ## Checklist before creating the issues
 
@@ -148,9 +161,10 @@ a loose collection of thoughts, a feature request with partial detail, or an
 older format. Your job is to elicit the missing context and write the full
 structure back to the **same** issue.
 
-Depending on the size, the issue becomes an epic (with one sub-issue per task,
-when the work is **L** or larger) or stays a single story or fix (when
-smaller).
+Depending on its size (see the Sizing rule in \`common.md\`), the issue stays a
+single task (a **Fix** or a **Story**), becomes an epic (an **Epic**, with one
+sub-issue per task), or gets a recommendation to plan it as a feature (a
+**Feature**: too big for one epic, so nothing is rewritten or filed).
 
 Follow the planning rules in \`common.md\`.
 
@@ -197,20 +211,26 @@ issue's existing blocking relations may already answer this.
 
 ## Step 3: Size the work
 
-Apply the Sizing rule from \`common.md\`. State the size, the rationale, and the
-resulting structure before continuing.
+Apply the Sizing rule from \`common.md\`. State the size (Fix, Story, Epic or
+Feature) with its t-shirt estimate, the reason, and the resulting structure
+before continuing.
 
 ## Step 4: Write the work item
 
-- **L or larger:** the epic format, with its numbered requirements. It
-  replaces the current description.
-- **Smaller than L:** a single task in the task format: its three paragraphs,
+- **Fix or Story:** a single task in the task format: its three paragraphs,
   framed as a fix for a bug and as a story otherwise. It replaces the current
   description, including one in an older format (a story sentence with a
   \`Covers:\` line, or \`## Current behavior\` / \`## Expected behavior\`
   sections).
+- **Epic:** the epic format, with its numbered requirements. It replaces the
+  current description.
+- **Feature:** don't rewrite the description. Write a comment recommending
+  feature planning: that it is too big for one epic, the reason it is a
+  feature, and a first cut of the epics it splits into, in the order they
+  would ship (a plain title and a sentence or two on what each delivers, split
+  by what each delivers, never by development phase). Skip Step 5.
 
-## Step 5: Tasks (L or larger only)
+## Step 5: Tasks (Epic only)
 
 Split the epic into tasks by the Splitting rule, each in the task format (a
 fix for a bug, a story otherwise), and present them as \`common.md\` →
@@ -219,12 +239,20 @@ epic against its requirements before its pull request opens.
 
 ## Final step: update the issue in {{trackerName}}
 
-Once the work item (plus its tasks, if **L or larger**) is written, have the
-user review and confirm. Only after they confirm, use the {{trackerName}} MCP
-tools to update the **existing** issue, following \`common.md\` →
-"{{trackerName}} structure reference".
+Once the work item (plus its tasks, if an **Epic**) or the Feature comment is
+written, have the user review and confirm. Only after they confirm, use the
+{{trackerName}} MCP tools to update the **existing** issue, following
+\`common.md\` → "{{trackerName}} structure reference".
 
-In both cases:
+**If a Feature, only comment:**
+
+- Post the recommendation and the first cut of the epics as one comment on
+  the issue.
+- Leave its title, description, labels and relations as they are, and do
+  **not** create any sub-issues or other issues: the epics are filed when the
+  feature is planned.
+
+**For a Fix, a Story or an Epic:**
 
 - Update the title to a descriptive but concise name (keep the existing title
   if it already fits).
@@ -235,7 +263,7 @@ In both cases:
   the user asks otherwise. Add \`blockedBy\` for any new prerequisites.
 - Keep any existing comments.
 
-**If L or larger, turn it into an epic:**
+**If an Epic, turn it into an epic:**
 
 - Create a sub-issue for each task, in task order: plain task title, the
   task's three paragraphs, a priority, its \`blockedBy\` dependencies, the
@@ -243,7 +271,7 @@ In both cases:
 - Do the post-creation steps: replace drafting labels with {{trackerName}}
   identifiers, and verify the blocks relations.
 
-**If smaller than L, keep it a single task:**
+**If a Fix or a Story, keep it a single task:**
 
 - The description is the task's three paragraphs. Add the bug label if it is
   a fix and doesn't have it yet.
@@ -256,7 +284,8 @@ In both cases:
 - [ ] Incorporated the user's answers
 ${PLAN_CHECKLIST}
 
-Once the issue is updated, tell the user you're done.`,
+Once the issue is updated (or, for a Feature, commented on), tell the user
+you're done.`,
 };
 
 /** `edit`: revise an existing epic or task. */
@@ -392,12 +421,19 @@ change summary in the conversation instead.
 Apply the Sizing rule from \`common.md\`, then compare against the issue's
 current structure:
 
-- Already an epic and still **L or larger**: keep the epic.
-- Currently a single task but grown to **L or larger**: recommend turning it
-  into an epic, but confirm before restructuring.
-- Currently an epic but shrunk below **L**: tell the user. Collapsing an epic
-  into a single task is a significant change that must be confirmed, and you
-  must never collapse sub-issues that are already completed or in progress.
+- Already an epic and still an **Epic**: keep the epic.
+- Currently a single task but grown to an **Epic**: recommend turning it into
+  an epic, but confirm before restructuring.
+- Currently an epic but shrunk to a **Fix** or a **Story**: tell the user.
+  Collapsing an epic into a single task is a significant change that must be
+  confirmed, and you must never collapse sub-issues that are already
+  completed or in progress.
+- Grown to a **Feature**: don't grow it into a bigger epic. Tell the user it is
+  too big for one pull request and recommend planning it as a feature, epic by
+  epic, with the reason and a first cut of the epics it splits into. Ask
+  whether to keep this edit within one epic's (or task's) scope, moving the
+  rest out to feature planning, or to stop and plan the feature first. Never
+  file the other epics from this mode.
 
 ## Step 5: Reconcile tasks (if the issue is or stays an epic)
 
@@ -449,16 +485,17 @@ number:
 
 Present a diff-style summary to the user: sections that changed; tasks kept,
 edited, added, removed or reordered; requirements added, edited or removed. If
-your re-sizing crosses the **L** threshold relative to the current structure,
-also summarize the proposed restructuring and get explicit confirmation before
-applying it.
+your re-sizing changes the structure (a single task becoming an epic, or an
+epic collapsing into a single task), also summarize the proposed restructuring
+and get explicit confirmation before applying it. A Feature is never applied:
+apply only the in-scope edit the user chose in Step 4.
 
 Have the user review and confirm before touching {{trackerName}}. Only after
 they confirm, use the {{trackerName}} MCP tools:
 
 - Update the issue's description with the revised epic or task.
 
-**If the issue stays (or becomes) an epic, L or larger:**
+**If the issue stays (or becomes) an Epic:**
 
 - Per task: **Keep**, no action; **Edit**, update the sub-issue's title and
   description; **Add**, create a new sub-issue (see \`common.md\` →
@@ -475,7 +512,7 @@ they confirm, use the {{trackerName}} MCP tools:
 - If a single task is being turned into an epic, create the tasks as in the
   \`new\` and \`triage\` final steps, with no validation task.
 
-**If the issue stays (or becomes) a single task, smaller than L:**
+**If the issue stays (or becomes) a single task, a Fix or a Story:**
 
 - Keep it in the task format: its done criteria in the "Don't stop until"
   paragraph, last.

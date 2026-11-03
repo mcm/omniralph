@@ -125,9 +125,10 @@ and fold it into your understanding before you start asking questions.
 - Never start implementing. Plan only.
 - Ask clarifying questions with lettered options (see \`common.md\`) so the
   user can answer quickly (e.g. "1A, 2C, 3B").
-- Size the whole body of work and let the size decide the structure: **L or
-  larger → an epic with sub-issues; smaller than L → a single story or fix.**
-  See \`common.md\` → "Sizing".
+- Size the whole body of work and let the size decide the structure: **a Fix
+  or a Story → a single task; an Epic → an epic with sub-issues; a Feature →
+  a recommendation to plan it as a feature, with a first cut of its epics,
+  and nothing filed.** See \`common.md\` → "Sizing".
 - Everything in the plan is in scope. State the full scope up front, never
   label work "future", "stretch" or "v2" unless the user did, and ask about
   anything genuinely optional instead of silently deferring it.
