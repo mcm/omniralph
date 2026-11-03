@@ -340,6 +340,27 @@ describe.skipIf(!databaseAvailable)("control-panel agent read tools", () => {
     });
   });
 
+  it("shows a pull-request run's PR from its URL, though its lane has no PR number", async () => {
+    const org = await seedOrg("Docs", `docs-${randomBytes(4).toString("hex")}`);
+    const prUrl = `https://github.com/${org.fullPath}/pull/12`;
+    const { run } = await createRun(db, {
+      origin: "pull-request",
+      organizationId: org.id,
+      repositoryId: org.repositoryId,
+      branch: "feature/rename",
+      baseBranch: "main",
+      prUrl,
+    });
+    const runs = (await call("list_ralph_runs", {}, org.id)).runs as Result[];
+    expect(runs.find((r) => r.id === run.id)).toMatchObject({
+      pullRequest: { number: 12, label: "#12" },
+    });
+    expect(await call("get_ralph_run", { run: run.id }, org.id)).toMatchObject({
+      pullRequest: { number: 12, url: prUrl },
+      lanes: [{ main: true, pullRequest: { number: 12 } }],
+    });
+  });
+
   it("list_reviews and get_review return only the organization's reviews", async () => {
     const list = await call("list_reviews", {}, acme.id);
     expect(list.reviews).toEqual([

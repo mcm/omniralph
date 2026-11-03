@@ -1439,6 +1439,49 @@ describe.skipIf(!databaseAvailable)("/api/ui/runs", () => {
     });
   });
 
+  it("links a pull-request run to the PR/MR it commits to, from its URL", async () => {
+    // A documentation update on a person's PR/MR: its lane's PR number stays null.
+    const pullRequestRun = async (repositoryId: string, prUrl: string) =>
+      (
+        await createRun(db, {
+          origin: "pull-request",
+          organizationId: orgId,
+          repositoryId,
+          branch: "feature/rename",
+          baseBranch: "main",
+          prUrl,
+        })
+      ).run;
+    const github = await pullRequestRun(repoA, "https://github.com/acme/api/pull/12");
+    const gitlab = await pullRequestRun(
+      repoB,
+      "https://gitlab.example.com/acme/web/-/merge_requests/5",
+    );
+    expect((await getMainLane(db, github))!.prNumber).toBeNull();
+
+    const rows = (await listPage()).runs;
+    expect(rows.find((row) => row.id === github.id)?.pullRequest).toEqual({
+      provider: "github",
+      number: 12,
+      url: "https://github.com/acme/api/pull/12",
+    });
+    expect(rows.find((row) => row.id === gitlab.id)?.pullRequest).toEqual({
+      provider: "gitlab",
+      number: 5,
+      url: "https://gitlab.example.com/acme/web/-/merge_requests/5",
+    });
+
+    const view = await detailPage(gitlab.id);
+    expect(view.details.pullRequest).toEqual({
+      provider: "gitlab",
+      number: 5,
+      url: "https://gitlab.example.com/acme/web/-/merge_requests/5",
+      merged: false,
+      closed: false,
+    });
+    expect(view.details.lanes.map((lane) => lane.pullRequest?.number)).toEqual([5]);
+  });
+
   it("shows a review run: two passes with their open findings, and the correlation", async () => {
     const { reviewRun } = await runOfEachKind();
     const passes = await db
