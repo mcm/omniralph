@@ -22,6 +22,8 @@ import { PLAYBOOK_ROLES, type PlaybookRole } from "@omniralph/tasks";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+// The driver's tests register their own triage adapter: the real one (`lib/triage/loop.ts`) stays out.
+vi.mock("@/lib/triage/loop", () => ({}));
 
 const {
   advanceLoop,
@@ -160,7 +162,8 @@ describe.skipIf(!databaseAvailable)("the loop driver", () => {
     db = createDb(testDb.uri);
     const [org] = await db.insert(organizations).values({ name: "Acme" }).returning();
     orgId = org!.id;
-    // Reviews register their own adapter (`lib/review/loop.ts`): the driver's tests use triage runs.
+    // Reviews register their own adapter (`lib/review/loop.ts`): the driver's tests use triage
+    // runs, with the real triage adapter mocked away.
     registerLoopAdapter("triage", {
       async startWorker(_tx, run, it) {
         calls.get(run.id)!.push(`worker ${it.number}${it.feedback ? `: ${it.feedback}` : ""}`);

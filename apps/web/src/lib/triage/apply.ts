@@ -18,6 +18,7 @@
 import {
   failCompletedJob,
   getIntegration,
+  getRunIterationByJob,
   finishTriageRunJob,
   getTriageRun,
   setTriageRunStatus,
@@ -62,6 +63,7 @@ import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
 import type { WorkItemTracker } from "@/lib/work-items/tracker";
 import { releaseTriageDelegation, removeTriageLabelQuietly } from "./label";
 import { continueTriageAfterJob } from "./reply";
+import { withQuestions } from "./rounds";
 import { lockedIssues, lockedMessage, type TriageDeps } from "./start";
 
 export interface TriageApplyDeps {
@@ -179,6 +181,22 @@ export function readTriageResult(
     return failed(`the triage result is too large: ${z.prettifyError(kept.error)}`);
   }
   return { triage: validated.result, result: kept.data };
+}
+
+/**
+ * A read triage with `questions` added after its own open questions (repeats dropped, within
+ * what a triage keeps), in both the triage applied and the result its run keeps.
+ */
+function withOpenQuestions(
+  read: ReturnType<typeof readTriageResult>,
+  questions: readonly string[],
+): ReturnType<typeof readTriageResult> {
+  if ("problem" in read || questions.length === 0 || !read.result.outcome) return read;
+  const openQuestions = withQuestions(read.triage.openQuestions, questions);
+  return {
+    triage: { ...read.triage, openQuestions },
+    result: { ...read.result, outcome: { ...read.result.outcome, openQuestions } },
+  };
 }
 
 /** The issue's new description: the PRD, with its open questions at the end. */
@@ -439,17 +457,35 @@ export async function reformatSubIssues(
   return done;
 }
 
+/** What the triage loop adds when it applies a round's draft (`applyTriageJob`). */
+export interface ApplyTriageOptions {
+  /** The result to apply (a round's worker job's): `job`'s own by default. */
+  result?: unknown;
+  /** Open questions to add after the draft's own: what still failed the loop's checks. */
+  openQuestions?: readonly string[];
+  /** Lines the final response adds to its list (e.g. how the checks went). */
+  notes?: readonly string[];
+}
+
 /**
- * Applies a completed triage job's result to the tracker. Idempotent: the run is
- * claimed (finished) before any tracker write, so a replayed result is ignored.
+ * Applies a completed triage job's result (or, for a loop, the round's draft `options` names)
+ * to the tracker. Idempotent: the run is claimed (finished) with `job`, its current job, before
+ * any tracker write, so a replayed result is ignored.
  */
-export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<ApplyTriageOutcome> {
+export async function applyTriageJob(
+  deps: TriageApplyDeps,
+  job: Job,
+  options: ApplyTriageOptions = {},
+): Promise<ApplyTriageOutcome> {
   const { db, tracker: gateway } = deps;
   const run = await currentRun(db, job);
   if (!run) return { status: "ignored" };
   const sessionId = run.trackerSessionId;
 
-  const read = readTriageResult(job.result);
+  const read = withOpenQuestions(
+    readTriageResult("result" in options ? options.result : job.result),
+    options.openQuestions ?? [],
+  );
   if ("problem" in read) {
     const claimed = await finishTriageRunJob(db, run.id, job.id, "failed", read.result);
     if (!claimed) return { status: "ignored" };
@@ -498,7 +534,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
   // A feature is planned epic by epic, never started as it is.
   const readiness: TriageReadiness =
     feature || triage.openQuestions.length > 0 ? "needs_refining" : "ready";
-  const notes: string[] = [];
+  const notes: string[] = [...(options.notes ?? [])];
   let created: IssueSummary[] = [];
   let reformat: SubIssueReformat | null = null;
   try {
@@ -643,7 +679,9 @@ export async function onTriageJobStarted(
 
 /**
  * A triage job completed: its result is applied, then a reply that arrived
- * while it ran starts the next job. Errors are logged, not thrown.
+ * while it ran starts the next job. A round of the triage loop is left to the
+ * loop (`./loop.ts`), which applies its chosen draft once the checks are done.
+ * Errors are logged, not thrown.
  */
 export async function onTriageJobCompleted(
   db: Database,
@@ -651,17 +689,34 @@ export async function onTriageJobCompleted(
   deps?: TriageJobDeps,
 ): Promise<void> {
   try {
-    const run = await currentRun(db, job);
-    if (!run || !isActive(run)) return;
-    const applyDeps = deps ?? (await defaultDeps(db, run));
-    const outcome = await applyTriageJob(applyDeps, job);
-    if (outcome.status !== "ignored") {
-      await removeTriageLabelQuietly(applyDeps.tracker, run.trackerIssueId);
-      await continueWithPendingReply(db, run.id, applyDeps);
-    }
+    // A round of the triage loop: the loop applies its draft once its checks are done.
+    if (await getRunIterationByJob(db, job.id)) return;
+    await applyTriageAndContinue(db, job, {}, deps);
   } catch (error) {
     console.error(`Applying triage job ${job.id} failed`, error);
   }
+}
+
+/**
+ * Applies `job` (the run's current job) with `options` (`applyTriageJob`), then removes the
+ * triage label and starts the job a reply that arrived meanwhile asks for. Nothing happens
+ * when the run is over or `job` isn't its current job.
+ */
+export async function applyTriageAndContinue(
+  db: Database,
+  job: Job,
+  options: ApplyTriageOptions,
+  deps?: TriageJobDeps,
+): Promise<ApplyTriageOutcome> {
+  const run = await currentRun(db, job);
+  if (!run || !isActive(run)) return { status: "ignored" };
+  const applyDeps = deps ?? (await defaultDeps(db, run));
+  const outcome = await applyTriageJob(applyDeps, job, options);
+  if (outcome.status !== "ignored") {
+    await removeTriageLabelQuietly(applyDeps.tracker, run.trackerIssueId);
+    await continueWithPendingReply(db, run.id, applyDeps);
+  }
+  return outcome;
 }
 
 /**

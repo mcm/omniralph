@@ -724,6 +724,19 @@ with the job, the agent runs it through the fixed query lifecycle
 ([ADR 0008](adr/0008-agents-tasks-and-the-harness.md)), and the `triage` sink validates the
 result and applies it to Linear.
 
+### Checks and revisions
+
+Triage doesn't stop at its first draft. Each draft is checked twice: by the work item lint (the
+epic's or task's required sections, done criteria that can be checked on the branch rather than
+outcomes after merge) and by the plan critic (`builtin:critique-plan`), a fresh session that judges
+it against the rubric for its size. A draft that fails either goes back to triage with the lint
+failures and the critic's notes and questions, and triage revises it, up to 3 rounds. Nothing changes
+in Linear until the loop ends.
+
+If the draft still fails after the last round, triage writes it anyway, but every lint failure and
+critic note left becomes an open question on the issue, so it stays in Needs refining and Om won't
+start it until a person answers them. The final response says how the checks went.
+
 ### What it writes
 
 Triage sizes the work as a **Fix**, a **Story**, an **Epic** or a **Feature**, with a one-paragraph

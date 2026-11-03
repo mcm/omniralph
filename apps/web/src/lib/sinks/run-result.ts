@@ -15,6 +15,8 @@ function invokerKind(job: Pick<Job, "payload">): RunInvoker["kind"] | null {
 }
 
 const byRalphRun = (job: Pick<Job, "payload">) => invokerKind(job) === "ralph-run";
+/** A triage loop's plan critic: the loop driver reads its answer, never this sink. */
+const byTriageRun = (job: Pick<Job, "payload">) => invokerKind(job) === "triage-run";
 
 /**
  * `run-result`: hands a `run.invoked` query run's result back to the run that
@@ -24,6 +26,8 @@ const byRalphRun = (job: Pick<Job, "payload">) => invokerKind(job) === "ralph-ru
  *   `applyCorrelationResult`): an output that doesn't match leaves the
  *   findings unmerged instead of being rejected; a final failure or a cancel
  *   does the same.
+ * - a triage run's plan critic: the triage loop's driver reads its answer
+ *   (`lib/triage/loop.ts`), so the sink leaves it alone.
  * - a ralph run's PR/MR description (its story task's `prDescriptionTaskId`):
  *   through the same hooks as a `ralph.describe-pr` job; the delivery makes
  *   its agent the run's sticky agent (or is skipped once the run is
@@ -41,14 +45,22 @@ export const runResultSink: Sink<never, QueryRunResult> = {
   },
   onStarted: async (db, job, agentId) =>
     byRalphRun(job) ? onRalphJobStarted(db, job, agentId) : { skip: false },
-  apply: (db, job, result) =>
-    byRalphRun(job) ? onRalphJobFinished(db, job) : applyCorrelationResult(db, job, result),
-  onFailed: (db, job, error) =>
-    byRalphRun(job)
-      ? onRalphJobFinished(db, job)
-      : onCorrelationFailed(db, job, `Correlation failed: ${error ?? "unknown error"}`),
-  onCanceled: (db, job) =>
-    byRalphRun(job)
-      ? onRalphJobFinished(db, job)
-      : onCorrelationFailed(db, job, "Correlation was canceled"),
+  apply: async (db, job, result) =>
+    byTriageRun(job)
+      ? undefined
+      : byRalphRun(job)
+        ? onRalphJobFinished(db, job)
+        : applyCorrelationResult(db, job, result),
+  onFailed: async (db, job, error) =>
+    byTriageRun(job)
+      ? undefined
+      : byRalphRun(job)
+        ? onRalphJobFinished(db, job)
+        : onCorrelationFailed(db, job, `Correlation failed: ${error ?? "unknown error"}`),
+  onCanceled: async (db, job) =>
+    byTriageRun(job)
+      ? undefined
+      : byRalphRun(job)
+        ? onRalphJobFinished(db, job)
+        : onCorrelationFailed(db, job, "Correlation was canceled"),
 };

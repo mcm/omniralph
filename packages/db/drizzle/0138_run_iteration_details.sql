@@ -1,0 +1,1 @@
+ALTER TABLE "run_iterations" ADD COLUMN "details" jsonb;

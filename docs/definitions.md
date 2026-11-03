@@ -415,6 +415,33 @@ open (anything else is `fail`). The prompt asks for a question only when neither
 repo answers it: the critic reads the repo first and puts what the repo settles in a note instead.
 The critic uses `claude-sonnet-5-5` with a 150,000-token cap.
 
+### Triage loop
+
+`builtin:triage` names `builtin:critique-plan` as its loop's verifier, with a cap of 3 rounds
+(`loop: { verifierPlaybookId: "builtin:critique-plan", maxIterations: 3 }`), so each triage runs as a
+loop (`apps/web/src/lib/triage/loop.ts`, run kind `triage`). Each round's worker is a `triage.run`
+job; then the control panel lints its draft with the work item lint (`lintWorkItem`: the
+description in its size's format, each story as a task) and starts the critic, a
+`triage.critique-plan` job whose trigger context adds `invoker` (`{ kind: "triage-run", id }`),
+`repository` and `round` to `critique` (`TriageCritiqueTriggerContext`). The loop driver reads the
+critic's answer, never the `run-result` sink. A draft that isn't a usable triage fails the lint with
+why and isn't critiqued; a Feature's recommendation is neither linted nor critiqued.
+
+The round passes when the lint finds nothing and the critic passes the draft. Otherwise the next
+worker's trigger context carries `previousResult` (the last usable draft) and `revision`
+(`revision.round`, `revision.maxRounds` and `revision.feedback`, the lint failures, unmet rubric
+items and the critic's questions, quoted as `<revision-feedback>`). Each round is recorded on its
+`run_iterations` row's `details` as a `TriageRound` (`@omniralph/shared`, `triage-loop.ts`): the
+`draft`, the `lint` (`passed`, `problems`) and the `critique` (`verdict`, `notes`,
+`openQuestions`).
+
+When the loop ends, the last usable draft is applied as a single session's would be. Unless it
+passed both checks, every lint failure and unmet rubric item left, and each of the critic's
+questions, becomes an open question on the work item (and so does a critic that couldn't judge it),
+which keeps it in Needs refining and unstartable until a person answers. A reply or retry starts a
+new loop on the same run, numbered on after the last one's rounds. A triage playbook whose loop names
+no verifier runs one session, as before.
+
 ## Built-in playbooks
 
 The built-ins are in `packages/tasks/src/builtin/` and registered in `packages/tasks/src/builtins.ts`

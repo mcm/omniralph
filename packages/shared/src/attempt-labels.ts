@@ -28,6 +28,7 @@ import { REVIEW_REPLY_JOB_TYPE } from "./reply.js";
 import { REVIEW_TASK_JOB_TYPE } from "./review-job.js";
 import { LEARN_RULE_JOB_TYPE } from "./rules.js";
 import { TRIAGE_RUN_JOB_TYPE } from "./triage-job.js";
+import { TRIAGE_CRITIQUE_JOB_TYPE } from "./triage-loop.js";
 
 /** Job type of the legacy single-pass reviews (before review tasks); no new job has it. */
 export const LEGACY_REVIEW_RUN_JOB_TYPE = "review.run";
@@ -209,6 +210,13 @@ const PHRASES: Record<string, (context: AttemptLabelContext) => Phrase> = {
   },
   [TRIAGE_RUN_JOB_TYPE]: (c) =>
     phrase("triage", "Triaging", "Triaged", present(c.workItem) ?? RUN_FALLBACK),
+  [TRIAGE_CRITIQUE_JOB_TYPE]: (c) =>
+    phrase(
+      "critique",
+      "Critiquing",
+      "Critiqued",
+      `the triage draft of ${present(c.workItem) ?? RUN_FALLBACK}`,
+    ),
   [CHAT_ASK_JOB_TYPE]: (c) => {
     const repo = repositoryName(c.repository);
     return phrase("answer", "Answering", "Answered", `a question${repo ? ` about ${repo}` : ""}`);

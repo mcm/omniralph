@@ -351,6 +351,31 @@ export const VARIABLES: readonly VariableDefinition[] = [
     triggers: ["tracker.triage"],
     description: "Description the previous triage wrote.",
   },
+  {
+    name: "revision.round",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["tracker.triage"],
+    description:
+      "The round of the triage loop that revises the previous round's draft (2 or later; `revision` is null on the first).",
+  },
+  {
+    name: "revision.maxRounds",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["tracker.triage"],
+    description:
+      "The triage loop's cap: after its last round, what still fails becomes open questions.",
+  },
+  {
+    name: "revision.feedback",
+    source: "trigger",
+    trust: "untrusted",
+    quote: "revision-feedback",
+    triggers: ["tracker.triage"],
+    description:
+      "What the work item lint and the plan critic found in the previous round's draft: lint failures, unmet rubric items and open questions.",
+  },
   // Correlation: the review run that invoked the run, with each task's results.
   {
     name: "reviewRun.tasks.items.taskId",

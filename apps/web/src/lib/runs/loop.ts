@@ -145,7 +145,7 @@ export function sinkMayLoop(sink: SinkKind): boolean {
  * job, with the playbook's verifier and loop limits (`playbookLoopSettings`).
  * Null for a playbook whose role doesn't loop through the driver (the
  * single-session roles, and coding roles) or that names no verifier: its run
- * is one session. A run whose loop already started gets its first iteration back.
+ * is one session. A run whose loop already started gets that first iteration back.
  * `options` may replace the playbook's limits and start the first worker itself.
  */
 export async function startLoop(
@@ -160,15 +160,19 @@ export async function startLoop(
   if (verifierPlaybookId === null) return null;
   const limits = { ...playbookLimits, ...options.limits };
   const adapter = adapterFor(run.kind);
+  const number = options.number ?? 1;
   const started = await db.transaction(async (tx) => {
     const iteration = await insertRunIteration(tx, {
       run,
-      number: 1,
+      number,
       feedback: null,
       verifierPlaybookId,
       ...limits,
     });
-    if (!iteration) return { iteration: (await listRunIterations(tx, run))[0]!, started: false };
+    if (!iteration) {
+      const existing = (await listRunIterations(tx, run)).find((it) => it.number === number)!;
+      return { iteration: existing, started: false };
+    }
     const workerJobId = await (options.startWorker
       ? options.startWorker(tx, iteration)
       : adapter.startWorker(tx, run, iteration));
@@ -184,6 +188,12 @@ export async function startLoop(
 export interface StartLoopOptions {
   /** Limits that replace the playbook's (e.g. a review depth's pass cap). */
   limits?: Partial<PlaybookLoopLimits>;
+  /**
+   * The number of the loop's first iteration (1 by default): a run that loops again after an
+   * earlier loop ended (e.g. a triage run answering a reply) numbers on after its last
+   * iteration, with a `maxIterations` counted from there.
+   */
+  number?: number;
   /**
    * Starts the first iteration's worker instead of the adapter's
    * `startWorker` (e.g. a job the caller builds), in the driver's transaction;

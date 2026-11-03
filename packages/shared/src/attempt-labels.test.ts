@@ -306,6 +306,20 @@ const CASES: [string, AttemptLabelContext, string, string, string][] = [
   ["triage.run", FULL, "Triaging SOC-1719", "Triaged SOC-1719", "Couldn't triage SOC-1719"],
   ["triage.run", {}, "Triaging this run", "Triaged this run", "Couldn't triage this run"],
   [
+    "triage.critique-plan",
+    FULL,
+    "Critiquing the triage draft of SOC-1719",
+    "Critiqued the triage draft of SOC-1719",
+    "Couldn't critique the triage draft of SOC-1719",
+  ],
+  [
+    "triage.critique-plan",
+    {},
+    "Critiquing the triage draft of this run",
+    "Critiqued the triage draft of this run",
+    "Couldn't critique the triage draft of this run",
+  ],
+  [
     "chat.ask",
     FULL,
     "Answering a question about customer-portal",
