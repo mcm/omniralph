@@ -842,13 +842,15 @@ export type RunFindings = z.infer<typeof runFindingsSchema>;
 
 /**
  * Where a triage run left its work item: still triaging (queued or running), Ready to start
- * (nothing left to answer), Needs answers (open questions left, so Needs refining), failed,
- * or stopped (the issue went in progress, or someone stopped it).
+ * (nothing left to answer), Needs answers (open questions left, so Needs refining), Needs
+ * planning (Feature-sized work, left in Needs refining with a recommendation to plan it as a
+ * feature), failed, or stopped (the issue went in progress, or someone stopped it).
  */
 export const TRIAGE_SUMMARY_OUTCOMES = [
   "triaging",
   "ready",
   "needs_answers",
+  "needs_planning",
   "failed",
   "stopped",
 ] as const;

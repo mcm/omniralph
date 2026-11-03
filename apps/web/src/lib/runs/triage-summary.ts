@@ -25,8 +25,10 @@ const JobIssue = z.object({
 
 /**
  * The run's outcome: its status while it isn't finished, else whether its last result left
- * open questions (Needs refining) or none (Ready to start). A completed run without a valid
- * result is shown failed: it changed nothing.
+ * open questions (Needs answers), sized the work as a Feature (Needs planning: the work item
+ * stays in Needs refining with a recommendation to plan it as a feature), or neither (Ready to
+ * start). Open questions come first, so a person can still answer them. A completed run
+ * without a valid result is shown failed: it changed nothing.
  */
 function outcomeOf(
   status: TriageRunWithJobs["run"]["status"],
@@ -42,7 +44,8 @@ function outcomeOf(
       return "stopped";
     case "completed":
       if (!result?.outcome) return "failed";
-      return result.outcome.openQuestions.length > 0 ? "needs_answers" : "ready";
+      if (result.outcome.openQuestions.length > 0) return "needs_answers";
+      return result.outcome.sizing?.size === "feature" ? "needs_planning" : "ready";
   }
 }
 
