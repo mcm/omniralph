@@ -697,7 +697,7 @@ questions. It never writes code, branches, commits or PRs/MRs.
 One triage runs per issue at a time: the label on an issue that is being triaged does nothing,
 and a mention or reply from another session is answered that the issue is being triaged in
 another session. Triage reports in the session like Om does: an "On it…" thought, a "Triaging …" thought naming the repository it reads, and a
-final response with what changed (outcome, size, structure, sub-issues created or updated, the
+final response with what changed (outcome, size and its reason, structure, sub-issues created or updated, the
 status set and the open questions).
 
 ### Repository and session
@@ -726,16 +726,19 @@ result and applies it to Linear.
 
 ### What it writes
 
-The issue's title and description are rewritten as a PRD following the `linear-prd` methodology
-(Introduction, Goals, Quality Gates, Non-Goals, Design and Technical Considerations, Success
-Metrics) with a t-shirt size, then:
+Triage sizes the work as a **Fix**, a **Story**, an **Epic** or a **Feature**, with a one-paragraph
+reason and a t-shirt estimate (XS–M for a Fix or a Story, L–XL for an Epic or a Feature). The size
+and its reason are kept with the triage run and named in the final response. The size decides
+what it writes:
 
-| Size     | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| XS, S, M | A single issue: the description carries the user story and its acceptance criteria.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| L, XL    | An epic: the description is the PRD without stories, and each story becomes a sub-issue (with priorities, sort order, its acceptance criteria, `manual` stories labelled with the organization's first manual label, and "blocks" relations from the dependencies). There is no validation sub-issue: Om audits the epic against its requirements before its PR opens. These go through the same materialization as a delegated PRD, so Om builds the epic as `children` without rewriting it. |
+| Size    | Result                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fix     | A single task: the title and description are rewritten in the task format, and the issue gets the integration's first fix (bug) label.                                                                                                                                                                                                                                                                 |
+| Story   | A single task in the task format, without the fix label.                                                                                                                                                                                                                                                                                                                                               |
+| Epic    | The description is rewritten in the epic format, and each task becomes a sub-issue (with priorities, sort order, `manual` tasks labelled with the organization's first manual label, Fix tasks with the fix label, and "blocks" relations from the dependencies). There is no validation sub-issue: Om audits the epic against its requirements before its PR opens. Om builds the epic as `children`. |
+| Feature | Too big for one epic. Triage rewrites nothing and files no sub-issues: it posts one comment recommending feature planning, with the reason, a first cut of the epics and any open questions, and leaves the issue in its Needs-refining state.                                                                                                                                                         |
 
-An L/XL issue that already has sub-issues gets no new story sub-issues next to them; triage it
+An Epic-sized issue that already has sub-issues gets no new story sub-issues next to them; triage it
 again to reformat them.
 
 **Reformatting.** An issue that is already triaged but not in Om's format (an epic with

@@ -36,6 +36,28 @@ const TrackerStateType = z.enum(TRACKER_STATE_TYPES);
 export const TRIAGE_SIZES = ["XS", "S", "M", "L", "XL"] as const;
 export type TriageSize = (typeof TRIAGE_SIZES)[number];
 
+/**
+ * How big triage judged the work, which decides the shape of its output: a Fix or a Story is a
+ * single task, an Epic is a set of task sub-issues, and a Feature (a set of epics) is too big to
+ * file: triage recommends planning it as a feature instead.
+ */
+export const TRIAGE_WORK_SIZES = ["fix", "story", "epic", "feature"] as const;
+export type TriageWorkSize = (typeof TRIAGE_WORK_SIZES)[number];
+
+/** Triage's sizing of the work: its size and, in one paragraph, why. */
+export const TriageSizing = z.object({
+  size: z.enum(TRIAGE_WORK_SIZES),
+  reason: z.string().trim().min(1).max(4000),
+});
+export type TriageSizing = z.infer<typeof TriageSizing>;
+
+/** An epic of a first cut at planning Feature-sized work (posted, never filed). */
+export const TriageFeatureEpic = z.object({
+  title: z.string().trim().min(1).max(255),
+  summary: z.string().trim().min(1).max(4000),
+});
+export type TriageFeatureEpic = z.infer<typeof TriageFeatureEpic>;
+
 /** A work item's ID in the tracker. */
 const TrackerId = z.string().min(1).max(64);
 /** A work item's identifier in the tracker, e.g. `TOOL-83`. */
@@ -112,11 +134,18 @@ export type TriageSubIssueUpdate = z.infer<typeof TriageSubIssueUpdate>;
 /** What a triage session decided: the issue as it should read in the tracker. */
 export const TriageOutcome = z.object({
   outcome: z.enum(TRIAGE_OUTCOME_KINDS),
+  /** The t-shirt estimate. */
   size: z.enum(TRIAGE_SIZES),
+  /** Fix, Story, Epic or Feature, and why; null for a triage from before sizing. */
+  sizing: TriageSizing.nullable().default(null),
   title: z.string().trim().min(1).max(255),
   /** A single task's kind: a Fix gets the integration's fix (bug) label. Always `story` for an epic. */
   kind: TriageTaskKind.default("story"),
-  /** The PRD, without the `## Open Questions` section (the control panel adds it from `openQuestions`). */
+  /**
+   * The PRD, without the `## Open Questions` section (the control panel adds it from
+   * `openQuestions`); for a Feature, the recommendation to plan it as a feature (posted, the
+   * issue is left as it is).
+   */
   description: z.string().trim().min(1).max(MAX_DOCUMENT_LENGTH),
   /** What it couldn't decide; empty when the issue is ready for Todo. */
   openQuestions: z.array(z.string().trim().min(1).max(4000)).max(50),
@@ -124,6 +153,8 @@ export const TriageOutcome = z.object({
   stories: z.array(TriageStory).max(100).default([]),
   /** Existing sub-issues reformatted to the PRD format (`reformat` only). */
   subIssueUpdates: z.array(TriageSubIssueUpdate).max(500).default([]),
+  /** A Feature's first cut of its epics (posted in the recommendation, never filed). */
+  featureEpics: z.array(TriageFeatureEpic).max(50).default([]),
 });
 export type TriageOutcome = z.infer<typeof TriageOutcome>;
 

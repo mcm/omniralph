@@ -49,6 +49,8 @@ export function withoutOpenQuestions(description: string): string {
 export interface TriagePreviousResult {
   outcome?: string;
   size: string;
+  /** Fix, Story, Epic or Feature, and why; null (or absent) for a triage from before sizing. */
+  sizing?: { size: string; reason: string } | null;
   title: string;
   description: string;
   openQuestions: readonly string[];
@@ -98,7 +100,7 @@ export interface TriagePromptInput {
 export const TRIAGE_HEADING = "## Triage this issue";
 
 /** System prompt addition of a triage session. */
-export const TRIAGE_SYSTEM_APPEND = `You are "Omniralph", a product manager triaging an issue into an epic or a task (a Story or a Fix), unattended.
+export const TRIAGE_SYSTEM_APPEND = `You are "Omniralph", a product manager triaging an issue into an epic or a task (a Story or a Fix), or recommending a Feature be planned as one, unattended.
 
 - You are a product manager, not a software engineer: produce the plan only. Never write code, create files, branches, commits or pull requests.
 - Only read. Inspect the repo in your working directory, when there is one, with read-only tools. You can't run commands, edit files or reach the network.
@@ -170,6 +172,8 @@ export interface TriageTemplateContext {
   previousResult: {
     outcome: string;
     size: string;
+    /** The size it judged the work (`fix`, `story`, `epic`, `feature`); null before sizing. */
+    sizing: { size: string; reason: string } | null;
     title: string;
     description: string;
     stories: TemplateList<{ index: number; title: string }>;
@@ -218,6 +222,9 @@ export function triageTemplateContext(input: TriagePromptInput): TriageTemplateC
       ? {
           outcome: previous.outcome ?? "prd",
           size: previous.size,
+          sizing: previous.sizing
+            ? { size: previous.sizing.size, reason: previous.sizing.reason }
+            : null,
           title: previous.title,
           description: previous.description,
           stories: templateList(previous.stories?.map((s, index) => ({ index, title: s.title }))),
@@ -293,8 +300,9 @@ export function buildTriagePrompt(input: TriagePromptInput): string {
     ...(previous
       ? [
           "## Your previous triage of this issue",
-          `This session triaged the issue before (outcome \`${previous.outcome ?? "prd"}\`, size ${previous.size}). Build on it rather than starting over: keep what still holds and change only what the reply and any new information call for.`,
+          `This session triaged the issue before (outcome \`${previous.outcome ?? "prd"}\`, size ${previous.size}${previous.sizing ? `, sized as \`${previous.sizing.size}\`` : ""}). Build on it rather than starting over: keep what still holds and change only what the reply and any new information call for.`,
           "",
+          ...(previous.sizing ? quote("previous-sizing-reason", previous.sizing.reason) : []),
           ...quote("previous-title", previous.title),
           ...quote("previous-description", previous.description),
           ...(previous.stories?.length
@@ -327,8 +335,8 @@ export function buildTriagePrompt(input: TriagePromptInput): string {
     "",
     TRIAGE_HEADING,
     `1. Study the issue, its comments and sub-issues, and the repo (\`${input.tracker.conventionsFile}\` first).`,
-    "2. Decide the outcome and the kind (a Story or a Fix), size the work, write or reformat the epic or the task in its three paragraphs, and write the tasks or sub-issue updates the structure needs.",
+    "2. Size the work as a Fix, a Story, an Epic or a Feature, decide the outcome, write or reformat the epic or the task in its three paragraphs (for a Feature, the recommendation and a first cut of its epics), and write the tasks or sub-issue updates the structure needs.",
     "3. Turn every remaining ambiguity into an open question.",
-    "4. Report the result in your structured output: `outcome`, `title`, `kind`, `description`, `size`, `openQuestions`, `stories`, `subIssueUpdates` and `summary`.",
+    "4. Report the result in your structured output: `outcome`, `sizing`, `title`, `description`, `size`, `openQuestions`, `stories`, `subIssueUpdates`, `featureEpics` and `summary`.",
   ].join("\n");
 }

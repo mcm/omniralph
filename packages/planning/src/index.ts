@@ -44,6 +44,7 @@ export {
 export type { Fragment, MethodologyContext } from "./methodology/rules.js";
 export {
   TRIAGE_DESCRIPTION_STEP,
+  TRIAGE_FEATURE_STEP,
   TRIAGE_OPEN_QUESTIONS_STEP,
   TRIAGE_OUTCOME_STEP,
   TRIAGE_REFORMAT_STEP,

@@ -97,13 +97,15 @@ export const EPIC_AUDIT_RULE: Fragment = {
 - An epic that already has a ${code(VALIDATION_AUDIT_TITLE)} task keeps it: it still runs as a task, and the epic is audited too.`,
 };
 
-/** T-shirt sizing and the task / epic threshold. */
+/** Sizing: Fix, Story, Epic or Feature, with the t-shirt estimate of each. */
 export const SIZING_RULE: Fragment = {
   id: "sizing",
   title: "Sizing",
-  body: `Size the whole body of work, not one piece of it: XS, S, M, L or XL. Weigh the number of distinct requirements, the surface it touches (database, API, UI, integrations, infrastructure), the unknowns and risk, and how many focused agent sessions it would realistically take.
-- **L or larger (L, XL): an epic.** One task per story or fix, and no validation task: the epic audit checks the requirements.
-- **Smaller than L (XS, S, M): a single task.** One task in the task format, a Fix when it is a bug, with its done criteria in its own description and no sub-issues.`,
+  body: `Size the whole body of work, not one piece of it. Weigh the number of distinct requirements, the surface it touches (database, API, UI, integrations, infrastructure), the unknowns and risk, and how many focused agent sessions it would realistically take. It is one of four sizes, each with a t-shirt estimate:
+- **Fix (XS, S or M): a single task fixing a bug.** One task in the task format, with its done criteria in its own description and no sub-issues; it gets the bug label.
+- **Story (XS, S or M): a single task of new work.** The same shape as a Fix, without the bug label.
+- **Epic (L or XL): a set of tasks shipped in one pull request.** One task per story or fix, and no validation task: the epic audit checks the requirements.
+- **Feature (L or XL): a set of epics.** Too big for one pull request: it is planned as a feature, epic by epic, rather than filed as one epic. Nothing is built from it directly.`,
 };
 
 /** Splitting an epic into tasks by feature. */

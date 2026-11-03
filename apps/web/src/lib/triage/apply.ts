@@ -1,8 +1,10 @@
 /**
- * Applies a finished `triage.run` job to the tracker (agents hold no tracker token):
- * the issue's title and description become the PRD (with its open questions
- * at the end), a Fix (a single task, or a new epic's task, for a bug) gets the integration's
- * fix label, a new epic gets its story sub-issues, a reformatted epic's
+ * Applies a finished `triage.run` job to the tracker (agents hold no tracker token), shaped by
+ * the size triage gave the work: the issue's title and description become the PRD (with its
+ * open questions at the end), a Fix (a single task, or a new epic's task, for a bug) gets the
+ * integration's fix label, a new Epic gets its story sub-issues (with "blocks" relations), a
+ * Feature only gets one comment recommending feature planning with a first cut of its epics
+ * (nothing is rewritten or filed), a reformatted epic's
  * Backlog/Todo sub-issues are rewritten (with their missing relations), and the issue moves through the tracker's readiness state
  * mapping: to its first Ready-to-start state when nothing is left to answer, else to its
  * first Needs-refining state. Triage never starts the epic itself. The outcome is
@@ -32,6 +34,7 @@ import {
   withoutOpenQuestions,
   type MaterializationPlan,
   type TriageAgentOutput,
+  type TriageResult,
 } from "@omniralph/ralph";
 import {
   QueryRunResult,
@@ -97,7 +100,8 @@ export type ApplyTriageOutcome =
 /** Ready to start (no open questions left) or Needs refining. */
 export type TriageReadiness = "ready" | "needs_refining";
 
-const EPIC_SIZES = new Set(["L", "XL"]);
+/** The sizes triage gives work, as the final response names them. */
+const SIZE_NAMES = { fix: "Fix", story: "Story", epic: "Epic", feature: "Feature" } as const;
 
 const READINESS_NAMES = { ready: "Ready to start", needs_refining: "Needs refining" } as const;
 
@@ -146,7 +150,7 @@ function clip(text: string): string {
 export function readTriageResult(
   result: unknown,
 ):
-  | { triage: TriageAgentOutput; result: TriageRunResult }
+  | { triage: TriageResult; result: TriageRunResult }
   | { problem: string; result: TriageRunResult | null } {
   const parsed = QueryRunResult.safeParse(result);
   if (!parsed.success) {
@@ -216,32 +220,39 @@ const FORMAT_ARTICLES = { epic: "an epic", task: "a task" } as const;
 /** The final response in the session: what triage decided and what it changed. */
 export function appliedMessage(
   issue: Pick<IssueSummary, "identifier">,
-  triage: TriageAgentOutput,
+  triage: TriageResult,
   created: readonly IssueSummary[],
   readiness: TriageReadiness,
   notes: readonly string[] = [],
   subIssues = 0,
 ): string {
   const plural = (n: number) => (n === 1 ? "" : "s");
-  const structure =
-    subIssues > 0
+  const feature = triage.sizing.size === "feature";
+  const structure = feature
+    ? `feature of ${triage.featureEpics.length} epic${plural(triage.featureEpics.length)} to plan as a feature (nothing filed)`
+    : subIssues > 0
       ? `epic with ${subIssues} existing sub-issue${plural(subIssues)}`
       : created.length > 0
         ? `epic with ${created.length} new sub-issue${plural(created.length)}: ${created.map((c) => c.identifier).join(", ")}`
-        : EPIC_SIZES.has(triage.size)
+        : triage.sizing.size === "epic"
           ? "epic (its existing sub-issues kept)"
           : "single task";
   const lines = [
-    `Triaged **${issue.identifier}** (${triage.outcome === "prd" ? `rewritten as ${FORMAT_ARTICLES[workItemFormat(triage.description) ?? "task"]}` : triage.outcome === "reformat" ? "reformatted as an epic" : "already in the planning formats"}).`,
+    `Triaged **${issue.identifier}** (${feature ? "too big for one epic: plan it as a feature" : triage.outcome === "prd" ? `rewritten as ${FORMAT_ARTICLES[workItemFormat(triage.description) ?? "task"]}` : triage.outcome === "reformat" ? "reformatted as an epic" : "already in the planning formats"}).`,
     "",
     triage.summary,
     "",
-    `- **Size:** ${triage.size}`,
+    `- **Size:** ${SIZE_NAMES[triage.sizing.size]} (${triage.size}): ${triage.sizing.reason.replace(/\s+/g, " ")}`,
     `- **Structure:** ${structure}`,
     `- **Status:** ${READINESS_NAMES[readiness]}`,
     ...notes.map((n) => `- ${n}`),
   ];
-  if (triage.openQuestions.length > 0) {
+  if (feature) {
+    lines.push(
+      "",
+      `${issue.identifier} isn't built as it is: plan it as a feature, epic by epic (the recommendation is in a comment on it).`,
+    );
+  } else if (triage.openQuestions.length > 0) {
     lines.push(
       "",
       `**Open questions** (it needs refining until they are answered; reply here to answer them):`,
@@ -262,6 +273,35 @@ export function openQuestionsComment(
   const who = issue.creator?.url ?? (issue.creator ? `@${issue.creator.name}` : null);
   const intro = `${who ? `${who} ` : ""}triage left ${questions.length === 1 ? "an open question" : `${questions.length} open questions`} on this issue. It needs refining until ${questions.length === 1 ? "it is" : "they are"} answered (reply in the triage session, or edit the description and triage again):`;
   return [intro, "", ...questions.map((q, i) => `${i + 1}. ${q}`)].join("\n");
+}
+
+/**
+ * The one comment Feature-sized triage posts: why the work is a feature, the recommendation to
+ * plan it as one, a first cut of its epics, and the questions left open.
+ */
+export function featurePlanningComment(
+  triage: Pick<TriageResult, "sizing" | "description" | "featureEpics" | "openQuestions">,
+): string {
+  const lines = [
+    "**Plan this as a feature.** It is too big for one epic, so triage rewrote nothing and filed no sub-issues.",
+    "",
+    `**Why it's a feature:** ${triage.sizing.reason.trim()}`,
+    "",
+    triage.description.trim(),
+    "",
+    "**A first cut of its epics:**",
+    "",
+    ...triage.featureEpics.map((e, i) => `${i + 1}. **${e.title}**: ${e.summary.trim()}`),
+  ];
+  if (triage.openQuestions.length > 0) {
+    lines.push(
+      "",
+      "**Open questions:**",
+      "",
+      ...triage.openQuestions.map((q, i) => `${i + 1}. ${q}`),
+    );
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -442,12 +482,18 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
     return { status: "in_progress", issues: locked };
   }
 
-  const readiness: TriageReadiness = triage.openQuestions.length > 0 ? "needs_refining" : "ready";
+  const feature = triage.sizing.size === "feature";
+  // A feature is planned epic by epic, never started as it is.
+  const readiness: TriageReadiness =
+    feature || triage.openQuestions.length > 0 ? "needs_refining" : "ready";
   const notes: string[] = [];
   let created: IssueSummary[] = [];
   let reformat: SubIssueReformat | null = null;
   try {
-    if (triage.outcome === "unchanged") {
+    if (feature) {
+      // Too big to file: one comment recommending feature planning, and nothing else changes.
+      await gateway.addComment(issue.id, featurePlanningComment(triage));
+    } else if (triage.outcome === "unchanged") {
       // Already a PRD: only its open questions change.
       const description = triagedDescription({
         description: withoutOpenQuestions(issue.description),
@@ -489,7 +535,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
       if (added) notes.push(`**Label added:** ${added} (a Fix)`);
     }
 
-    if (triage.outcome === "prd" && EPIC_SIZES.has(triage.size) && triage.stories.length > 0) {
+    if (triage.outcome === "prd" && triage.sizing.size === "epic" && triage.stories.length > 0) {
       if (children.length === 0) {
         const [manualLabel] = await runManualLabels(db, { organizationId: job.organizationId });
         const [fixLabel] = triage.stories.some((s) => s.kind === "fix") ? await fixLabels() : [];
@@ -516,7 +562,7 @@ export async function applyTriageJob(deps: TriageApplyDeps, job: Job): Promise<A
     return fail(error);
   }
 
-  if (triage.openQuestions.length > 0) {
+  if (!feature && triage.openQuestions.length > 0) {
     await quietly(`Commenting the open questions on ${issue.identifier}`, () =>
       gateway.addComment(issue.id, openQuestionsComment(issue, triage.openQuestions)),
     );

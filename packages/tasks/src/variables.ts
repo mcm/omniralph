@@ -308,7 +308,11 @@ export const VARIABLES: readonly VariableDefinition[] = [
   ...(
     [
       ["outcome", "Outcome of the session's previous triage (`prd`, `reformat`, `unchanged`)."],
-      ["size", "Size of the previous triage."],
+      ["size", "T-shirt size of the previous triage."],
+      [
+        "sizing.size",
+        "What the previous triage sized the work as (`fix`, `story`, `epic`, `feature`).",
+      ],
       ["stories.items.index", "0-based index of a story of the previous triage."],
       ["stories.items.title", "Title of a story of the previous triage."],
       ["subIssueUpdates.items.id", "Tracker ID of a sub-issue the previous triage reformatted."],
@@ -330,6 +334,14 @@ export const VARIABLES: readonly VariableDefinition[] = [
     quote: "previous-title",
     triggers: ["tracker.triage"],
     description: "Title the previous triage wrote.",
+  },
+  {
+    name: "previousResult.sizing.reason",
+    source: "trigger",
+    trust: "untrusted",
+    quote: "previous-sizing-reason",
+    triggers: ["tracker.triage"],
+    description: "Why the previous triage sized the work as it did.",
   },
   {
     name: "previousResult.description",

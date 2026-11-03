@@ -53,12 +53,14 @@ const PRD = [
 const outcome = (overrides: Partial<TriageOutcome> = {}): TriageOutcome => ({
   outcome: "prd",
   size: "S",
+  sizing: { size: "story", reason: "One focused session builds it." },
   title: "Export widgets",
   kind: "story",
   description: PRD,
   openQuestions: [],
   stories: [],
   subIssueUpdates: [],
+  featureEpics: [],
   ...overrides,
 });
 
