@@ -9,7 +9,7 @@
  * per review.
  */
 import { and, asc, desc, eq, inArray, isNull, lt, ne, notInArray } from "drizzle-orm";
-import type { ReviewDepth, ReviewPassRecord } from "@omniralph/shared";
+import type { DocumentationUpdate, ReviewDepth, ReviewPassRecord } from "@omniralph/shared";
 import { currentChangeCollector, recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import {
@@ -703,6 +703,8 @@ export interface ReviewOutcomeInput {
   fixedFindingIds?: readonly string[];
   /** A looped review's passes and the findings their verifier dropped (left alone when absent). */
   passes?: { records: readonly ReviewPassRecord[]; droppedFindings: number };
+  /** A documentation check's confirmed updates (left alone when absent). */
+  documentationUpdates?: readonly DocumentationUpdate[];
   findings: Omit<
     typeof findings.$inferInsert,
     | "id"
@@ -748,6 +750,9 @@ export async function saveReviewOutcome(
         ...(input.passes && {
           passes: [...input.passes.records],
           droppedFindings: input.passes.droppedFindings,
+        }),
+        ...(input.documentationUpdates && {
+          documentationUpdates: [...input.documentationUpdates],
         }),
         error: null,
       })

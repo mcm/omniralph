@@ -8,6 +8,7 @@
 import type {
   AgentHostReport,
   ClaudeLoginReport,
+  DocumentationUpdate,
   HostToolReport,
   ReviewPassRecord,
   RoutingQuery,
@@ -1574,6 +1575,11 @@ export const reviews = pgTable(
     droppedFindings: integer("dropped_findings").notNull().default(0),
     /** A looped review's passes, first first, as each one's verifier settled it. */
     passes: jsonb("passes").$type<ReviewPassRecord[]>().notNull().default([]),
+    /**
+     * A documentation check's confirmed updates, one per file (empty when
+     * nothing needs changing); null for every other review.
+     */
+    documentationUpdates: jsonb("documentation_updates").$type<DocumentationUpdate[]>(),
     error: text("error"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

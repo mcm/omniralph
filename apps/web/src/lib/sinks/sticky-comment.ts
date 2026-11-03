@@ -12,6 +12,7 @@ import {
   onReviewJobFailed,
   onReviewJobRetry,
   onReviewJobStarted,
+  loopIterationOf,
   reviewJobState,
   saveReviewResult,
   settleReviewRunOf,
@@ -29,6 +30,8 @@ import type { Sink } from "./index";
  * every later run (`postStickyComment`), and its review run settles as for
  * the `review` sink, which leaves it out of the correlation and the posted
  * review. Start, retry, failure and cancel are the `review` sink's.
+ * A documentation check's iterations (`builtin:check-docs`) are left to its
+ * loop (`lib/review/docs-loop.ts`), which saves the review once it ends.
  */
 export const stickyCommentSink: Sink<never, ReviewTaskResult> = {
   kind: "sticky-comment",
@@ -41,6 +44,8 @@ export const stickyCommentSink: Sink<never, ReviewTaskResult> = {
   onStarted: onReviewJobStarted,
   async apply(db, job, result) {
     const state = reviewJobState(job);
+    // A documentation check's iteration: its loop verifies and saves the review.
+    if (loopIterationOf(state) !== null) return;
     if (result.findings.length > 0) {
       console.warn("dropping the findings of a summary-only review task", {
         jobId: job.id,

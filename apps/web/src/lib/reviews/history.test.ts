@@ -87,6 +87,7 @@ describe("view mapping", () => {
         checkType: null,
         droppedFindings: 0,
         passes: [],
+        documentationUpdates: null,
         repositoryId: "repo",
         prNumber: 3,
         prTitle: null,

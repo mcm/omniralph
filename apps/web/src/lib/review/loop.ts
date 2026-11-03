@@ -18,9 +18,9 @@ import {
   type RunIteration,
 } from "@omniralph/db";
 import {
+  documentationLoopLimits,
   FINDING_VERIFICATION_JOB_TYPE,
   findingVerificationContext,
-  isRateLimitError,
   MAX_REVIEW_SUMMARY_LENGTH,
   QueryRunResult,
   REVIEW_DEPTHS,
@@ -28,11 +28,10 @@ import {
   reviewPassLimits,
   reviewTriggerContext,
   RunSpecJobPayload,
-  verifierRunFromResult,
+  type DocumentationDepth,
   type ReviewCheckType,
   type ReviewDepth,
   type ReviewPassContext,
-  type VerifierRun,
 } from "@omniralph/shared";
 import type { Playbook } from "@omniralph/tasks";
 import type { JobDispatcher } from "@/lib/dispatch";
@@ -45,6 +44,14 @@ import {
   type LoopExecutor,
   type LoopVerdict,
 } from "@/lib/runs/loop";
+import {
+  DEFAULT_DOCUMENTATION_VERIFIER_ID,
+  documentationOfJob,
+  finishDocumentation,
+  judgeDocumentation,
+  startDocumentationVerifier,
+  startDocumentationWorker,
+} from "./docs-loop";
 import { reviewPassJobKey, reviewVerifierJobKey } from "./job-review";
 import { fixedFindingIds, settleReviewRunOf } from "./jobs";
 import {
@@ -56,6 +63,9 @@ import {
   type PassInput,
   type SettledPass,
 } from "./passes";
+import { verifierRunOf } from "./verifier-run";
+
+export { verifierRunOf };
 
 /**
  * Looped reviews (ADR 0013): a review task whose playbook names a finding
@@ -84,6 +94,11 @@ import {
  * posted), and once that committed the review run settles as before: the
  * findings of all check types are merged by the run's correlation and posted
  * as one review.
+ *
+ * A documentation check (`builtin:check-docs`, its jobs' trigger context has
+ * a `documentation`) is one review whose loop runs on the same adapter: its
+ * iterations verify `documentationUpdates` instead of findings
+ * (`./docs-loop.ts`), capped by the documentation depth.
  */
 
 /** The verifier of a looped review playbook that names none. */
@@ -116,6 +131,42 @@ export async function startReviewLoop(
   depth: ReviewDepth,
   jobInput: NewJobInput,
 ): Promise<{ job: Job; created: boolean }> {
+  return startLoopOfReview(db, dispatcher, review, playbook, jobInput, {
+    defaultVerifierId: DEFAULT_REVIEW_VERIFIER_ID,
+    maxIterations: REVIEW_DEPTHS[depth].maxPasses,
+  });
+}
+
+/**
+ * Starts the loop of documentation check review `review` (a run of a
+ * `docs-check` playbook, e.g. `builtin:check-docs`): its first iteration,
+ * whose worker is `jobInput` (a `review.task` job whose trigger context has
+ * the depth's `documentation`). The iteration cap is the documentation
+ * depth's (`documentationLoopLimits`); the verifier is the playbook's
+ * (`builtin:verify-docs` when it names none). As `startReviewLoop` otherwise.
+ */
+export async function startDocumentationCheckLoop(
+  db: Database,
+  dispatcher: JobDispatcher,
+  review: Pick<Review, "id">,
+  playbook: Pick<Playbook, "role" | "loop">,
+  depth: DocumentationDepth,
+  jobInput: NewJobInput,
+): Promise<{ job: Job; created: boolean }> {
+  return startLoopOfReview(db, dispatcher, review, playbook, jobInput, {
+    defaultVerifierId: DEFAULT_DOCUMENTATION_VERIFIER_ID,
+    ...documentationLoopLimits(depth),
+  });
+}
+
+async function startLoopOfReview(
+  db: Database,
+  dispatcher: JobDispatcher,
+  review: Pick<Review, "id">,
+  playbook: Pick<Playbook, "role" | "loop">,
+  jobInput: NewJobInput,
+  options: { defaultVerifierId: string; maxIterations: number },
+): Promise<{ job: Job; created: boolean }> {
   let dispatched: { job: Job; created: boolean } | undefined;
   try {
     await startLoop(
@@ -125,11 +176,11 @@ export async function startReviewLoop(
         ...playbook,
         loop: {
           ...playbook.loop,
-          verifierPlaybookId: playbook.loop?.verifierPlaybookId ?? DEFAULT_REVIEW_VERIFIER_ID,
+          verifierPlaybookId: playbook.loop?.verifierPlaybookId ?? options.defaultVerifierId,
         },
       },
       {
-        limits: { maxIterations: REVIEW_DEPTHS[depth].maxPasses },
+        limits: { maxIterations: options.maxIterations },
         startWorker: async (tx) => {
           const target = jobInput.repositoryId
             ? await pinnedAgentFor(asDb(tx), jobInput.organizationId, jobInput.repositoryId)
@@ -158,29 +209,6 @@ class DuplicatePass extends Error {
 /** The pool or a transaction as the `@omniralph/db` queries take it. */
 function asDb(db: LoopExecutor): Database {
   return db as Database;
-}
-
-/** How a verifier job ended, as `applyFindingVerification` reads it; null while it runs. */
-export function verifierRunOf(job: Pick<Job, "status" | "result" | "error">): VerifierRun | null {
-  switch (job.status) {
-    case "completed": {
-      const result = QueryRunResult.safeParse(job.result);
-      return result.success
-        ? verifierRunFromResult(result.data)
-        : {
-            status: "failed",
-            error: "The verifier's result isn't a query result",
-            rateLimited: false,
-          };
-    }
-    case "failed":
-      return { status: "failed", error: job.error, rateLimited: isRateLimitError(job.error) };
-    case "canceled":
-    case "skipped":
-      return { status: "failed", error: "The verifier was canceled", rateLimited: false };
-    default:
-      return null;
-  }
 }
 
 /** One pass as its jobs left it, with what its jobs spent. */
@@ -280,6 +308,7 @@ const reviewLoopAdapter: LoopAdapter = {
     const firstJobId = iterations[0]?.workerJobId;
     const first = firstJobId ? await getJob(asDb(db), firstJobId) : null;
     if (!first) throw new Error(`Review ${run.id} has no first pass job`);
+    if (documentationOfJob(first)) return startDocumentationWorker(db, run, iteration, first);
     const payload = RunSpecJobPayload.parse(first.payload);
     const context = reviewTriggerContext(first.payload);
     if (!context.pass) throw new Error(`Review ${run.id}'s first job isn't a looped pass`);
@@ -322,6 +351,9 @@ const reviewLoopAdapter: LoopAdapter = {
    * reviewed nothing, or whose depth doesn't verify settles at once.
    */
   async startVerifier(db, run, iteration, worker) {
+    if (documentationOfJob(worker)) {
+      return startDocumentationVerifier(db, run, iteration, worker);
+    }
     const result = ReviewTaskResult.safeParse(worker.result);
     if (!result.success) {
       return {
@@ -392,6 +424,7 @@ const reviewLoopAdapter: LoopAdapter = {
   /** The pass's verdict from its verifier's answer (a failed answer keeps the findings unverified). */
   async judge(db, run, iteration, verifier) {
     const worker = iteration.workerJobId ? await getJob(asDb(db), iteration.workerJobId) : null;
+    if (documentationOfJob(worker)) return judgeDocumentation(db, run, iteration, verifier);
     const result = ReviewTaskResult.safeParse(worker?.result);
     if (!result.success) return null;
     return settleIteration(db, run, iteration, {
@@ -408,6 +441,9 @@ const reviewLoopAdapter: LoopAdapter = {
    * superseded meanwhile is skipped with the run's reason.
    */
   async finish(db, run, end) {
+    const firstWorkerJobId = end.iterations[0]?.workerJobId;
+    const firstWorker = firstWorkerJobId ? await getJob(asDb(db), firstWorkerJobId) : null;
+    if (documentationOfJob(firstWorker)) return finishDocumentation(db, run, end.iterations);
     const review = await getReview(asDb(db), run.id);
     if (!review || (review.status !== "queued" && review.status !== "running")) return;
     const reviewRun = review.reviewRunId ? await getReviewRun(asDb(db), review.reviewRunId) : null;

@@ -34,7 +34,8 @@ import { finishReviewRun } from "./run";
  * A looped review's pass job (its trigger context has a `pass`) belongs to
  * the review's loop (`lib/review/loop.ts`): its result, failure or cancel is
  * left to the loop driver, which verifies the pass, runs the next one and
- * finally saves the review.
+ * finally saves the review. So is each iteration of a documentation check
+ * (its trigger context has a `documentation`).
  */
 
 /** What the hooks read from a review job: the `ReviewTriggerContext` of its run. */
@@ -49,11 +50,22 @@ export type ReviewJobState = Pick<
   | "mode"
   | "previousReview"
   | "pass"
+  | "documentation"
 >;
 
 /** A review job's state: its run's trigger context. */
 export function reviewJobState(job: Pick<Job, "payload">): ReviewJobState {
   return reviewTriggerContext(job.payload);
+}
+
+/**
+ * The iteration a review job runs of its review's loop: a looped review's
+ * pass or a documentation check's iteration; null for a single-session review.
+ */
+export function loopIterationOf(state: Pick<ReviewJobState, "pass" | "documentation">) {
+  if (state.pass) return state.pass.number;
+  if (state.documentation) return state.documentation.earlier?.iteration ?? 1;
+  return null;
 }
 
 /**
@@ -95,9 +107,10 @@ async function onReviewStarted(
 ): Promise<{ skip: false } | { skip: true; reason: "already_reviewed" }> {
   const review = await getReview(db, state.reviewId);
   // A looped review's later passes continue a review that started.
+  const iteration = loopIterationOf(state);
   const completed =
     (review?.trigger ?? "webhook") === "webhook" &&
-    (state.pass?.number ?? 1) === 1 &&
+    (iteration ?? 1) === 1 &&
     (await findCompletedReview(db, {
       repositoryId: state.repositoryId,
       prNumber: state.prNumber,
@@ -112,7 +125,7 @@ async function onReviewStarted(
     await finishReview(db, state.reviewId, { status: "skipped", error: reason });
     if (review?.reviewRunId) await settleAndFinishReviewRun(db, review.reviewRunId);
     // A skipped pass ends its loop.
-    if (state.pass) await advanceLoop(db, job, { status: "canceled" });
+    if (iteration !== null) await advanceLoop(db, job, { status: "canceled" });
     return { skip: true, reason: "already_reviewed" };
   }
   await markReviewRunning(db, state.reviewId, agentId);
@@ -133,7 +146,7 @@ async function onReviewCompleted(
   result: ReviewJobResult & { summary?: string },
 ): Promise<void> {
   // The loop verifies a pass's findings before the review keeps them.
-  if (state.pass) return;
+  if (loopIterationOf(state) !== null) return;
   await saveReviewResult(db, state, result);
   await settleReviewRunOf(db, state.reviewId);
 }
@@ -185,7 +198,7 @@ export function fixedFindingIds(
 
 /** A review job that ended `canceled` (e.g. superseded by a newer push). */
 async function onReviewCanceled(db: Database, state: ReviewJobState): Promise<void> {
-  if (state.pass) return;
+  if (loopIterationOf(state) !== null) return;
   await finishReview(db, state.reviewId, { status: "skipped", error: CANCELED_REVIEW_ERROR });
   await settleReviewRunOf(db, state.reviewId);
 }
@@ -201,7 +214,7 @@ async function onReviewRetry(db: Database, state: ReviewJobState, error: string 
  * or gets one failure note when every task run failed.
  */
 async function onReviewFailed(db: Database, state: ReviewJobState, error: string): Promise<void> {
-  if (state.pass) return;
+  if (loopIterationOf(state) !== null) return;
   await finishReview(db, state.reviewId, { status: "failed", error });
   await settleReviewRunOf(db, state.reviewId);
 }
