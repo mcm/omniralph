@@ -53,6 +53,7 @@ import {
   startDocumentationWorker,
 } from "./docs-loop";
 import { reviewPassJobKey, reviewVerifierJobKey } from "./job-review";
+import { postStickyComment } from "@/lib/sinks/sticky-comment";
 import { fixedFindingIds, settleReviewRunOf } from "./jobs";
 import {
   nextPassContext,
@@ -525,7 +526,9 @@ const reviewLoopAdapter: LoopAdapter = {
 
   /**
    * Makes the loop's new jobs claimable, and settles the review run once
-   * the review ended (its correlation, then one posted review).
+   * the review ended (its correlation, then one posted review). A
+   * documentation check that ended is posted as its sticky comment
+   * (`postStickyComment`); a failure to post is logged, not retried.
    */
   async afterCommit(db, run) {
     const last = (await listRunIterations(db, run)).at(-1);
@@ -534,8 +537,20 @@ const reviewLoopAdapter: LoopAdapter = {
       [last?.workerJobId, last?.verifierJobId].filter((id): id is string => Boolean(id)),
     );
     const review = await getReview(db, run.id);
-    if (review && review.status !== "queued" && review.status !== "running") {
-      await settleReviewRunOf(db, review.id);
+    if (!review || review.status === "queued" || review.status === "running") return;
+    await settleReviewRunOf(db, review.id);
+    if (review.documentationUpdates === null) return;
+    try {
+      await postStickyComment(
+        db,
+        { taskId: review.taskId, organizationId: run.organizationId },
+        review.id,
+      );
+    } catch (error) {
+      console.error("failed to post the documentation check's comment", {
+        reviewId: review.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   },
 };

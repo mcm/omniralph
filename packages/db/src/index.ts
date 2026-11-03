@@ -351,6 +351,7 @@ export {
   skipReviewRuns,
   getStickyComment,
   writeStickyComment,
+  reviewRunSuperseded,
   type StickyComment,
   type StickyCommentKey,
   applyCorrelation,

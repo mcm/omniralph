@@ -8,6 +8,7 @@ import {
   insertJob,
   listRunIterations,
   pinnedAgentFor,
+  reviewRunSuperseded,
   saveReviewOutcome,
   type Database,
   type Job,
@@ -343,8 +344,9 @@ export async function judgeDocumentation(
 /**
  * Saves the documentation check's review with every confirmed update and
  * no findings, or ends it: a first iteration that failed fails it (a
- * canceled one skips it), and a review whose run was superseded meanwhile
- * is skipped with the run's reason. A later iteration that failed keeps
+ * canceled one skips it), and a review whose run was superseded by a newer
+ * push meanwhile is skipped with the run's reason. A run that settled
+ * (its other reviews ended first) doesn't end the check. A later iteration that failed keeps
  * what the earlier ones confirmed.
  */
 export async function finishDocumentation(
@@ -355,7 +357,8 @@ export async function finishDocumentation(
   const review = await getReview(asDb(db), run.id);
   if (!review || (review.status !== "queued" && review.status !== "running")) return;
   const reviewRun = review.reviewRunId ? await getReviewRun(asDb(db), review.reviewRunId) : null;
-  if (reviewRun && reviewRun.status !== "queued" && reviewRun.status !== "running") {
+  // Only a newer push ends the check: being summary-only, it may end after its run settled.
+  if (reviewRun && reviewRunSuperseded(reviewRun)) {
     await finishReview(asDb(db), review.id, {
       status: "skipped",
       error: reviewRun.error ?? CANCELED_REVIEW_ERROR,
