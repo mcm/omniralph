@@ -66,7 +66,8 @@ its findings feed the next iteration until the verifier is satisfied or a cap is
 replies, learned rules, correlation, PR descriptions and review summaries, plus the loop's own
 helpers. `docs-check` is the [documentation check](#documentation-check): a looped review-type
 run whose output goes to its own sticky comment. `verifier` checks a worker's output (a task against
-its acceptance criteria, a review pass's findings, a documentation check's updates) and `audit`
+its acceptance criteria, a review pass's findings, a documentation check's updates, a triage draft
+against its plan rubric) and `audit`
 checks a finished epic against its requirements before its PR opens; both are invoked by another
 run and hand their output back to it.
 
@@ -373,6 +374,47 @@ from `documentation.depth` (`documentationProfileConfig`), never the repo's revi
 the trigger context's `reviewConfig.profile` the same profile with exploration on; a check without a
 valid depth can't be resolved. `documentationLoopLimits` gives the loop's iteration cap.
 
+### Plan critique
+
+`builtin:critique-plan` (role `verifier`, `packages/tasks/src/builtin/critique-plan.ts`) is the plan
+critic: a fresh session that never saw how a triage draft was written judges it against a rubric
+matched to its size, so a weak plan is caught before anyone builds against it. It is a `run.invoked`
+query run with `Read`, `Grep` and `Glob` (no shell, tracker or network), on a read-only checkout of
+the default branch of the repo the work item routes to, when there is one.
+
+Its trigger context carries the draft and its size under `critique` (`planCritiqueContext` in
+`@omniralph/shared`, `plan-critique.ts`): `critique.size` (`fix`, `story` or `epic`), one flag per
+size (`critique.fix`, `critique.story`, `critique.epic`) that picks the rubric the prompt shows, and
+`critique.draft` (`title`; `description`; for an Epic, `stories` as a JSON array of `index`, `title`,
+`body`, `kind`, `dependsOn` (0-based indexes of the stories it is blocked by) and `manual`). The
+invoking run adds its `invoker` and `repository`. The draft is quoted data in the prompt, and the
+system text says the draft and everything read in the repo are untrusted.
+
+The rubrics are `PLAN_RUBRICS` in `@omniralph/planning` (`methodology/critique.ts`), beside the
+planning formats, each item an `id` and the check it stands for:
+
+| Size  | Rubric items                                                                                                                                                                                                                                        |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fix   | `task-format`, `broken-behavior` (what happens now and what should), `reproduction`, `located-cause` (the likely cause and its file), `fixed-behavior`, `checkable-criteria`, `constraints-placed`, `grounded-in-repo`, `one-session`               |
+| Story | `task-format`, `story-sentence` (what to build, for whom and why), `approach`, `done-criteria`, `checkable-criteria`, `constraints-placed`, `grounded-in-repo`, `one-session`                                                                       |
+| Epic  | `epic-format` (the epic template), `honest-scope`, `requirement-wording`, `requirements-covered` (every requirement built by a story), `story-order` (order and `dependsOn` as blocks relations), `story-split`, `story-format`, `grounded-in-repo` |
+
+The critic answers one note per rubric item, the questions only a person can answer, and a verdict:
+
+```json
+{
+  "verdict": "pass",
+  "notes": [{ "item": "task-format", "ok": true, "note": "…" }],
+  "openQuestions": []
+}
+```
+
+`PlanCritiqueOutput` in `@omniralph/shared` parses it: one to 40 notes (an unmet note says what the
+draft must change), at most 20 questions, and a `pass` only when every note is `ok` and no question is
+open (anything else is `fail`). The prompt asks for a question only when neither the draft nor the
+repo answers it: the critic reads the repo first and puts what the repo settles in a note instead.
+The critic uses `claude-sonnet-5-5` with a 150,000-token cap.
+
 ## Built-in playbooks
 
 The built-ins are in `packages/tasks/src/builtin/` and registered in `packages/tasks/src/builtins.ts`
@@ -386,6 +428,7 @@ engineer) are folded into each playbook.
 | `builtin:verify-findings`    | `verifier`         | `claude-sonnet-5-5`       | 100,000                   |
 | `builtin:check-docs`         | `docs-check`       | The documentation depth's | The documentation depth's |
 | `builtin:verify-docs`        | `verifier`         | `claude-sonnet-5-5`       | 100,000                   |
+| `builtin:critique-plan`      | `verifier`         | `claude-sonnet-5-5`       | 150,000                   |
 | `builtin:correlate-findings` | `correlation`      | `claude-sonnet-5-5`       | 100,000                   |
 | `builtin:implement-story`    | `story`            | `opus`                    | No limit                  |
 | `builtin:handle-request`     | `request`          | `opus`                    | No limit                  |

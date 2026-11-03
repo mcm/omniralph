@@ -370,6 +370,9 @@ importers:
 
   packages/shared:
     dependencies:
+      '@omniralph/planning':
+        specifier: workspace:*
+        version: link:../planning
       '@omniralph/tasks':
         specifier: workspace:*
         version: link:../tasks

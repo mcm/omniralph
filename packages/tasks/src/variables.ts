@@ -491,6 +491,60 @@ export const VARIABLES: readonly VariableDefinition[] = [
     description:
       "The iteration's documentation updates as a JSON array (`id`, `path`, `reason`, `suggestion`).",
   },
+  // Plan critique: a triage draft and its size, which the triage run asks its critic to judge.
+  {
+    name: "critique.size",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description: "Size of the draft a plan critic judges: `fix`, `story` or `epic`.",
+  },
+  {
+    name: "critique.fix",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description: "True when the draft a plan critic judges is a Fix.",
+  },
+  {
+    name: "critique.story",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description: "True when the draft a plan critic judges is a Story.",
+  },
+  {
+    name: "critique.epic",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description: "True when the draft a plan critic judges is an Epic.",
+  },
+  {
+    name: "critique.draft.title",
+    source: "trigger",
+    trust: "untrusted",
+    quote: "draft-title",
+    triggers: ["run.invoked"],
+    description: "Title of the draft, on one line.",
+  },
+  {
+    name: "critique.draft.description",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "markdown",
+    triggers: ["run.invoked"],
+    description: "The draft's description: a three-paragraph task, or an epic.",
+  },
+  {
+    name: "critique.draft.stories",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "json",
+    triggers: ["run.invoked"],
+    description:
+      "An epic draft's stories as a JSON array (`index`, `title`, `body`, `kind`, `dependsOn`: 0-based indexes of the stories it is blocked by, `manual`); null for a Fix or a Story.",
+  },
   // Coding runs (story and request runs) and the PR description they invoke. Titles and
   // identifiers are put on one line and render as is; issue text, the PRD, requests, guidance,
   // progress and feedback are fenced.
