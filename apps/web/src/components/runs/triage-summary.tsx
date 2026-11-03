@@ -26,6 +26,7 @@ export const TRIAGE_OUTCOME_VIEWS: Record<
   triaging: { label: "Triaging", tone: "run" },
   ready: { label: "Ready to start", tone: "good" },
   needs_answers: { label: "Needs answers", tone: "need" },
+  needs_planning: { label: "Needs feature planning", tone: "need" },
   failed: { label: "Triage failed", tone: "fail" },
   stopped: { label: "Stopped", tone: "warn" },
 };
@@ -48,7 +49,7 @@ export interface TriageSummaryProps {
 
 /**
  * A triage run's card in its detail: the outcome (still triaging, Ready to start, Needs
- * answers, failed or stopped) with what triage did (a new PRD, a reformatted epic or none),
+ * answers, Needs feature planning, failed or stopped) with what triage did (a new PRD, a reformatted epic or none),
  * the size and planned stories; Om's summary or why it failed; the open questions it left
  * (a form to answer them when the run needs answers and the user may answer); and,
  * collapsed, the issue as it read before triage. View PRD opens the PRD in a sheet.
