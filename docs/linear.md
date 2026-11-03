@@ -738,6 +738,14 @@ what it writes:
 | Epic    | The description is rewritten in the epic format, and each task becomes a sub-issue (with priorities, sort order, `manual` tasks labelled with the organization's first manual label, Fix tasks with the fix label, and "blocks" relations from the dependencies). There is no validation sub-issue: Om audits the epic against its requirements before its PR opens. Om builds the epic as `children`. |
 | Feature | Too big for one epic. Triage rewrites nothing and files no sub-issues: it posts one comment recommending feature planning, with the reason, a first cut of the epics and any open questions, and leaves the issue in its Needs-refining state.                                                                                                                                                         |
 
+**Bug triage.** A Fix starts without another round of investigation: triage reads the repo (with
+`Read`, `Grep` and `Glob` only; it never changes code or commits) to find where the bug likely
+lives, and writes the files and functions of the likely cause, the reproduction steps, and what
+happens now and what should happen instead. The final response names the likely cause. When triage
+can't locate it (no repo is checked out, or nothing it read explains the report), it says so and
+adds an open question instead of guessing, so the issue stays in Needs refining until a person
+answers.
+
 An Epic-sized issue that already has sub-issues gets no new story sub-issues next to them; triage it
 again to reformat them.
 

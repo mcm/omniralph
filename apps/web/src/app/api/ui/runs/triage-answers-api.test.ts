@@ -95,6 +95,7 @@ const outcome = (openQuestions: string[]): TriageOutcome => ({
   stories: [],
   subIssueUpdates: [],
   featureEpics: [],
+  bug: null,
 });
 
 const result = (openQuestions: string[]): TriageRunResult => ({

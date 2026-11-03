@@ -1,6 +1,11 @@
 import { renderTriageMethodology, workItemFormat } from "@omniralph/planning";
 import { describe, expect, it } from "vitest";
-import { TRIAGE_OUTPUT_SCHEMA, type TriageAgentOutput, validateTriageOutput } from "./output.js";
+import {
+  TRIAGE_OUTPUT_SCHEMA,
+  type TriageAgentOutput,
+  UNLOCATED_BUG_QUESTION,
+  validateTriageOutput,
+} from "./output.js";
 import { parsePrd } from "./prd.js";
 import {
   OPEN_QUESTIONS_HEADING,
@@ -41,7 +46,7 @@ Don't stop until:
 
 const FIX = `I want you to fix saving a task with a priority, which drops the priority today: the priority should be kept.
 
-Build it by checking the save handler, which likely ignores the field.
+Build it by fixing \`saveTask\` in \`src/tasks/save.ts\`, which builds the row without the priority.
 
 Don't stop until saving a task keeps its priority. Tasks without a priority save as before.`;
 
@@ -61,6 +66,7 @@ const single: TriageAgentOutput = {
   stories: [],
   subIssueUpdates: [],
   featureEpics: [],
+  bug: null,
   summary: "Sized S: one column and a badge.",
 };
 
@@ -69,7 +75,20 @@ const fix: TriageAgentOutput = {
   sizing: { size: "fix", reason: "The save handler drops one field." },
   title: "Keep task priorities",
   description: FIX,
+  bug: {
+    locations: [{ file: "src/tasks/save.ts", symbol: "saveTask" }],
+    reproduction: ["Open a task", "Set its priority to High", "Save it and reload"],
+    currentBehavior: "The task reloads without a priority.",
+    expectedBehavior: "The task reloads with the priority High.",
+    unlocatedQuestion: "",
+  },
 };
+
+/** \`fix\` as \`validateTriageOutput\` keeps it: the bug triage without its \`unlocatedQuestion\`. */
+function fixResult(value: TriageAgentOutput = fix) {
+  const { unlocatedQuestion: _, ...bug } = value.bug!;
+  return { ...value, bug, kind: "fix" };
+}
 
 const epic: TriageAgentOutput = {
   ...single,
@@ -171,7 +190,7 @@ describe("hasOpenQuestions", () => {
 describe("validateTriageOutput", () => {
   it("accepts a single story, a single fix, an epic and a feature, each with its sizing", () => {
     expect(validateTriageOutput(single)).toEqual({ result: { ...single, kind: "story" } });
-    expect(validateTriageOutput(fix)).toEqual({ result: { ...fix, kind: "fix" } });
+    expect(validateTriageOutput(fix)).toEqual({ result: fixResult() });
     expect(validateTriageOutput(epic)).toEqual({ result: { ...epic, kind: "story" } });
     expect(validateTriageOutput(feature)).toEqual({ result: { ...feature, kind: "story" } });
   });
@@ -217,6 +236,78 @@ describe("validateTriageOutput", () => {
     expect(problemOf({ ...single, featureEpics: feature.featureEpics })).toMatch(
       /a story has no `featureEpics`/,
     );
+  });
+
+  it("keeps a located bug's files, functions, reproduction and behavior, with no extra question", () => {
+    const r = validateTriageOutput({
+      ...fix,
+      bug: {
+        ...fix.bug!,
+        locations: [
+          { file: " src/tasks/save.ts ", symbol: " saveTask " },
+          { file: "src/tasks/save.ts", symbol: "saveTask" },
+          { file: "src/tasks/row.ts", symbol: "" },
+        ],
+        reproduction: [" Open a task ", "  ", "Save it"],
+      },
+    });
+    if (!("result" in r)) throw new Error(r.problem);
+    expect(r.result.bug).toEqual({
+      locations: [
+        { file: "src/tasks/save.ts", symbol: "saveTask" },
+        { file: "src/tasks/row.ts", symbol: "" },
+      ],
+      reproduction: ["Open a task", "Save it"],
+      currentBehavior: "The task reloads without a priority.",
+      expectedBehavior: "The task reloads with the priority High.",
+    });
+    expect(r.result.openQuestions).toEqual([]);
+  });
+
+  it("turns a bug whose cause isn't located into an open question instead of a guess", () => {
+    const unlocated = { ...fix.bug!, locations: [] };
+    const asked = validateTriageOutput({
+      ...fix,
+      openQuestions: ["Which browsers?"],
+      bug: { ...unlocated, unlocatedQuestion: " Which screen saves the priority? " },
+    });
+    if (!("result" in asked)) throw new Error(asked.problem);
+    expect(asked.result.bug?.locations).toEqual([]);
+    expect(asked.result.openQuestions).toEqual([
+      "Which browsers?",
+      "Which screen saves the priority?",
+    ]);
+
+    // Without a question worded by the session, Omniralph asks where the bug lives.
+    const unworded = validateTriageOutput({ ...fix, bug: { ...unlocated, unlocatedQuestion: "" } });
+    if (!("result" in unworded)) throw new Error(unworded.problem);
+    expect(unworded.result.openQuestions).toEqual([UNLOCATED_BUG_QUESTION]);
+
+    // A question it also listed is asked once.
+    const twice = validateTriageOutput({
+      ...fix,
+      openQuestions: ["Which screen?"],
+      bug: { ...unlocated, unlocatedQuestion: "Which screen?" },
+    });
+    expect("result" in twice && twice.result.openQuestions).toEqual(["Which screen?"]);
+  });
+
+  it("requires a fix's bug triage, and only a fix's", () => {
+    expect(problemOf({ ...fix, bug: null })).toMatch(/a fix needs its bug triage/);
+    expect(problemOf({ ...fix, bug: { ...fix.bug!, reproduction: [" "] } })).toMatch(
+      /no reproduction steps/,
+    );
+    expect(problemOf({ ...fix, bug: { ...fix.bug!, currentBehavior: "" } })).toMatch(
+      /what happens now/,
+    );
+    expect(problemOf({ ...fix, bug: { ...fix.bug!, expectedBehavior: " " } })).toMatch(
+      /what should happen/,
+    );
+    expect(
+      problemOf({ ...fix, bug: { ...fix.bug!, locations: [{ file: " ", symbol: "saveTask" }] } }),
+    ).toMatch(/has no file/);
+    expect(problemOf({ ...single, bug: fix.bug })).toMatch(/a story has no `bug`/);
+    expect(problemOf({ ...epic, bug: fix.bug })).toMatch(/an epic has no `bug`/);
   });
 
   it("drops a validation task, and the dependencies on it, since the epic audit checks requirements", () => {
@@ -531,6 +622,7 @@ describe("TRIAGE_OUTPUT_SCHEMA", () => {
       "openQuestions",
       "stories",
       "subIssueUpdates",
+      "bug",
       "featureEpics",
       "summary",
     ]);
