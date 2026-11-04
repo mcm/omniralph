@@ -334,6 +334,16 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(under(keys.backlog.all)).toBe(false);
   });
 
+  it("feature: the Features lists and each named feature, never another feature", () => {
+    const prefixes = liveInvalidations(event({ resource: "feature", ids: [ID] }));
+    expect(prefixes).toEqual([keys.features.lists, keys.features.detail(ID)]);
+    const under = (key: QueryKey) =>
+      prefixes.some((prefix) => prefix.every((part, i) => key[i] === part));
+    expect(under(keys.features.part(ID, "documents"))).toBe(true);
+    expect(under(keys.features.detail(OTHER_RUN))).toBe(false);
+    expect(under(keys.sprints.all)).toBe(false);
+  });
+
   it("organization: the organization's queries", () => {
     expect(liveInvalidations(event({ resource: "organization" }))).toEqual([keys.organization.all]);
   });

@@ -37,6 +37,7 @@ export const CHANGE_RESOURCES = [
   "chat",
   "model_prices",
   "sprint",
+  "feature",
 ] as const satisfies readonly ChangeResource[];
 export type ChangeEventResource = (typeof CHANGE_RESOURCES)[number];
 
@@ -123,6 +124,9 @@ const base = {
  * - `sprint`: a sprint was created, renamed, reordered, deleted or changed status, or one of
  *   its epics' state changed (`ids` = sprint IDs). Work items joining or leaving a sprint are
  *   `work_item` changes too.
+ * - `feature`: a feature was created, renamed, archived or restored, or its PRFAQ, Plan or
+ *   attachments changed (`ids` = feature IDs). A work item's attachments changing is a
+ *   `work_item` change.
  */
 export const changeEventSchemas = {
   run: z.strictObject({ ...base, resource: z.literal("run"), runId: id.optional() }),
@@ -170,6 +174,7 @@ export const changeEventSchemas = {
   chat: z.strictObject({ ...base, resource: z.literal("chat") }),
   model_prices: z.strictObject({ ...base, resource: z.literal("model_prices") }),
   sprint: z.strictObject({ ...base, resource: z.literal("sprint") }),
+  feature: z.strictObject({ ...base, resource: z.literal("feature") }),
 } satisfies { [R in ChangeEventResource]: z.ZodType<{ resource: R }> };
 
 export const changeEventSchema = z.discriminatedUnion("resource", [
@@ -187,6 +192,7 @@ export const changeEventSchema = z.discriminatedUnion("resource", [
   changeEventSchemas.chat,
   changeEventSchemas.model_prices,
   changeEventSchemas.sprint,
+  changeEventSchemas.feature,
 ]);
 
 export type ChangeEvent = z.infer<typeof changeEventSchema>;

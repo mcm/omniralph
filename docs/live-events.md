@@ -24,7 +24,8 @@ browser). Every Ably message is named `change`, and its data is one event:
 Events carry **IDs only**, never titles, bodies, payloads or names. `runId` (the run an attempt,
 transcript, pull request or webhook event belongs to), `section` and `subjectId` (a settings save)
 are optional. The resources are `run`, `transcript`, `pull_request`, `inbox_state`,
-`webhook_event`, `settings`, `agent`, `repository`, `connection` and `organization`; the doc
+`webhook_event`, `settings`, `agent`, `repository`, `connection`, `organization`, `work_item`,
+`chat`, `model_prices`, `sprint` and `feature`; the doc
 comment on `changeEventSchemas` says what each one's `ids` are.
 
 | Channel                        | Carries                                                                          |

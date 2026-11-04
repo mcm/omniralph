@@ -16,6 +16,7 @@ export const QUERY_AREAS = [
   "deliveries",
   "diffs",
   "agents",
+  "features",
   "inbox",
   "navIndicators",
   "organization",
