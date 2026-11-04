@@ -277,6 +277,29 @@ export class ChangeRequestRefusedError extends Error {
   }
 }
 
+/** What {@link ScmAdapter.mergeBranch} merges: `from` into `into`, both branches of the repository. */
+export interface BranchMerge {
+  /** The branch that is updated (e.g. a sprint branch). */
+  into: string;
+  /** The branch whose commits it takes (e.g. the default branch). */
+  from: string;
+  /** The merge commit's message. */
+  message: string;
+}
+
+/**
+ * How merging one branch into another went:
+ * - `up_to_date`: `into` already has every commit of `from`; nothing changed
+ * - `merged`: `into` now has them (`sha`: its new head, when the host said)
+ * - `conflicts`: they don't merge cleanly; nothing changed
+ * - `refused`: the host refused for another reason (branch protection, rights); nothing changed
+ */
+export type BranchMergeResult =
+  | { status: "up_to_date" }
+  | { status: "merged"; sha: string | null }
+  | { status: "conflicts"; hostMessage: string }
+  | { status: "refused"; hostMessage: string };
+
 /** Webhook request headers, either a Fetch `Headers` or a plain record. */
 export type WebhookHeaders = Headers | Record<string, string | string[] | undefined>;
 
@@ -318,6 +341,17 @@ export interface ScmAdapter {
   getDefaultBranch(repo: RepoRef): Promise<string>;
   /** The commit branch `branch` of the repository points at; null when it doesn't exist. */
   getBranchHead(repo: RepoRef, branch: string): Promise<string | null>;
+  /**
+   * Creates branch `branch` at commit `sha`. `created: false` when the branch
+   * already exists (it is left where it is).
+   */
+  createBranch(repo: RepoRef, branch: string, sha: string): Promise<{ created: boolean }>;
+  /**
+   * Brings branch `into` up to date with branch `from` with a merge commit
+   * (never a squash or rebase, and never deleting `from`). Throws when a
+   * branch doesn't exist.
+   */
+  mergeBranch(repo: RepoRef, merge: BranchMerge): Promise<BranchMergeResult>;
   /** The open PR/MR whose source is `sourceBranch` (in this repository), if any. */
   findOpenChangeRequest(repo: RepoRef, sourceBranch: string): Promise<OpenChangeRequest | null>;
   /**

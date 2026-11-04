@@ -469,6 +469,36 @@ export async function cancelSprint(
   );
 }
 
+/**
+ * Records the branch a merge-together sprint's epics' PRs target, unless one is recorded
+ * already (that one is kept). Answers the sprint, or null when it is gone.
+ */
+export async function setSprintBranch(
+  db: Database,
+  organizationId: string,
+  sprintId: string,
+  branch: string,
+): Promise<SprintWithEpics | null> {
+  return db.transaction(async (tx) => {
+    await lockSprints(tx, organizationId);
+    const updated = await tx
+      .update(sprints)
+      .set({ sprintBranch: branch, updatedAt: new Date() })
+      .where(
+        and(
+          eq(sprints.id, sprintId),
+          eq(sprints.organizationId, organizationId),
+          isNull(sprints.sprintBranch),
+        ),
+      )
+      .returning({ id: sprints.id });
+    if (updated.length > 0) {
+      recordChange(tx, { resource: "sprint", ids: [sprintId], organizationId });
+    }
+    return getSprint(tx, organizationId, sprintId);
+  });
+}
+
 export type ClaimNextSprintEpicResult =
   /** The sprint isn't running, or one of its epics is running or stalled: nothing starts. */
   | { status: "idle"; sprint: SprintWithEpics | null }

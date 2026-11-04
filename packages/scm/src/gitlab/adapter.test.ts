@@ -1307,3 +1307,104 @@ describe("required checks, approve and merge", () => {
     );
   });
 });
+
+describe("branches", () => {
+  const SYNC = `${API}/merge_requests/31`;
+  const merge = { into: "sprint/q4", from: "main", message: "Update sprint/q4 from main" };
+  const adapter = () =>
+    new GitLabAdapter({ token: TOKEN, webhookSecret: SECRET, baseUrl: HOST, mergeStatusPollMs: 0 });
+
+  it("creates a branch at a commit, and leaves one that exists", async () => {
+    server.use(
+      http.post(`${API}/repository/branches`, () =>
+        HttpResponse.json({ name: "sprint/q4" }, { status: 201 }),
+      ),
+    );
+    await expect(adapter().createBranch(REPO, "sprint/q4", HEAD)).resolves.toEqual({
+      created: true,
+    });
+    const [created] = requests.filter((r) => r.url.includes("/repository/branches"));
+    const url = new URL(created!.url);
+    // gitbeaker sends the branch and ref in the query or the body.
+    const sent = { ...Object.fromEntries(url.searchParams), ...(created!.body as object) };
+    expect(sent).toMatchObject({ branch: "sprint/q4", ref: HEAD });
+
+    server.use(
+      http.post(`${API}/repository/branches`, () =>
+        HttpResponse.json({ message: "Branch already exists" }, { status: 400 }),
+      ),
+    );
+    await expect(adapter().createBranch(REPO, "sprint/q4", HEAD)).resolves.toEqual({
+      created: false,
+    });
+  });
+
+  it("is up to date when the default branch has no commits the sprint branch lacks", async () => {
+    server.use(http.get(`${API}/repository/compare`, () => HttpResponse.json({ commits: [] })));
+    await expect(adapter().mergeBranch(REPO, merge)).resolves.toEqual({ status: "up_to_date" });
+    expect(requests.some((r) => r.method === "POST")).toBe(false);
+  });
+
+  function syncServer(status: string[], mergeResponse?: () => Response) {
+    let shown = 0;
+    server.use(
+      http.get(`${API}/repository/compare`, () => HttpResponse.json({ commits: [{ id: BASE }] })),
+      http.get(`${API}/merge_requests`, () => HttpResponse.json([])),
+      http.post(`${API}/merge_requests`, () => HttpResponse.json({ iid: 31 }, { status: 201 })),
+      http.get(SYNC, () => {
+        const detailed = status[Math.min(shown, status.length - 1)];
+        shown += 1;
+        return HttpResponse.json({ iid: 31, sha: HEAD, detailed_merge_status: detailed });
+      }),
+      http.put(`${SYNC}/merge`, () =>
+        mergeResponse ? mergeResponse() : HttpResponse.json({ merge_commit_sha: START }),
+      ),
+      http.put(SYNC, () => HttpResponse.json({ iid: 31, state: "closed" })),
+    );
+  }
+
+  it("merges through an MR once GitLab has checked it, as a merge commit keeping the source", async () => {
+    syncServer(["checking", "mergeable"]);
+    await expect(adapter().mergeBranch(REPO, merge)).resolves.toEqual({
+      status: "merged",
+      sha: START,
+    });
+    await Promise.all(pendingBodies);
+    const opened = requests.find((r) => r.method === "POST" && r.url.endsWith("/merge_requests"));
+    expect(opened!.body).toMatchObject({
+      source_branch: "main",
+      target_branch: "sprint/q4",
+      remove_source_branch: false,
+      squash: false,
+    });
+    const merged = requests.find((r) => r.method === "PUT" && r.url.endsWith("/merge"));
+    expect(merged!.body).toMatchObject({
+      sha: HEAD,
+      squash: false,
+      should_remove_source_branch: false,
+    });
+  });
+
+  it("closes the MR again on conflicts and on a refused merge", async () => {
+    syncServer(["conflict"]);
+    await expect(adapter().mergeBranch(REPO, merge)).resolves.toMatchObject({
+      status: "conflicts",
+    });
+    await Promise.all(pendingBodies);
+    expect(requests.filter((r) => r.method === "PUT" && r.url.endsWith("/merge"))).toHaveLength(0);
+    expect(requests.find((r) => r.method === "PUT" && r.url === SYNC)!.body).toMatchObject({
+      state_event: "close",
+    });
+
+    requests = [];
+    pendingBodies = [];
+    syncServer(["ci_must_pass"], () =>
+      HttpResponse.json({ message: "405 Method Not Allowed" }, { status: 405 }),
+    );
+    await expect(adapter().mergeBranch(REPO, merge)).resolves.toEqual({
+      status: "refused",
+      hostMessage: "405 Method Not Allowed (detailed_merge_status: ci_must_pass)",
+    });
+    expect(requests.some((r) => r.method === "PUT" && r.url === SYNC)).toBe(true);
+  });
+});

@@ -1433,3 +1433,74 @@ describe("required checks, approve and merge", () => {
     );
   });
 });
+
+describe("branches", () => {
+  const REFS = `${API}/repos/acme/widgets/git/refs`;
+  const MERGES = `${API}/repos/acme/widgets/merges`;
+
+  it("creates a branch at a commit, and leaves one that exists", async () => {
+    let body: unknown = null;
+    server.use(
+      http.post(REFS, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ ref: "refs/heads/sprint/q4" }, { status: 201 });
+      }),
+    );
+    await expect(makeAdapter().createBranch(REPO, "sprint/q4", HEAD)).resolves.toEqual({
+      created: true,
+    });
+    expect(body).toEqual({ ref: "refs/heads/sprint/q4", sha: HEAD });
+
+    server.use(
+      http.post(REFS, () =>
+        HttpResponse.json({ message: "Reference already exists" }, { status: 422 }),
+      ),
+    );
+    await expect(makeAdapter().createBranch(REPO, "sprint/q4", HEAD)).resolves.toEqual({
+      created: false,
+    });
+  });
+
+  it("merges one branch into another, telling up to date and conflicts apart", async () => {
+    let body: unknown = null;
+    server.use(
+      http.post(MERGES, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ sha: BASE }, { status: 201 });
+      }),
+    );
+    const merge = { into: "sprint/q4", from: "main", message: "Update sprint/q4 from main" };
+    await expect(makeAdapter().mergeBranch(REPO, merge)).resolves.toEqual({
+      status: "merged",
+      sha: BASE,
+    });
+    expect(body).toEqual({
+      base: "sprint/q4",
+      head: "main",
+      commit_message: "Update sprint/q4 from main",
+    });
+
+    server.use(http.post(MERGES, () => new HttpResponse(null, { status: 204 })));
+    await expect(makeAdapter().mergeBranch(REPO, merge)).resolves.toEqual({
+      status: "up_to_date",
+    });
+
+    server.use(
+      http.post(MERGES, () => HttpResponse.json({ message: "Merge conflict" }, { status: 409 })),
+    );
+    await expect(makeAdapter().mergeBranch(REPO, merge)).resolves.toEqual({
+      status: "conflicts",
+      hostMessage: "Merge conflict",
+    });
+
+    server.use(
+      http.post(MERGES, () =>
+        HttpResponse.json({ message: "Resource not accessible by integration" }, { status: 403 }),
+      ),
+    );
+    await expect(makeAdapter().mergeBranch(REPO, merge)).resolves.toEqual({
+      status: "refused",
+      hostMessage: "Resource not accessible by integration",
+    });
+  });
+});

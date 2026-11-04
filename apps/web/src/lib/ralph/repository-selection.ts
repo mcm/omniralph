@@ -27,7 +27,7 @@ import { errorMessage, postActivity, quietly } from "./notify";
 import { changeRequestTerm } from "./publish";
 import { matchSelection } from "./routing";
 import { advanceRun, type AdvanceResult, type RalphDeps } from "./run";
-import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
+import { laneBaseBranch } from "@/lib/sprints/branch";
 import { epicIssue } from "./epic-loader";
 
 /** `routed_by` of a repository a person picked: later re-routing keeps it. */
@@ -158,7 +158,12 @@ export async function answerRepositorySelection(
     branch = epicBranchName(epicIssue(issue), run.kind === "single" ? null : undefined);
     const found = await getRepositoryWithConnection(deps.db, repository.id);
     if (!found) throw new Error(`repository ${repository.fullPath} is gone`);
-    baseBranch = await fetchDefaultBranch(deps, found.connection, found.repository);
+    baseBranch = await laneBaseBranch(deps, {
+      tracker: run.trackerProvider,
+      issueId: run.trackerIssueId,
+      connection: found.connection,
+      repository: found.repository,
+    });
   } catch (error) {
     await postActivity(conversationFor(run, deps), {
       type: "error",

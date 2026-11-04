@@ -7,9 +7,12 @@ import {
   createRun,
   createSprint,
   ensureLane,
+  findings,
   getMainLane,
   getSprint,
   ralphRuns,
+  reviewRuns,
+  reviews,
   setSprintEpicState,
   sprintEpics,
   saveIntegration,
@@ -40,6 +43,12 @@ import {
   sprintRunDeps,
   startRefusal,
 } from "@/lib/sprints/run";
+import { PostgresDispatcher } from "@/lib/dispatch/dispatcher";
+import type { RalphDeps } from "@/lib/ralph/run";
+import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
+import type * as ScmAdapters from "@/lib/scm/adapters";
+import { laneBaseBranch, sprintBranchName } from "@/lib/sprints/branch";
+import { mergeSprintEpicWhenClean } from "@/lib/sprints/merge";
 import type * as LinearClient from "@/lib/tracker/linear/client";
 
 vi.mock("server-only", () => ({}));
@@ -49,6 +58,11 @@ const state = vi.hoisted(() => ({
   orgId: "",
   role: "admin" as Role,
   linear: new Map<string, FakeLinearGateway>(),
+  scm: undefined as unknown as FakeScmAdapter,
+}));
+vi.mock("@/lib/scm/adapters", async (importOriginal) => ({
+  ...(await importOriginal<typeof ScmAdapters>()),
+  scmAdapterFor: () => state.scm.asAdapter(),
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
 vi.mock("@/lib/auth/session", () => ({
@@ -241,6 +255,9 @@ describe.skipIf(!databaseAvailable)("running a sprint", () => {
     state.role = "admin";
     linear = new FakeLinearGateway();
     state.linear.set(orgId, linear);
+    state.scm = new FakeScmAdapter();
+    state.scm.defaultBranch = "main";
+    state.scm.branchHeads.set("acme/api:main", "main-1");
     await db.delete(sprints);
   });
 
@@ -635,6 +652,375 @@ describe.skipIf(!databaseAvailable)("running a sprint", () => {
       expect(await check()).toMatchObject({ checked: 1, advanced: 1 });
       expect(await epicStates(id)).toEqual(["merged", "running"]);
       expect(delegated(b)).toBe(true);
+    });
+  });
+
+  describe("merging together", () => {
+    let scm: FakeScmAdapter;
+    let prNumber = 100;
+    beforeEach(() => {
+      scm = state.scm;
+    });
+
+    const ralphDeps = (): RalphDeps => ({
+      db,
+      organizationId: orgId,
+      tracker: linear,
+      dispatcher: new PostgresDispatcher({ db }),
+      adapterFor: () => scm.asAdapter(),
+    });
+
+    /** A started merge-together sprint of `issues`, its first epic running. */
+    const started = async (issues: IssueSummary[]) => {
+      const id = await sprintOf(issues, { mergeTogether: true });
+      await accepted("start", id);
+      const branch = (await stored(id)).sprintBranch!;
+      return { id, branch };
+    };
+
+    /**
+     * The epic's run, done working, with its PR into the sprint branch open on the code host
+     * (head `head`).
+     */
+    const openPullRequest = async (issue: IssueSummary, branch: string, head = "head-1") => {
+      prNumber += 1;
+      const { run } = await createRun(db, {
+        origin: "tracker",
+        organizationId: orgId,
+        trackerIssueId: issue.id,
+        trackerIdentifier: issue.identifier,
+        trackerSessionId: `session-${randomUUID()}`,
+        kind: "prd",
+        repositoryId: repoId,
+        branch: issue.branchName,
+        baseBranch: branch,
+      });
+      const lane = (await updateLane(db, (await getMainLane(db, run))!.id, {
+        prNumber,
+        prUrl: `https://github.com/acme/api/pull/${prNumber}`,
+      }))!;
+      await updateRun(db, run.id, { status: "completed" });
+      scm.changeRequests.push({
+        number: prNumber,
+        url: lane.prUrl!,
+        fullPath: "acme/api",
+        sourceBranch: issue.branchName ?? `branch-${prNumber}`,
+        targetBranch: branch,
+        title: issue.title,
+        body: "",
+        draft: false,
+        state: "open",
+        headSha: head,
+      });
+      return { run, lane, number: prNumber };
+    };
+
+    const ciOf = (number: number, state: "pending" | "passed" | "failed", head = "head-1") =>
+      scm.requiredChecks.set(`acme/api#${number}`, {
+        state,
+        headSha: head,
+        checks: [{ name: "test", state, url: null }],
+      });
+
+    /** A finished review of the PR with one finding in `status`; returns the finding's ID. */
+    const reviewWithFinding = async (
+      number: number,
+      status: "open" | "resolved" = "open",
+      head = "head-1",
+    ) => {
+      const [reviewRun] = await db
+        .insert(reviewRuns)
+        .values({
+          organizationId: orgId,
+          repositoryId: repoId,
+          prNumber: number,
+          headSha: head,
+          baseSha: "base",
+          trigger: "webhook",
+          mode: "incremental",
+          status: "completed",
+        })
+        .returning();
+      const [review] = await db
+        .insert(reviews)
+        .values({
+          reviewRunId: reviewRun!.id,
+          repositoryId: repoId,
+          prNumber: number,
+          headSha: head,
+          baseSha: "base",
+          trigger: "webhook",
+          status: "completed",
+          budget: 1000,
+        })
+        .returning();
+      const [finding] = await db
+        .insert(findings)
+        .values({
+          reviewId: review!.id,
+          path: "src/app.ts",
+          startLine: 1,
+          endLine: 2,
+          severity: "high",
+          category: "bug",
+          title: "Off by one",
+          body: "The loop skips the last item.",
+          confidence: 0.9,
+          status,
+        })
+        .returning();
+      return finding!.id;
+    };
+
+    it("creates the sprint branch from the default branch when it starts, and records it", async () => {
+      const a = epic("ENG-200");
+      const { id, branch } = await started([a]);
+      const sprint = await stored(id);
+      expect(branch).toBe(sprintBranchName(sprint));
+      expect(branch).toMatch(/^sprint\/q4-[0-9a-f]{8}$/);
+      // At the default branch's head, before the first epic was delegated.
+      expect(scm.createdBranches.get(`acme/api:${branch}`)).toBe("main-1");
+      expect(scm.calls.indexOf("createBranch")).toBeGreaterThan(-1);
+      expect(delegated(a)).toBe(true);
+      // Created already: nothing to bring up to date.
+      expect(scm.branchMerges).toEqual([]);
+    });
+
+    it("bases the lanes of the sprint's epics in its repo on the sprint branch", async () => {
+      const [a, outsider] = [epic("ENG-205"), epic("ENG-206")];
+      const { branch } = await started([a]);
+      const found = (await import("@omniralph/db")).getRepositoryWithConnection;
+      const target = (await found(db, repoId))!;
+      const other = (await found(db, otherRepoId))!;
+      const deps = { db, organizationId: orgId, adapterFor: () => scm.asAdapter() };
+      const base = (issue: IssueSummary, where: typeof target) =>
+        laneBaseBranch(deps, {
+          tracker: "linear",
+          issueId: issue.id,
+          connection: where.connection,
+          repository: where.repository,
+        });
+      expect(await base(a, target)).toBe(branch);
+      // Another repo of the run, and a work item that isn't in the sprint: the default branch.
+      expect(await base(a, other)).toBe("main");
+      expect(await base(outsider, target)).toBe("main");
+    });
+
+    it("bases nothing on a sprint branch for a sprint that doesn't merge together", async () => {
+      const a = epic("ENG-207");
+      const id = await sprintOf([a]);
+      await accepted("start", id);
+      expect((await stored(id)).sprintBranch).toBeNull();
+      expect(scm.calls).not.toContain("createBranch");
+      const target = (await (
+        await import("@omniralph/db")
+      ).getRepositoryWithConnection(db, repoId))!;
+      await expect(
+        laneBaseBranch(
+          { db, organizationId: orgId, adapterFor: () => scm.asAdapter() },
+          { tracker: "linear", issueId: a.id, ...target },
+        ),
+      ).resolves.toBe("main");
+    });
+
+    it("doesn't merge while CI is red, and merges once it's green and nothing is open", async () => {
+      const [a, b] = [epic("ENG-210"), epic("ENG-211")];
+      const { id, branch } = await started([a, b]);
+      const { lane, number } = await openPullRequest(a, branch);
+
+      ciOf(number, "failed");
+      expect(await mergeSprintEpicWhenClean(ralphDeps(), lane.id)).toEqual({
+        status: "waiting",
+        why: "checks_failed",
+      });
+      ciOf(number, "pending");
+      expect(await mergeSprintEpicWhenClean(ralphDeps(), lane.id)).toEqual({
+        status: "waiting",
+        why: "checks_pending",
+      });
+      expect(scm.approvals).toEqual([]);
+      expect(scm.calls).not.toContain("mergePullRequest");
+      expect(await epicStates(id)).toEqual(["running", "queued"]);
+
+      ciOf(number, "passed");
+      expect(await mergeSprintEpicWhenClean(ralphDeps(), lane.id)).toEqual({ status: "merged" });
+      // Approved and merged pinned to the head that passed.
+      expect(scm.approvals).toEqual([`acme/api#${number}@head-1`]);
+      expect(scm.changeRequests.find((c) => c.number === number)!.state).toBe("merged");
+      // The epic merged; the sprint branch was brought up to date before the next one started.
+      expect(await epicStates(id)).toEqual(["merged", "running"]);
+      expect(delegated(b)).toBe(true);
+      expect(scm.branchMerges).toEqual([
+        { fullPath: "acme/api", into: branch, from: "main", message: `Update ${branch} from main` },
+      ]);
+    });
+
+    it("falls back to the PR's CI when its target branch requires no checks", async () => {
+      const a = epic("ENG-215");
+      const { branch } = await started([a]);
+      const { lane, number } = await openPullRequest(a, branch);
+      scm.ciStatuses.set(`acme/api#${number}`, {
+        state: "failed",
+        headSha: "head-1",
+        failedJobs: [],
+      });
+      expect(await mergeSprintEpicWhenClean(ralphDeps(), lane.id)).toEqual({
+        status: "waiting",
+        why: "checks_failed",
+      });
+    });
+
+    it("doesn't merge while a review finding is open, and re-evaluates once it's addressed", async () => {
+      const [a, b] = [epic("ENG-220"), epic("ENG-221")];
+      const { id, branch } = await started([a, b]);
+      const { lane, number } = await openPullRequest(a, branch);
+      ciOf(number, "passed");
+      const finding = await reviewWithFinding(number);
+
+      expect(await mergeSprintEpicWhenClean(ralphDeps(), lane.id)).toEqual({
+        status: "waiting",
+        why: "findings",
+      });
+      expect(scm.calls).not.toContain("approvePullRequest");
+      expect(scm.calls).not.toContain("mergePullRequest");
+
+      // The fix push: the finding is resolved and a new review starts.
+      await db.update(findings).set({ status: "resolved" }).where(eq(findings.id, finding));
+      const [running] = await db
+        .insert(reviewRuns)
+        .values({
+          organizationId: orgId,
+          repositoryId: repoId,
+          prNumber: number,
+          headSha: "head-2",
+          baseSha: "base",
+          trigger: "webhook",
+          mode: "incremental",
+          status: "running",
+        })
+        .returning();
+      scm.changeRequests.find((c) => c.number === number)!.headSha = "head-2";
+      ciOf(number, "passed", "head-2");
+      expect(await mergeSprintEpicWhenClean(ralphDeps(), lane.id)).toEqual({
+        status: "waiting",
+        why: "reviewing",
+      });
+
+      // Its review found something new.
+      await db
+        .update(reviewRuns)
+        .set({ status: "completed" })
+        .where(eq(reviewRuns.id, running!.id));
+      const second = await reviewWithFinding(number, "open", "head-2");
+      expect(await mergeSprintEpicWhenClean(ralphDeps(), lane.id)).toMatchObject({
+        why: "findings",
+      });
+
+      await db.update(findings).set({ status: "dismissed" }).where(eq(findings.id, second));
+      expect(await mergeSprintEpicWhenClean(ralphDeps(), lane.id)).toEqual({ status: "merged" });
+      expect(scm.approvals).toEqual([`acme/api#${number}@head-2`]);
+      expect(await epicStates(id)).toEqual(["merged", "running"]);
+    });
+
+    it("waits while the epic's run is still working", async () => {
+      const a = epic("ENG-225");
+      const { branch } = await started([a]);
+      const { run, lane, number } = await openPullRequest(a, branch);
+      ciOf(number, "passed");
+      // A review's findings reopened the run.
+      await updateRun(db, run.id, { status: "pending" });
+      expect(await mergeSprintEpicWhenClean(ralphDeps(), lane.id)).toEqual({
+        status: "waiting",
+        why: "working",
+      });
+    });
+
+    it("merges even when the code host refuses Om's approval of its own PR", async () => {
+      const a = epic("ENG-230");
+      const { id, branch } = await started([a]);
+      const { lane, number } = await openPullRequest(a, branch);
+      ciOf(number, "passed");
+      scm.refusals.set("approve", {
+        reason: "forbidden",
+        message: "Can not approve your own pull request",
+      });
+      expect(await mergeSprintEpicWhenClean(ralphDeps(), lane.id)).toEqual({ status: "merged" });
+      expect(await epicStates(id)).toEqual(["merged"]);
+    });
+
+    it("never merges an epic PR that targets the default branch", async () => {
+      const a = epic("ENG-235");
+      const { branch } = await started([a]);
+      const { lane, number } = await openPullRequest(a, branch);
+      scm.changeRequests.find((c) => c.number === number)!.targetBranch = "main";
+      ciOf(number, "passed");
+      expect(await mergeSprintEpicWhenClean(ralphDeps(), lane.id)).toEqual({ status: "skipped" });
+      expect(scm.calls).not.toContain("mergePullRequest");
+    });
+
+    it("pauses the sprint with the host's reason when the merge is refused", async () => {
+      const [a, b] = [epic("ENG-240"), epic("ENG-241")];
+      const { id, branch } = await started([a, b]);
+      const { lane, number } = await openPullRequest(a, branch);
+      ciOf(number, "passed");
+      scm.refusals.set("merge", {
+        reason: "blocked",
+        message: "At least 1 approving review is required by reviewers with write access.",
+      });
+
+      const result = await mergeSprintEpicWhenClean(ralphDeps(), lane.id);
+      const reason = `The code host refused to merge ENG-240's PR into ${branch}: At least 1 approving review is required by reviewers with write access.`;
+      expect(result).toEqual({ status: "paused", reason });
+      const sprint = await stored(id);
+      expect(sprint.status).toBe("paused");
+      expect(sprint.pausedReason).toBe(reason);
+      expect(sprint.epics.map((e) => e.state)).toEqual(["stalled", "queued"]);
+      expect(delegated(b)).toBe(false);
+
+      // A person approved it and resumed: the epic's open PR is adopted and merges now.
+      scm.refusals.delete("merge");
+      const resumed = await accepted("resume", id);
+      expect(resumed.status).toBe("running");
+      expect(await epicStates(id)).toEqual(["merged", "running"]);
+      expect(delegated(b)).toBe(true);
+    });
+
+    it("pauses before the next epic when the sprint branch conflicts with the default branch", async () => {
+      const [a, b] = [epic("ENG-250"), epic("ENG-251")];
+      const { id, branch } = await started([a, b]);
+      const { lane, number } = await openPullRequest(a, branch);
+      ciOf(number, "passed");
+      scm.branchMergeResult = { status: "conflicts", hostMessage: "Merge conflict" };
+
+      expect(await mergeSprintEpicWhenClean(ralphDeps(), lane.id)).toEqual({ status: "merged" });
+      const sprint = await stored(id);
+      expect(sprint.status).toBe("paused");
+      expect(sprint.pausedReason).toBe(
+        `The sprint branch ${branch} conflicts with main, so Om didn't start the next epic. Merge main into ${branch} by hand, then resume. (Merge conflict)`,
+      );
+      // The epic that merged counts; the next waits, undelegated.
+      expect(sprint.epics.map((e) => e.state)).toEqual(["merged", "queued"]);
+      expect(delegated(b)).toBe(false);
+
+      // Fixed by hand: resuming brings the branch up to date and starts it.
+      scm.branchMergeResult = { status: "up_to_date" };
+      await accepted("resume", id);
+      expect(await epicStates(id)).toEqual(["merged", "running"]);
+      expect(delegated(b)).toBe(true);
+    });
+
+    it("merges a clean epic PR from the sprint check when its events were missed", async () => {
+      const [a, b] = [epic("ENG-260"), epic("ENG-261")];
+      const { id, branch } = await started([a, b]);
+      const { number } = await openPullRequest(a, branch);
+      ciOf(number, "passed");
+      const response = await sprintCheck(
+        new Request("http://localhost/api/cron/sprint-check", {
+          headers: { authorization: "Bearer cron-secret" },
+        }),
+      );
+      expect(await response.json()).toMatchObject({ checked: 1, merged: 1 });
+      expect(await epicStates(id)).toEqual(["merged", "running"]);
     });
   });
 });

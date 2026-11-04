@@ -28,6 +28,7 @@ import { createRouter, routedRepository } from "@/lib/routing/resolve";
 import { organizationManualLabels, repositoryAllowsPreparation } from "./epic-loader";
 import type { RalphDeps } from "./run";
 import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
+import { laneBaseBranch } from "@/lib/sprints/branch";
 
 type Executor = Database | RalphTransaction;
 
@@ -67,7 +68,10 @@ export type StoryLanes = Map<string, { laneId: string | null; elsewhere: string 
 export async function routeStories(
   deps: Pick<RalphDeps, "db" | "adapterFor" | "tracker">,
   tx: RalphTransaction,
-  run: Pick<RalphRun, "id" | "organizationId" | "repositoryId" | "trackerIdentifier">,
+  run: Pick<
+    RalphRun,
+    "id" | "organizationId" | "repositoryId" | "trackerIdentifier" | "trackerIssueId"
+  >,
   epic: Epic,
 ): Promise<StoryLanes> {
   const main = await getMainLane(tx, run);
@@ -126,13 +130,14 @@ export async function routeStories(
 
 /**
  * The run's lane in another repository, created on the main lane's branch and
- * based on the repository's default branch. Null when the default branch can't
+ * based on the repository's default branch (or, for an epic of a merge-together
+ * sprint building there, its sprint branch). Null when the default branch can't
  * be read (logged; the next `advanceRun` tries again).
  */
 async function laneIn(
-  deps: Pick<RalphDeps, "db" | "adapterFor">,
+  deps: Pick<RalphDeps, "db" | "adapterFor" | "tracker">,
   tx: RalphTransaction,
-  run: Pick<RalphRun, "id" | "trackerIdentifier">,
+  run: Pick<RalphRun, "id" | "organizationId" | "trackerIdentifier" | "trackerIssueId">,
   main: RalphLane,
   repositoryId: string,
 ): Promise<RalphLane | null> {
@@ -141,7 +146,17 @@ async function laneIn(
   try {
     const found = await getRepositoryWithConnection(deps.db, repositoryId);
     if (!found) throw new Error(`repository ${repositoryId} is gone`);
-    const baseBranch = await fetchDefaultBranch(deps, found.connection, found.repository);
+    const baseBranch = run.trackerIssueId
+      ? await laneBaseBranch(
+          { ...deps, organizationId: run.organizationId },
+          {
+            tracker: deps.tracker.provider,
+            issueId: run.trackerIssueId,
+            connection: found.connection,
+            repository: found.repository,
+          },
+        )
+      : await fetchDefaultBranch(deps, found.connection, found.repository);
     return await ensureLane(tx, { runId: run.id, repositoryId, branch: main.branch, baseBranch });
   } catch (error) {
     console.error(

@@ -16,6 +16,8 @@ import {
   CloneCredentialPermissionError,
   CommitNotFoundError,
   getHeader,
+  type BranchMerge,
+  type BranchMergeResult,
   type ChangeRequest,
   type ChangeRequestActionOptions,
   type ChangeRequestRefusalReason,
@@ -558,6 +560,47 @@ export class GitHubAdapter implements ScmAdapter {
       return data.commit.sha;
     } catch (error) {
       if (hasStatus(error, 404)) return null;
+      throw error;
+    }
+  }
+
+  /** `POST /git/refs`; GitHub's 422 "Reference already exists" means it exists. */
+  async createBranch(repo: RepoRef, branch: string, sha: string): Promise<{ created: boolean }> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const octokit = await this.client(repo);
+    try {
+      await octokit.git.createRef({ owner, repo: name, ref: `refs/heads/${branch}`, sha });
+      return { created: true };
+    } catch (error) {
+      if (hasStatus(error, 422) && /already exists/i.test(hostMessage(error))) {
+        return { created: false };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * `POST /merges`: 201 with the merge commit, 204 when `into` already has
+   * `from`, 409 on conflicts; 403 (rights, protection) is a refusal.
+   */
+  async mergeBranch(repo: RepoRef, merge: BranchMerge): Promise<BranchMergeResult> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const octokit = await this.client(repo);
+    try {
+      const response = await octokit.repos.merge({
+        owner,
+        repo: name,
+        base: merge.into,
+        head: merge.from,
+        commit_message: merge.message,
+      });
+      if ((response.status as number) === 204) return { status: "up_to_date" };
+      return { status: "merged", sha: response.data?.sha ?? null };
+    } catch (error) {
+      if (hasStatus(error, 409)) return { status: "conflicts", hostMessage: hostMessage(error) };
+      if (hasStatus(error, 403) || hasStatus(error, 422)) {
+        return { status: "refused", hostMessage: hostMessage(error) };
+      }
       throw error;
     }
   }

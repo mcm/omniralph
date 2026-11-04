@@ -72,7 +72,7 @@ import {
 import { addInstruction, NOTHING_TO_DO, PASSED_TO_RUNNING_JOB } from "./requests";
 import { scheduleRunByStatus, scheduleRunSafetyCheck } from "./due";
 import { advanceRun, FINISHED_RUN_STATUSES, syncStories, type RalphDeps } from "./run";
-import { fetchDefaultBranch } from "@/lib/repositories/default-branch";
+import { laneBaseBranch } from "@/lib/sprints/branch";
 
 export type SessionCreatedEvent = SessionStartedEvent;
 
@@ -745,7 +745,13 @@ async function startNewRun(
   try {
     const found = await getRepositoryWithConnection(db, chosen.repository.id);
     if (!found) throw new Error(`repository ${chosen.repository.fullPath} is gone`);
-    baseBranch = await fetchDefaultBranch(deps, found.connection, found.repository);
+    // A merge-together sprint's epic builds on its sprint branch.
+    baseBranch = await laneBaseBranch(deps, {
+      tracker: deps.tracker.provider,
+      issueId: root.id,
+      connection: found.connection,
+      repository: found.repository,
+    });
   } catch (error) {
     await post(deps, event, {
       type: "error",

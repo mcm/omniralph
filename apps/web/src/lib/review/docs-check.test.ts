@@ -107,6 +107,8 @@ function fakeAdapter(provider: ScmProvider) {
     getWriteCloneCredential: unused,
     getDefaultBranch: unused,
     getBranchHead: unused,
+    createBranch: unused,
+    mergeBranch: unused,
     findOpenChangeRequest: unused,
     createChangeRequest: unused,
     updateChangeRequest: unused,

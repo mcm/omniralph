@@ -8,8 +8,11 @@ import {
   isTrackerRun,
   listLanes,
   listRunningSprints,
+  pauseSprint,
   setSprintEpicState,
   type Database,
+  type ScmConnection,
+  type SprintWithEpics,
   type RalphLane,
   type RalphRun,
   type TrackerRun,
@@ -17,11 +20,15 @@ import {
   type SprintEpicState,
   type WorkItemTracker as TrackerKind,
 } from "@omniralph/db";
+import type { ScmAdapter } from "@omniralph/scm";
 import type { TrackerGateway } from "@omniralph/tracker";
+import type { RalphDeps } from "@/lib/ralph/run";
 import type { StartOutcome } from "@/lib/ralph/start";
+import { scmAdapterFor } from "@/lib/scm/adapters";
 import type { WorkItemActor } from "@/lib/work-items/actions";
 import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
 import type { WorkItemTracker } from "@/lib/work-items/tracker";
+import { prepareSprintBranch } from "./branch";
 
 /**
  * Running a sprint: each epic starts through the Backlog's Start epic (`startWorkItem`, with
@@ -30,7 +37,9 @@ import type { WorkItemTracker } from "@/lib/work-items/tracker";
  * the agent session webhook), whose run fails or is stopped, or whose PR closes without
  * merging stalls, and pauses its sprint with the reason; resuming queues it again, so it is
  * retried first. A paused or canceled sprint starts nothing; a merge still counts while it is
- * paused.
+ * paused. A merge-together sprint's branch is created when its first epic starts and brought
+ * up to date with the default branch before each next one (`./branch`); its epics' PRs merge
+ * themselves into it once clean (`./merge`).
  */
 
 /** Who starts the epics after the first: Om. */
@@ -41,14 +50,25 @@ export interface SprintRunDeps {
   organizationId: string;
   /** The organization's work item tracker. */
   loadTracker: () => Promise<WorkItemTracker>;
+  /** The code-host adapter of a repository's connection (the sprint branch). */
+  adapterFor: (db: Database, connection: ScmConnection) => ScmAdapter;
+  /** The orchestrator's deps for the organization's runs (merging an epic's PR). */
+  ralphDeps: () => Promise<RalphDeps>;
 }
 
-/** The sprint deps of a tracker webhook or ralph handler that holds the tracker's gateway. */
-export function sprintRunDeps(deps: {
-  db: Database;
-  organizationId: string;
-  tracker: TrackerGateway;
-}): SprintRunDeps {
+/**
+ * The sprint deps of a tracker webhook or ralph handler that holds the tracker's gateway (and,
+ * from a ralph handler, the rest of its deps).
+ */
+export function sprintRunDeps(
+  deps: {
+    db: Database;
+    organizationId: string;
+    tracker: TrackerGateway;
+  } & Partial<Pick<RalphDeps, "dispatcher" | "adapterFor" | "chat">>,
+): SprintRunDeps {
+  const adapterFor = deps.adapterFor ?? scmAdapterFor;
+  const { dispatcher } = deps;
   return {
     db: deps.db,
     organizationId: deps.organizationId,
@@ -58,6 +78,28 @@ export function sprintRunDeps(deps: {
         organizationId: deps.organizationId,
         gateway: deps.tracker,
       }),
+    adapterFor,
+    ralphDeps: async () => {
+      if (dispatcher) {
+        return {
+          db: deps.db,
+          organizationId: deps.organizationId,
+          tracker: deps.tracker,
+          dispatcher,
+          adapterFor,
+          ...(deps.chat ? { chat: deps.chat } : {}),
+        };
+      }
+      // Loaded on first use: the ralph job handlers import this module.
+      const { getDispatcher } = await import("@/lib/dispatch");
+      return {
+        db: deps.db,
+        organizationId: deps.organizationId,
+        tracker: deps.tracker,
+        dispatcher: getDispatcher(),
+        adapterFor,
+      };
+    },
   };
 }
 
@@ -171,6 +213,43 @@ async function startEpic(
   }
 }
 
+/** Whether `claimNextSprintEpic` would claim an epic of the sprint now. */
+const claimsNext = (sprint: SprintWithEpics) =>
+  sprint.status === "running" &&
+  !sprint.epics.some((epic) => epic.state === "running" || epic.state === "stalled") &&
+  sprint.epics.some((epic) => epic.state === "queued");
+
+/**
+ * Before a merge-together sprint's next epic starts: its sprint branch is created (the first
+ * time) or brought up to date with the default branch. False when it couldn't be: the sprint
+ * paused with the reason (a conflict, a refusal). True otherwise, also when no epic starts now.
+ */
+async function readySprintBranch(deps: SprintRunDeps, sprintId: string): Promise<boolean> {
+  const sprint = await getSprint(deps.db, deps.organizationId, sprintId);
+  if (!sprint?.mergeTogether || !claimsNext(sprint)) return true;
+  const prepared = await prepareSprintBranch(deps, sprint);
+  if (prepared.status === "ready") return true;
+  await pauseSprint(deps.db, deps.organizationId, sprintId, prepared.reason);
+  return false;
+}
+
+/**
+ * Evaluates the merge of a running merge-together sprint's running epic's PRs/MRs (after it
+ * resumed, and from the sprint check): each one clean is approved and merged into the sprint
+ * branch (`mergeSprintEpicWhenClean`).
+ */
+export async function mergeRunningSprintEpic(deps: SprintRunDeps, sprintId: string): Promise<void> {
+  const sprint = await getSprint(deps.db, deps.organizationId, sprintId);
+  if (!sprint?.mergeTogether || sprint.status !== "running") return;
+  const epic = sprint.epics.find((e) => e.state === "running");
+  if (!epic) return;
+  const run = await getRunByIssue(deps.db, deps.organizationId, epic.externalId);
+  if (!run || !isTrackerRun(run)) return;
+  // Loaded on first use: merging records the merge through the ralph cleanup, which imports this module.
+  const { mergeSprintEpicLanes } = await import("./merge");
+  await mergeSprintEpicLanes(await deps.ralphDeps(), run);
+}
+
 /** The most epics one advance walks past (each already merged): a sprint's most epics. */
 const MAX_STEPS = 50;
 
@@ -186,6 +265,7 @@ export async function advanceSprint(
   actor: WorkItemActor = SPRINT_ACTOR,
 ): Promise<void> {
   for (let step = 0; step < MAX_STEPS; step += 1) {
+    if (!(await readySprintBranch(deps, sprintId))) return;
     const claim = await claimNextSprintEpic(deps.db, deps.organizationId, sprintId);
     if (claim.status !== "claimed") return;
     const { epic } = claim;
@@ -427,6 +507,13 @@ export async function checkSprint(
       if ((await pullRequestLanes(db, run.id)).length === 0) {
         return stall(noPullRequestReason(epic.identifier));
       }
+      if (!sprint.mergeTogether) return "ok";
+      // A clean PR whose CI or review event was missed merges now.
+      await mergeRunningSprintEpic(deps, sprintId);
+      const after = await getSprint(db, organizationId, sprintId);
+      const settled = after?.epics.find((e) => e.id === epic.id)?.state;
+      if (settled === "merged") return "merged";
+      if (settled === "stalled") return "paused";
       return "ok";
     }
     default:

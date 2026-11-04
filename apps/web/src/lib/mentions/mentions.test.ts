@@ -108,6 +108,12 @@ function fakeAdapter() {
     async getBranchHead() {
       throw new Error("not used");
     },
+    async createBranch() {
+      throw new Error("not used");
+    },
+    async mergeBranch() {
+      throw new Error("not used");
+    },
     async findOpenChangeRequest() {
       throw new Error("not used");
     },
