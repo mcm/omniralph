@@ -32,6 +32,9 @@ export interface FollowUp {
   reason?: string;
 }
 
+/** At most this many `blockedBy` identifiers are kept from one story session (`MAX_RALPH_BLOCKED_BY` in `@omniralph/shared`). */
+export const MAX_BLOCKED_BY = 10;
+
 /** At most this many recommendations are kept from one story session (`MAX_RALPH_RESULT_RECOMMENDATIONS` in `@omniralph/shared`). */
 export const MAX_RECOMMENDATIONS = 10;
 
@@ -106,6 +109,12 @@ export const StoryAgentOutput = z.object({
     .describe(
       "Work outside this story's scope, in this project, for the orchestrator to file as new stories. Never work for another project or repository. Empty when there is none.",
     ),
+  blockedBy: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Only with `status: "blocked"`: the tracker identifiers (e.g. `ENG-123`) of other unfinished work you discovered, while working, that this story needs first. Never ask for another branch to be merged instead.',
+    ),
   recommendations: z
     .array(
       z.object({
@@ -143,9 +152,11 @@ export function isWaitingStory(structured: unknown): boolean {
 }
 
 /** A story session's result after `readStoryOutcome`'s clean-up. */
-export type StoryOutcome = Omit<StoryAgentOutput, "followUps" | "recommendations"> & {
+export type StoryOutcome = Omit<StoryAgentOutput, "followUps" | "recommendations" | "blockedBy"> & {
   followUps: FollowUp[];
   recommendations?: Recommendation[];
+  /** Trimmed, de-duplicated case-insensitively and capped; absent when empty. */
+  blockedBy?: string[];
 };
 
 /** `outputFormat` schema of a story session. */
@@ -153,7 +164,7 @@ export const STORY_OUTPUT_SCHEMA = jsonSchema(StoryAgentOutput);
 
 /**
  * A story session's structured result, with follow-ups and recommendations trimmed, deduplicated by title
- * and capped. A result
+ * and capped, and `blockedBy` trimmed, deduplicated case-insensitively and capped. A result
  * that is missing or doesn't match the schema gives the problem instead.
  */
 export function readStoryOutcome(
@@ -181,11 +192,17 @@ export function readStoryOutcome(
     }
     recommendations.push({ title, description: r.description.trim() });
   }
+  const blockedBy: string[] = [];
+  for (const raw of parsed.data.blockedBy ?? []) {
+    const id = raw.trim();
+    if (!id || blockedBy.some((x) => x.toLowerCase() === id.toLowerCase())) continue;
+    blockedBy.push(id);
+  }
   const commit = parsed.data.commit?.summary.trim()
     ? { summary: parsed.data.commit.summary.replace(/\s+/g, " ").trim() }
     : undefined;
   // A metric without a name or a finite value is dropped, not an invalid result.
-  const { metric: reported, recommendations: _, ...rest } = parsed.data;
+  const { metric: reported, recommendations: _, blockedBy: __, ...rest } = parsed.data;
   const name = reported?.name.replace(/\s+/g, " ").trim().slice(0, 200);
   const metric =
     reported && name && Number.isFinite(reported.value)
@@ -205,6 +222,7 @@ export function readStoryOutcome(
       ...(recommendations.length > 0 && {
         recommendations: recommendations.slice(0, MAX_RECOMMENDATIONS),
       }),
+      ...(blockedBy.length > 0 && { blockedBy: blockedBy.slice(0, MAX_BLOCKED_BY) }),
       ...(metric && { metric }),
     },
   };

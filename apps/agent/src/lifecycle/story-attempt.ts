@@ -363,6 +363,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
           const summary = clip(outcome?.summary.trim() || session.output.trim());
           const followUps = followUpsOf(outcome);
           const recommendations = recommendationsOf(outcome);
+          const blockedBy = (outcome?.blockedBy ?? []).map((id) => clip(id, 255));
           const result = (
             status: RalphStoryStatus,
             extra: { feedback: string | null; commitSha?: string; hiddenRef?: HiddenRefPush },
@@ -372,6 +373,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
             ...(extra.commitSha && { commitSha: extra.commitSha }),
             ...(extra.hiddenRef && { hiddenRef: extra.hiddenRef }),
             followUps,
+            ...(blockedBy.length > 0 && { blockedBy }),
             ...(recommendations.length > 0 && { recommendations }),
             ...(outcome?.metric && { metric: outcome.metric }),
             feedback: extra.feedback === null ? null : clip(extra.feedback),

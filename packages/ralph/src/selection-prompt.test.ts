@@ -793,6 +793,26 @@ describe("structured results", () => {
     expect("outcome" in none && none.outcome.recommendations).toBeUndefined();
   });
 
+  it("reads blockedBy: trimmed, without blanks, de-duplicated case-insensitively and capped", () => {
+    const base = { status: "blocked", summary: "Needs TOOL-2.", followUps: [] };
+    const read = readStoryOutcome({
+      ...base,
+      blockedBy: [" TOOL-2 ", "", "   ", "tool-2", "TOOL-7"],
+    });
+    expect("outcome" in read && read.outcome.blockedBy).toEqual(["TOOL-2", "TOOL-7"]);
+    const many = readStoryOutcome({
+      ...base,
+      blockedBy: Array.from({ length: 15 }, (_, i) => `TOOL-${i}`),
+    });
+    expect("outcome" in many && many.outcome.blockedBy).toEqual(
+      Array.from({ length: 10 }, (_, i) => `TOOL-${i}`),
+    );
+    for (const blockedBy of [undefined, [], [" ", ""]]) {
+      const empty = readStoryOutcome({ ...base, ...(blockedBy && { blockedBy }) });
+      expect(empty).toEqual({ outcome: { ...base, commit: undefined } });
+    }
+  });
+
   it("keeps a blocked result's commit and applied stashes", () => {
     const read = readStoryOutcome({
       status: "blocked",

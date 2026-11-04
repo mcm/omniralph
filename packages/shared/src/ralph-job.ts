@@ -316,6 +316,9 @@ export const RalphStoryMetric = z.object({
 });
 export type RalphStoryMetric = z.infer<typeof RalphStoryMetric>;
 
+/** Most tracker identifiers a story result may report in `blockedBy`. */
+export const MAX_RALPH_BLOCKED_BY = 10;
+
 /** Outcome of a `ralph.story` coding run (`/api/agent/jobs/{id}/result`). */
 export const RalphStoryResult = z.object({
   status: z.enum(RALPH_STORY_STATUSES),
@@ -330,6 +333,11 @@ export const RalphStoryResult = z.object({
    */
   hiddenRef: z.object({ ref: z.string().min(1).max(255), sha: CommitSha }).optional(),
   followUps: z.array(RalphFollowUp).max(MAX_FOLLOW_UPS),
+  /**
+   * With `status: "blocked"`: tracker identifiers of other work the session discovered it needs
+   * first (older agents never send any).
+   */
+  blockedBy: z.array(z.string().trim().min(1).max(255)).max(MAX_RALPH_BLOCKED_BY).optional(),
   /** Advice for other projects (older agents never send any). */
   recommendations: z.array(RalphRecommendation).max(MAX_RALPH_RESULT_RECOMMENDATIONS).optional(),
   /** The story's progress metric this round, when it reports one (older agents never do). */

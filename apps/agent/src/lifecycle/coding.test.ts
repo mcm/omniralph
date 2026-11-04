@@ -584,6 +584,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
           },
         ],
         recommendations: [{ title: "Fix it upstream", description: "In acme/sdk: drop our shim." }],
+        blockedBy: [" TOOL-12 ", "tool-12", "TOOL-40"],
         metric: { name: "critique score", value: 26, direction: "higher" },
       });
     });
@@ -609,6 +610,7 @@ describe("coding runs of a story task", { timeout: 60_000 }, () => {
     expect(out.recommendations).toEqual([
       { title: "Fix it upstream", description: "In acme/sdk: drop our shim." },
     ]);
+    expect(out.blockedBy).toEqual(["TOOL-12", "TOOL-40"]);
     expect(out.metric).toEqual({ name: "critique score", value: 26, direction: "higher" });
     expect(git(worktreePath(), "status", "--porcelain", "--untracked-files=all")).toBe("");
   });
