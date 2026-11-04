@@ -40,6 +40,7 @@ import { storyLane } from "./lanes";
 import { isBranchMergeFollowUp } from "./merge-follow-ups";
 import { postActivity, quietly, quote, tail } from "./notify";
 import { addRecommendations } from "./recommendations";
+import { blockOnReported } from "./reported-blockers";
 import { addRoundMetric, bestValue, isStalled, metricTrend } from "./rounds";
 import type { RalphDeps } from "./run";
 import { runningVerification, startTaskVerifier, verificationOutcome } from "./verify";
@@ -180,6 +181,11 @@ async function applyStoryResult(
       const entry = wipProgressEntry(story, wipSha, result.summary, ctx.now ?? new Date());
       run = (await updateRun(tx, run.id, { progress: appendProgress(base, entry) })) ?? run;
     }
+    // The work items it reported it is blocked by now block it (another epic's as that epic).
+    const reported =
+      blocked && result.blockedBy?.length
+        ? await blockOnReported({ ...ctx, run }, story, result.blockedBy)
+        : { waitingOn: [] };
     // Follow-ups that follow the epic never hold the story, so they don't make a round, nor
     // do merges into its branch, which are never filed.
     const branch = blocked ? (await storyLane(tx, run, story))?.branch : undefined;
@@ -192,6 +198,12 @@ async function applyStoryResult(
         metric: result.metric,
         wipSha,
         caps,
+      });
+    } else if (reported.waitingOn.length > 0) {
+      // It runs again, with its attempts and rounds, once what it waits on is done.
+      await waitOnBlockers({ ...ctx, run }, story, resultFeedback(result), {
+        waitingOn: reported.waitingOn,
+        wipSha,
       });
     } else {
       await recordFailedAttempt({ ...ctx, run }, story, resultFeedback(result), {
@@ -391,6 +403,30 @@ export async function recordFailedAttempt(
       body: `**${story.identifier}** attempt ${attempt}/${max} did not complete; retrying with feedback.${saved}\n\n${excerpt(feedback, 1500)}`,
     });
   }
+}
+
+/**
+ * Sets a blocked story aside until the blockers its session reported are done
+ * (`blockOnReported` made them block it): `pending` with its attempts and rounds
+ * unchanged, so selection skips it while they're open, the run waits on them
+ * through `waiting_on` once nothing else can run, and it runs again after.
+ */
+async function waitOnBlockers(
+  ctx: OutcomeContext,
+  story: RalphStory,
+  feedback: string,
+  options: { waitingOn: readonly string[]; wipSha?: string | null },
+): Promise<void> {
+  await updateStory(ctx.tx, story.id, { status: "pending", lastFeedback: feedback });
+  const saved = options.wipSha
+    ? ` Its work so far is committed as \`${options.wipSha.slice(0, 10)}\`.`
+    : "";
+  const names = options.waitingOn.map((identifier) => `**${identifier}**`).join(", ");
+  const one = options.waitingOn.length === 1;
+  await postActivity(conversationFor(ctx.run, ctx), {
+    type: "thought",
+    body: `🚧 **${story.identifier}** is blocked by ${names}, so I'm setting it aside until ${one ? "it's" : "they're"} done.${saved} Stories that don't depend on it carry on.`,
+  });
 }
 
 /**

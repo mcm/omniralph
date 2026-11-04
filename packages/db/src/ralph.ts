@@ -46,6 +46,7 @@ import {
   ralphRuns,
   ralphStories,
   repositories,
+  type RalphCrossEpicBlocker,
   type RalphGuidance,
   type RalphPendingElicitation,
 } from "./schema.js";
@@ -1554,8 +1555,27 @@ export type RalphStoryUpdate = Partial<
     | "commitSha"
     | "lastJobId"
     | "title"
+    | "crossEpicBlockers"
+    | "rebasePending"
+    | "rerunAfterCancel"
   >
 >;
+
+/**
+ * Records outside blockers (another epic, or a standalone task) of a story as its cross-epic
+ * dependencies, keeping those recorded before: one entry per blocker, the first one recorded.
+ * Returns the story, or null if it's gone.
+ */
+export async function recordCrossEpicBlockers(
+  db: Executor,
+  story: Pick<RalphStory, "id" | "crossEpicBlockers">,
+  blockers: readonly RalphCrossEpicBlocker[],
+): Promise<RalphStory | null> {
+  const known = new Set(story.crossEpicBlockers.map((b) => b.id));
+  const added = blockers.filter((b) => !known.has(b.id) && known.add(b.id));
+  if (added.length === 0) return getStory(db, story.id);
+  return updateStory(db, story.id, { crossEpicBlockers: [...story.crossEpicBlockers, ...added] });
+}
 
 /** Links a `ralph.story` job to the story it works on. */
 export async function setJobRalphStory(

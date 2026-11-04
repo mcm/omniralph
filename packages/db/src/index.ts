@@ -701,6 +701,7 @@ export {
   updateRepositoryCoding,
   updateRun,
   updateStory,
+  recordCrossEpicBlockers,
   setJobRalphStory,
   upsertStories,
   copyLanes,
