@@ -37,6 +37,8 @@ import {
   rules,
   scmConnections,
   runActivities,
+  sprintEpics,
+  sprints,
   triageRuns,
   users,
   WEB_CHAT_CONNECTION_NAME,
@@ -454,6 +456,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
     await seedOtherJobs(tx, now);
     await seedTriage(tx, now);
     await seedAsk(tx, now);
+    await seedSprints(tx, now);
   });
 }
 
@@ -490,6 +493,59 @@ async function clearFixtures(tx: Tx): Promise<void> {
     .where(sql`${agentAudit.id}::text like ${`${fixtureId("agentAudit", 0).slice(0, 8)}-%`}`);
   await tx.delete(organizations).where(inArray(organizations.id, Object.values(O)));
   await tx.delete(users).where(inArray(users.id, Object.values(U)));
+}
+
+// ── Sprints ─────────────────────────────────────────────────────────────────
+
+/** A draft sprint of the control panel and a running one, each with its epics in order. */
+async function seedSprints(tx: Tx, now: Date): Promise<void> {
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+  const S = FIXTURE_IDS.sprints;
+  await tx.insert(sprints).values([
+    {
+      id: S.draft,
+      organizationId: O.main,
+      repositoryId: R.controlPanel,
+      name: "Billing",
+      mergeTogether: true,
+      createdBy: U.admin,
+      createdAt: ago(DAY),
+    },
+    {
+      id: S.running,
+      organizationId: O.main,
+      repositoryId: R.controlPanel,
+      name: "Onboarding",
+      status: "running",
+      createdBy: U.admin,
+      createdAt: ago(3 * DAY),
+    },
+  ]);
+  const epic = (
+    sprintId: string,
+    position: number,
+    identifier: string,
+    title: string,
+    state: "queued" | "running" | "merged" = "queued",
+  ) => ({
+    sprintId,
+    organizationId: O.main,
+    tracker: "linear" as const,
+    externalId: `fixture-issue-${identifier.toLowerCase()}`,
+    identifier,
+    title,
+    position,
+    state,
+  });
+  await tx
+    .insert(sprintEpics)
+    .values([
+      epic(S.draft, 0, "FIX-200", "Invoice model and storage"),
+      epic(S.draft, 1, "FIX-201", "Invoice PDFs"),
+      epic(S.draft, 2, "FIX-202", "Dunning emails"),
+      epic(S.running, 0, "FIX-90", "Add pagination to the jobs page", "merged"),
+      epic(S.running, 1, "FIX-100", "Rebuild the onboarding flow", "running"),
+    ]);
 }
 
 // ── Ask ─────────────────────────────────────────────────────────────────────

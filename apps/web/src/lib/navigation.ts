@@ -4,6 +4,7 @@ import {
   IconGitFork,
   IconInbox,
   IconLayoutList,
+  IconListNumbers,
   IconMessage,
   IconPlayerPlay,
   IconServer2,
@@ -25,7 +26,8 @@ import type { NavIndicators } from "@/lib/api/nav-indicators";
  * General beside the section nav when wide) and lights up for every `/settings/**` page.
  *
  * Inbox comes first (a phone tab), then Runs and Backlog (`/backlog/**`, work that hasn't
- * started; phone tabs). Ask (`/ask/**`) sits at the top of the bottom group and is the fourth
+ * started; phone tabs), then Sprints (`/sprints/**`, ordered queues of epics; phone drawer).
+ * Ask (`/ask/**`) sits at the top of the bottom group and is the fourth
  * phone tab; on desktop the app shell gives it an `onSelect` that opens the Ask panel
  * instead (`components/ask/ask-panel.tsx`). It never has an indicator: nothing in Ask needs
  * you. The live indicators come from `withNavIndicators`.
@@ -56,6 +58,15 @@ export const navItems: readonly NavItem[] = [
     placement: "main",
     phone: "tab",
     activeFor: ["/backlog"],
+  },
+  {
+    id: "sprints",
+    label: "Sprints",
+    href: "/sprints",
+    icon: IconListNumbers,
+    placement: "main",
+    phone: "drawer",
+    activeFor: ["/sprints"],
   },
   {
     id: "repos",

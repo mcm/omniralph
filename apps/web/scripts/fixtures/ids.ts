@@ -29,6 +29,7 @@ const KINDS = {
   chatConnection: 0x108,
   chatThread: 0x109,
   chatWebMessage: 0x10a,
+  sprint: 0x10b,
 } as const;
 
 /** The fixture UUID `n` of a kind of row. */
@@ -89,6 +90,13 @@ export const FIXTURE_IDS = {
   reviews: {
     /** Completed, with findings in every severity and status (open, dismissed, restored, …). */
     featured: fixtureId("review", 1),
+  },
+  /** Sprints of the control panel repo. */
+  sprints: {
+    /** A draft of three FIX epics, merge together on. */
+    draft: fixtureId("sprint", 1),
+    /** Running: its first epic merged, the second running. */
+    running: fixtureId("sprint", 2),
   },
   /** The admin's web chats (Ask). */
   askChats: {
