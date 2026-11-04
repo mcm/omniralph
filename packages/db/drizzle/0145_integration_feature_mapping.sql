@@ -1,0 +1,2 @@
+CREATE TYPE "public"."feature_mapping" AS ENUM('omniralph', 'parent-issue');--> statement-breakpoint
+ALTER TABLE "integrations" ADD COLUMN "feature_mapping" "feature_mapping" DEFAULT 'omniralph' NOT NULL;

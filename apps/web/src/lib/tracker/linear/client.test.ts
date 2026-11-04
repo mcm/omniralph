@@ -265,6 +265,7 @@ describe("lazyLinearGateway", () => {
       delegation: true,
       documents: true,
       uploads: true,
+      parentIssues: true,
     });
     expect(gateway.uploads.isUploadUrl("https://uploads.linear.app/a/b")).toBe(true);
     expect(gateway.uploads.findUploads("see https://uploads.linear.app/a/b")).toEqual([

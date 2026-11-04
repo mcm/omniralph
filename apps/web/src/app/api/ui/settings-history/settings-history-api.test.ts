@@ -463,6 +463,7 @@ describe.skipIf(!databaseAvailable)("settings change history", () => {
         { field: "ready", label: "Ready to start", before: null, after: ["unstarted"] },
         { field: "needsRefining", label: "Needs refining", before: null, after: ["backlog"] },
         { field: "fixLabels", label: "Fix labels", before: null, after: ["Bug"] },
+        { field: "featureMapping", label: "Features", before: null, after: "Omniralph only" },
       ]);
 
       await connectingWithHistory(

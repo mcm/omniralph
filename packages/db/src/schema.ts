@@ -472,6 +472,14 @@ export const DEFAULT_TRACKER_STATE_MAPPING: TrackerStateMapping = {
   teams: {},
 };
 
+/**
+ * Where a tracker shows features: `omniralph`, only in Omniralph; `parent-issue`, also as a
+ * parent issue in the tracker that the feature's epics are filed under.
+ */
+export const FEATURE_MAPPINGS = ["omniralph", "parent-issue"] as const;
+export type FeatureMapping = (typeof FEATURE_MAPPINGS)[number];
+export const featureMapping = pgEnum("feature_mapping", FEATURE_MAPPINGS);
+
 export const integrations = pgTable(
   "integrations",
   {
@@ -501,6 +509,8 @@ export const integrations = pgTable(
       .array()
       .notNull()
       .default(sql`ARRAY['Bug']::text[]`),
+    /** Where the tracker shows features (`FEATURE_MAPPINGS`). */
+    featureMapping: featureMapping("feature_mapping").notNull().default("omniralph"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -11,7 +11,7 @@ Linear is Omniralph's first tracker adapter: the orchestrator works with any tra
 tracker-neutral `TrackerGateway` (`@omniralph/tracker`), and this page describes how the Linear
 adapter (`packages/tracker/src/linear/`, with its web side in `apps/web/src/lib/tracker/linear/`)
 fills it in. Linear has every optional capability: agent sessions (activities and plan steps),
-delegation, documents and uploads. See [trackers.md](trackers.md) for the layer and how to add a
+delegation, documents, uploads and parent issues. See [trackers.md](trackers.md) for the layer and how to add a
 tracker, and [ADR 0012](adr/0012-tracker-layer.md) for the design. The names Om uses are the
 neutral ones:
 
@@ -925,6 +925,21 @@ label" card on the Linear connection page (Settings › Connections › Linear),
 states. Members read them from `GET /api/ui/trackers/{integrationId}/fix-labels`; admins save them
 with `PUT` and `{ "fixLabels": ["Bug", "Regression"] }` (trimmed, duplicates dropped ignoring case;
 400 for a blank label or an empty list). A save is recorded in the connection's change history.
+
+### Feature mapping
+
+A feature (a group of epics planned together, with its PRFAQ and Plan) can exist only in Omniralph
+(`omniralph`, the default) or also as a parent issue in the tracker that its epics are filed under
+(`parent-issue`). Admins choose in the "Features" card on the Linear connection page, beside the fix
+labels, where each choice has a one-line explanation; members see it read-only. Members read it from
+`GET /api/ui/trackers/{integrationId}/feature-mapping` (`featureMapping`, plus `parentIssues`:
+whether the tracker can hold parent issues); admins save it with `PUT` and
+`{ "featureMapping": "parent-issue" }`. An unknown value answers 400, and so does `parent-issue`
+for a tracker without the `parentIssues` capability. A save is recorded in the connection's change
+history. Linear has the capability: `parentIssues.createParentIssue` creates a plain issue (in the
+feature's project, if given) and `parentIssues.fileUnder` sets an issue's parent, making it a
+sub-issue. A gateway without it throws `TrackerCapabilityError` from
+`requireCapability(gateway, "parentIssues")`.
 
 ## Agents and concurrency
 

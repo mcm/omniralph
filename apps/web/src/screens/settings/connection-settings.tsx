@@ -41,6 +41,7 @@ import { mutationResultSchema, type MutationResult } from "@/lib/api/schemas";
 import { hasRole } from "@/lib/auth/roles";
 import { withoutWebhookProblems, type ConnectionHealthSummary } from "@/lib/connections/health";
 import { navigateTo, openInNewTab } from "@/lib/navigate";
+import { FeatureMappingCard } from "./feature-mapping-card";
 import { FixLabelsCard } from "./fix-labels-card";
 import { useConnections } from "./queries";
 import { SETTINGS_PATH } from "./settings-nav";
@@ -317,6 +318,11 @@ function ConnectionView({
             history={connection.history}
           />
           <FixLabelsCard
+            integrationId={connection.id}
+            isAdmin={isAdmin}
+            history={connection.history}
+          />
+          <FeatureMappingCard
             integrationId={connection.id}
             isAdmin={isAdmin}
             history={connection.history}

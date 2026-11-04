@@ -20,6 +20,7 @@ import {
   type TrackerDelegation,
   type TrackerDocument,
   type TrackerDocuments,
+  type TrackerParentIssues,
   type TrackerSessions,
   type TrackerUploads,
   type UpdateIssueInput,
@@ -544,6 +545,17 @@ export class FakeLinearGateway implements LinearGateway {
     if (labels.length !== issue.labels.length) issue.updatedAt = this.tick();
     issue.labels = labels;
   }
+  readonly parentIssues: TrackerParentIssues = {
+    createParentIssue: ({ teamId, title, description, projectId }) =>
+      this.createIssue({ teamId, title, description, ...(projectId && { projectId }) }),
+    fileUnder: async (parentId, issueId) => {
+      this.fail("fileUnder");
+      const parent = this.find(parentId);
+      const issue = this.find(issueId);
+      issue.parentId = parent.id;
+      issue.updatedAt = this.tick();
+    },
+  };
   readonly delegation: TrackerDelegation = {
     delegateIssue: async (issueId, delegateId) => {
       this.fail("delegateIssue");

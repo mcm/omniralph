@@ -883,6 +883,26 @@ describe("SdkLinearGateway writes", () => {
     });
   });
 
+  it("creates a parent issue for a feature, in its project, without a parent of its own", async () => {
+    resolvers.CreateIssue = () => ({ issueCreate: { success: true, issue: issueNode("8") } });
+    const parent = await gateway().parentIssues.createParentIssue({
+      teamId: "team-1",
+      title: "Features",
+      description: "The plan",
+      projectId: "project-1",
+    });
+    expect(parent.id).toBe("8");
+    expect(calls.map((c) => c.operation)).toEqual(["CreateIssue"]);
+    expect(calls[0]?.variables).toEqual({
+      input: {
+        teamId: "team-1",
+        title: "Features",
+        description: "The plan",
+        projectId: "project-1",
+      },
+    });
+  });
+
   it("throws when a mutation doesn't succeed", async () => {
     resolvers.CreateIssue = () => ({ issueCreate: { success: false, issue: null } });
     await expect(
@@ -974,6 +994,12 @@ describe("SdkLinearGateway writes", () => {
       resolvers.UpdateIssue = () => ({ issueUpdate: { success: true } });
       await gateway().delegation.delegateIssue("1", "app-user");
       expect(updates()).toEqual([{ id: "1", input: { delegateId: "app-user" } }]);
+    });
+
+    it("files an issue under a parent issue", async () => {
+      resolvers.UpdateIssue = () => ({ issueUpdate: { success: true } });
+      await gateway().parentIssues.fileUnder("parent-1", "epic-1");
+      expect(updates()).toEqual([{ id: "epic-1", input: { parentId: "parent-1" } }]);
     });
 
     it("throws when the update doesn't succeed", async () => {
@@ -1185,6 +1211,7 @@ describe("SdkLinearGateway as a tracker gateway", () => {
       delegation: true,
       documents: true,
       uploads: true,
+      parentIssues: true,
     });
   });
 

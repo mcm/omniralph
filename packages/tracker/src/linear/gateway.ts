@@ -20,6 +20,7 @@ import {
   type TrackerDocument,
   type TrackerDocuments,
   type TrackerDelegation,
+  type TrackerParentIssues,
   type TrackerSessions,
   type TrackerUploads,
   type UpdateIssueInput,
@@ -45,7 +46,8 @@ export type { RoutingIssue, RoutingIssueFields };
 /**
  * The Linear adapter of the tracker gateway (ported from cyralph):
  * `SdkLinearGateway` implements {@link LinearGateway} with `@linear/sdk`, with
- * every optional capability (agent sessions, delegation, documents, uploads).
+ * every optional capability (agent sessions, delegation, documents, uploads,
+ * parent issues).
  */
 
 export interface ProjectMilestone {
@@ -464,6 +466,13 @@ export class SdkLinearGateway implements LinearGateway {
     findUploads: findLinearUploads,
     downloadUpload: (url, signal) => this.downloadUpload(url, signal),
     uploadFile: (input) => this.uploadFile(input),
+  };
+
+  /** A parent issue is a plain issue; filing under it sets an issue's `parentId` (a sub-issue). */
+  readonly parentIssues: TrackerParentIssues = {
+    createParentIssue: ({ teamId, title, description, projectId }) =>
+      this.createIssue({ teamId, title, description, ...(projectId && { projectId }) }),
+    fileUnder: (parentId, issueId) => this.issueUpdate(issueId, { parentId }),
   };
 
   /** Linear refusing the input (`InvalidInputLinearError`) throws a `TrackerInvalidInputError`. */
