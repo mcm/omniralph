@@ -1,0 +1,8 @@
+{
+  "$comment": "Generated from the omniralph repo (packages/planning/src/plugin, built by scripts/build-prd-plugin.ts). Do not edit by hand: change it in the omniralph repo, and CI publishes it here.",
+  "name": "omniralph-prd",
+  "description": "Plan epics, stories and fixes in Linear for Omniralph to build, with t-shirt sizing and epic decomposition, and draft a feature's PRFAQ and Plan.",
+  "author": {
+    "name": "Steve McMaster"
+  }
+}

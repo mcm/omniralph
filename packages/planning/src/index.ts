@@ -57,6 +57,20 @@ export {
   renderTriageMethodology,
 } from "./methodology/triage.js";
 
+export {
+  DOCUMENT_RULES,
+  FEATURE_DOCUMENT_KINDS,
+  PLAN_EPICS_SECTION,
+  PLAN_EPIC_LINES,
+  PLAN_RULE,
+  PLAN_TEMPLATE,
+  PRFAQ_RULE,
+  PRFAQ_TEMPLATE,
+  SUCCESS_METRICS_RULE,
+  SUCCESS_METRICS_SECTION,
+} from "./methodology/documents.js";
+export type { FeatureDocumentKind } from "./methodology/documents.js";
+
 export { CRITIQUE_SIZES, PLAN_RUBRICS, renderRubric } from "./methodology/critique.js";
 export type { CritiqueSize, RubricItem } from "./methodology/critique.js";
 
@@ -102,6 +116,7 @@ export {
   PLUGIN_DIR,
   PLUGIN_NAME,
   renderCommon,
+  renderMode,
   renderPluginFiles,
   renderSkill,
 } from "./plugin/render.js";

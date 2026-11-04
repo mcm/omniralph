@@ -18,7 +18,7 @@ import {
   TRACKER_STRUCTURE,
   WORKED_EXAMPLE,
 } from "./common.js";
-import { PLUGIN_MODES } from "./modes.js";
+import { PLUGIN_MODES, type PluginMode } from "./modes.js";
 import { SKILL_BODY, SKILL_DESCRIPTION, SKILL_NAME } from "./skill.js";
 
 /** One file of the plugin's marketplace repo. */
@@ -45,7 +45,7 @@ export const GENERATED_NOTICE =
   "Generated from the omniralph repo (packages/planning/src/plugin, built by scripts/build-prd-plugin.ts). Do not edit by hand: change it in the omniralph repo, and CI publishes it here.";
 
 const PLUGIN_DESCRIPTION =
-  "Plan epics, stories and fixes in Linear for Omniralph to build, with t-shirt sizing and epic decomposition.";
+  "Plan epics, stories and fixes in Linear for Omniralph to build, with t-shirt sizing and epic decomposition, and draft a feature's PRFAQ and Plan.";
 
 const AUTHOR = { name: "Steve McMaster" };
 
@@ -105,6 +105,19 @@ export function renderCommon(): string {
 }
 
 /**
+ * A mode's reference file: its steps, then the methodology fragments it follows
+ * (the PRFAQ and Plan rules), each as a `##` section.
+ */
+export function renderMode(mode: PluginMode): string {
+  return markdown(
+    [
+      renderFragment(mode.body, PLUGIN_CONTEXT),
+      ...(mode.rules ?? []).flatMap((rule) => ["---", section(rule, 2)]),
+    ].join("\n\n"),
+  );
+}
+
+/**
  * Every file of the marketplace repo the plugin owns, in a fixed order: the
  * marketplace manifest, the plugin manifest, `SKILL.md` and its references.
  */
@@ -133,7 +146,7 @@ export function renderPluginFiles(): PluginFile[] {
     { path: `${SKILL_DIR}/references/common.md`, content: renderCommon() },
     ...PLUGIN_MODES.map((mode) => ({
       path: `${SKILL_DIR}/references/${mode.file}`,
-      content: markdown(renderFragment(mode.body, PLUGIN_CONTEXT)),
+      content: renderMode(mode),
     })),
   ];
 }

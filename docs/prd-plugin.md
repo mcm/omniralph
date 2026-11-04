@@ -1,7 +1,7 @@
 # The omniralph-prd plugin
 
 `omniralph-prd` is the Claude plugin people use to plan work for Omniralph from a Claude
-session (`/omniralph-prd new|triage|edit|ui-loop`). Its marketplace repo is
+session (`/omniralph-prd new|triage|edit|ui-loop|prfaq|plan`). Its marketplace repo is
 [`mcm/omniralph-prd`](https://github.com/mcm/omniralph-prd), but its files are generated
 from this repo: don't edit them there, since the next publish overwrites them.
 
@@ -13,15 +13,30 @@ from this repo: don't edit them there, since the next publish overwrites them.
   from `packages/planning/src/methodology/rules.ts` and `templates.ts`. Omniralph's triage
   prompts render the same fragments, so planning in Claude and triage in Omniralph follow the
   same rules.
+- **Planning documents** (a feature's PRFAQ and Plan: their flexible formats and templates,
+  optional success metrics that are for people only, and the `## Epics` section where a Plan
+  names the epics it expects) come from `packages/planning/src/methodology/documents.ts`. The
+  `prfaq` and `plan` modes render them after their steps.
 - **Plugin-only text** (the skill's entry point, the modes, lettered questions, drafting
   with the user, confirming before writing to Linear, the worked example) lives in
   `packages/planning/src/plugin/`: `skill.ts`, `common.ts` and `modes.ts`. `render.ts` puts
   the files together.
 
 To change the plugin, change those files. `packages/planning/src/plugin/plugin.test.ts`
-snapshots every Markdown file it generates (`SKILL.md`, `common.md` and each `mode-*.md`,
-in `__snapshots__/`); update them with
+snapshots every file it generates (the two manifests, `SKILL.md`, `common.md` and each
+`mode-*.md`, in `__snapshots__/`): they are the committed plugin, and CI fails when the
+generator's output drifts from them. Update them with
 `pnpm --filter @omniralph/planning exec vitest run -u` and review the diff.
+
+## The prfaq and plan modes
+
+`/omniralph-prd prfaq [context]` and `/omniralph-prd plan [context]` draft a feature's PRFAQ
+or Plan with the person; neither writes to Linear. When the session has `OMNIRALPH_URL` (the
+control panel's address) and `OMNIRALPH_API_TOKEN` set and a shell to call it from, they pick
+or create the feature (`GET`/`POST /api/ui/features`), load the current document
+(`GET /api/ui/features/<id>/documents/<kind>`) and save a new version against the version
+they loaded (`PUT …` with `{ body, baseVersion }`, handling `409 stale_version` by asking).
+Otherwise they hand the person the document to paste into the feature in the control panel.
 
 ## Building it
 
@@ -34,7 +49,7 @@ writes the marketplace layout into `<dir>`:
 - `.claude-plugin/marketplace.json`
 - `plugins/omniralph-prd/.claude-plugin/plugin.json`
 - `plugins/omniralph-prd/skills/omniralph-prd/SKILL.md`
-- `plugins/omniralph-prd/skills/omniralph-prd/references/{common,mode-new,mode-triage,mode-edit,mode-ui-loop}.md`
+- `plugins/omniralph-prd/skills/omniralph-prd/references/{common,mode-new,mode-triage,mode-edit,mode-ui-loop,mode-prfaq,mode-plan}.md`
 
 It replaces `plugins/omniralph-prd/` whole and leaves other files in `<dir>` (a README, the
 git history) alone. Every generated file starts with a notice that it is generated: an HTML
