@@ -1,8 +1,17 @@
 /**
- * The skill's modes (`new`, `triage`, `edit`, `ui-loop`): the plugin-only,
- * interactive step sequences. Each refers to the planning rules in
- * `common.md` by name instead of restating them.
+ * The skill's modes (`new`, `triage`, `edit`, `ui-loop`, `prfaq`, `plan`): the
+ * plugin-only, interactive step sequences. Each refers to the planning rules in
+ * `common.md` by name instead of restating them; `prfaq` and `plan` carry the
+ * planning-document rules they follow (`rules`), rendered after their steps.
  */
+import {
+  type FeatureDocumentKind,
+  PLAN_EPICS_SECTION,
+  PLAN_RULE,
+  PRFAQ_RULE,
+  SUCCESS_METRICS_RULE,
+} from "../methodology/documents.js";
+import type { Fragment } from "../methodology/rules.js";
 
 /** A mode of the skill and its reference file. */
 export interface PluginMode {
@@ -12,6 +21,8 @@ export interface PluginMode {
   file: string;
   /** The file's Markdown, with `{{trackerName}}`/`{{conventionsFile}}` placeholders. */
   body: string;
+  /** Methodology fragments the mode follows, rendered after its body as `##` sections. */
+  rules?: readonly Fragment[];
 }
 
 /** The checks shared by every mode's checklist, before it writes to the tracker. */
@@ -98,7 +109,9 @@ feature to plan) before continuing.
   ship: a plain title and a sentence or two on what each delivers, split by
   what each delivers, never by development phase. Skip Step 4. If the user
   would rather start now, offer to plan just the first epic as its own work
-  item (sized again with the Sizing rule) and continue with that.
+  item (sized again with the Sizing rule) and continue with that. Otherwise
+  offer to start the feature's PRFAQ (\`/omniralph-prd prfaq\`) or its Plan
+  (\`/omniralph-prd plan\`) from what you've learned.
 
 ## Step 4: Tasks (Epic only)
 
@@ -829,5 +842,256 @@ When you finish, tell the user two things (and don't offer to delegate; see
 - [ ] Everything in \`mode-new.md\`'s checklist for an epic`,
 };
 
+/** What each planning document is called, and the control panel's editor for it. */
+const DOCUMENT_NAMES: Record<FeatureDocumentKind, string> = { prfaq: "PRFAQ", plan: "Plan" };
+
+/**
+ * How a `prfaq` or `plan` mode finds the feature and its current document: through the
+ * Omniralph API when the session has it configured, from the person otherwise.
+ */
+function documentSource(kind: FeatureDocumentKind): string {
+  const name = DOCUMENT_NAMES[kind];
+  return `## Step 1: Find the feature
+
+Work out where the ${name} goes before drafting it.
+
+**The Omniralph API is configured** when the session has both the
+\`OMNIRALPH_URL\` (the control panel's address, e.g.
+\`https://omniralph.example.com\`) and \`OMNIRALPH_API_TOKEN\` environment
+variables and a shell to call it from (Claude Code). Check with
+\`test -n "$OMNIRALPH_URL" && test -n "$OMNIRALPH_API_TOKEN" && echo configured\`,
+never by printing the token. Send every request with
+\`-H "Authorization: Bearer $OMNIRALPH_API_TOKEN"\`, and JSON bodies with
+\`-H "Content-Type: application/json"\`. When it is configured:
+
+1. List the features: \`GET $OMNIRALPH_URL/api/ui/features\` answers
+   \`{ "features": [{ "id", "name", "status", "repository" }] }\`, newest first.
+2. Ask which feature the ${name} is for, with the features in \`planning\` as
+   lettered options and a last option to create a new one. To create one, ask
+   for its name (and its repo, if the context names one) and send
+   \`POST $OMNIRALPH_URL/api/ui/features\` with \`{ "name": "…" }\`; it answers
+   \`{ "ok": true, "feature": { "id", … } }\`. An \`archived\` feature takes no
+   new versions: offer to create a new feature instead.
+3. Load the current ${name}:
+   \`GET $OMNIRALPH_URL/api/ui/features/<id>/documents/${kind}\` answers
+   \`{ "version", "body" }\`, version \`0\` and an empty body when it was never
+   saved. Remember the version: the save sends it back. A non-empty body is the
+   person's draft: revise it rather than starting over, and keep their
+   structure and wording where it still holds.
+
+If the API answers 401 or 403, the token is missing, expired or not allowed:
+say so, and carry on without the API. Any other failure: show the status and
+the \`error\` of the JSON answer, and ask whether to retry or carry on without
+the API.
+
+**The Omniralph API is not configured** (or the person chose to carry on
+without it): say that you'll produce the ${name} for them to paste into the
+feature's ${name} in the Omniralph control panel (**Features**, then the
+feature). Ask whether they already have a draft, and if so, ask them to paste
+it so you revise it rather than starting over.`;
+}
+
+/** How a `prfaq` or `plan` mode saves the document it drafted. */
+function documentSave(kind: FeatureDocumentKind): string {
+  const name = DOCUMENT_NAMES[kind];
+  return `## Final step: save the ${name}
+
+Have the person review the whole ${name} and confirm it is ready to save.
+Only after they confirm:
+
+**With the Omniralph API**, save it as the feature's new version:
+\`PUT $OMNIRALPH_URL/api/ui/features/<id>/documents/${kind}\` with
+\`{ "body": "<the ${name} as Markdown>", "baseVersion": <the version you loaded> }\`.
+Write the ${name} to a file and build the JSON with a tool that escapes it,
+e.g. \`jq -n --rawfile body ${kind}.md --argjson baseVersion <version> '{body: $body, baseVersion: $baseVersion}'\`,
+never by pasting the text into a quoted string. Earlier versions are kept, so
+a save never loses the person's work.
+
+- \`{ "ok": true, "document": { "version" } }\`: tell the person the version
+  saved.
+- 409 with \`"code": "stale_version"\`: someone saved a later version while you
+  were drafting. Load it again, show the person what changed, fold their
+  choice into the draft and save against the new version. Never overwrite it
+  without asking.
+- 409 with \`"code": "archived"\`: the feature was archived. Say so and offer
+  to create a new feature for it.
+- Any other failure: show the status and \`error\`, then give the person the
+  ${name} to paste instead.
+
+**Without the Omniralph API**, give the person the whole ${name} as one
+Markdown block, ready to paste into the feature's ${name} in the control
+panel, and tell them where it goes.
+
+Write nothing to {{trackerName}}: a ${name} is a feature's document, not an
+issue.`;
+}
+
+/** `prfaq`: draft a feature's PRFAQ with the person. */
+export const MODE_PRFAQ: PluginMode = {
+  id: "prfaq",
+  file: "mode-prfaq.md",
+  body: `# Mode: prfaq
+
+You are drafting a feature's PRFAQ with the person: the feature told from the
+side of the people who will use it, as if it had already shipped. It is where
+a feature starts, before its Plan. The PRFAQ rule below is its format; it is
+flexible, so follow the person's own structure when they have one.
+
+If the invocation included a \`context\`, treat it as the feature's background.
+If it didn't, ask what the feature is before going further.
+
+---
+
+${documentSource("prfaq")}
+
+## Step 2: Clarifying questions
+
+Ask 3–5 essential questions where the context leaves the feature unclear,
+with lettered options and adaptive questioning (see \`common.md\`):
+
+- **Who:** Who will use it, and what do they do today instead?
+- **Problem:** What is painful about that, and why does it matter now?
+- **Promise:** What changes for them when it ships, in their words?
+- **Edges:** What will people ask that the feature doesn't do?
+- **Success metrics:** Do they want the optional section, and if so, how will
+  they judge the feature once it ships?
+
+Don't re-ask what the context or an existing draft already answers: confirm
+your understanding instead.
+
+## Step 3: Draft the PRFAQ
+
+Write it by the PRFAQ rule: the press release, then the FAQ, then the success
+metrics only if the person wants them. Keep it short and concrete, in the
+users' language. Settle every FAQ answer with the person; never leave a
+placeholder or a question unanswered.
+
+## Step 4: Review and revise
+
+Show the whole draft, ask what to change, and revise until the person is happy
+with it. Point out where the press release promises something the FAQ
+contradicts, or where an answer is vague.
+
+${documentSave("prfaq")}
+
+When it is saved or handed over, suggest the next step: drafting the feature's
+Plan with \`/omniralph-prd plan\`.
+
+## Checklist before saving
+
+- [ ] Found the feature through the Omniralph API, or told the person they'll
+      paste the PRFAQ themselves
+- [ ] Revised the existing draft rather than replacing it, if there was one
+- [ ] Asked clarifying questions with lettered options
+- [ ] A press release and an FAQ, in the person's structure if they have one
+- [ ] Every FAQ answer settled with the person; no placeholders
+- [ ] Success metrics only if the person wanted them, and nowhere but their
+      own section
+- [ ] No implementation detail, epics or tasks
+- [ ] The person confirmed before saving`,
+  rules: [PRFAQ_RULE, SUCCESS_METRICS_RULE],
+};
+
+/** `plan`: draft a feature's Plan with the person, naming the epics it expects. */
+export const MODE_PLAN: PluginMode = {
+  id: "plan",
+  file: "mode-plan.md",
+  body: `# Mode: plan
+
+You are drafting a feature's Plan with the person: how the feature is built,
+ending with the epics it expects. Omniralph shards the Plan into epics later,
+and a person reviews them before anything is filed, so you write no epics,
+requirements or tasks here. The Plan rule below is its format; it is flexible,
+so follow the person's own structure when they have one.
+
+If the invocation included a \`context\`, treat it as the feature's background.
+If it didn't, ask what the feature is before going further.
+
+Follow the planning rules in \`common.md\` for sizing and splitting: each
+epic the Plan names is sized as an Epic and split by what it delivers.
+
+---
+
+${documentSource("plan")}
+
+Then read the feature's PRFAQ, if it has one: with the API,
+\`GET $OMNIRALPH_URL/api/ui/features/<id>/documents/prfaq\`; without it, ask
+the person to paste it. The Plan builds what the PRFAQ promises: note any
+promise it would leave out, and ask the person about it.
+
+## Step 2: Read the repo
+
+If you have source access (see "Accessing the target repo" in \`SKILL.md\`),
+read the parts of the repo the feature touches, targeted, not wholesale, so
+the Plan names real components, file paths and patterns to reuse.
+
+## Step 3: Clarifying questions
+
+Ask 3–5 essential questions where the feature is unclear, with lettered
+options and adaptive questioning (see \`common.md\`):
+
+- **Scope:** What is in, and what is deliberately left out?
+- **Approach:** Which parts, design and technical decisions does it need?
+- **Order:** What has to ship first for the rest to build on?
+- **Prerequisites:** What must a person do (access, accounts, decisions)?
+- **Success metrics:** Do they want the optional section, and if so, how will
+  they judge the feature once it ships?
+
+Don't re-ask what the context, the PRFAQ or an existing draft already answers.
+
+## Step 4: Draft the Plan
+
+Write it by the Plan rule: a \`##\` section for each part, the scope and what
+it leaves out, success metrics only if the person wants them, and the
+\`## ${PLAN_EPICS_SECTION}\` section last. Then check the epics against the
+sections: every section saying what the feature delivers is covered by an
+epic, no epic builds something the Plan doesn't say, each epic waits only for
+earlier epics, and the waits form no cycle. Fix the Plan, or ask the person, until
+they hold.
+
+## Step 5: Review and revise
+
+Show the whole draft, with each epic's coverage, ask what to change, and
+revise until the person is happy with it. If an epic looks too big for one
+pull request, propose splitting it; if a section belongs to no epic, propose
+where it goes.
+
+${documentSave("plan")}
+
+When it is saved or handed over, tell the person the next step happens in
+Omniralph: **Shard into epics** on the feature's page drafts the epics from
+the Plan for them to review before anything is filed.
+
+## Checklist before saving
+
+- [ ] Found the feature through the Omniralph API, or told the person they'll
+      paste the Plan themselves
+- [ ] Read the PRFAQ, if there is one, and asked about any promise the Plan
+      leaves out
+- [ ] Revised the existing draft rather than replacing it, if there was one
+- [ ] Asked clarifying questions with lettered options
+- [ ] A \`##\` heading for each part; the full scope stated, nothing labelled
+      later or optional unless the person did
+- [ ] Success metrics only if the person wanted them, and nowhere but their
+      own section
+- [ ] \`## ${PLAN_EPICS_SECTION}\` names each expected epic in shipping order,
+      with what it delivers, its \`Covers:\` and, when it waits for earlier
+      epics, its \`After:\`
+- [ ] Every section saying what the feature delivers is covered by an epic,
+      and no epic adds scope the Plan lacks
+- [ ] Epics split by what each delivers, never by phase, each sized as an Epic
+- [ ] Epics wait only for other epics, with no cycle
+- [ ] No requirements or tasks written in the Plan
+- [ ] The person confirmed before saving`,
+  rules: [PLAN_RULE, SUCCESS_METRICS_RULE],
+};
+
 /** Every mode, in the order the skill lists them. */
-export const PLUGIN_MODES: readonly PluginMode[] = [MODE_NEW, MODE_TRIAGE, MODE_EDIT, MODE_UI_LOOP];
+export const PLUGIN_MODES: readonly PluginMode[] = [
+  MODE_NEW,
+  MODE_TRIAGE,
+  MODE_EDIT,
+  MODE_UI_LOOP,
+  MODE_PRFAQ,
+  MODE_PLAN,
+];

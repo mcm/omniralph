@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { CRITIQUE_SIZES, PLAN_RUBRICS, renderRubric } from "./critique.js";
+import { DOCUMENT_RULES, PLAN_TEMPLATE, PRFAQ_TEMPLATE } from "./documents.js";
 import { type Fragment, SHARED_RULES, renderFragment } from "./rules.js";
 import { EPIC_TEMPLATE, TASK_PARAGRAPHS, TASK_TEMPLATE } from "./templates.js";
 import { TRIAGE_STEPS, renderTriageMethodology } from "./triage.js";
@@ -20,6 +21,11 @@ function headings(markdown: string): string[] {
 
 const templates = { EPIC_TEMPLATE, TASK_TEMPLATE };
 const fragments: Fragment[] = [...SHARED_RULES, ...TRIAGE_STEPS];
+/** Every fragment and template, the planning documents' included. */
+const allTexts = [
+  ...[...fragments, ...DOCUMENT_RULES].map((f) => [f.id, f.body] as const),
+  ...Object.entries({ ...templates, PRFAQ_TEMPLATE, PLAN_TEMPLATE }),
+];
 
 describe("templates", () => {
   it("lays out an epic as Problem, Scope (In / Out), Design, Technical notes, Requirements", () => {
@@ -57,17 +63,20 @@ describe("templates", () => {
 
 describe("fragments", () => {
   it("have unique ids", () => {
-    const ids = fragments.map((fragment) => fragment.id);
+    const ids = [...fragments, ...DOCUMENT_RULES].map((fragment) => fragment.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
   it.each([...fragments.map((f) => [f.id, f.body] as const), ...Object.entries(templates)])(
-    "%s never asks for Success Metrics or Quality Gates, or names a tracker",
+    "%s never asks for Success Metrics or Quality Gates",
     (_name, text) => {
       expect(text).not.toMatch(/success metrics|quality gates/i);
-      expect(text).not.toMatch(/\b(linear|github|gitlab|jira)\b/i);
     },
   );
+
+  it.each(allTexts)("%s never names a tracker", (_name, text) => {
+    expect(text).not.toMatch(/\b(linear|github|gitlab|jira)\b/i);
+  });
 
   it("fills in the tracker and conventions file", () => {
     expect(renderFragment("Read {{conventionsFile}} for {{trackerName}} issues.", context)).toBe(

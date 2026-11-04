@@ -49,7 +49,9 @@ feature to plan) before continuing.
   ship: a plain title and a sentence or two on what each delivers, split by
   what each delivers, never by development phase. Skip Step 4. If the user
   would rather start now, offer to plan just the first epic as its own work
-  item (sized again with the Sizing rule) and continue with that.
+  item (sized again with the Sizing rule) and continue with that. Otherwise
+  offer to start the feature's PRFAQ (`/omniralph-prd prfaq`) or its Plan
+  (`/omniralph-prd plan`) from what you've learned.
 
 ## Step 4: Tasks (Epic only)
 
