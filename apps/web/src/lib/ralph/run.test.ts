@@ -2995,6 +2995,109 @@ Tasks have no priority.
     expect(thoughts).not.toContain(`blocking **ENG-66**`);
   });
 
+  it("never files a completed story's follow-ups that ask to merge another branch into its branch", async () => {
+    const epic = tracker.add({ identifier: "ENG-70", title: "Epic" });
+    const first = tracker.add({ identifier: "ENG-71", title: "First", parentId: epic.id });
+    const validate = tracker.add({
+      identifier: "ENG-72",
+      title: "Validate the epic",
+      parentId: epic.id,
+      priority: 1,
+    });
+    await tracker.createBlocksRelation(first.id, validate.id);
+    const run = await delegate(epic.id);
+    const lane = (await getMainLane(db, run))!;
+    const issues = tracker.issues.size;
+
+    await work(run.id, {
+      followUps: [
+        {
+          title: "Merge the auth branch",
+          description: `Merge \`feat/auth\` into \`${lane.branch}\` so the session helper exists.`,
+          manual: true,
+        },
+        {
+          title: "Merge ENG-40 into this branch",
+          description: "It has the helper.",
+          manual: false,
+        },
+        {
+          title: "Tidy the config",
+          description: "Merge duplicate config keys into one file.",
+          manual: false,
+        },
+      ],
+    });
+    // Only the merge in another sense is filed, blocking the story's dependents as before.
+    expect(tracker.issues.size).toBe(issues + 1);
+    const tidy = [...tracker.issues.values()].find((i) => i.title === "Tidy the config")!;
+    expect(tidy.parentId).toBe(epic.id);
+    expect(tracker.blocks.get(validate.id)).toEqual([first.id, tidy.id]);
+    const thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
+    expect(thoughts).toContain(
+      `I didn't file "Merge the auth branch", "Merge ENG-40 into this branch" from **ENG-71**: they ask to merge another branch into \`${lane.branch}\`, and merges into the run's branch aren't allowed.`,
+    );
+    expect(thoughts).toContain(`Filed **${tidy.identifier}** as a new story of **ENG-70**`);
+    expect(thoughts).not.toContain("manual step");
+  });
+
+  it("never files a blocked story's follow-ups that ask to merge another branch into its branch", async () => {
+    const epic = tracker.add({ identifier: "ENG-73", title: "Epic" });
+    const story = tracker.add({ identifier: "ENG-74", title: "Widgets", parentId: epic.id });
+    const run = await delegate(epic.id);
+    const issues = tracker.issues.size;
+
+    // Only merges: nothing is filed or blocks it, so it's set aside as blocked, not a round.
+    await work(run.id, {
+      status: "blocked",
+      summary: "Needs ENG-40's helper.",
+      followUps: [
+        {
+          title: "Bring in the auth work",
+          description: "A person should merge `feat/auth` into the epic branch.",
+          manual: true,
+        },
+        {
+          title: "Merge main into the feature branch",
+          description: "Then rerun.",
+          manual: false,
+        },
+      ],
+    });
+    expect(tracker.issues.size).toBe(issues);
+    expect(tracker.blocks.get(story.id)).toBeUndefined();
+    expect(await storyRounds(run.id, "ENG-74")).toMatchObject({ status: "exhausted", rounds: 0 });
+    let thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
+    expect(thoughts).toContain("**ENG-74** is blocked");
+    expect(thoughts).toContain(
+      `I didn't file "Bring in the auth work", "Merge main into the feature branch" from **ENG-74**: they ask to merge another branch into`,
+    );
+
+    // With other follow-ups too, those are still filed and block it: a round.
+    await handleTrackerEvent(
+      { kind: "session_prompted", sessionId: run.trackerSessionId, body: "/continue" },
+      { db, organizationId: orgId, workspaceId: "org-1" },
+      { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
+    );
+    await work(run.id, {
+      status: "blocked",
+      summary: "Needs the helper and a key.",
+      followUps: [
+        { title: "Merge feat/auth into this branch", description: "", manual: true },
+        { title: "Grant the API key", description: "Grant it.", manual: true },
+      ],
+    });
+    const grant = [...tracker.issues.values()].find((i) => i.title === "Grant the API key")!;
+    expect(tracker.issues.size).toBe(issues + 1);
+    expect(tracker.blocks.get(story.id)).toEqual([grant.id]);
+    expect(await storyRounds(run.id, "ENG-74")).toMatchObject({ status: "pending", rounds: 1 });
+    thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
+    expect(thoughts).toContain(
+      `I didn't file "Merge feat/auth into this branch" from **ENG-74**: it asks to merge another branch into`,
+    );
+    expect(thoughts).toContain(`blocking **ENG-74**`);
+  });
+
   it("counts a blocked result as a round when one of its follow-ups doesn't follow the epic", async () => {
     const epic = tracker.add({ identifier: "ENG-67", title: "Epic" });
     const story = tracker.add({ identifier: "ENG-68", title: "Validate", parentId: epic.id });

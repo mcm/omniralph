@@ -37,6 +37,7 @@ import { conversationFor } from "./conversation";
 import { runManualLabels } from "./epic-loader";
 import { recordStoryHiddenRef } from "./hidden-refs";
 import { storyLane } from "./lanes";
+import { isBranchMergeFollowUp } from "./merge-follow-ups";
 import { postActivity, quietly, quote, tail } from "./notify";
 import { addRecommendations } from "./recommendations";
 import { addRoundMetric, bestValue, isStalled, metricTrend } from "./rounds";
@@ -179,8 +180,13 @@ async function applyStoryResult(
       const entry = wipProgressEntry(story, wipSha, result.summary, ctx.now ?? new Date());
       run = (await updateRun(tx, run.id, { progress: appendProgress(base, entry) })) ?? run;
     }
-    // Follow-ups that follow the epic never hold the story, so they don't make a round.
-    if (blocked && result.followUps.some((f) => !followsEpic(f))) {
+    // Follow-ups that follow the epic never hold the story, so they don't make a round, nor
+    // do merges into its branch, which are never filed.
+    const branch = blocked ? (await storyLane(tx, run, story))?.branch : undefined;
+    if (
+      blocked &&
+      result.followUps.some((f) => !followsEpic(f) && !isBranchMergeFollowUp(f, branch))
+    ) {
       // A round of a review loop: it runs again once its follow-ups are done.
       await recordRound({ ...ctx, run }, story, resultFeedback(result), {
         metric: result.metric,
@@ -444,6 +450,32 @@ function followsEpic(followUp: RalphFollowUp): boolean {
 }
 
 /**
+ * Drops the follow-ups that ask to merge another branch into the story's lane
+ * branch (`isBranchMergeFollowUp`), with a note in the thread naming each:
+ * epics ship independently through their own PRs, so no branch's history is
+ * mixed into a run's. Returns the others.
+ */
+async function dropBranchMerges<F extends RalphFollowUp>(
+  ctx: OutcomeContext,
+  story: RalphStory,
+  followUps: readonly F[],
+): Promise<readonly F[]> {
+  const branch = (await storyLane(ctx.tx, ctx.run, story))?.branch;
+  const dropped = followUps.filter((f) => isBranchMergeFollowUp(f, branch));
+  if (dropped.length === 0) return followUps;
+  const one = dropped.length === 1;
+  await postActivity(conversationFor(ctx.run, ctx), {
+    type: "thought",
+    body:
+      `I didn't file ${dropped.map((f) => `"${f.title}"`).join(", ")} from **${story.identifier}**: ` +
+      `${one ? "it asks" : "they ask"} to merge another branch into ${branch ? `\`${branch}\`` : "the run's branch"}, ` +
+      "and merges into the run's branch aren't allowed. Each epic ships through its own pull request, " +
+      "so work this story needs from another epic is a blocker to report, not a branch to merge.",
+  });
+  return followUps.filter((f) => !dropped.includes(f));
+}
+
+/**
  * Files the follow-ups a story turned up as sub-issues of the epic, with the
  * story's team, project, milestone, cycle, priority and labels (manual ones also
  * with the manual label of the story's repository), and records the story as
@@ -455,7 +487,9 @@ function followsEpic(followUp: RalphFollowUp): boolean {
  * reports the same work again doesn't file it twice. A follow-up that follows
  * the epic (`after: "epic"`) is filed as a standalone task in the epic's team
  * and project instead, blocked by the epic and blocking nothing
- * (`fileEpicFollowers`). Single-issue and chat runs have no epic to file them in.
+ * (`fileEpicFollowers`). One that asks to merge another branch into the run's
+ * branch is dropped with a note (`dropBranchMerges`). Single-issue and chat runs
+ * have no epic to file them in.
  */
 export async function fileFollowUps(
   ctx: OutcomeContext,
@@ -465,6 +499,8 @@ export async function fileFollowUps(
 ): Promise<void> {
   const { tracker, run } = ctx;
   if (followUps.length === 0 || run.kind === "single" || !isTrackerRun(run)) return;
+  followUps = await dropBranchMerges(ctx, story, followUps);
+  if (followUps.length === 0) return;
   let siblings;
   let parent;
   try {
