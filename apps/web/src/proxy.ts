@@ -3,7 +3,7 @@ import { classifyPath, SESSION_COOKIES, SIGN_IN_PATH } from "@/lib/auth/routes";
 
 /**
  * Optimistic auth check: requests without a session cookie are sent to sign-in (pages)
- * or rejected (APIs). The session itself is validated by `requirePageUser`/`requireUser`
+ * or rejected (APIs without a Bearer token). The session itself is validated by `requirePageUser`/`requireUser`
  * in layouts, pages and actions. Agent, webhook and cron APIs use their own auth.
  */
 export function proxy(request: NextRequest) {
@@ -13,6 +13,9 @@ export function proxy(request: NextRequest) {
   if (SESSION_COOKIES.some((name) => request.cookies.has(name))) return NextResponse.next();
 
   if (kind === "api") {
+    // A personal API token: the route checks it (`apiHandler({ apiTokens: true })`), and a
+    // route that doesn't take tokens answers 401 itself.
+    if (/^Bearer /i.test(request.headers.get("authorization") ?? "")) return NextResponse.next();
     return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   }
   const signIn = new URL(SIGN_IN_PATH, request.url);

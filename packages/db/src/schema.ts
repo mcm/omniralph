@@ -361,6 +361,35 @@ export const organizationInvitations = pgTable(
 );
 
 /**
+ * A member's personal API token for one organization (You › API tokens), sent as
+ * `Authorization: Bearer <token>` by tools such as the omniralph-prd plugin. Only the token's
+ * `hashToken()` is kept (it is shown once); `prefix` is its first characters, to tell tokens
+ * apart. A revoked token, or one whose user left the organization, no longer authenticates.
+ */
+export const apiTokens = pgTable(
+  "api_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** What the member called it, e.g. "PRD plugin on my laptop". */
+    name: text("name").notNull(),
+    /** SHA-256 hex of the token (`hashToken()`). */
+    tokenHash: text("token_hash").notNull().unique(),
+    /** The token's first characters, shown in the list. */
+    prefix: text("prefix").notNull(),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [index("api_tokens_organization_user_idx").on(t.organizationId, t.userId)],
+);
+
+/**
  * Email domains of an organization. With none, anyone may be invited; with some,
  * invitations and joins are limited to emails in those domains.
  */

@@ -17,6 +17,7 @@ export const SETTINGS_PATHS = {
   addConnection: "/settings/connections/new",
   profile: "/settings/profile",
   linkedAccounts: "/settings/linked-accounts",
+  apiTokens: "/settings/api-tokens",
   routing: "/settings/advanced/routing",
   playbooks: "/settings/advanced/playbooks",
   chat: "/settings/advanced/chat",
@@ -88,6 +89,7 @@ export function settingsNavGroups({
       items: [
         { label: "Profile & theme", href: SETTINGS_PATHS.profile },
         { label: "Linked chat accounts", href: SETTINGS_PATHS.linkedAccounts },
+        { label: "API tokens", href: SETTINGS_PATHS.apiTokens },
       ],
     },
     {
