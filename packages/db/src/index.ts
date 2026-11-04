@@ -965,6 +965,7 @@ export {
   deleteDraftSprint,
   findStartedSprintEpic,
   getSprint,
+  listRunningSprints,
   listSprints,
   pauseSprint,
   resumeSprint,
