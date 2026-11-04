@@ -38,6 +38,8 @@ export const sprintRowSchema = z.object({
   pausedReason: z.string().nullable(),
   /** The branch the epics' PRs target (merge-together sprints, once started). */
   sprintBranch: z.string().nullable(),
+  /** The PR/MR from the sprint branch to the default branch, once Om opened it. */
+  sprintPullRequest: z.object({ number: z.number(), url: z.string() }).nullable(),
   epics: z.array(sprintEpicRowSchema),
   createdAt: isoDate,
   updatedAt: isoDate,

@@ -201,6 +201,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/sprints", () => {
       mergeTogether: true,
       status: "draft",
       sprintBranch: null,
+      sprintPullRequest: null,
     });
     expect(sprint.epics.map((e) => [e.identifier, e.position, e.state])).toEqual([
       ["ENG-1", 0, "queued"],

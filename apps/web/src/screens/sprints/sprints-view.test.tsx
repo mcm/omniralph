@@ -89,6 +89,7 @@ function sprintRow(overrides: Partial<SprintRow> = {}): SprintRow {
     status: "draft",
     pausedReason: null,
     sprintBranch: null,
+    sprintPullRequest: null,
     epics: [
       epic("SOC-401", "Invoice model", 0),
       epic("SOC-402", "Invoice PDFs", 1),

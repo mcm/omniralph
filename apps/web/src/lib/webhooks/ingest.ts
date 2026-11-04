@@ -4,6 +4,7 @@ import {
   deleteScmConnection,
   findLaneByBranch,
   findLaneByPullRequest,
+  findSprintByPullRequest,
   findRepositoriesByExternalId,
   findScmConnectionsByExternalId,
   releaseWebhookDelivery,
@@ -32,6 +33,7 @@ import { cleanupClosedPullRequest } from "@/lib/ralph/cleanup";
 import { storeDefaultBranch } from "@/lib/repositories/default-branch";
 import { enqueueReview } from "@/lib/review/enqueue";
 import { scmAdapterFor } from "@/lib/scm/adapters";
+import { settleSprintPullRequest } from "@/lib/sprints/pull-request";
 import {
   githubInstallationId,
   parseGitHubCiEvent,
@@ -648,7 +650,7 @@ async function handleClosed(
 ): Promise<Handled> {
   const { db, repository, delivery, closed, log } = input;
   const found = await findLaneByPullRequest(db, repository.id, closed.number);
-  if (!found) return skipped("not_ralph");
+  if (!found) return handleSprintClosed(input);
   const run = ralphRun(found.run);
   if (delivery && !(await claimWebhookDelivery(db, { ...delivery, repositoryId: repository.id }))) {
     return handled({ status: "duplicate" }, { outcome: "duplicate", run });
@@ -685,6 +687,52 @@ async function handleClosed(
   return handled(
     { status: "accepted", event: closed.merged ? "merged" : "closed" },
     { outcome: "updated_run", run },
+  );
+}
+
+/**
+ * A closed PR/MR that isn't a ralph lane's: when it's a started sprint's PR/MR, it's checked
+ * with the code host (via `defer`): merged, the sprint is done; closed unmerged, it pauses.
+ * Others are ignored.
+ */
+async function handleSprintClosed(
+  input: WebhookDeps & {
+    repository: Repository;
+    provider: ScmProvider;
+    delivery: WebhookDeliveryRef | null;
+    closed: ClosedEvent;
+    log: DeliveryLog;
+  },
+): Promise<Handled> {
+  const { db, repository, delivery, closed, log } = input;
+  const sprint = await findSprintByPullRequest(db, repository.id, closed.number);
+  if (!sprint) return skipped("not_ralph");
+  if (delivery && !(await claimWebhookDelivery(db, { ...delivery, repositoryId: repository.id }))) {
+    return handled({ status: "duplicate" }, { outcome: "duplicate" });
+  }
+  const task = async () => {
+    try {
+      await settleSprintPullRequest(
+        {
+          db,
+          organizationId: repository.organizationId,
+          adapterFor: input.adapterFor ?? scmAdapterFor,
+        },
+        sprint,
+      );
+    } catch (error) {
+      console.error(
+        `${input.provider} ${closed.merged ? "merge" : "closing"} of sprint PR ${repository.fullPath}#${closed.number} failed to settle`,
+        error,
+      );
+      await log.settle({ outcome: "failed", error });
+    }
+  };
+  const defer = input.defer ?? ((run: () => Promise<void>) => run());
+  await defer(task);
+  return handled(
+    { status: "accepted", event: closed.merged ? "merged" : "closed" },
+    { outcome: "updated_run" },
   );
 }
 
