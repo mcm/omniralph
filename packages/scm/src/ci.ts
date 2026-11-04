@@ -57,3 +57,13 @@ export function ciLogTail(text: string): string {
   const log = cleanCiLog(text);
   return log.length > MAX_CI_LOG_CHARS ? `…${log.slice(-MAX_CI_LOG_CHARS)}` : log;
 }
+
+/** The overall state of required checks: `none` without any, else the worst one's. */
+export function requiredChecksState(
+  checks: { state: "pending" | "passed" | "failed" }[],
+): "none" | "pending" | "passed" | "failed" {
+  if (checks.length === 0) return "none";
+  if (checks.some((c) => c.state === "failed")) return "failed";
+  if (checks.some((c) => c.state === "pending")) return "pending";
+  return "passed";
+}

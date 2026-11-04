@@ -1,0 +1,87 @@
+{
+  "branch": {
+    "name": "main",
+    "commit": { "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+    "protected": true,
+    "protection": {
+      "enabled": true,
+      "required_status_checks": {
+        "enforcement_level": "non_admins",
+        "contexts": ["test", "ci/legacy"],
+        "checks": [
+          { "context": "test", "app_id": 15368 },
+          { "context": "ci/legacy", "app_id": null }
+        ]
+      }
+    },
+    "protection_url": "https://api.github.com/repos/acme/widgets/branches/main/protection"
+  },
+  "rules": [
+    {
+      "type": "deletion",
+      "ruleset_source_type": "Repository",
+      "ruleset_source": "acme/widgets",
+      "ruleset_id": 9
+    },
+    {
+      "type": "required_status_checks",
+      "ruleset_source_type": "Organization",
+      "ruleset_source": "acme",
+      "ruleset_id": 10,
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          { "context": "lint", "integration_id": 15368 },
+          { "context": "test" }
+        ]
+      }
+    }
+  ],
+  "checkRuns": {
+    "total_count": 3,
+    "check_runs": [
+      {
+        "id": 4001,
+        "name": "test",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "status": "completed",
+        "conclusion": "failure",
+        "html_url": "https://github.com/acme/widgets/runs/4001",
+        "details_url": "https://github.com/acme/widgets/actions/runs/1/job/4001"
+      },
+      {
+        "id": 4002,
+        "name": "test",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "status": "completed",
+        "conclusion": "success",
+        "html_url": "https://github.com/acme/widgets/runs/4002",
+        "details_url": "https://github.com/acme/widgets/actions/runs/1/job/4002"
+      },
+      {
+        "id": 4003,
+        "name": "lint",
+        "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "status": "in_progress",
+        "conclusion": null,
+        "html_url": "https://github.com/acme/widgets/runs/4003",
+        "details_url": "https://github.com/acme/widgets/actions/runs/1/job/4003"
+      }
+    ]
+  },
+  "combinedStatus": {
+    "state": "success",
+    "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "total_count": 1,
+    "statuses": [
+      {
+        "id": 77,
+        "context": "ci/legacy",
+        "state": "success",
+        "target_url": "https://ci.example.com/build/77",
+        "description": "Build passed"
+      }
+    ]
+  }
+}

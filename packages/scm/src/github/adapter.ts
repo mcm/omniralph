@@ -1,15 +1,28 @@
 import type { Octokit } from "@octokit/rest";
 import { verify } from "@octokit/webhooks-methods";
-import { ciLogTail, type ChangeRequestStatus, type CiFailedJob, type CiStatus } from "../ci.js";
+import {
+  ciLogTail,
+  requiredChecksState,
+  type ChangeRequestStatus,
+  type CiFailedJob,
+  type CiStatus,
+} from "../ci.js";
 import { capLength, capTitle, renderInlineComment, summaryWithFallbacks } from "../comment-body.js";
 import { capPatch, maxFilesOf } from "../commit-diff.js";
 import { buildDiffLineIndex, isCommentInDiff } from "../diff-lines.js";
 import {
   ChangeRequestNotFoundError,
+  ChangeRequestRefusedError,
   CloneCredentialPermissionError,
   CommitNotFoundError,
   getHeader,
   type ChangeRequest,
+  type ChangeRequestActionOptions,
+  type ChangeRequestRefusalReason,
+  type MergedChangeRequest,
+  type RequiredCheck,
+  type RequiredCheckState,
+  type RequiredChecksStatus,
   type CommitDiff,
   type CommitDiffFile,
   type CommitDiffOptions,
@@ -156,6 +169,32 @@ function isPermissionNotGranted(error: unknown): boolean {
     ?.message;
   return typeof message === "string" && /level of access for permissions/i.test(message);
 }
+
+/** GitHub's reason for a refused request: the message and its validation errors. */
+function hostMessage(error: unknown): string {
+  const data = (error as { response?: { data?: { message?: unknown; errors?: unknown[] } } } | null)
+    ?.response?.data;
+  const parts = [
+    data?.message,
+    ...(data?.errors ?? []).map((e) =>
+      typeof e === "string" ? e : (e as { message?: unknown } | null)?.message,
+    ),
+  ]
+    .filter((m): m is string => typeof m === "string" && m.trim() !== "")
+    .map((m) => m.trim());
+  if (parts.length > 0) return [...new Set(parts)].join(" ");
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Check run conclusions that let a required check pass. */
+const GITHUB_PASSING = new Set(["success", "neutral", "skipped"]);
+
+/** The repository's merge methods, in the order picked: GitHub's API default first. */
+const MERGE_METHODS = [
+  ["allow_merge_commit", "merge"],
+  ["allow_squash_merge", "squash"],
+  ["allow_rebase_merge", "rebase"],
+] as const;
 
 /** Workflow run and job conclusions that count as a CI failure. */
 const GITHUB_FAILED = new Set(["failure", "timed_out", "startup_failure"]);
@@ -682,6 +721,229 @@ export class GitHubAdapter implements ScmAdapter {
       headSha: pr.head.sha,
       mergeSha: merged ? (pr.merge_commit_sha ?? null) : null,
     };
+  }
+
+  /**
+   * The status checks the base branch requires (classic branch protection
+   * and rulesets) and their state on the head: the newest check run of each
+   * name, else the commit status of that context. A required check that
+   * hasn't reported yet is `pending`.
+   */
+  async getRequiredChecks(repo: RepoRef, number: number): Promise<RequiredChecksStatus> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const octokit = await this.client(repo);
+    const pr = await this.pullRequest(octokit, repo, number);
+    const headSha = pr.head.sha;
+    const required = await this.requiredCheckNames(octokit, owner, name, pr.base.ref);
+    if (required.length === 0) return { state: "none", headSha, checks: [] };
+
+    const runs = await octokit.paginate(octokit.checks.listForRef, {
+      owner,
+      repo: name,
+      ref: headSha,
+      per_page: 100,
+    });
+    const latestRuns = new Map<string, (typeof runs)[number]>();
+    for (const run of runs) {
+      const seen = latestRuns.get(run.name);
+      if (!seen || run.id > seen.id) latestRuns.set(run.name, run);
+    }
+    const { data: combined } = await octokit.repos.getCombinedStatusForRef({
+      owner,
+      repo: name,
+      ref: headSha,
+      per_page: 100,
+    });
+    const statuses = new Map(combined.statuses.map((status) => [status.context, status]));
+
+    const checks = required.map((context): RequiredCheck => {
+      const run = latestRuns.get(context);
+      if (run) {
+        const state: RequiredCheckState =
+          run.status !== "completed"
+            ? "pending"
+            : GITHUB_PASSING.has(String(run.conclusion))
+              ? "passed"
+              : "failed";
+        return { name: context, state, url: run.html_url ?? run.details_url ?? null };
+      }
+      const status = statuses.get(context);
+      if (status) {
+        const state: RequiredCheckState =
+          status.state === "success" ? "passed" : status.state === "pending" ? "pending" : "failed";
+        return { name: context, state, url: status.target_url ?? null };
+      }
+      return { name: context, state: "pending", url: null };
+    });
+    return { state: requiredChecksState(checks), headSha, checks };
+  }
+
+  /**
+   * Submits an `APPROVE` review on the head (or `headSha`). GitHub refuses
+   * an App's approval of a pull request the App opened itself (`forbidden`).
+   */
+  async approvePullRequest(
+    repo: RepoRef,
+    number: number,
+    options?: ChangeRequestActionOptions,
+  ): Promise<void> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const octokit = await this.client(repo);
+    const pr = await this.pullRequest(octokit, repo, number);
+    this.assertActionable(repo, number, "approve", pr, options);
+    try {
+      await octokit.pulls.createReview({
+        owner,
+        repo: name,
+        pull_number: number,
+        commit_id: options?.headSha ?? pr.head.sha,
+        event: "APPROVE",
+      });
+    } catch (error) {
+      if (hasStatus(error, 404))
+        throw new ChangeRequestNotFoundError(repo, number, { cause: error });
+      if (hasStatus(error, 403) || hasStatus(error, 422)) {
+        const message = hostMessage(error);
+        const reason: ChangeRequestRefusalReason =
+          hasStatus(error, 403) || /your own pull request|not permitted|permission/i.test(message)
+            ? "forbidden"
+            : /draft/i.test(message)
+              ? "draft"
+              : "other";
+        throw new ChangeRequestRefusedError(repo, number, "approve", reason, message, {
+          cause: error,
+        });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Merges with the repository's merge method: a merge commit when allowed,
+   * else squash, else rebase. Pins the merge to the head (or `headSha`) so a
+   * new push makes GitHub refuse it (`head_changed`).
+   */
+  async mergePullRequest(
+    repo: RepoRef,
+    number: number,
+    options?: ChangeRequestActionOptions,
+  ): Promise<MergedChangeRequest> {
+    const { owner, repo: name } = splitRepoPath(repo);
+    const octokit = await this.client(repo);
+    const pr = await this.pullRequest(octokit, repo, number);
+    this.assertActionable(repo, number, "merge", pr, options);
+    if (pr.draft) {
+      throw new ChangeRequestRefusedError(
+        repo,
+        number,
+        "merge",
+        "draft",
+        "The pull request is a draft.",
+      );
+    }
+    if (pr.mergeable === false && pr.mergeable_state === "dirty") {
+      throw new ChangeRequestRefusedError(
+        repo,
+        number,
+        "merge",
+        "conflicts",
+        `The head branch ${pr.head.ref} has conflicts with ${pr.base.ref}.`,
+      );
+    }
+    const { data: settings } = await octokit.repos.get({ owner, repo: name });
+    const method = MERGE_METHODS.find(([setting]) => settings[setting] !== false)?.[1] ?? "merge";
+    try {
+      const { data } = await octokit.pulls.merge({
+        owner,
+        repo: name,
+        pull_number: number,
+        merge_method: method,
+        sha: options?.headSha ?? pr.head.sha,
+      });
+      return { mergeSha: data.sha ?? null };
+    } catch (error) {
+      if (hasStatus(error, 404))
+        throw new ChangeRequestNotFoundError(repo, number, { cause: error });
+      const message = hostMessage(error);
+      const refuse = (reason: ChangeRequestRefusalReason) =>
+        new ChangeRequestRefusedError(repo, number, "merge", reason, message, { cause: error });
+      if (hasStatus(error, 409)) throw refuse("head_changed");
+      if (hasStatus(error, 403)) throw refuse("forbidden");
+      if (hasStatus(error, 405)) {
+        if (/conflict/i.test(message)) throw refuse("conflicts");
+        // "Pull Request is not mergeable" is also GitHub's answer for conflicts.
+        const current = await this.pullRequest(octokit, repo, number).catch(() => null);
+        throw refuse(current?.mergeable_state === "dirty" ? "conflicts" : "blocked");
+      }
+      if (hasStatus(error, 422)) throw refuse("other");
+      throw error;
+    }
+  }
+
+  /** Refuses an action on a closed/merged PR, or one whose head moved past `headSha`. */
+  private assertActionable(
+    repo: RepoRef,
+    number: number,
+    action: "approve" | "merge",
+    pr: { state: string; merged?: boolean | null; head: { sha: string } },
+    options: ChangeRequestActionOptions | undefined,
+  ): void {
+    if (pr.state !== "open" || pr.merged) {
+      const what = pr.merged ? "already merged" : "closed";
+      throw new ChangeRequestRefusedError(
+        repo,
+        number,
+        action,
+        "not_open",
+        `The pull request is ${what}.`,
+      );
+    }
+    if (options?.headSha && options.headSha !== pr.head.sha) {
+      throw new ChangeRequestRefusedError(
+        repo,
+        number,
+        action,
+        "head_changed",
+        `The head moved from ${options.headSha} to ${pr.head.sha}.`,
+      );
+    }
+  }
+
+  /**
+   * Status check contexts `branch` requires: classic protection (`GET
+   * /branches/{branch}`, readable with Contents: read) and rulesets (`GET
+   * /rules/branches/{branch}`). Either may be missing (404).
+   */
+  private async requiredCheckNames(
+    octokit: Octokit,
+    owner: string,
+    repo: string,
+    branch: string,
+  ): Promise<string[]> {
+    const names = new Set<string>();
+    try {
+      const { data } = await octokit.repos.getBranch({ owner, repo, branch });
+      const checks = data.protection?.required_status_checks;
+      for (const context of checks?.contexts ?? []) names.add(context);
+      for (const check of checks?.checks ?? []) names.add(check.context);
+    } catch (error) {
+      if (!hasStatus(error, 404)) throw error;
+    }
+    try {
+      const rules = await octokit.paginate(octokit.repos.getBranchRules, {
+        owner,
+        repo,
+        branch,
+        per_page: 100,
+      });
+      for (const rule of rules) {
+        if (rule.type !== "required_status_checks") continue;
+        for (const check of rule.parameters?.required_status_checks ?? []) names.add(check.context);
+      }
+    } catch (error) {
+      if (!hasStatus(error, 404)) throw error;
+    }
+    return [...names];
   }
 
   /**

@@ -1,6 +1,12 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { AccessLevel, Gitlab } from "@gitbeaker/rest";
-import { ciLogTail, type ChangeRequestStatus, type CiFailedJob, type CiStatus } from "../ci.js";
+import {
+  ciLogTail,
+  requiredChecksState,
+  type ChangeRequestStatus,
+  type CiFailedJob,
+  type CiStatus,
+} from "../ci.js";
 import { capLength, capTitle, fencedBlock, summaryWithFallbacks } from "../comment-body.js";
 import { capPatch, countPatchLines, maxFilesOf } from "../commit-diff.js";
 import {
@@ -10,10 +16,17 @@ import {
 } from "../credential-cache.js";
 import {
   ChangeRequestNotFoundError,
+  ChangeRequestRefusedError,
   CloneCredentialPermissionError,
   CommitNotFoundError,
   getHeader,
   type ChangeRequest,
+  type ChangeRequestActionOptions,
+  type ChangeRequestRefusalReason,
+  type MergedChangeRequest,
+  type RequiredCheck,
+  type RequiredCheckState,
+  type RequiredChecksStatus,
   type CommitDiff,
   type CommitDiffFile,
   type CommitDiffOptions,
@@ -109,6 +122,23 @@ function isTokenCreationForbidden(error: unknown): boolean {
   const description = (error as { cause?: { description?: unknown } }).cause?.description;
   const text = `${typeof description === "string" ? description : ""} ${(error as Error).message ?? ""}`;
   return /permission to create (a )?project access token/i.test(text);
+}
+
+/** GitLab's reason for a refused request (the response's `message`/`error`). */
+function hostMessage(error: unknown): string {
+  const description = (error as { cause?: { description?: unknown } } | null)?.cause?.description;
+  if (typeof description === "string" && description.trim() !== "") return description.trim();
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** `detailed_merge_status` values that mean the source branch must be fixed first. */
+const GITLAB_CONFLICT_STATUSES = new Set(["conflict", "broken_status", "need_rebase"]);
+
+/** An external status check's state; GitLab has called `passed` `approved`. */
+function externalCheckState(status: string): RequiredCheckState {
+  if (status === "passed" || status === "approved") return "passed";
+  if (status === "failed") return "failed";
+  return "pending";
 }
 
 /** GitLab project ID (preferred) or URL path. */
@@ -588,6 +618,195 @@ export class GitLabAdapter implements ScmAdapter {
       files: entries.slice(0, maxFiles).map(gitLabCommitFile),
       truncated: entries.length > maxFiles,
     };
+  }
+
+  /**
+   * The checks merging requires: the head pipeline when the project only
+   * allows merges whose pipeline succeeded (a skipped one passes when the
+   * project allows that), plus the MR's external status checks (GitLab
+   * Ultimate; skipped when the tier has none). A pipeline that hasn't run on
+   * the head yet, or waits on a manual job, is `pending`.
+   */
+  async getRequiredChecks(repo: RepoRef, number: number): Promise<RequiredChecksStatus> {
+    const project = projectId(repo);
+    const mr = await this.mergeRequest(repo, number);
+    const headSha = mr.sha;
+    const settings = await this.api.Projects.show(project);
+    const checks: RequiredCheck[] = [];
+    if (settings.only_allow_merge_if_pipeline_succeeds) {
+      const pipeline = (mr.head_pipeline ?? null) as {
+        sha?: string;
+        status?: string;
+        web_url?: string;
+      } | null;
+      const status =
+        pipeline && (!pipeline.sha || pipeline.sha === headSha) ? pipeline.status : null;
+      const state: RequiredCheckState =
+        !status || GITLAB_PENDING.has(status) || status === "manual"
+          ? "pending"
+          : status === "success" ||
+              (status === "skipped" && settings.allow_merge_on_skipped_pipeline)
+            ? "passed"
+            : "failed";
+      checks.push({ name: "pipeline", state, url: status ? (pipeline?.web_url ?? null) : null });
+    }
+    try {
+      const external = await this.api.ExternalStatusChecks.all(project, {
+        mergerequestIId: number,
+      });
+      for (const check of external) {
+        checks.push({
+          name: check.name,
+          state: externalCheckState(String(check.status)),
+          url: null,
+        });
+      }
+    } catch (error) {
+      // Tiers without external status checks answer 403 or 404.
+      const status = statusOf(error);
+      if (status !== 403 && status !== 404) throw error;
+    }
+    return { state: requiredChecksState(checks), headSha, checks };
+  }
+
+  /**
+   * Approves the MR at its head (or `headSha`). Approving again is a no-op;
+   * GitLab refuses an approver it doesn't allow, such as the MR's author
+   * when the project prevents that (`forbidden`).
+   */
+  async approvePullRequest(
+    repo: RepoRef,
+    number: number,
+    options?: ChangeRequestActionOptions,
+  ): Promise<void> {
+    const project = projectId(repo);
+    const mr = await this.mergeRequest(repo, number);
+    this.assertActionable(repo, number, "approve", mr, options);
+    try {
+      await this.api.MergeRequestApprovals.approve(project, number, {
+        sha: options?.headSha ?? mr.sha,
+      });
+    } catch (error) {
+      const status = statusOf(error);
+      if (status === 404) throw new ChangeRequestNotFoundError(repo, number, { cause: error });
+      const message = hostMessage(error);
+      if (status === 409) {
+        throw new ChangeRequestRefusedError(repo, number, "approve", "head_changed", message, {
+          cause: error,
+        });
+      }
+      if (status === 401 || status === 403) {
+        // GitLab answers 401 both for an approver it doesn't allow and for a
+        // second approval. When the approvals can't be read either, the token
+        // itself was refused: rethrow so the caller can reload it.
+        let approvals: { user_has_approved?: boolean };
+        try {
+          approvals = (await this.api.MergeRequestApprovals.showConfiguration(project, {
+            mergerequestIId: number,
+          })) as { user_has_approved?: boolean };
+        } catch (lookupError) {
+          if (statusOf(lookupError) === 401) throw error;
+          throw lookupError;
+        }
+        if (approvals.user_has_approved) return;
+        throw new ChangeRequestRefusedError(repo, number, "approve", "forbidden", message, {
+          cause: error,
+        });
+      }
+      if (status === 400 || status === 405 || status === 422) {
+        throw new ChangeRequestRefusedError(repo, number, "approve", "other", message, {
+          cause: error,
+        });
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Merges the MR with the project's merge method (merge commit, semi-linear
+   * or fast-forward, which GitLab applies itself), squashing when the
+   * project's squash option is `always` or `default_on`. Pinned to the head
+   * (or `headSha`), so a new push makes GitLab refuse it (`head_changed`).
+   */
+  async mergePullRequest(
+    repo: RepoRef,
+    number: number,
+    options?: ChangeRequestActionOptions,
+  ): Promise<MergedChangeRequest> {
+    const project = projectId(repo);
+    const mr = await this.mergeRequest(repo, number);
+    this.assertActionable(repo, number, "merge", mr, options);
+    if (mr.draft ?? mr.work_in_progress) {
+      throw new ChangeRequestRefusedError(
+        repo,
+        number,
+        "merge",
+        "draft",
+        "The merge request is a draft.",
+      );
+    }
+    const settings = await this.api.Projects.show(project);
+    const squash = settings.squash_option === "always" || settings.squash_option === "default_on";
+    try {
+      const merged = await this.api.MergeRequests.merge(project, number, {
+        sha: options?.headSha ?? mr.sha,
+        ...(squash ? { squash: true } : {}),
+      });
+      const mergeSha = merged.merge_commit_sha ?? merged.squash_commit_sha ?? merged.sha;
+      return { mergeSha: mergeSha || null };
+    } catch (error) {
+      const status = statusOf(error);
+      if (status === 404) throw new ChangeRequestNotFoundError(repo, number, { cause: error });
+      const message = hostMessage(error);
+      const refuse = (reason: ChangeRequestRefusalReason, detail = message) =>
+        new ChangeRequestRefusedError(repo, number, "merge", reason, detail, { cause: error });
+      if (status === 409) throw refuse("head_changed");
+      if (status === 401 || status === 403) throw refuse("forbidden");
+      if (status === 405 || status === 406 || status === 422) {
+        // GitLab's message is generic ("405 Method Not Allowed"); the MR's
+        // detailed merge status says why.
+        const current = await this.api.MergeRequests.show(project, number).catch(() => null);
+        const detailed = current ? String(current.detailed_merge_status ?? "") : "";
+        const detail =
+          detailed && detailed !== "mergeable"
+            ? `${message} (detailed_merge_status: ${detailed})`
+            : message;
+        if (GITLAB_CONFLICT_STATUSES.has(detailed) || /cannot be merged|conflict/i.test(message))
+          throw refuse("conflicts", detail);
+        if (detailed === "draft_status") throw refuse("draft", detail);
+        if (detailed === "not_open") throw refuse("not_open", detail);
+        throw refuse("blocked", detail);
+      }
+      throw error;
+    }
+  }
+
+  /** Refuses an action on a closed/merged MR, or one whose head moved past `headSha`. */
+  private assertActionable(
+    repo: RepoRef,
+    number: number,
+    action: "approve" | "merge",
+    mr: { state: string; sha: string },
+    options: ChangeRequestActionOptions | undefined,
+  ): void {
+    if (mr.state !== "opened" && mr.state !== "locked") {
+      throw new ChangeRequestRefusedError(
+        repo,
+        number,
+        action,
+        "not_open",
+        `The merge request is ${mr.state === "merged" ? "already merged" : mr.state}.`,
+      );
+    }
+    if (options?.headSha && options.headSha !== mr.sha) {
+      throw new ChangeRequestRefusedError(
+        repo,
+        number,
+        action,
+        "head_changed",
+        `The head moved from ${options.headSha} to ${mr.sha}.`,
+      );
+    }
   }
 
   private async mergeRequest(repo: RepoRef, number: number) {
