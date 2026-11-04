@@ -956,3 +956,23 @@ export {
   type RunIteration,
   type RunIterationUpdate,
 } from "./run-iterations.js";
+export {
+  ACTIVE_SPRINT_STATUSES,
+  createSprint,
+  deleteDraftSprint,
+  getSprint,
+  listSprints,
+  updateDraftSprint,
+  type CreateSprintInput,
+  type CreateSprintResult,
+  type DeleteDraftSprintResult,
+  type Sprint,
+  type SprintEpic,
+  type SprintEpicConflict,
+  type SprintEpicInput,
+  type SprintEpicState,
+  type SprintStatus,
+  type SprintWithEpics,
+  type UpdateDraftSprintInput,
+  type UpdateDraftSprintResult,
+} from "./sprints.js";

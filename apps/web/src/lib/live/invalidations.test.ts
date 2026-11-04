@@ -322,6 +322,15 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(under(keys.repositories.lists)).toBe(false);
   });
 
+  it("sprint: the Sprints lists and each named sprint, never another sprint", () => {
+    const prefixes = liveInvalidations(event({ resource: "sprint", ids: [ID] }));
+    expect(prefixes).toEqual([keys.sprints.lists, keys.sprints.detail(ID)]);
+    const under = (key: QueryKey) =>
+      prefixes.some((prefix) => prefix.every((part, i) => key[i] === part));
+    expect(under(keys.sprints.detail(OTHER_RUN))).toBe(false);
+    expect(under(keys.backlog.all)).toBe(false);
+  });
+
   it("organization: the organization's queries", () => {
     expect(liveInvalidations(event({ resource: "organization" }))).toEqual([keys.organization.all]);
   });

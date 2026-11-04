@@ -240,6 +240,11 @@ export const LIVE_INVALIDATIONS = {
     [...keys.runs.all, "detail"],
     ...analyticsKeys(keys).covering(event.organizationId),
   ],
+  // The Sprints screen's list and the named sprints.
+  sprint: (event, keys) => [
+    keys.sprints.lists,
+    ...event.ids.map((sprintId) => keys.sprints.detail(sprintId)),
+  ],
 } satisfies Record<ChangeEvent["resource"], Invalidator<never>> & {
   [R in ChangeEventResource]: Invalidator<R>;
 };
