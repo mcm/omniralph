@@ -3327,6 +3327,42 @@ Tasks have no priority.
       expect(tracker.created.filter((c) => c.title.startsWith("Sort out"))).toEqual([]);
     });
 
+    it("rebases before the rerun when one outside blocker was completed and another canceled", async () => {
+      const first = tracker.add({ identifier: "ENG-120", title: "Auth epic" });
+      tracker.add({ identifier: "ENG-121", title: "Auth", parentId: first.id });
+      const second = tracker.add({ identifier: "ENG-122", title: "Standalone" });
+      const epic = tracker.add({ identifier: "ENG-123", title: "Epic" });
+      tracker.add({ identifier: "ENG-124", title: "Widgets", parentId: epic.id });
+      const run = await delegate(epic.id);
+      await work(run.id, {
+        status: "blocked",
+        summary: "Needs both.",
+        blockedBy: ["ENG-121", "ENG-122"],
+      });
+      expect(await crossEpicBlockers(run.id, "ENG-124")).toEqual([
+        ["ENG-120", "ENG-121"],
+        ["ENG-122", "ENG-122"],
+      ]);
+
+      // One over isn't enough: the run keeps waiting.
+      await finishIssue(second.id, "canceled");
+      expect(await activeJobs(run.id)).toEqual([]);
+      expect(await storyRow(run.id, "ENG-124")).toMatchObject({
+        rebasePending: false,
+        rerunAfterCancel: false,
+      });
+
+      await finishIssue(first.id, "completed");
+      expect(await storyRow(run.id, "ENG-124")).toMatchObject({
+        rebasePending: true,
+        rerunAfterCancel: false,
+      });
+      const payload = await rebase(run.id);
+      expect(payload.requests[0]!.text).toContain("**ENG-120**, **ENG-122** are done");
+      expect((await work(run.id)).story.identifier).toBe("ENG-124");
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+    });
+
     it("files one manual follow-up blocking the task when its rerun after a canceled epic doesn't complete", async () => {
       const { other, epic, story, run } = await blockedOnOtherEpic();
 
