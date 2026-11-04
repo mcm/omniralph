@@ -7,6 +7,7 @@
 import {
   getJob,
   getRepository,
+  getStory,
   listStories,
   recordFollowUpSource,
   updateRun,
@@ -138,7 +139,7 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
     const verification = runningVerification(story);
     if (verification) {
       await applyVerification(ctx, story, verification, job);
-      await settleRerunAfterCancel(ctx, story.id, verification.pending?.summary ?? null);
+      await settleRerunAfterCancel(ctx, story, verification.pending?.summary ?? null);
       continue;
     }
     const parsed = job?.status === "completed" ? RalphStoryResult.safeParse(job.result) : null;
@@ -156,7 +157,7 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
         maxAttempts: caps.maxAttemptsPerStory,
       });
     }
-    await settleRerunAfterCancel(ctx, story.id, parsed?.success ? parsed.data.summary : null);
+    await settleRerunAfterCancel(ctx, story, parsed?.success ? parsed.data.summary : null);
   }
   return { busy };
 }
@@ -170,10 +171,12 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
  */
 async function settleRerunAfterCancel(
   ctx: OutcomeContext,
-  storyId: string,
+  loaded: RalphStory,
   summary: string | null,
 ): Promise<void> {
-  const story = (await listStories(ctx.tx, ctx.run.id)).find((s) => s.id === storyId);
+  // Only the cross-epic step sets the flag, so the row loaded before the outcome tells.
+  if (!loaded.rerunAfterCancel) return;
+  const story = await getStory(ctx.tx, loaded.id);
   if (!story?.rerunAfterCancel || story.status === "running") return;
   const canceled = story.canceledBlockers;
   const canceledIds = new Set(canceled.map((b) => b.id));
