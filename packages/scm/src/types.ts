@@ -203,6 +203,80 @@ export class CommitNotFoundError extends Error {
   }
 }
 
+/** State of one check the target branch requires (a status check, a CI pipeline). */
+export type RequiredCheckState = "pending" | "passed" | "failed";
+
+export interface RequiredCheck {
+  /** The check's name on the code host (GitHub check/status context, `pipeline` on GitLab). */
+  name: string;
+  /** `pending` also covers a required check that hasn't reported on the head yet. */
+  state: RequiredCheckState;
+  url: string | null;
+}
+
+/**
+ * Whether the checks the target branch requires have passed on the PR/MR's
+ * head. `none`: the branch requires no checks; `failed` when any failed,
+ * else `pending` when any hasn't finished, else `passed`.
+ */
+export interface RequiredChecksStatus {
+  state: "none" | RequiredCheckState;
+  headSha: string;
+  checks: RequiredCheck[];
+}
+
+/** Options of {@link ScmAdapter.approvePullRequest} and {@link ScmAdapter.mergePullRequest}. */
+export interface ChangeRequestActionOptions {
+  /**
+   * The head commit the decision was made on. The code host refuses (as
+   * `head_changed`) when the PR/MR has moved past it since.
+   */
+  headSha?: string;
+}
+
+export interface MergedChangeRequest {
+  /** The merge (or squash) commit; `null` when the host didn't report one. */
+  mergeSha: string | null;
+}
+
+/**
+ * Why the code host refused to approve or merge:
+ * - `conflicts`: the source branch doesn't merge cleanly (or needs a rebase)
+ * - `blocked`: branch protection or the host's merge rules (required checks,
+ *   approvals, unresolved threads, rulesets)
+ * - `head_changed`: the head moved past `headSha`
+ * - `draft`: the PR/MR is a draft
+ * - `not_open`: it's closed or already merged
+ * - `forbidden`: the bot may not do it (e.g. approving its own PR, no merge rights)
+ * - `other`: anything else the host refused
+ */
+export type ChangeRequestRefusalReason =
+  | "conflicts"
+  | "blocked"
+  | "head_changed"
+  | "draft"
+  | "not_open"
+  | "forbidden"
+  | "other";
+
+/** The code host refused to approve or merge a PR/MR; `hostMessage` says why, in its words. */
+export class ChangeRequestRefusedError extends Error {
+  constructor(
+    readonly repo: RepoRef,
+    readonly number: number,
+    readonly action: "approve" | "merge",
+    readonly reason: ChangeRequestRefusalReason,
+    readonly hostMessage: string,
+    options?: { cause?: unknown },
+  ) {
+    super(
+      `The code host refused to ${action} ${repo.fullPath}#${number} (${reason}): ${hostMessage}`,
+      options,
+    );
+    this.name = "ChangeRequestRefusedError";
+  }
+}
+
 /** Webhook request headers, either a Fetch `Headers` or a plain record. */
 export type WebhookHeaders = Headers | Record<string, string | string[] | undefined>;
 
@@ -280,6 +354,31 @@ export interface ScmAdapter {
    * doesn't have the commit.
    */
   getCommitDiff(repo: RepoRef, sha: string, options?: CommitDiffOptions): Promise<CommitDiff>;
+  /**
+   * The checks the PR/MR's target branch requires and their state on its
+   * head. Throws {@link ChangeRequestNotFoundError} when it doesn't exist.
+   */
+  getRequiredChecks(repo: RepoRef, number: number): Promise<RequiredChecksStatus>;
+  /**
+   * Approves the PR/MR as the bot. Throws {@link ChangeRequestRefusedError}
+   * when the host refuses, {@link ChangeRequestNotFoundError} when it doesn't exist.
+   */
+  approvePullRequest(
+    repo: RepoRef,
+    number: number,
+    options?: ChangeRequestActionOptions,
+  ): Promise<void>;
+  /**
+   * Merges the PR/MR with the repository's default merge method. Throws
+   * {@link ChangeRequestRefusedError} when the host refuses (conflicts, branch
+   * protection, a moved head), {@link ChangeRequestNotFoundError} when it
+   * doesn't exist.
+   */
+  mergePullRequest(
+    repo: RepoRef,
+    number: number,
+    options?: ChangeRequestActionOptions,
+  ): Promise<MergedChangeRequest>;
   /** Verifies a webhook delivery's signature against the raw request body. */
   verifyWebhook(headers: WebhookHeaders, rawBody: string | Uint8Array): Promise<boolean>;
 }

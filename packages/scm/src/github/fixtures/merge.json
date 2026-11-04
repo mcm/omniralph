@@ -1,0 +1,59 @@
+{
+  "repository": {
+    "id": 1,
+    "full_name": "acme/widgets",
+    "default_branch": "main",
+    "allow_merge_commit": false,
+    "allow_squash_merge": true,
+    "allow_rebase_merge": true
+  },
+  "merged": {
+    "sha": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+    "merged": true,
+    "message": "Pull Request successfully merged"
+  },
+  "approved": {
+    "id": 80,
+    "node_id": "PRR_kwDOAJy2Ks5pO9Zx",
+    "user": { "login": "omniralph[bot]", "type": "Bot" },
+    "body": "",
+    "state": "APPROVED",
+    "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "html_url": "https://github.com/acme/widgets/pull/7#pullrequestreview-80"
+  },
+  "refusals": {
+    "notMergeable": {
+      "status": 405,
+      "body": {
+        "message": "Pull Request is not mergeable",
+        "documentation_url": "https://docs.github.com/rest/pulls/pulls#merge-a-pull-request",
+        "status": "405"
+      }
+    },
+    "protection": {
+      "status": 405,
+      "body": {
+        "message": "At least 1 approving review is required by reviewers with write access. Required status check \"test\" is expected.",
+        "documentation_url": "https://docs.github.com/articles/about-protected-branches",
+        "status": "405"
+      }
+    },
+    "headModified": {
+      "status": 409,
+      "body": {
+        "message": "Head branch was modified. Review and try the merge again.",
+        "documentation_url": "https://docs.github.com/rest/pulls/pulls#merge-a-pull-request",
+        "status": "409"
+      }
+    },
+    "ownApproval": {
+      "status": 422,
+      "body": {
+        "message": "Unprocessable Entity",
+        "errors": ["Review Can not approve your own pull request"],
+        "documentation_url": "https://docs.github.com/rest/pulls/reviews#create-a-review-for-a-pull-request",
+        "status": "422"
+      }
+    }
+  }
+}

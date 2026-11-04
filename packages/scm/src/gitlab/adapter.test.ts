@@ -6,6 +6,7 @@ import { MemoryCredentialCache } from "../credential-cache.js";
 import { MAX_PATCH_LINES } from "../commit-diff.js";
 import {
   ChangeRequestNotFoundError,
+  ChangeRequestRefusedError,
   CloneCredentialPermissionError,
   CommitNotFoundError,
 } from "../types.js";
@@ -1063,5 +1064,246 @@ describe("getCommitDiff", () => {
       ),
     );
     await expect(adapter.getCommitDiff(REPO, SHA)).rejects.toBeInstanceOf(CommitNotFoundError);
+  });
+});
+
+describe("required checks, approve and merge", () => {
+  /** Recorded project, status check, approval and merge responses, and GitLab's refusals. */
+  const recorded = JSON.parse(
+    readFileSync(new URL("./fixtures/merge.json", import.meta.url), "utf8"),
+  ) as {
+    project: Record<string, unknown>;
+    statusChecks: Record<string, unknown>[];
+    merged: Record<string, unknown>;
+    approved: Record<string, unknown>;
+    approvalsAfterApproving: Record<string, unknown>;
+    approvalsAsAuthor: Record<string, unknown>;
+    refusals: Record<string, { status: number; body: Record<string, unknown> }>;
+  };
+  const PIPELINE_URL = `${HOST}/acme/tools/widgets/-/pipelines/55`;
+
+  function mr(fields: Record<string, unknown> = {}) {
+    return http.get(MR, () =>
+      HttpResponse.json({
+        ...mrJson,
+        draft: false,
+        state: "opened",
+        detailed_merge_status: "mergeable",
+        ...fields,
+      }),
+    );
+  }
+
+  function project(fields: Record<string, unknown> = {}) {
+    return http.get(API, () => HttpResponse.json({ ...recorded.project, ...fields }));
+  }
+
+  function statusChecks(list: Record<string, unknown>[] | number = recorded.statusChecks) {
+    return http.get(`${MR}/status_checks`, () =>
+      typeof list === "number"
+        ? HttpResponse.json({ message: "403 Forbidden" }, { status: list })
+        : HttpResponse.json(list),
+    );
+  }
+
+  function refusal(name: string) {
+    const { status, body } = recorded.refusals[name]!;
+    return HttpResponse.json(body, { status });
+  }
+
+  it("requires the head pipeline and the external status checks", async () => {
+    server.use(
+      mr({ head_pipeline: { id: 55, sha: HEAD, status: "success", web_url: PIPELINE_URL } }),
+      project(),
+      statusChecks(),
+    );
+    await expect(makeAdapter().getRequiredChecks(REPO, 7)).resolves.toEqual({
+      state: "pending",
+      headSha: HEAD,
+      checks: [
+        { name: "pipeline", state: "passed", url: PIPELINE_URL },
+        { name: "Compliance", state: "pending", url: null },
+      ],
+    });
+  });
+
+  it.each([
+    ["success", false, "passed"],
+    ["running", false, "pending"],
+    ["manual", false, "pending"],
+    ["failed", false, "failed"],
+    ["canceled", false, "failed"],
+    ["skipped", false, "failed"],
+    ["skipped", true, "passed"],
+  ])("maps a %s pipeline (skipped allowed: %s) to %s", async (status, allowSkipped, state) => {
+    server.use(
+      mr({ head_pipeline: { id: 55, sha: HEAD, status, web_url: PIPELINE_URL } }),
+      project({ allow_merge_on_skipped_pipeline: allowSkipped }),
+      statusChecks(403),
+    );
+    await expect(makeAdapter().getRequiredChecks(REPO, 7)).resolves.toMatchObject({ state });
+  });
+
+  it("waits for a pipeline on the head, and is none when the project requires no checks", async () => {
+    const adapter = makeAdapter();
+    server.use(
+      mr({ head_pipeline: { id: 55, sha: "o".repeat(40), status: "success" } }),
+      project(),
+      statusChecks(404),
+    );
+    await expect(adapter.getRequiredChecks(REPO, 7)).resolves.toEqual({
+      state: "pending",
+      headSha: HEAD,
+      checks: [{ name: "pipeline", state: "pending", url: null }],
+    });
+    server.use(project({ only_allow_merge_if_pipeline_succeeds: false }), statusChecks([]));
+    await expect(adapter.getRequiredChecks(REPO, 7)).resolves.toEqual({
+      state: "none",
+      headSha: HEAD,
+      checks: [],
+    });
+  });
+
+  it("approves the head commit", async () => {
+    server.use(
+      mr(),
+      http.post(`${MR}/approve`, () => HttpResponse.json(recorded.approved, { status: 201 })),
+    );
+    await makeAdapter().approvePullRequest(REPO, 7);
+    const [approve] = await posts("/merge_requests/7/approve");
+    expect(approve?.body).toMatchObject({ sha: HEAD });
+  });
+
+  it("treats GitLab's 401 for a second approval as done, and as a typed refusal otherwise", async () => {
+    const adapter = makeAdapter();
+    server.use(
+      mr(),
+      http.post(`${MR}/approve`, () => refusal("unauthorized")),
+      http.get(`${MR}/approvals`, () => HttpResponse.json(recorded.approvalsAfterApproving)),
+    );
+    await expect(adapter.approvePullRequest(REPO, 7)).resolves.toBeUndefined();
+
+    server.use(http.get(`${MR}/approvals`, () => HttpResponse.json(recorded.approvalsAsAuthor)));
+    const error = await adapter.approvePullRequest(REPO, 7).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ChangeRequestRefusedError);
+    expect(error).toMatchObject({
+      action: "approve",
+      reason: "forbidden",
+      hostMessage: "401 Unauthorized",
+    });
+
+    // A revoked bot token can't read the approvals either: GitLab's own error is rethrown,
+    // so the reloading adapter retries with fresh credentials.
+    server.use(http.get(`${MR}/approvals`, () => refusal("unauthorized")));
+    const revoked = await adapter.approvePullRequest(REPO, 7).catch((e: unknown) => e);
+    expect(revoked).not.toBeInstanceOf(ChangeRequestRefusedError);
+    expect(revoked).toMatchObject({ cause: { response: { status: 401 } } });
+  });
+
+  it("merges pinned to the head, squashing when the project squashes by default", async () => {
+    let merge: { body: Record<string, unknown> } | undefined;
+    server.use(
+      mr(),
+      project(),
+      http.put(`${MR}/merge`, async ({ request }) => {
+        merge = { body: (await readBody(request)) as Record<string, unknown> };
+        return HttpResponse.json(recorded.merged);
+      }),
+    );
+    await expect(makeAdapter().mergePullRequest(REPO, 7)).resolves.toEqual({
+      mergeSha: recorded.merged.squash_commit_sha,
+    });
+    expect(merge?.body).toMatchObject({ sha: HEAD, squash: true });
+
+    server.use(project({ squash_option: "default_off" }));
+    await makeAdapter().mergePullRequest(REPO, 7);
+    expect(merge?.body).not.toHaveProperty("squash");
+  });
+
+  it.each([
+    ["cannotBeMerged", "mergeable", "conflicts", "Branch cannot be merged"],
+    [
+      "notAllowed",
+      "conflict",
+      "conflicts",
+      "405 Method Not Allowed (detailed_merge_status: conflict)",
+    ],
+    [
+      "notAllowed",
+      "not_approved",
+      "blocked",
+      "405 Method Not Allowed (detailed_merge_status: not_approved)",
+    ],
+    [
+      "notAllowed",
+      "discussions_not_resolved",
+      "blocked",
+      "405 Method Not Allowed (detailed_merge_status: discussions_not_resolved)",
+    ],
+    [
+      "shaMismatch",
+      "mergeable",
+      "head_changed",
+      `SHA does not match HEAD of source branch: ${HEAD}`,
+    ],
+    ["unauthorized", "mergeable", "forbidden", "401 Unauthorized"],
+  ])(
+    "turns a %s refusal (%s) into a typed %s error",
+    async (name, detailedStatus, reason, message) => {
+      let shows = 0;
+      server.use(
+        http.get(MR, () => {
+          shows += 1;
+          // The merge status GitLab reports once the merge was refused.
+          return HttpResponse.json({
+            ...mrJson,
+            draft: false,
+            state: "opened",
+            detailed_merge_status: shows === 1 ? "mergeable" : detailedStatus,
+          });
+        }),
+        project(),
+        http.put(`${MR}/merge`, () => refusal(name)),
+      );
+      const error = await makeAdapter()
+        .mergePullRequest(REPO, 7)
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ChangeRequestRefusedError);
+      expect(error).toMatchObject({ action: "merge", reason, hostMessage: message });
+    },
+  );
+
+  it("refuses to merge a draft, a merged MR or one whose head moved, before asking GitLab", async () => {
+    const adapter = makeAdapter();
+    server.use(mr({ draft: true }));
+    await expect(adapter.mergePullRequest(REPO, 7)).rejects.toMatchObject({ reason: "draft" });
+    server.use(mr({ state: "merged" }));
+    await expect(adapter.mergePullRequest(REPO, 7)).rejects.toMatchObject({
+      reason: "not_open",
+      hostMessage: "The merge request is already merged.",
+    });
+    server.use(mr());
+    await expect(
+      adapter.mergePullRequest(REPO, 7, { headSha: "o".repeat(40) }),
+    ).rejects.toMatchObject({ reason: "head_changed" });
+    expect(requests.some((r) => r.method === "PUT")).toBe(false);
+  });
+
+  it("throws ChangeRequestNotFoundError for a missing merge request", async () => {
+    server.use(
+      http.get(`${API}/merge_requests/404`, () =>
+        HttpResponse.json({ message: "404 Not found" }, { status: 404 }),
+      ),
+    );
+    const adapter = makeAdapter();
+    await expect(adapter.mergePullRequest(REPO, 404)).rejects.toBeInstanceOf(
+      ChangeRequestNotFoundError,
+    );
+    await expect(adapter.approvePullRequest(REPO, 404)).rejects.toBeInstanceOf(
+      ChangeRequestNotFoundError,
+    );
+    await expect(adapter.getRequiredChecks(REPO, 404)).rejects.toBeInstanceOf(
+      ChangeRequestNotFoundError,
+    );
   });
 });

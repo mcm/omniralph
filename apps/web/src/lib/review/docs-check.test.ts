@@ -112,6 +112,9 @@ function fakeAdapter(provider: ScmProvider) {
     updateChangeRequest: unused,
     markChangeRequestReady: unused,
     getCiStatus: unused,
+    getRequiredChecks: unused,
+    approvePullRequest: unused,
+    mergePullRequest: unused,
     getCiJobLog: unused,
     getCommitDiff: unused,
     async hasWriteAccess() {

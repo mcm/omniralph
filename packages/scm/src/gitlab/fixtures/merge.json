@@ -1,0 +1,57 @@
+{
+  "project": {
+    "id": 99,
+    "path_with_namespace": "acme/tools/widgets",
+    "default_branch": "main",
+    "merge_method": "ff",
+    "squash_option": "default_on",
+    "only_allow_merge_if_pipeline_succeeds": true,
+    "allow_merge_on_skipped_pipeline": false,
+    "only_allow_merge_if_all_discussions_are_resolved": true
+  },
+  "statusChecks": [
+    {
+      "id": 2,
+      "name": "Compliance",
+      "external_url": "https://compliance.example.com/hook",
+      "status": "pending"
+    }
+  ],
+  "merged": {
+    "iid": 7,
+    "state": "merged",
+    "sha": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+    "merge_commit_sha": null,
+    "squash_commit_sha": "5d4a8f2c9e7b1a0d3c6e8f9a2b4c6d8e0f1a3b5c",
+    "detailed_merge_status": "not_open"
+  },
+  "approved": {
+    "id": 501,
+    "iid": 7,
+    "approved": true,
+    "approved_by": [{ "user": { "id": 12, "username": "omniralph-bot" } }]
+  },
+  "approvalsAfterApproving": {
+    "approved": true,
+    "user_has_approved": true,
+    "user_can_approve": false,
+    "approved_by": [{ "user": { "id": 12, "username": "omniralph-bot" } }]
+  },
+  "approvalsAsAuthor": {
+    "approved": false,
+    "user_has_approved": false,
+    "user_can_approve": false,
+    "approved_by": []
+  },
+  "refusals": {
+    "notAllowed": { "status": 405, "body": { "message": "405 Method Not Allowed" } },
+    "cannotBeMerged": { "status": 422, "body": { "message": "Branch cannot be merged" } },
+    "shaMismatch": {
+      "status": 409,
+      "body": {
+        "message": "SHA does not match HEAD of source branch: hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      }
+    },
+    "unauthorized": { "status": 401, "body": { "message": "401 Unauthorized" } }
+  }
+}

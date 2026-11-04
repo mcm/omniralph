@@ -131,6 +131,15 @@ function fakeAdapter() {
     async getCiStatus() {
       throw new Error("not used");
     },
+    async getRequiredChecks() {
+      throw new Error("not used");
+    },
+    async approvePullRequest() {
+      throw new Error("not used");
+    },
+    async mergePullRequest() {
+      throw new Error("not used");
+    },
     async getCiJobLog() {
       throw new Error("not used");
     },

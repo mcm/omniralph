@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { MAX_PATCH_LINES } from "../commit-diff.js";
 import {
   ChangeRequestNotFoundError,
+  ChangeRequestRefusedError,
   CloneCredentialPermissionError,
   CommitNotFoundError,
 } from "../types.js";
@@ -1175,5 +1176,260 @@ describe("getCommitDiff", () => {
     });
     server.use(http.get(COMMIT_URL, () => HttpResponse.json({ message: "boom" }, { status: 500 })));
     await expect(adapter.getCommitDiff(REPO, SHA)).rejects.not.toBeInstanceOf(CommitNotFoundError);
+  });
+});
+
+describe("required checks, approve and merge", () => {
+  function fixture<T>(name: string): T {
+    return JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8")) as T;
+  }
+  /** Recorded responses of the branch, rules, check runs and statuses endpoints. */
+  const checks = fixture<{
+    branch: Record<string, unknown>;
+    rules: Record<string, unknown>[];
+    checkRuns: { check_runs: Record<string, unknown>[] };
+    combinedStatus: Record<string, unknown>;
+  }>("required-checks.json");
+  /** Recorded merge, review and repository responses, and the code host's refusals. */
+  const merge = fixture<{
+    repository: Record<string, unknown>;
+    merged: Record<string, unknown>;
+    approved: Record<string, unknown>;
+    refusals: Record<string, { status: number; body: Record<string, unknown> }>;
+  }>("merge.json");
+  const PR = `${API}/repos/acme/widgets/pulls/7`;
+
+  function pull(fields: Record<string, unknown> = {}) {
+    return http.get(PR, () =>
+      HttpResponse.json({
+        number: 7,
+        state: "open",
+        merged: false,
+        draft: false,
+        mergeable: true,
+        mergeable_state: "clean",
+        base: { sha: BASE, ref: "main", repo: { id: 1 } },
+        head: { sha: HEAD, ref: "ralph/epic", repo: { id: 1 } },
+        ...fields,
+      }),
+    );
+  }
+
+  function refusal(name: string) {
+    const recorded = merge.refusals[name]!;
+    return HttpResponse.json(recorded.body, { status: recorded.status });
+  }
+
+  function checksHandlers(
+    options: { runs?: Record<string, unknown>[]; branch?: Record<string, unknown> } = {},
+  ) {
+    return [
+      http.get(`${API}/repos/acme/widgets/branches/main`, () =>
+        HttpResponse.json(options.branch ?? checks.branch),
+      ),
+      http.get(`${API}/repos/acme/widgets/rules/branches/main`, () =>
+        HttpResponse.json(checks.rules),
+      ),
+      http.get(`${API}/repos/acme/widgets/commits/${HEAD}/check-runs`, () =>
+        HttpResponse.json({
+          total_count: (options.runs ?? checks.checkRuns.check_runs).length,
+          check_runs: options.runs ?? checks.checkRuns.check_runs,
+        }),
+      ),
+      http.get(`${API}/repos/acme/widgets/commits/${HEAD}/status`, () =>
+        HttpResponse.json(checks.combinedStatus),
+      ),
+    ];
+  }
+
+  it("reads the checks branch protection and rulesets require, by the newest run of each", async () => {
+    server.use(pull(), ...checksHandlers());
+    await expect(makeAdapter({ installationId: 42 }).getRequiredChecks(REPO, 7)).resolves.toEqual({
+      state: "pending",
+      headSha: HEAD,
+      checks: [
+        { name: "test", state: "passed", url: "https://github.com/acme/widgets/runs/4002" },
+        { name: "ci/legacy", state: "passed", url: "https://ci.example.com/build/77" },
+        { name: "lint", state: "pending", url: "https://github.com/acme/widgets/runs/4003" },
+      ],
+    });
+  });
+
+  it("passes when every required check passed, fails when one failed, and waits for one not reported", async () => {
+    const adapter = makeAdapter({ installationId: 42 });
+    const run = (id: number, name: string, conclusion: string) => ({
+      id,
+      name,
+      status: "completed",
+      conclusion,
+      html_url: `https://github.com/acme/widgets/runs/${id}`,
+    });
+    server.use(
+      pull(),
+      ...checksHandlers({ runs: [run(1, "test", "success"), run(2, "lint", "skipped")] }),
+    );
+    await expect(adapter.getRequiredChecks(REPO, 7)).resolves.toMatchObject({ state: "passed" });
+
+    server.use(
+      ...checksHandlers({ runs: [run(1, "test", "timed_out"), run(2, "lint", "success")] }),
+    );
+    await expect(adapter.getRequiredChecks(REPO, 7)).resolves.toMatchObject({
+      state: "failed",
+      checks: expect.arrayContaining([{ name: "test", state: "failed", url: expect.any(String) }]),
+    });
+
+    server.use(...checksHandlers({ runs: [run(1, "test", "success")] }));
+    await expect(adapter.getRequiredChecks(REPO, 7)).resolves.toMatchObject({
+      state: "pending",
+      checks: expect.arrayContaining([{ name: "lint", state: "pending", url: null }]),
+    });
+  });
+
+  it("is none when the base branch requires no checks", async () => {
+    server.use(
+      pull(),
+      http.get(`${API}/repos/acme/widgets/branches/main`, () =>
+        HttpResponse.json({ name: "main", protected: false, protection: { enabled: false } }),
+      ),
+      http.get(`${API}/repos/acme/widgets/rules/branches/main`, () => HttpResponse.json([])),
+    );
+    await expect(makeAdapter({ installationId: 42 }).getRequiredChecks(REPO, 7)).resolves.toEqual({
+      state: "none",
+      headSha: HEAD,
+      checks: [],
+    });
+  });
+
+  it("approves the head commit", async () => {
+    let body: Record<string, unknown> | undefined;
+    server.use(
+      pull(),
+      http.post(`${PR}/reviews`, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(merge.approved);
+      }),
+    );
+    await makeAdapter({ installationId: 42 }).approvePullRequest(REPO, 7);
+    expect(body).toEqual({ commit_id: HEAD, event: "APPROVE" });
+  });
+
+  it("refuses to approve its own pull request with GitHub's reason", async () => {
+    server.use(
+      pull(),
+      http.post(`${PR}/reviews`, () => refusal("ownApproval")),
+    );
+    const error = await makeAdapter({ installationId: 42 })
+      .approvePullRequest(REPO, 7)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ChangeRequestRefusedError);
+    expect(error).toMatchObject({
+      action: "approve",
+      reason: "forbidden",
+      hostMessage: "Unprocessable Entity Review Can not approve your own pull request",
+    });
+  });
+
+  it("refuses without calling GitHub when the head moved past the evaluated commit", async () => {
+    let reviewed = false;
+    server.use(
+      pull(),
+      http.post(`${PR}/reviews`, () => {
+        reviewed = true;
+        return HttpResponse.json(merge.approved);
+      }),
+    );
+    await expect(
+      makeAdapter({ installationId: 42 }).approvePullRequest(REPO, 7, { headSha: "c".repeat(40) }),
+    ).rejects.toMatchObject({ name: "ChangeRequestRefusedError", reason: "head_changed" });
+    expect(reviewed).toBe(false);
+  });
+
+  it("merges with the repository's merge method, pinned to the head", async () => {
+    let body: Record<string, unknown> | undefined;
+    server.use(
+      pull(),
+      http.get(`${API}/repos/acme/widgets`, () => HttpResponse.json(merge.repository)),
+      http.put(`${PR}/merge`, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(merge.merged);
+      }),
+    );
+    await expect(makeAdapter({ installationId: 42 }).mergePullRequest(REPO, 7)).resolves.toEqual({
+      mergeSha: merge.merged.sha,
+    });
+    // Merge commits are off in the recorded repository, so squash is next.
+    expect(body).toEqual({ merge_method: "squash", sha: HEAD });
+  });
+
+  it.each([
+    ["notMergeable", "dirty", "conflicts", "Pull Request is not mergeable"],
+    [
+      "protection",
+      "blocked",
+      "blocked",
+      'At least 1 approving review is required by reviewers with write access. Required status check "test" is expected.',
+    ],
+    [
+      "headModified",
+      "clean",
+      "head_changed",
+      "Head branch was modified. Review and try the merge again.",
+    ],
+  ])("turns a %s refusal into a typed error", async (name, mergeableState, reason, message) => {
+    let gets = 0;
+    server.use(
+      http.get(PR, () => {
+        gets += 1;
+        // GitHub computes mergeability lazily: it is unknown until after the first read.
+        return HttpResponse.json({
+          number: 7,
+          state: "open",
+          merged: false,
+          draft: false,
+          mergeable: gets === 1 ? null : mergeableState !== "dirty",
+          mergeable_state: gets === 1 ? "unknown" : mergeableState,
+          base: { sha: BASE, ref: "main", repo: { id: 1 } },
+          head: { sha: HEAD, ref: "ralph/epic", repo: { id: 1 } },
+        });
+      }),
+      http.get(`${API}/repos/acme/widgets`, () => HttpResponse.json(merge.repository)),
+      http.put(`${PR}/merge`, () => refusal(name)),
+    );
+    const error = await makeAdapter({ installationId: 42 })
+      .mergePullRequest(REPO, 7)
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ChangeRequestRefusedError);
+    expect(error).toMatchObject({ action: "merge", reason, hostMessage: message });
+  });
+
+  it("refuses to merge a draft, a closed or a conflicting pull request before asking GitHub", async () => {
+    const adapter = makeAdapter({ installationId: 42 });
+    server.use(pull({ draft: true }));
+    await expect(adapter.mergePullRequest(REPO, 7)).rejects.toMatchObject({ reason: "draft" });
+    server.use(pull({ state: "closed", merged: true }));
+    await expect(adapter.mergePullRequest(REPO, 7)).rejects.toMatchObject({
+      reason: "not_open",
+      hostMessage: "The pull request is already merged.",
+    });
+    server.use(pull({ mergeable: false, mergeable_state: "dirty" }));
+    await expect(adapter.mergePullRequest(REPO, 7)).rejects.toMatchObject({ reason: "conflicts" });
+  });
+
+  it("throws ChangeRequestNotFoundError for a missing pull request", async () => {
+    server.use(
+      http.get(`${API}/repos/acme/widgets/pulls/404`, () =>
+        HttpResponse.json({ message: "Not Found" }, { status: 404 }),
+      ),
+    );
+    const adapter = makeAdapter({ installationId: 42 });
+    await expect(adapter.mergePullRequest(REPO, 404)).rejects.toBeInstanceOf(
+      ChangeRequestNotFoundError,
+    );
+    await expect(adapter.approvePullRequest(REPO, 404)).rejects.toBeInstanceOf(
+      ChangeRequestNotFoundError,
+    );
+    await expect(adapter.getRequiredChecks(REPO, 404)).rejects.toBeInstanceOf(
+      ChangeRequestNotFoundError,
+    );
   });
 });
