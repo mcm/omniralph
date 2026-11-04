@@ -1558,6 +1558,8 @@ export type RalphStoryUpdate = Partial<
     | "crossEpicBlockers"
     | "rebasePending"
     | "rerunAfterCancel"
+    | "canceledBlockers"
+    | "rebaseRequestId"
   >
 >;
 

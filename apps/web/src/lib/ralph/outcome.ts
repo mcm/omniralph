@@ -99,12 +99,21 @@ function wipProgressEntry(story: RalphStory, sha: string, summary: string, now: 
   ].join("\n");
 }
 
-/** Whether a story's stored feedback says its session reported it blocked. */
+/**
+ * Whether a story's stored feedback says its session reported it blocked, or that its lane
+ * couldn't be rebased after its outside blockers finished.
+ */
 export function isBlockedFeedback(feedback: string | null | undefined): boolean {
-  return feedback?.startsWith(BLOCKED_FEEDBACK) === true;
+  return (
+    feedback?.startsWith(BLOCKED_FEEDBACK) === true ||
+    feedback?.startsWith(REBASE_FEEDBACK) === true
+  );
 }
 
 const BLOCKED_FEEDBACK = "The previous session reported it was blocked.";
+
+/** The start of the feedback of a story set aside because its lane couldn't be rebased. */
+export const REBASE_FEEDBACK = "Its branch has to be rebased before it runs again.";
 
 export interface OutcomeContext extends RalphDeps {
   tx: RalphTransaction;
@@ -129,6 +138,7 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
     const verification = runningVerification(story);
     if (verification) {
       await applyVerification(ctx, story, verification, job);
+      await settleRerunAfterCancel(ctx, story.id, verification.pending?.summary ?? null);
       continue;
     }
     const parsed = job?.status === "completed" ? RalphStoryResult.safeParse(job.result) : null;
@@ -146,8 +156,54 @@ export async function applyJobOutcomes(ctx: OutcomeContext): Promise<{ busy: boo
         maxAttempts: caps.maxAttemptsPerStory,
       });
     }
+    await settleRerunAfterCancel(ctx, story.id, parsed?.success ? parsed.data.summary : null);
   }
   return { busy };
+}
+
+/**
+ * The rerun of a story whose recorded outside blockers were all canceled (`rerunAfterCancel`)
+ * ended: done, it's just cleared; anything else (failed, blocked, a failed job, a rejected
+ * verification) files one manual follow-up that blocks the story, naming the canceled work and
+ * quoting the rerun's summary, so a person sorts out the stuck task. Nothing while its
+ * verifier runs.
+ */
+async function settleRerunAfterCancel(
+  ctx: OutcomeContext,
+  storyId: string,
+  summary: string | null,
+): Promise<void> {
+  const story = (await listStories(ctx.tx, ctx.run.id)).find((s) => s.id === storyId);
+  if (!story?.rerunAfterCancel || story.status === "running") return;
+  const canceled = story.canceledBlockers;
+  const canceledIds = new Set(canceled.map((b) => b.id));
+  await updateStory(ctx.tx, story.id, {
+    rerunAfterCancel: false,
+    canceledBlockers: [],
+    // Recorded again by the rerun's own report: they're canceled, so nothing waits on them.
+    crossEpicBlockers: story.crossEpicBlockers.filter((b) => !canceledIds.has(b.id)),
+  });
+  if (story.status === "completed") return;
+  const names = canceled.map((b) => b.identifier).join(", ");
+  const said = summary?.trim() || story.lastFeedback?.trim() || "(no summary)";
+  const one = canceled.length === 1;
+  const followUp: RalphFollowUp = {
+    title: `Sort out ${story.identifier} after ${names} ${one ? "was" : "were"} canceled`,
+    description: [
+      `${story.identifier} (${story.title}) was blocked by ${names}, which ${one ? "was" : "were"} canceled instead of completed, so the default branch has nothing new from ${one ? "it" : "them"}. ${story.identifier} ran again as it was and didn't complete.`,
+      `What its rerun said:
+
+${quote(tail(said, 3000))}`,
+      `Decide how ${story.identifier} goes on without that work: change the task, do the missing work in this epic, or cancel it. Mark this issue done when ${story.identifier} can run again.`,
+    ].join("\n\n"),
+    manual: true,
+  };
+  const filed = await fileFollowUps(ctx, story, [followUp], { blocking: true });
+  if (filed.length === 0) return;
+  await postActivity(conversationFor(ctx.run, ctx), {
+    type: "thought",
+    body: `🙋 **${story.identifier}** didn't complete after ${names} ${one ? "was" : "were"} canceled, so I filed ${filed.map((i) => `[${i.identifier}](${i.url})`).join(", ")} for a person to sort it out. It blocks **${story.identifier}**.`,
+  });
 }
 
 async function applyStoryResult(
@@ -532,11 +588,11 @@ export async function fileFollowUps(
   story: RalphStory,
   followUps: readonly RalphFollowUp[],
   options: { blocking: boolean },
-): Promise<void> {
+): Promise<IssueSummary[]> {
   const { tracker, run } = ctx;
-  if (followUps.length === 0 || run.kind === "single" || !isTrackerRun(run)) return;
+  if (followUps.length === 0 || run.kind === "single" || !isTrackerRun(run)) return [];
   followUps = await dropBranchMerges(ctx, story, followUps);
-  if (followUps.length === 0) return;
+  if (followUps.length === 0) return [];
   let siblings;
   let parent;
   try {
@@ -548,7 +604,7 @@ export async function fileFollowUps(
       type: "thought",
       body: `I couldn't file the follow-ups of **${story.identifier}** in ${trackerName(run.trackerProvider)}: ${followUps.map((f) => `"${f.title}"`).join(", ")}.`,
     });
-    return;
+    return [];
   }
   const open = new Map(
     siblings.filter((s) => !isDoneStateType(s.stateType)).map((s) => [s.title.toLowerCase(), s]),
@@ -567,6 +623,7 @@ export async function fileFollowUps(
         return [];
       });
   const filed: string[] = [];
+  const issues: IssueSummary[] = [];
   const forPerson: string[] = [];
   const failed: string[] = [];
   const following = await fileEpicFollowers(
@@ -606,6 +663,7 @@ export async function fileFollowUps(
         dependent.blockerIds.add(issue.id);
       }
       filed.push(`**${issue.identifier}**`);
+      issues.push(issue);
       if (followUp.manual) forPerson.push(`**${issue.identifier}**`);
     } catch (error) {
       console.warn(`${run.trackerIdentifier}: could not file follow-up "${followUp.title}"`, error);
@@ -646,6 +704,7 @@ export async function fileFollowUps(
       body: lines.join(" "),
     });
   }
+  return issues;
 }
 
 /** A gap an epic audit found, to file as a task of the epic (`fileAuditGaps`). */
