@@ -3104,6 +3104,257 @@ Tasks have no priority.
         .find((s) => s.identifier === identifier)!
         .crossEpicBlockers.map((b) => [b.identifier, b.reported]);
 
+    const storyRow = async (runId: string, identifier: string) =>
+      (await listStories(db, runId)).find((s) => s.identifier === identifier)!;
+
+    /** Moves an outside issue to a done state and delivers its webhook. */
+    async function finishIssue(issueId: string, type: "completed" | "canceled") {
+      await tracker.setIssueState(issueId, { type });
+      await handleTrackerEvent(
+        { kind: "issue_state_changed", issueId, removed: false },
+        { db, organizationId: orgId, workspaceId: "org-1" },
+        { tracker, dispatcher },
+      );
+    }
+
+    const replyTo = (run: TrackerRun, body: string) =>
+      handleTrackerEvent(
+        { kind: "session_prompted", sessionId: run.trackerSessionId, body },
+        { db, organizationId: orgId, workspaceId: "org-1" },
+        { tracker, dispatcher, adapterFor: () => scm.asAdapter() },
+      );
+
+    /** Plays the run's queued rebase request job. Returns its payload. */
+    async function rebase(
+      runId: string,
+      outcome: Partial<RalphRequestResult> = {},
+    ): Promise<RalphRequestPayload> {
+      const job = await activeJob(runId);
+      expect(job.type).toBe("ralph.request");
+      const { claim } = await claimJob(db, {
+        organizationId: orgId,
+        agentId: agentA,
+        acceptedTaskTypes: ["query", "coding"],
+        pools: ["short", "long"],
+        agentVersion: TRACKER_PROTOCOL_MIN_AGENT_VERSION,
+        maxDeliveries: MAX_JOB_DELIVERIES,
+      });
+      expect(claim?.job.id).toBe(job.id);
+      expect(await onRalphJobStarted(db, job, agentA)).toEqual({ skip: false });
+      const payload = RalphRequestPayload.parse(ralphJobPayload(job));
+      expect(payload.requests[0]?.text).toContain("git fetch origin && git rebase origin/");
+      await completeJob(db, {
+        jobId: job.id,
+        agentId: agentA,
+        result: {
+          summary: "Rebased and shipped.",
+          error: null,
+          sessionId: "claude-rebase",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          durationMs: 10,
+          ...outcome,
+        },
+      });
+      await onRalphJobFinished(db, (await getJob(db, job.id))!, deps());
+      return payload;
+    }
+
+    /** An epic whose first story reports it is blocked by a task of another epic. */
+    async function blockedOnOtherEpic() {
+      const other = tracker.add({ identifier: "ENG-110", title: "Other epic" });
+      tracker.add({ identifier: "ENG-111", title: "Auth", parentId: other.id });
+      const epic = tracker.add({ identifier: "ENG-112", title: "Epic" });
+      const story = tracker.add({
+        identifier: "ENG-113",
+        title: "Widgets",
+        parentId: epic.id,
+        priority: 1,
+      });
+      tracker.add({ identifier: "ENG-114", title: "Gadgets", parentId: epic.id, priority: 2 });
+      const run = await delegate(epic.id);
+      await work(run.id, { status: "failed", summary: "Tried." });
+      await work(run.id, {
+        status: "blocked",
+        summary: "Needs the auth work.",
+        blockedBy: ["ENG-111"],
+      });
+      expect(tracker.blocks.get(story.id)).toEqual([other.id]);
+      // The other story carries on, then the run waits on the other epic.
+      expect((await work(run.id)).story.identifier).toBe("ENG-114");
+      expect(await getRun(db, run.id)).toMatchObject({ status: "waiting" });
+      return { other, epic, story, run };
+    }
+
+    afterEach(async () => {
+      await db
+        .update(repositories)
+        .set({ historyRewrite: "when-asked" })
+        .where(eq(repositories.id, repoId));
+    });
+
+    it("rebases the lane onto its base branch once the other epic is completed, then continues the task", async () => {
+      const { other, run } = await blockedOnOtherEpic();
+      const lane = (await getMainLane(db, run))!;
+
+      await finishIssue(other.id, "completed");
+      // The next job is the rebase request on the task's lane, not the task.
+      const job = await activeJob(run.id);
+      expect(job.type).toBe("ralph.request");
+      expect(await storyRow(run.id, "ENG-113")).toMatchObject({
+        status: "pending",
+        rebasePending: true,
+        // The failed attempt; the blocked one didn't count.
+        attempts: 1,
+      });
+      // The task isn't scheduled while the request is queued.
+      expect((await advanceRun(run.id, deps())).action).toBe("busy");
+      expect(await activeJobs(run.id)).toHaveLength(1);
+
+      const payload = await rebase(run.id);
+      expect(payload).toMatchObject({ branch: lane.branch, baseBranch: lane.baseBranch });
+      const text = payload.requests[0]!.text;
+      expect(text).toContain(`git fetch origin && git rebase origin/${lane.baseBranch}`);
+      expect(text).toContain("forceWithLease: true");
+      expect(text).toContain("quality gates");
+      expect(text).toContain("Resolve any conflicts");
+      expect(text).toContain(`Never merge \`${lane.baseBranch}\` or any other branch`);
+
+      expect(await storyRow(run.id, "ENG-113")).toMatchObject({
+        rebasePending: false,
+        rebaseRequestId: null,
+        crossEpicBlockers: [],
+      });
+      const thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
+      expect(thoughts).toContain(
+        `🔀 Rebased \`${lane.branch}\` onto \`${lane.baseBranch}\`, which now has the work of **ENG-110**. **ENG-113** is continuing.`,
+      );
+      // The task runs again with its attempts.
+      const next = await work(run.id);
+      expect(next.story.identifier).toBe("ENG-113");
+      expect(next.attempt).toBe(2);
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+    });
+
+    it("keeps the rebase pending and the task set aside when the rebase fails, and retries it on /continue", async () => {
+      const { other, run } = await blockedOnOtherEpic();
+
+      await finishIssue(other.id, "completed");
+      await rebase(run.id, {
+        summary: "Rebase failed: conflicts in src/auth.ts I couldn't resolve.",
+      });
+      expect(await storyRow(run.id, "ENG-113")).toMatchObject({
+        status: "exhausted",
+        rebasePending: true,
+        rebaseRequestId: null,
+      });
+      expect(await activeJobs(run.id)).toEqual([]);
+      const errors = tracker.bodies(run.trackerSessionId, "error").join("\n");
+      expect(errors).toContain("I couldn't rebase");
+      expect(errors).toContain("conflicts in src/auth.ts I couldn't resolve.");
+
+      // A failed job is a failed rebase too.
+      await replyTo(run, "/continue");
+      const job = await activeJob(run.id);
+      expect(job.type).toBe("ralph.request");
+      expect(RalphRequestPayload.parse(ralphJobPayload(job)).requests[0]!.text).toContain(
+        "git rebase origin/",
+      );
+      await rebase(run.id, { error: "the session crashed" });
+      expect(await storyRow(run.id, "ENG-113")).toMatchObject({
+        status: "exhausted",
+        rebasePending: true,
+      });
+
+      // Again, and this time it goes through before the task.
+      await replyTo(run, "/continue");
+      await rebase(run.id);
+      expect((await work(run.id)).story.identifier).toBe("ENG-113");
+    });
+
+    it("queues no rebase and asks a person when the repository forbids history rewrites", async () => {
+      const { other, run } = await blockedOnOtherEpic();
+      await db
+        .update(repositories)
+        .set({ historyRewrite: "never" })
+        .where(eq(repositories.id, repoId));
+
+      await finishIssue(other.id, "completed");
+      expect(await activeJobs(run.id)).toEqual([]);
+      expect(await storyRow(run.id, "ENG-113")).toMatchObject({
+        status: "exhausted",
+        rebasePending: true,
+        rebaseRequestId: null,
+      });
+      const asked = tracker.bodies(run.trackerSessionId, "elicitation").join("\n");
+      expect(asked).toContain("**ENG-113** needs");
+      expect(asked).toContain("doesn't allow history rewrites");
+      expect(asked).toContain("**ENG-110** is done");
+      expect((await getRun(db, run.id))?.status).toBe("waiting");
+
+      // Still forbidden: `/continue` checks again and changes nothing.
+      await replyTo(run, "/continue");
+      expect(await activeJobs(run.id)).toEqual([]);
+      expect((await storyRow(run.id, "ENG-113")).status).toBe("exhausted");
+
+      // Allowed now: the rebase is queued before the task.
+      await db
+        .update(repositories)
+        .set({ historyRewrite: "always" })
+        .where(eq(repositories.id, repoId));
+      await replyTo(run, "/continue");
+      await rebase(run.id);
+      expect((await work(run.id)).story.identifier).toBe("ENG-113");
+    });
+
+    it("reruns the task without a rebase when the other epic is canceled", async () => {
+      const { other, run } = await blockedOnOtherEpic();
+
+      await finishIssue(other.id, "canceled");
+      expect(await storyRow(run.id, "ENG-113")).toMatchObject({
+        rerunAfterCancel: true,
+        crossEpicBlockers: [],
+        rebasePending: false,
+      });
+      const thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
+      expect(thoughts).toContain("**ENG-110** was canceled");
+      const next = await work(run.id);
+      expect(next.story.identifier).toBe("ENG-113");
+      expect(next.attempt).toBe(2);
+      expect(await storyRow(run.id, "ENG-113")).toMatchObject({
+        status: "completed",
+        rerunAfterCancel: false,
+      });
+      expect(tracker.created.filter((c) => c.title.startsWith("Sort out"))).toEqual([]);
+    });
+
+    it("files one manual follow-up blocking the task when its rerun after a canceled epic doesn't complete", async () => {
+      const { other, epic, story, run } = await blockedOnOtherEpic();
+
+      await finishIssue(other.id, "canceled");
+      await work(run.id, { status: "failed", summary: "The auth module isn't there." });
+      const filed = tracker.created.filter((c) => c.title.startsWith("Sort out"));
+      expect(filed).toHaveLength(1);
+      const followUp = filed[0]!;
+      expect(followUp).toMatchObject({
+        title: "Sort out ENG-113 after ENG-110 was canceled",
+        parentId: epic.id,
+      });
+      expect(followUp.description).toContain("ENG-110");
+      expect(followUp.description).toContain("> The auth module isn't there.");
+      expect(followUp.description).not.toMatch(/merge/i);
+      expect(followUp.labels).toContain("manual");
+      const issue = [...tracker.issues.values()].find((i) => i.title === followUp.title)!;
+      expect(tracker.blocks.get(story.id)).toContain(issue.id);
+      const thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
+      expect(thoughts).toContain(`[${issue.identifier}](${issue.url})`);
+      expect(await storyRow(run.id, "ENG-113")).toMatchObject({ rerunAfterCancel: false });
+
+      // Once, even as the run carries on.
+      expect(await activeJobs(run.id)).toEqual([]);
+      await replyTo(run, "/continue");
+      expect(tracker.created.filter((c) => c.title.startsWith("Sort out"))).toHaveLength(1);
+    });
+
     it("blocks the story on a task of its own epic and runs it again once that task is done", async () => {
       const epic = tracker.add({ identifier: "ENG-80", title: "Epic" });
       const story = tracker.add({
@@ -3175,14 +3426,10 @@ Tasks have no priority.
       });
       expect(await relationViolations(tracker, epic.id)).toEqual([]);
 
-      // Once it's done the story runs again; reporting the same blocker changes nothing, and
-      // with nothing left to wait for it's set aside.
-      await tracker.setIssueState(other.id, { type: "completed" });
-      await handleTrackerEvent(
-        { kind: "issue_state_changed", issueId: other.id, removed: false },
-        { db, organizationId: orgId, workspaceId: "org-1" },
-        { tracker, dispatcher },
-      );
+      // Once it's done the branch is rebased and the story runs again; reporting the same
+      // blocker changes nothing, and with nothing left to wait for it's set aside.
+      await finishIssue(other.id, "completed");
+      await rebase(run.id);
       await work(run.id, { status: "blocked", summary: "Still.", blockedBy: ["ENG-91"] });
       expect(tracker.blocks.get(story.id)).toEqual([other.id]);
       expect(await crossEpicBlockers(run.id, "ENG-86")).toEqual([["ENG-90", "ENG-91"]]);

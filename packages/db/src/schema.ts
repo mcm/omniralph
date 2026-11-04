@@ -2739,6 +2739,15 @@ export const ralphStories = pgTable(
      * doesn't complete files a follow-up for a person, once.
      */
     rerunAfterCancel: boolean("rerun_after_cancel").notNull().default(false),
+    /** The recorded blockers that were all canceled, for the follow-up of a rerun that doesn't complete. */
+    canceledBlockers: jsonb("canceled_blockers")
+      .$type<RalphCrossEpicBlocker[]>()
+      .notNull()
+      .default([]),
+    /** The pending request (`ralph_messages`) that rebases the lane's branch before it runs again. */
+    rebaseRequestId: uuid("rebase_request_id").references((): AnyPgColumn => ralphMessages.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

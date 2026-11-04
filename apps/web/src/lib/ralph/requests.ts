@@ -24,6 +24,7 @@ import {
   getRepositoryWithConnection,
   listLanes,
   listPendingRequests,
+  listStories,
   updateLane,
   updateRun,
   insertMessage,
@@ -49,6 +50,7 @@ import {
 } from "./documentation-runs";
 import { ralphJobPayload } from "./coding";
 import { conversationFor } from "./conversation";
+import { settleRebaseRequests } from "./cross-epic";
 import { settleFindingThreads } from "./finding-threads";
 import { errorMessage, quietly, tail } from "./notify";
 import { jobFailure } from "./outcome";
@@ -249,6 +251,15 @@ export async function applyRequestJob(
   const lanes = await listLanes(tx, run.id);
   const lane = lanes.find((l) => l.repositoryId === payload.data.repositoryId);
   const parsed = job.status === "completed" ? RalphRequestResult.safeParse(job.result) : null;
+  // A rebase the orchestrator asked for before a story runs again: the story goes on or waits.
+  await settleRebaseRequests(deps, tx, run, {
+    job,
+    requestIds: payload.data.requests.map((r) => r.id),
+    rows: await listStories(tx, run.id),
+    result: parsed?.success ? parsed.data : null,
+    branch: payload.data.branch,
+    baseBranch: payload.data.baseBranch,
+  });
 
   let output: string;
   if (!parsed?.success) {

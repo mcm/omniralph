@@ -1,0 +1,3 @@
+ALTER TABLE "ralph_stories" ADD COLUMN "canceled_blockers" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "ralph_stories" ADD COLUMN "rebase_request_id" uuid;--> statement-breakpoint
+ALTER TABLE "ralph_stories" ADD CONSTRAINT "ralph_stories_rebase_request_id_ralph_messages_id_fk" FOREIGN KEY ("rebase_request_id") REFERENCES "public"."ralph_messages"("id") ON DELETE set null ON UPDATE no action;

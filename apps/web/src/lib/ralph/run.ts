@@ -101,6 +101,7 @@ import { postActivity, quietly } from "./notify";
 import { settleStrandedMessages } from "./messages";
 import { applyJobOutcomes, isBlockedFeedback } from "./outcome";
 import { applyAuditJob, auditBeforePublishing } from "./audit";
+import { prepareCrossEpicStories } from "./cross-epic";
 import { awaitRepository } from "./repository-selection";
 import {
   buildDescribePrPayload,
@@ -345,8 +346,8 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
 
   const epic = await reloadEpic(deps.tracker, run, await runEpicOptions(deps.db, run));
   // Stories routed to another repository get a lane there; those belonging nowhere here are manual.
-  const rows = await syncStories(tx, run.id, epic, await routeStories(deps, tx, run, epic));
-  const stories = storiesWithRunState(epic, rows, run.ignoreBlockers);
+  let rows = await syncStories(tx, run.id, epic, await routeStories(deps, tx, run, epic));
+  let stories = storiesWithRunState(epic, rows, run.ignoreBlockers);
   // A mention: only its requests run (no story loop, no tracker state changes, no blockers).
   if (run.mode === "request") {
     const [next] = await pendingRequestLanes(tx, run);
@@ -378,10 +379,25 @@ async function step(deps: RalphDeps, tx: RalphTransaction, run: RalphRun): Promi
   const violations = allDone ? [] : await relationViolations(deps.tracker, trackerIssueId);
 
   if (rootBlockers.length === 0 && violations.length === 0) {
-    const focused = run.focusStoryId
-      ? stories.find((s) => s.issueId === run.focusStoryId && isStoryReady(s, stories))
+    // A task whose outside blockers are over: its lane is rebased onto its base branch first.
+    const crossEpic = await prepareCrossEpicStories(deps, tx, run, { stories, rows });
+    if (crossEpic.changed) {
+      rows = await listStories(tx, run.id);
+      stories = storiesWithRunState(epic, rows, run.ignoreBlockers);
+    }
+    const rebase = crossEpic.rebaseRequestId
+      ? (await pendingRequestLanes(tx, run)).find((lane) =>
+          lane.requests.some((r) => r.id === crossEpic.rebaseRequestId),
+        )
       : undefined;
-    const next = focused ?? selectNextStory(stories);
+    if (rebase) return enqueueRequest(deps, tx, run, { epic, stories, ...rebase });
+    const held = crossEpic.held;
+    const focused = run.focusStoryId
+      ? stories.find(
+          (s) => s.issueId === run.focusStoryId && !held.has(s.key) && isStoryReady(s, stories),
+        )
+      : undefined;
+    const next = focused ?? selectNextStory(stories, held);
     if (next) {
       const main = run.repositoryId
         ? await getRepositoryWithConnection(deps.db, run.repositoryId)
