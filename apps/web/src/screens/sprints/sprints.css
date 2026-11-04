@@ -191,6 +191,22 @@
   margin: 0;
 }
 
+.or-sprint__paused {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+}
+
+.or-sprint__paused-reason {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .or-sprint__epics,
 .or-sprint__candidates {
   display: flex;

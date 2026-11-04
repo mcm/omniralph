@@ -81,6 +81,7 @@ import {
   legacyJobRouting,
 } from "@omniralph/shared";
 import { jobRepository } from "@/lib/scm/adapters";
+import { sprintEpicPullRequestClosed, sprintRunDeps } from "@/lib/sprints/run";
 import { organizationPlaybooks } from "@/lib/playbooks";
 import { DEFAULT_CODING_SETTINGS, storyCodingSettings } from "./coding";
 import {
@@ -378,6 +379,8 @@ export async function recordClosedPullRequest(
     console.error(`Starting the cleanup of ${lane.branch} (ralph lane ${lane.id}) failed`, error);
   }
   if (state.state === "merged") await resolveMergedIssue(deps, lane);
+  // A sprint's epic merged (its next epic starts) or closed unmerged (the sprint pauses).
+  await sprintEpicPullRequestClosed(sprintRunDeps(deps), lane);
 }
 
 /**

@@ -12,6 +12,7 @@ import {
   type SprintRow,
 } from "@/lib/api/sprints";
 import { sprintsKeys } from "./queries";
+import type { SprintAction } from "./sprint-status";
 
 /** Writes `sprint` into its detail and every cached list (`remove`: takes it out of the lists). */
 async function writeSprint(cache: MutationCache, sprint: SprintRow, remove = false) {
@@ -105,5 +106,36 @@ export function useDeleteSprint(sprint: SprintRow, onDeleted: () => void) {
     invalidate: (keys) => [sprintsKeys(keys).lists],
     success: `Deleted ${sprint.name}`,
     onSuccess: onDeleted,
+  });
+}
+
+/** What a sprint action's success toast says, by the sprint's status after it. */
+function actionToast(sprint: SprintRow, action: SprintAction): string {
+  if (sprint.status === "paused" && action !== "pause") return `${sprint.name} is paused`;
+  switch (action) {
+    case "start":
+      return `Started ${sprint.name}`;
+    case "pause":
+      return `Paused ${sprint.name}`;
+    case "resume":
+      return `Resumed ${sprint.name}`;
+    case "cancel":
+      return `Canceled ${sprint.name}`;
+  }
+}
+
+/**
+ * `POST /api/ui/sprints/{id}/{action}`: Start, Pause, Resume or Cancel. The answer (with
+ * a refused epic's pause reason) replaces the sprint.
+ */
+export function useSprintAction() {
+  return useApiMutation<SavedSprint, { sprint: SprintRow; action: SprintAction }>({
+    mutationFn: ({ sprint, action }, { organizationId }) =>
+      api.post(`/api/ui/sprints/${encodeURIComponent(sprint.id)}/${action}`, savedSprintSchema, {
+        organizationId,
+      }),
+    applyResult: (result, cache) => writeSprint(cache, result.sprint),
+    invalidate: (keys) => [sprintsKeys(keys).lists],
+    success: (result, { action }) => actionToast(result.sprint, action),
   });
 }

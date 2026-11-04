@@ -19,7 +19,7 @@ import type { SprintEpicRow, SprintRow } from "@/lib/api/sprints";
 import { backlogOf, blockedRow, manualRow, workItemRow } from "../backlog/test-fixtures";
 import { portalRow, webRow, REPO_PORTAL, REPO_WEB } from "../repos/test-fixtures";
 import {
-  ACTIONS_NOT_AVAILABLE,
+  PAUSED_HINT,
   MERGE_TOGETHER_EXPLANATION,
   NAME_EXPLANATION,
   ORDER_EXPLANATION,
@@ -87,6 +87,7 @@ function sprintRow(overrides: Partial<SprintRow> = {}): SprintRow {
     repository: { id: REPO_PORTAL, fullPath: "acme/portal" },
     mergeTogether: false,
     status: "draft",
+    pausedReason: null,
     sprintBranch: null,
     epics: [
       epic("SOC-401", "Invoice model", 0),
@@ -448,12 +449,29 @@ describe("the sprint editor", () => {
     expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ id: SPRINT_ID }), "pause");
   });
 
-  it("keeps the actions disabled until sprint runs are wired in", async () => {
+  it("sends an action to the API and shows the sprint it answers", async () => {
+    serve({
+      [`POST /api/ui/sprints/${SPRINT_ID}/start`]: () =>
+        jsonResponse({
+          ok: true,
+          sprint: sprintRow({
+            status: "paused",
+            pausedReason: "Om didn't start SOC-401: the PRD of SOC-401 still has open questions.",
+          }),
+        }),
+    });
     renderView({ sprintId: SPRINT_ID });
-    const start = within(await sprintPane()).getByRole("button", { name: "Start sprint" });
-    expect(start.getAttribute("aria-disabled")).toBe("true");
-    await userEvent.hover(start);
-    expect((await screen.findAllByText(ACTIONS_NOT_AVAILABLE)).length).toBeGreaterThan(0);
+    const pane = await sprintPane();
+    await userEvent.click(within(pane).getByRole("button", { name: "Start sprint" }));
+    expect(
+      await within(pane).findByText(
+        "Om didn't start SOC-401: the PRD of SOC-401 still has open questions.",
+      ),
+    ).toBeTruthy();
+    expect(within(pane).getByText(PAUSED_HINT)).toBeTruthy();
+    expect(within(pane).getByRole("button", { name: "Resume" })).toBeTruthy();
+    expect(seen.some((request) => request.path.endsWith(`${SPRINT_ID}/start`))).toBe(true);
+    expect(ui.toast).toHaveBeenCalledWith("Invoicing is paused");
   });
 
   it("deletes a draft after confirming and goes back to the list", async () => {

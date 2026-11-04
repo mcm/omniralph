@@ -85,6 +85,7 @@ import { preparationOf } from "./preparation";
 import { answerRepositorySelection, repositorySelectionOf } from "./repository-selection";
 import { addInstruction } from "./requests";
 import { continueRun, newerRunMessage, resumeRun } from "./retry";
+import { sprintEpicRunEnded } from "@/lib/sprints/run";
 import { openQuestionsCheckFailedMessage, openQuestionsMessage, withOpenQuestions } from "./start";
 import {
   advanceRun,
@@ -582,6 +583,8 @@ export async function stopRun(
   };
   await postActivity(conversationFor(run, deps), content);
   await cleanUpStoppedRun(deps, run.id);
+  // A stopped run's sprint epic stalls, which pauses its sprint.
+  await sprintEpicRunEnded(deps, { ...run, status: "stopped" });
   return { status: "stopped", canceled };
 }
 

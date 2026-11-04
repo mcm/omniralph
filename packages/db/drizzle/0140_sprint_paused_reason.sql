@@ -1,0 +1,1 @@
+ALTER TABLE "sprints" ADD COLUMN "paused_reason" text;

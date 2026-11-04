@@ -46,7 +46,7 @@ export const REPOSITORY_INVALID_MESSAGE = "Choose a repo of this organization wi
 
 function record(
   db: Database,
-  resolved: ResolvedWorkItem,
+  resolved: Pick<ResolvedWorkItem, "key">,
   actor: WorkItemActor,
   kind: WorkItemEventKind,
   detail: Record<string, unknown> = {},
@@ -60,24 +60,33 @@ function record(
   });
 }
 
+/** The work item a start acts on: only its organization's ID is read. */
+export type StartableWorkItem = Pick<ResolvedWorkItem, "tracker" | "item" | "key"> & {
+  organization: Pick<ResolvedWorkItem["organization"], "id">;
+};
+
 /**
  * Start epic: delegates the item to Om, whose agent session webhook starts the run as a
  * delegation made in the tracker does. Only a Ready to start item without a run (409 with one,
  * 400 otherwise); never a manual task (400, `manual`: a person's job) nor a blocked item (400,
  * `blocked`: open blockers or a blocked label), never a feature: a work item holding epics, or a
  * task directly under one (400, `feature`), nor work whose blocks relations break the
- * dependency rules (400, `relations`).
+ * dependency rules (400, `relations`). `retry` (a sprint retrying an epic whose run ended
+ * without merging) starts it again although it has a run, whatever its readiness now.
  */
 export async function startWorkItem(
   db: Database,
-  resolved: ResolvedWorkItem,
+  resolved: StartableWorkItem,
   actor: WorkItemActor,
+  options: { retry?: boolean } = {},
 ): Promise<void> {
   const { item, tracker, organization } = resolved;
-  if (await getRunByIssue(db, organization.id, item.id)) {
-    throw new ApiRouteError(409, hasRunMessage(item.identifier), "run_exists");
+  if (!options.retry) {
+    if (await getRunByIssue(db, organization.id, item.id)) {
+      throw new ApiRouteError(409, hasRunMessage(item.identifier), "run_exists");
+    }
+    if (groupFor(item) !== "ready") throw new ApiRouteError(400, NOT_READY_MESSAGE, "not_ready");
   }
-  if (groupFor(item) !== "ready") throw new ApiRouteError(400, NOT_READY_MESSAGE, "not_ready");
   const holds = workItemHolds(item, await getTrackerLabels(db, organization.id));
   if (holds.manual) throw new ApiRouteError(400, MANUAL_START_MESSAGE, "manual");
   if (holds.blocked) throw new ApiRouteError(400, BLOCKED_START_MESSAGE, "blocked");

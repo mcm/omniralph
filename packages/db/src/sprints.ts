@@ -327,3 +327,274 @@ export async function deleteDraftSprint(
     return { status: "deleted" as const };
   });
 }
+
+// ── Running a sprint ─────────────────────────────────────────────────────
+
+/** The statuses of a started sprint that isn't over: its epics' merges still count. */
+export const STARTED_SPRINT_STATUSES = [
+  "running",
+  "paused",
+] as const satisfies readonly SprintStatus[];
+
+export type SprintTransitionResult =
+  | { status: "updated"; sprint: SprintWithEpics }
+  | { status: "not_found" }
+  /** The sprint's status doesn't allow the change; nothing was written. */
+  | { status: "wrong_status"; sprint: SprintWithEpics }
+  /** A sprint without epics doesn't start; nothing was written. */
+  | { status: "empty"; sprint: SprintWithEpics };
+
+/**
+ * Moves the sprint from one of `from` to `to` under the organization's sprint lock, after
+ * `apply` (in the same transaction), and records a live `sprint` change.
+ */
+async function transitionSprint(
+  db: Database,
+  organizationId: string,
+  sprintId: string,
+  from: readonly SprintStatus[],
+  to: SprintStatus,
+  set: { pausedReason?: string | null } = {},
+  apply?: (tx: Transaction, sprint: SprintWithEpics) => Promise<SprintTransitionResult | void>,
+): Promise<SprintTransitionResult> {
+  return db.transaction(async (tx) => {
+    await lockSprints(tx, organizationId);
+    const current = await getSprint(tx, organizationId, sprintId);
+    if (!current) return { status: "not_found" as const };
+    if (!from.includes(current.status)) {
+      return { status: "wrong_status" as const, sprint: current };
+    }
+    const refused = await apply?.(tx, current);
+    if (refused) return refused;
+    await tx
+      .update(sprints)
+      .set({ status: to, ...set, updatedAt: new Date() })
+      .where(eq(sprints.id, sprintId));
+    recordChange(tx, { resource: "sprint", ids: [sprintId], organizationId });
+    return {
+      status: "updated" as const,
+      sprint: (await getSprint(tx, organizationId, sprintId))!,
+    };
+  });
+}
+
+/** Starts a draft sprint that has epics: it becomes `running` (its first epic starts next). */
+export async function startSprint(
+  db: Database,
+  organizationId: string,
+  sprintId: string,
+): Promise<SprintTransitionResult> {
+  return transitionSprint(
+    db,
+    organizationId,
+    sprintId,
+    ["draft"],
+    "running",
+    { pausedReason: null },
+    async (_tx, sprint) =>
+      sprint.epics.length === 0 ? { status: "empty" as const, sprint } : undefined,
+  );
+}
+
+/** Pauses a running sprint with `reason`: no new epic starts; running ones carry on. */
+export async function pauseSprint(
+  db: Database,
+  organizationId: string,
+  sprintId: string,
+  reason: string,
+): Promise<SprintTransitionResult> {
+  return transitionSprint(db, organizationId, sprintId, ["running"], "paused", {
+    pausedReason: reason,
+  });
+}
+
+/**
+ * Resumes a paused sprint: it runs again, its reason is cleared and each stalled epic is
+ * queued again, so it is retried first.
+ */
+export async function resumeSprint(
+  db: Database,
+  organizationId: string,
+  sprintId: string,
+): Promise<SprintTransitionResult> {
+  return transitionSprint(
+    db,
+    organizationId,
+    sprintId,
+    ["paused"],
+    "running",
+    { pausedReason: null },
+    async (tx, sprint) => {
+      const stalled = sprint.epics.filter((epic) => epic.state === "stalled");
+      if (stalled.length === 0) return;
+      await tx
+        .update(sprintEpics)
+        .set({ state: "queued", updatedAt: new Date() })
+        .where(
+          inArray(
+            sprintEpics.id,
+            stalled.map((epic) => epic.id),
+          ),
+        );
+      recordItemChanges(tx, organizationId, stalled);
+    },
+  );
+}
+
+/** Cancels a started sprint: no epic starts any more; running ones are left alone. */
+export async function cancelSprint(
+  db: Database,
+  organizationId: string,
+  sprintId: string,
+): Promise<SprintTransitionResult> {
+  return transitionSprint(
+    db,
+    organizationId,
+    sprintId,
+    STARTED_SPRINT_STATUSES,
+    "canceled",
+    {},
+    async (tx, sprint) => recordItemChanges(tx, organizationId, sprint.epics),
+  );
+}
+
+export type ClaimNextSprintEpicResult =
+  /** The sprint isn't running, or one of its epics is running or stalled: nothing starts. */
+  | { status: "idle"; sprint: SprintWithEpics | null }
+  /** The next queued epic, now `running`: the caller starts it. */
+  | { status: "claimed"; sprint: SprintWithEpics; epic: SprintEpic }
+  /**
+   * Every epic merged: the sprint is `done`, or, merging together, stays `running` until its
+   * sprint PR lands.
+   */
+  | { status: "all_merged"; sprint: SprintWithEpics };
+
+/**
+ * The next epic of a running sprint to start: its first queued epic once none is running or
+ * stalled, marked `running` under the sprint lock so it starts once. With every epic merged
+ * the sprint is done (unless it merges together).
+ */
+export async function claimNextSprintEpic(
+  db: Database,
+  organizationId: string,
+  sprintId: string,
+): Promise<ClaimNextSprintEpicResult> {
+  return db.transaction(async (tx) => {
+    await lockSprints(tx, organizationId);
+    const sprint = await getSprint(tx, organizationId, sprintId);
+    if (!sprint || sprint.status !== "running") return { status: "idle" as const, sprint };
+    if (sprint.epics.some((epic) => epic.state === "running" || epic.state === "stalled")) {
+      return { status: "idle" as const, sprint };
+    }
+    const next = sprint.epics.find((epic) => epic.state === "queued");
+    if (!next) {
+      if (!sprint.mergeTogether) {
+        await tx
+          .update(sprints)
+          .set({ status: "done", pausedReason: null, updatedAt: new Date() })
+          .where(eq(sprints.id, sprintId));
+        recordChange(tx, { resource: "sprint", ids: [sprintId], organizationId });
+        recordItemChanges(tx, organizationId, sprint.epics);
+      }
+      return {
+        status: "all_merged" as const,
+        sprint: (await getSprint(tx, organizationId, sprintId))!,
+      };
+    }
+    const [epic] = await tx
+      .update(sprintEpics)
+      .set({ state: "running", updatedAt: new Date() })
+      .where(eq(sprintEpics.id, next.id))
+      .returning();
+    recordChange(tx, { resource: "sprint", ids: [sprintId], organizationId });
+    recordItemChanges(tx, organizationId, [next]);
+    return {
+      status: "claimed" as const,
+      sprint: (await getSprint(tx, organizationId, sprintId))!,
+      epic: epic!,
+    };
+  });
+}
+
+/** A work item's epic in a started sprint (running or paused), with that sprint. */
+export interface StartedSprintEpic {
+  sprint: Sprint;
+  epic: SprintEpic;
+}
+
+/** The work item's epic in a running or paused sprint of the organization, or null. */
+export async function findStartedSprintEpic(
+  db: Pick<Database, "select">,
+  organizationId: string,
+  tracker: WorkItemTracker,
+  externalId: string,
+): Promise<StartedSprintEpic | null> {
+  const [row] = await db
+    .select({ sprint: sprints, epic: sprintEpics })
+    .from(sprintEpics)
+    .innerJoin(sprints, eq(sprints.id, sprintEpics.sprintId))
+    .where(
+      and(
+        eq(sprintEpics.organizationId, organizationId),
+        eq(sprintEpics.tracker, tracker),
+        eq(sprintEpics.externalId, externalId),
+        inArray(sprints.status, [...STARTED_SPRINT_STATUSES]),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+export type SprintEpicChangeResult =
+  | { status: "updated"; sprint: SprintWithEpics; epic: SprintEpic }
+  /** The epic is gone, or isn't in one of the expected states; nothing was written. */
+  | { status: "unchanged" };
+
+/**
+ * Moves one epic of a sprint from one of `from` to `state`; a `pause` reason also pauses its
+ * sprint while it is running or paused (the reason replacing an earlier one). Records live
+ * `sprint` and `work_item` changes.
+ */
+export async function setSprintEpicState(
+  db: Database,
+  input: {
+    organizationId: string;
+    epicId: string;
+    from: readonly SprintEpicState[];
+    state: SprintEpicState;
+    pause?: string;
+  },
+): Promise<SprintEpicChangeResult> {
+  const { organizationId } = input;
+  return db.transaction(async (tx) => {
+    await lockSprints(tx, organizationId);
+    const [current] = await tx
+      .select()
+      .from(sprintEpics)
+      .where(and(eq(sprintEpics.id, input.epicId), eq(sprintEpics.organizationId, organizationId)));
+    if (!current || !input.from.includes(current.state)) return { status: "unchanged" as const };
+    const [epic] = await tx
+      .update(sprintEpics)
+      .set({ state: input.state, updatedAt: new Date() })
+      .where(eq(sprintEpics.id, current.id))
+      .returning();
+    if (input.pause !== undefined) {
+      await tx
+        .update(sprints)
+        .set({ status: "paused", pausedReason: input.pause, updatedAt: new Date() })
+        .where(
+          and(
+            eq(sprints.id, current.sprintId),
+            inArray(sprints.status, [...STARTED_SPRINT_STATUSES]),
+          ),
+        );
+    }
+    recordChange(tx, { resource: "sprint", ids: [current.sprintId], organizationId });
+    recordItemChanges(tx, organizationId, [current]);
+    return {
+      status: "updated" as const,
+      sprint: (await getSprint(tx, organizationId, current.sprintId))!,
+      epic: epic!,
+    };
+  });
+}
