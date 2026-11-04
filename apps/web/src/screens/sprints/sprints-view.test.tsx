@@ -2,7 +2,7 @@
 import "@/components/pickers/test-dom";
 import type * as OmniralphUi from "@omniralph/ui";
 import { UiProvider, type LinkProps } from "@omniralph/ui";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,12 +15,18 @@ import {
   testUser,
   type SeenRequest,
 } from "@/components/query-test-utils";
+import { changeEvent } from "@/components/live/live-test-utils";
 import type { SprintEpicRow, SprintRow } from "@/lib/api/sprints";
+import { createLiveInvalidator } from "@/lib/live/invalidations";
 import { backlogOf, blockedRow, manualRow, workItemRow } from "../backlog/test-fixtures";
 import { portalRow, webRow, REPO_PORTAL, REPO_WEB } from "../repos/test-fixtures";
 import {
   PAUSED_HINT,
   MERGE_TOGETHER_EXPLANATION,
+  SPRINT_BRANCH_PENDING,
+  SPRINT_DONE,
+  SPRINT_PR_EXPLANATION,
+  SPRINT_PR_PENDING,
   NAME_EXPLANATION,
   ORDER_EXPLANATION,
   READ_ONLY_MEMBER,
@@ -77,6 +83,8 @@ function epic(identifier: string, title: string, position: number): SprintEpicRo
     title,
     position,
     state: "queued",
+    run: null,
+    pullRequests: [],
   };
 }
 
@@ -84,7 +92,7 @@ function sprintRow(overrides: Partial<SprintRow> = {}): SprintRow {
   return {
     id: SPRINT_ID,
     name: "Invoicing",
-    repository: { id: REPO_PORTAL, fullPath: "acme/portal" },
+    repository: { id: REPO_PORTAL, provider: "github", fullPath: "acme/portal" },
     mergeTogether: false,
     status: "draft",
     pausedReason: null,
@@ -102,6 +110,7 @@ function sprintRow(overrides: Partial<SprintRow> = {}): SprintRow {
 }
 
 let sprints: SprintRow[];
+let lastClient: QueryClient;
 let patchAnswer: (request: SeenRequest) => Response | Promise<Response>;
 let seen: SeenRequest[];
 
@@ -140,7 +149,7 @@ function serve(
         id: OTHER_SPRINT_ID,
         name: body.name,
         mergeTogether: body.mergeTogether,
-        repository: { id: body.repositoryId, fullPath: "acme/web" },
+        repository: { id: body.repositoryId, provider: "github", fullPath: "acme/web" },
         epics: [],
       });
       return jsonResponse({ ok: true, sprint: created });
@@ -162,6 +171,7 @@ function serve(
 
 function renderView(props: SprintsViewProps = {}, user: SessionUser = testUser) {
   const client = createTestQueryClient();
+  lastClient = client;
   return render(
     <CurrentUserProvider user={user}>
       <QueryClientProvider client={client}>
@@ -191,7 +201,7 @@ beforeEach(() => {
       name: "Checkout",
       status: "running",
       mergeTogether: true,
-      repository: { id: REPO_WEB, fullPath: "acme/web" },
+      repository: { id: REPO_WEB, provider: "github", fullPath: "acme/web" },
       epics: [epic("WEB-7", "Cart", 0)],
     }),
   ];
@@ -518,5 +528,220 @@ describe("the sprint editor", () => {
     });
     renderView({ sprintId: SPRINT_ID });
     expect(screen.getByTestId("sprint-skeleton")).toBeTruthy();
+  });
+});
+
+const RUN_1 = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1";
+const RUN_2 = "cccccccc-cccc-4ccc-8ccc-ccccccccccc2";
+
+/** The rows of a started sprint's epics, by identifier. */
+const epicRow = (pane: HTMLElement, identifier: string) =>
+  within(within(pane).getByRole("list", { name: "Epics in order" }))
+    .getAllByRole("listitem")
+    .find((item) => item.textContent?.includes(identifier))!;
+
+/** A running sprint: SOC-401 merged, SOC-402 building with its PR open, SOC-403 queued. */
+function runningSprint(overrides: Partial<SprintRow> = {}): SprintRow {
+  return sprintRow({
+    status: "running",
+    epics: [
+      {
+        ...epic("SOC-401", "Invoice model", 0),
+        state: "merged",
+        run: { id: RUN_1, status: "completed" },
+        pullRequests: [
+          {
+            number: 101,
+            url: "https://github.com/acme/portal/pull/101",
+            state: "merged",
+            baseBranch: "main",
+          },
+        ],
+      },
+      {
+        ...epic("SOC-402", "Invoice PDFs", 1),
+        state: "running",
+        run: { id: RUN_2, status: "running" },
+        pullRequests: [
+          {
+            number: 102,
+            url: "https://github.com/acme/portal/pull/102",
+            state: "open",
+            baseBranch: "main",
+          },
+        ],
+      },
+      epic("SOC-403", "Invoice emails", 2),
+    ],
+    ...overrides,
+  });
+}
+
+describe("the sprint view", () => {
+  it("shows a running sprint's epics with their position, run, PRs and state, updating live", async () => {
+    sprints = [runningSprint()];
+    renderView({ sprintId: SPRINT_ID });
+    const pane = await sprintPane();
+    expect(epicOrder(pane)).toEqual(["SOC-401", "SOC-402", "SOC-403"]);
+
+    const first = epicRow(pane, "SOC-401");
+    expect(first.querySelector(".or-sprint-epic__position")!.textContent).toBe("1");
+    expect(within(first).getByRole("link", { name: "Run finished" }).getAttribute("href")).toBe(
+      `/runs/${RUN_1}`,
+    );
+    expect(within(first).getByRole("link", { name: /#101/ }).getAttribute("href")).toBe(
+      "https://github.com/acme/portal/pull/101",
+    );
+    // Its PR's merge state (into the default branch, so no branch named) and its own state.
+    expect(within(first).getAllByText("Merged")).toHaveLength(2);
+
+    const second = epicRow(pane, "SOC-402");
+    expect(within(second).getByRole("link", { name: "Run running" })).toBeTruthy();
+    expect(within(second).getByText("Open")).toBeTruthy();
+    expect(within(second).getByText("Building")).toBeTruthy();
+
+    const third = epicRow(pane, "SOC-403");
+    expect(third.querySelector(".or-sprint-epic__position")!.textContent).toBe("3");
+    expect(within(third).getByText("Queued")).toBeTruthy();
+    expect(within(third).queryByRole("link")).toBeNull();
+
+    // Not merging together: no sprint branch or sprint PR.
+    expect(within(pane).queryByRole("heading", { name: "Merging together" })).toBeNull();
+
+    // The epic's PR merges and the next epic starts: a pull_request event refetches the sprint.
+    const [merged, building, queued] = sprints[0]!.epics;
+    sprints = [
+      runningSprint({
+        epics: [
+          merged!,
+          {
+            ...building!,
+            state: "merged",
+            run: { id: RUN_2, status: "completed" },
+            pullRequests: [{ ...building!.pullRequests[0]!, state: "merged" }],
+          },
+          { ...queued!, state: "running", run: null },
+        ],
+      }),
+    ];
+    createLiveInvalidator(lastClient).apply(
+      changeEvent(TEST_ORGANIZATION_ID, { resource: "pull_request", runId: RUN_2 }),
+      new Set([TEST_ORGANIZATION_ID]),
+    );
+    await waitFor(() =>
+      expect(within(epicRow(pane, "SOC-402")).queryByText("Building")).toBeNull(),
+    );
+    expect(
+      within(epicRow(pane, "SOC-402")).getByRole("link", { name: "Run finished" }),
+    ).toBeTruthy();
+    expect(within(epicRow(pane, "SOC-403")).getByText("Building")).toBeTruthy();
+  });
+
+  it("shows a merge-together sprint's branch and, once open, its sprint PR", async () => {
+    sprints = [
+      runningSprint({
+        mergeTogether: true,
+        sprintBranch: null,
+        epics: [epic("SOC-401", "Invoice model", 0)],
+      }),
+    ];
+    const { unmount } = renderView({ sprintId: SPRINT_ID });
+    let pane = await sprintPane();
+    expect(within(pane).getByRole("heading", { name: "Merging together" })).toBeTruthy();
+    expect(within(pane).getByText(SPRINT_BRANCH_PENDING)).toBeTruthy();
+    expect(within(pane).getByText(SPRINT_PR_PENDING)).toBeTruthy();
+    unmount();
+
+    sprints = [
+      sprintRow({
+        status: "running",
+        mergeTogether: true,
+        sprintBranch: "sprint/invoicing-bbbbbbbb",
+        sprintPullRequest: { number: 120, url: "https://github.com/acme/portal/pull/120" },
+        epics: [
+          {
+            ...epic("SOC-401", "Invoice model", 0),
+            state: "merged",
+            run: { id: RUN_1, status: "completed" },
+            pullRequests: [
+              {
+                number: 101,
+                url: "https://github.com/acme/portal/pull/101",
+                state: "merged",
+                baseBranch: "sprint/invoicing-bbbbbbbb",
+              },
+            ],
+          },
+        ],
+      }),
+    ];
+    renderView({ sprintId: SPRINT_ID });
+    pane = await sprintPane();
+    expect(within(pane).getByText("sprint/invoicing-bbbbbbbb")).toBeTruthy();
+    expect(within(pane).getByRole("link", { name: /#120/ }).getAttribute("href")).toBe(
+      "https://github.com/acme/portal/pull/120",
+    );
+    expect(within(pane).getByText(SPRINT_PR_EXPLANATION)).toBeTruthy();
+    expect(
+      within(epicRow(pane, "SOC-401")).getByText("Merged into sprint/invoicing-bbbbbbbb"),
+    ).toBeTruthy();
+  });
+
+  it("shows a paused sprint's reason and the epic it stopped on, with Resume for admins", async () => {
+    const reason = "The code host refused to merge SOC-402's PR into sprint/invoicing: conflicts.";
+    const base = runningSprint();
+    sprints = [
+      {
+        ...base,
+        status: "paused",
+        pausedReason: reason,
+        epics: base.epics.map((row) =>
+          row.identifier === "SOC-402" ? { ...row, state: "stalled" } : row,
+        ),
+      },
+    ];
+    const { unmount } = renderView({ sprintId: SPRINT_ID });
+    let pane = await sprintPane();
+    const callout = within(pane).getAllByRole("status")[0]!;
+    expect(within(callout).getByText(reason)).toBeTruthy();
+    expect(callout.textContent).toContain("Stopped on SOC-402 Invoice PDFs (epic 2 of 3)");
+    expect(within(pane).getByText(PAUSED_HINT)).toBeTruthy();
+    const stalled = epicRow(pane, "SOC-402");
+    expect(stalled.getAttribute("aria-current")).toBe("step");
+    expect(within(stalled).getByText("Stalled")).toBeTruthy();
+    expect(epicRow(pane, "SOC-401").getAttribute("aria-current")).toBeNull();
+    expect(within(pane).getByRole("button", { name: "Resume" })).toBeTruthy();
+    unmount();
+
+    renderView({ sprintId: SPRINT_ID }, member);
+    pane = await sprintPane();
+    expect(within(pane).getByText(reason)).toBeTruthy();
+    expect(within(pane).getAllByRole("status")[0]!.textContent).toContain("Stopped on SOC-402");
+    expect(within(pane).queryByRole("button", { name: "Resume" })).toBeNull();
+    expect(within(pane).queryByText(PAUSED_HINT)).toBeNull();
+  });
+
+  it("shows a done sprint with every epic merged and no actions", async () => {
+    const base = runningSprint();
+    sprints = [
+      {
+        ...base,
+        status: "done",
+        epics: base.epics.map((row, index) => ({
+          ...row,
+          state: "merged",
+          run: { id: index === 0 ? RUN_1 : RUN_2, status: "completed" },
+        })),
+      },
+    ];
+    renderView({ sprintId: SPRINT_ID });
+    const pane = await sprintPane();
+    expect(within(pane).getByText("Done")).toBeTruthy();
+    expect(within(pane).getByText(SPRINT_DONE)).toBeTruthy();
+    for (const identifier of ["SOC-401", "SOC-402", "SOC-403"]) {
+      expect(within(epicRow(pane, identifier)).getAllByText("Merged").length).toBeGreaterThan(0);
+    }
+    expect(within(pane).queryByRole("group", { name: "Sprint actions" })).toBeNull();
+    expect(within(pane).queryByText(/Stopped on/)).toBeNull();
   });
 });

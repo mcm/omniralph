@@ -60,6 +60,7 @@ describe("LIVE_INVALIDATIONS", () => {
       ...analyticsOfOrg,
       ...repositoryViews,
       backlog.details,
+      keys.sprints.all,
     ]);
   });
 
@@ -101,15 +102,17 @@ describe("LIVE_INVALIDATIONS", () => {
     ]);
   });
 
-  it("pull_request: the run and the lists and inbox that show it", () => {
+  it("pull_request: the run and the lists, inbox and sprints that show it", () => {
     expect(liveInvalidations(event({ resource: "pull_request", runId: RUN }))).toEqual([
       keys.runs.lists,
       keys.runs.detail(RUN),
       keys.inbox.all,
+      keys.sprints.all,
     ]);
     expect(liveInvalidations(event({ resource: "pull_request" }))).toEqual([
       keys.runs.all,
       keys.inbox.all,
+      keys.sprints.all,
     ]);
   });
 

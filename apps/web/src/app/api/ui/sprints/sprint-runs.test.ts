@@ -34,7 +34,7 @@ import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import type { IssueSummary } from "@omniralph/tracker";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { savedSprintSchema, type SprintRow } from "@/lib/api/sprints";
+import { savedSprintSchema, sprintRowSchema, type SprintRow } from "@/lib/api/sprints";
 import { assertRole, type Role } from "@/lib/auth/roles";
 import {
   sprintEpicPullRequestClosed,
@@ -103,6 +103,7 @@ const routes = {
   cancel: await import("./[id]/cancel/route"),
 };
 const { GET: sprintCheck } = await import("../../cron/sprint-check/route");
+const sprintRoute = await import("./[id]/route");
 
 type Handler = (
   request: Request,
@@ -300,6 +301,40 @@ describe.skipIf(!databaseAvailable)("running a sprint", () => {
     const done = await stored(id);
     expect(done.status).toBe("done");
     expect(done.epics.map((e) => e.state)).toEqual(["merged", "merged", "merged"]);
+  });
+
+  it("answers each started epic's latest run and its PRs, and none for a queued epic", async () => {
+    const [a, b, c] = [epic("ENG-5"), epic("ENG-6"), epic("ENG-7")];
+    const id = await sprintOf([a, b, c]);
+    await accepted("start", id);
+    const first = await runOf(a);
+    await updateRun(db, first.run.id, { status: "completed" });
+    await closePullRequest(first.lane, true);
+    const second = await runOf(b);
+
+    const response = await (sprintRoute.GET as Handler)(
+      new Request(`http://localhost/api/ui/sprints/${id}`),
+      { params: Promise.resolve({ id }) },
+    );
+    expect(response.status).toBe(200);
+    const sprint = sprintRowSchema.parse(await response.json());
+    expect(sprint.repository).toMatchObject({ provider: "github", fullPath: "acme/api" });
+    expect(
+      sprint.epics.map(({ state, run, pullRequests }) => ({ state, run, pullRequests })),
+    ).toEqual([
+      {
+        state: "merged",
+        run: { id: first.run.id, status: "completed" },
+        pullRequests: [{ number: 7, url: first.lane.prUrl, state: "merged", baseBranch: "main" }],
+      },
+      {
+        state: "running",
+        // The run's `pending` status reads as the Runs screen's `queued`.
+        run: { id: second.run.id, status: "queued" },
+        pullRequests: [{ number: 7, url: second.lane.prUrl, state: "open", baseBranch: "main" }],
+      },
+      { state: "queued", run: null, pullRequests: [] },
+    ]);
   });
 
   it("keeps a merge-together sprint running after its last epic, for its sprint PR", async () => {

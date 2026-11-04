@@ -6,10 +6,10 @@
  * deleted. Every write records a live `sprint` change, and a `work_item` change for the work
  * items that joined or left a sprint (the Backlog shows each item's sprint).
  */
-import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
-import { repositories, sprintEpics, sprints } from "./schema.js";
+import { ralphLanes, ralphRuns, repositories, sprintEpics, sprints } from "./schema.js";
 import type { WorkItemTracker } from "./work-item-matches.js";
 import { workItemUrlId } from "./work-items.js";
 
@@ -30,6 +30,7 @@ export const ACTIVE_SPRINT_STATUSES = [
 /** A sprint with its repository's full path and its epics in order. */
 export interface SprintWithEpics extends Sprint {
   repositoryFullPath: string;
+  repositoryProvider: (typeof repositories.$inferSelect)["provider"];
   epics: SprintEpic[];
 }
 
@@ -62,7 +63,11 @@ async function loadSprints(
   sprintId?: string,
 ): Promise<SprintWithEpics[]> {
   const rows = await db
-    .select({ sprint: sprints, repositoryFullPath: repositories.fullPath })
+    .select({
+      sprint: sprints,
+      repositoryFullPath: repositories.fullPath,
+      repositoryProvider: repositories.provider,
+    })
     .from(sprints)
     .innerJoin(repositories, eq(repositories.id, sprints.repositoryId))
     .where(
@@ -83,9 +88,10 @@ async function loadSprints(
       ),
     )
     .orderBy(asc(sprintEpics.position));
-  return rows.map(({ sprint, repositoryFullPath }) => ({
+  return rows.map(({ sprint, repositoryFullPath, repositoryProvider }) => ({
     ...sprint,
     repositoryFullPath,
+    repositoryProvider,
     epics: epics.filter((epic) => epic.sprintId === sprint.id),
   }));
 }
@@ -298,14 +304,11 @@ export async function updateDraftSprint(
     if (input.epics) {
       await tx.delete(sprintEpics).where(eq(sprintEpics.sprintId, sprintId));
       await insertEpics(tx, organizationId, sprintId, input.epics);
-      const key = (item: Pick<SprintEpicInput, "tracker" | "externalId">) =>
-        `${item.tracker}:${item.externalId}`;
-      const before = new Set(current.epics.map(key));
-      const after = new Set(input.epics.map(key));
-      recordItemChanges(tx, organizationId, [
-        ...current.epics.filter((epic) => !after.has(key(epic))),
-        ...input.epics.filter((epic) => !before.has(key(epic))),
-      ]);
+    }
+    // The Backlog shows each epic's sprint name and position: a new order or name changes
+    // every epic that was or is in the sprint.
+    if (input.epics || (input.name !== undefined && input.name !== current.name)) {
+      recordItemChanges(tx, organizationId, [...current.epics, ...(input.epics ?? [])]);
     }
     recordChange(tx, { resource: "sprint", ids: [sprintId], organizationId });
     return {
@@ -714,4 +717,117 @@ export async function setSprintEpicState(
       epic: epic!,
     };
   });
+}
+
+/** A work item's place in an active sprint (the Backlog's sprint chip). */
+export interface ActiveSprintPlace {
+  organizationId: string;
+  tracker: WorkItemTracker;
+  externalId: string;
+  sprintId: string;
+  sprintName: string;
+  /** 0-based. */
+  position: number;
+  /** How many epics the sprint holds. */
+  epicCount: number;
+}
+
+/** The epics of the organizations' active sprints (`ACTIVE_SPRINT_STATUSES`), each with its sprint. */
+export async function listActiveSprintPlaces(
+  db: Pick<Database, "select">,
+  organizationIds: readonly string[],
+): Promise<ActiveSprintPlace[]> {
+  if (organizationIds.length === 0) return [];
+  const rows = await db
+    .select({
+      organizationId: sprintEpics.organizationId,
+      tracker: sprintEpics.tracker,
+      externalId: sprintEpics.externalId,
+      sprintId: sprints.id,
+      sprintName: sprints.name,
+      position: sprintEpics.position,
+    })
+    .from(sprintEpics)
+    .innerJoin(sprints, eq(sprints.id, sprintEpics.sprintId))
+    .where(
+      and(
+        inArray(sprintEpics.organizationId, [...organizationIds]),
+        inArray(sprints.status, [...ACTIVE_SPRINT_STATUSES]),
+      ),
+    );
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(row.sprintId, (counts.get(row.sprintId) ?? 0) + 1);
+  return rows.map((row) => ({ ...row, epicCount: counts.get(row.sprintId)! }));
+}
+
+/** One PR/MR of a sprint epic's run. */
+export interface SprintEpicPullRequest {
+  number: number;
+  url: string;
+  state: "open" | "draft" | "merged" | "closed";
+  /** The branch it targets. */
+  baseBranch: string;
+}
+
+/** The latest run of a sprint epic, with the PRs/MRs its lanes opened. */
+export interface SprintEpicProgress {
+  runId: string;
+  status: typeof ralphRuns.$inferSelect.status;
+  pullRequests: SprintEpicPullRequest[];
+}
+
+/**
+ * The latest tracker run of each of the work items `externalIds` of the organization's
+ * tracker `tracker`, with its lanes' PRs/MRs in lane order, by external ID. Items with no run
+ * are left out.
+ */
+export async function listSprintEpicProgress(
+  db: Pick<Database, "select">,
+  organizationId: string,
+  tracker: WorkItemTracker,
+  externalIds: readonly string[],
+): Promise<Map<string, SprintEpicProgress>> {
+  const progress = new Map<string, SprintEpicProgress>();
+  if (externalIds.length === 0) return progress;
+  const runs = await db
+    .select({ id: ralphRuns.id, issueId: ralphRuns.trackerIssueId, status: ralphRuns.status })
+    .from(ralphRuns)
+    .where(
+      and(
+        eq(ralphRuns.organizationId, organizationId),
+        eq(ralphRuns.origin, "tracker"),
+        eq(ralphRuns.trackerProvider, tracker),
+        inArray(ralphRuns.trackerIssueId, [...externalIds]),
+      ),
+    )
+    .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id));
+  for (const run of runs) {
+    if (run.issueId === null || progress.has(run.issueId)) continue;
+    progress.set(run.issueId, { runId: run.id, status: run.status, pullRequests: [] });
+  }
+  if (progress.size === 0) return progress;
+  const byRun = new Map([...progress.values()].map((entry) => [entry.runId, entry]));
+  const lanes = await db
+    .select({
+      runId: ralphLanes.runId,
+      prNumber: ralphLanes.prNumber,
+      prUrl: ralphLanes.prUrl,
+      prDraft: ralphLanes.prDraft,
+      prMerged: ralphLanes.prMerged,
+      prClosed: ralphLanes.prClosed,
+      baseBranch: ralphLanes.baseBranch,
+    })
+    .from(ralphLanes)
+    .where(and(inArray(ralphLanes.runId, [...byRun.keys()]), isNotNull(ralphLanes.prNumber)))
+    .orderBy(asc(ralphLanes.createdAt), asc(ralphLanes.id));
+  for (const lane of lanes) {
+    if (lane.prNumber === null || lane.prUrl === null) continue;
+    byRun.get(lane.runId)?.pullRequests.push({
+      number: lane.prNumber,
+      url: lane.prUrl,
+      state: lane.prMerged ? "merged" : lane.prClosed ? "closed" : lane.prDraft ? "draft" : "open",
+      baseBranch: lane.baseBranch,
+    });
+  }
+  return progress;
 }

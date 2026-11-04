@@ -83,7 +83,13 @@ export function useUpdateSprint(sprint: SprintRow, callbacks: UpdateSprintCallba
         name: change.name ?? current.name,
         mergeTogether: change.mergeTogether ?? current.mergeTogether,
         epics: change.epics
-          ? change.epics.map((epic, position) => ({ ...epic, position }))
+          ? // A draft's epics have no runs yet.
+            change.epics.map((epic, position) => ({
+              run: null,
+              pullRequests: [],
+              ...epic,
+              position,
+            }))
           : current.epics,
       });
     },
