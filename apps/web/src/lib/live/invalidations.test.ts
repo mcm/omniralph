@@ -256,13 +256,14 @@ describe("LIVE_INVALIDATIONS", () => {
     ]);
   });
 
-  it("connection: connections, Settings' connections, dots, state mappings and fix labels, the repositories' list and details, the Runs Repo filter and the Backlog (state mapping)", () => {
+  it("connection: connections, Settings' connections, dots, state mappings, fix labels and feature mappings, the repositories' list and details, the Runs Repo filter and the Backlog (state mapping)", () => {
     expect(liveInvalidations(event({ resource: "connection" }))).toEqual([
       keys.connections.all,
       connectionKeys(keys).list,
       keys.navIndicators.all,
       connectionKeys(keys).stateMappings,
       connectionKeys(keys).fixLabelsAll,
+      connectionKeys(keys).featureMappingAll,
       chatPlaybooksKey(keys),
       ...repositoryViews,
       runsKeys(keys).filterOptionsAll,

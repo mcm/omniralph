@@ -28,6 +28,7 @@ import {
   type TrackerDocument,
   type TrackerDocuments,
   type TrackerGateway,
+  type TrackerParentIssues,
   type TrackerProvider,
   type TrackerSessions,
   type TrackerUploads,
@@ -74,6 +75,7 @@ export class FakeTrackerGateway implements TrackerGateway {
   readonly delegation?: TrackerDelegation;
   readonly documents?: TrackerDocuments;
   readonly uploads?: TrackerUploads;
+  readonly parentIssues?: TrackerParentIssues;
 
   private seq = 0;
   /** The fake's clock for `updatedAt`: each change moves it on a second. */
@@ -149,6 +151,7 @@ export class FakeTrackerGateway implements TrackerGateway {
     }
     if (on("documents")) this.documents = { getDocument: (ref) => this.getDocument(ref) };
     if (on("uploads")) this.uploads = this.uploadOperations();
+    if (on("parentIssues")) this.parentIssues = this.parentIssueOperations();
   }
 
   /** Adds an issue, filling in what the partial leaves out. */
@@ -471,6 +474,20 @@ export class FakeTrackerGateway implements TrackerGateway {
         this.fail("addExternalUrl");
         this.findSession(sessionId);
         this.urls.push({ sessionId, label, url });
+      },
+    };
+  }
+
+  private parentIssueOperations(): TrackerParentIssues {
+    return {
+      createParentIssue: ({ teamId, title, description, projectId }) =>
+        this.createIssue({ teamId, title, description, ...(projectId && { projectId }) }),
+      fileUnder: async (parentId, issueId) => {
+        this.fail("fileUnder");
+        const parent = this.find(parentId);
+        const issue = this.find(issueId);
+        issue.parentId = parent.id;
+        issue.updatedAt = this.tick();
       },
     };
   }

@@ -57,15 +57,16 @@ everything but the adapter, its routes (`/api/webhooks/linear`, `/api/integratio
 
 The gateway's core is what every tracker has: read and search issues, comments, blockers,
 children, teams, projects, labels and workflow states; create and update issues, set states,
-labels and blocks relations, comment and link URLs. Four features are optional sub-interfaces on
+labels and blocks relations, comment and link URLs. Five features are optional sub-interfaces on
 the gateway, present or absent:
 
-| Capability   | Operations                                                        | Without it                                                                                                                    |
-| ------------ | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `sessions`   | agent sessions on an issue, activities, plan steps, external URLs | `trackerConversation` writes to the work item's comments: activities become comments, the plan a `**Plan**` checklist comment |
-| `delegation` | delegate an issue to the app user                                 | delegating fails with `TrackerCapabilityError`; runs start from mentions, the Backlog or chat                                 |
-| `documents`  | read a document by ID or slug                                     | the `tracker_get_document` tool isn't offered to runs                                                                         |
-| `uploads`    | recognise, find, download and upload the tracker's files          | runs gather no attachments from the tracker                                                                                   |
+| Capability     | Operations                                                          | Without it                                                                                                                    |
+| -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `sessions`     | agent sessions on an issue, activities, plan steps, external URLs   | `trackerConversation` writes to the work item's comments: activities become comments, the plan a `**Plan**` checklist comment |
+| `delegation`   | delegate an issue to the app user                                   | delegating fails with `TrackerCapabilityError`; runs start from mentions, the Backlog or chat                                 |
+| `documents`    | read a document by ID or slug                                       | the `tracker_get_document` tool isn't offered to runs                                                                         |
+| `uploads`      | recognise, find, download and upload the tracker's files            | runs gather no attachments from the tracker                                                                                   |
+| `parentIssues` | create a parent issue (e.g. for a feature) and file issues under it | the feature mapping can't be set to `parent-issue`: features exist only in Omniralph                                          |
 
 Call sites check with `hasCapability(gateway, "sessions")` (which narrows the type), get them with
 `requireCapability` (which throws `TrackerCapabilityError`), or list them with

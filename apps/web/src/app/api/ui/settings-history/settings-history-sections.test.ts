@@ -402,6 +402,7 @@ describe.skipIf(!databaseAvailable)("settings change history of connections", ()
         { field: "ready", label: "Ready to start", before: ["unstarted"], after: null },
         { field: "needsRefining", label: "Needs refining", before: ["backlog"], after: null },
         { field: "fixLabels", label: "Fix labels", before: ["Bug"], after: null },
+        { field: "featureMapping", label: "Features", before: "Omniralph only", after: null },
       ]);
 
       for (const platform of ["slack", "discord"] as const) {

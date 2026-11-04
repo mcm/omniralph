@@ -1,3 +1,4 @@
+import type { FeatureMapping as StoredFeatureMapping } from "@omniralph/db";
 import type { TrackerProvider } from "@omniralph/tracker";
 import { z } from "zod";
 import { READINESS_STATE_TYPES, stateMappingSchema } from "@/lib/work-items/readiness";
@@ -91,6 +92,44 @@ export const trackerFixLabelsSchema = z.object({
   fixLabels: z.array(z.string()),
 });
 export type TrackerFixLabelsView = z.infer<typeof trackerFixLabelsSchema>;
+
+/** Wire format of a tracker connection's feature mapping: `/api/ui/trackers/{id}/feature-mapping`. */
+
+/** Where a tracker shows features (the integration's `feature_mapping`). */
+export const FEATURE_MAPPINGS = [
+  "omniralph",
+  "parent-issue",
+] as const satisfies readonly StoredFeatureMapping[];
+export type FeatureMapping = (typeof FEATURE_MAPPINGS)[number];
+
+/** Each feature mapping as people read it. */
+export const FEATURE_MAPPING_LABELS: Record<FeatureMapping, string> = {
+  omniralph: "Omniralph only",
+  "parent-issue": "Parent issue in the tracker",
+};
+
+/** The 400 message of `parent-issue` for a tracker that can't hold parent issues. */
+export const NO_PARENT_ISSUES =
+  "This tracker can't hold parent issues, so features stay in Omniralph.";
+
+/** The body of `PUT`. */
+export const featureMappingRequestSchema = z.strictObject({
+  featureMapping: z.enum(FEATURE_MAPPINGS, {
+    error: "Choose Omniralph only or a parent issue in the tracker.",
+  }),
+});
+
+/**
+ * `GET` and `PUT`: the connection's feature mapping, and whether its tracker can hold
+ * parent issues (without them only `omniralph` can be saved).
+ */
+export const trackerFeatureMappingSchema = z.object({
+  integrationId: z.string(),
+  organization: organizationRefSchema,
+  featureMapping: z.enum(FEATURE_MAPPINGS),
+  parentIssues: z.boolean(),
+});
+export type TrackerFeatureMappingView = z.infer<typeof trackerFeatureMappingSchema>;
 
 /**
  * A tracker provider's name as people read it, for general surfaces that name the

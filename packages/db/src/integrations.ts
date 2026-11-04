@@ -8,7 +8,12 @@ import { and, asc, eq, lt, ne } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { decrypt, encrypt } from "./crypto.js";
 import { recordConnectionChange } from "./repositories.js";
-import { integrations, oauthStateUses, type TrackerStateMapping } from "./schema.js";
+import {
+  integrations,
+  oauthStateUses,
+  type FeatureMapping,
+  type TrackerStateMapping,
+} from "./schema.js";
 
 export type IntegrationProvider = (typeof integrations.$inferSelect)["provider"];
 
@@ -23,6 +28,8 @@ export interface Integration {
   stateMapping: TrackerStateMapping;
   /** The labels that mark a work item as a Fix, matched ignoring case. */
   fixLabels: string[];
+  /** Where the tracker shows features: only in Omniralph, or also as a parent issue. */
+  featureMapping: FeatureMapping;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -111,6 +118,25 @@ export async function setIntegrationFixLabels(
   const [row] = await db
     .update(integrations)
     .set({ fixLabels, updatedAt: new Date() })
+    .where(eq(integrations.id, id))
+    .returning();
+  if (!row) return null;
+  recordConnectionChange(db, row);
+  return toIntegration(row);
+}
+
+/**
+ * Saves an integration's feature mapping (validated by the caller) and records a
+ * `connection` change. Returns the integration, or null when it no longer exists.
+ */
+export async function setIntegrationFeatureMapping(
+  db: Database,
+  id: string,
+  featureMapping: FeatureMapping,
+): Promise<Integration | null> {
+  const [row] = await db
+    .update(integrations)
+    .set({ featureMapping, updatedAt: new Date() })
     .where(eq(integrations.id, id))
     .returning();
   if (!row) return null;

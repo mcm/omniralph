@@ -22,8 +22,10 @@ import {
 } from "@/lib/api/organization";
 import { routingRulesSchema, type RoutingRules } from "@/lib/api/routing-rules";
 import {
+  trackerFeatureMappingSchema,
   trackerFixLabelsSchema,
   trackerStateMappingSchema,
+  type TrackerFeatureMappingView,
   type TrackerFixLabelsView,
   type TrackerStateMappingView,
 } from "@/lib/api/trackers";
@@ -177,6 +179,25 @@ export function useTrackerFixLabels(integrationId: string) {
       api.get(
         `/api/ui/trackers/${encodeURIComponent(integrationId)}/fix-labels`,
         trackerFixLabelsSchema,
+        { organizationId: organization.id, signal },
+      ),
+  });
+}
+
+/**
+ * A tracker connection's feature mapping (`GET /api/ui/trackers/{id}/feature-mapping`, any
+ * member), for its connection page. A live query: the connection's `connection` events
+ * (another admin's save, a disconnect) refetch it.
+ */
+export function useTrackerFeatureMapping(integrationId: string) {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery<TrackerFeatureMappingView>({
+    queryKey: connectionKeys(keys).featureMapping(integrationId),
+    queryFn: ({ signal }) =>
+      api.get(
+        `/api/ui/trackers/${encodeURIComponent(integrationId)}/feature-mapping`,
+        trackerFeatureMappingSchema,
         { organizationId: organization.id, signal },
       ),
   });

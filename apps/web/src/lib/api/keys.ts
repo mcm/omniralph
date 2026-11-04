@@ -247,6 +247,10 @@ export function connectionKeys(keys: QueryKeys) {
     /** Every tracker connection's fix labels (its connection page). */
     fixLabelsAll: keys.settings.detail("tracker-fix-labels"),
     fixLabels: (integrationId: string) => keys.settings.part("tracker-fix-labels", integrationId),
+    /** Every tracker connection's feature mapping (its connection page). */
+    featureMappingAll: keys.settings.detail("tracker-feature-mapping"),
+    featureMapping: (integrationId: string) =>
+      keys.settings.part("tracker-feature-mapping", integrationId),
   };
 }
 

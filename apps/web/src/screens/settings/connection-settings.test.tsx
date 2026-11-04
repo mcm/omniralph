@@ -23,6 +23,11 @@ import { UnsavedChangesProvider } from "@/components/unsaved-changes";
 import type { Connection, ConnectionProvider } from "@/lib/api/connections";
 import type { TrackerStateMappingView } from "@/lib/api/trackers";
 import { ConnectionSettings } from "./connection-settings";
+import {
+  FEATURE_MAPPING_EXPLANATIONS,
+  FEATURE_MAPPING_HELP,
+  NO_PARENT_ISSUES_NOTE,
+} from "./feature-mapping-card";
 import { FIX_LABELS_HELP, NO_FIX_LABEL_ERROR } from "./fix-labels-card";
 import { SettingsLayoutView } from "./settings-layout-view";
 import { organizationChange } from "./test-fixtures";
@@ -175,6 +180,9 @@ let mapping: TrackerStateMappingView;
 let fixLabels: string[];
 /** The answer to a fix labels save (default: the saved labels echoed back). */
 let fixLabelsSave: ((body: { fixLabels: string[] }) => Response) | null;
+let featureMapping: "omniralph" | "parent-issue";
+/** Whether the tracker can hold parent issues. */
+let parentIssues: boolean;
 let seen: SeenRequest[];
 /** While set, reads never answer: the view shows only what the cache holds. */
 let holdReads: boolean;
@@ -188,6 +196,14 @@ const fixLabelsView = () => ({
   fixLabels,
 });
 
+const FEATURE_MAPPING_PATH = `/api/ui/trackers/${IDS.linear}/feature-mapping`;
+const featureMappingView = () => ({
+  integrationId: IDS.linear,
+  organization: { id: TEST_ORGANIZATION_ID, name: "Acme", role: "admin" },
+  featureMapping,
+  parentIssues,
+});
+
 beforeEach(() => {
   ui.toast.mockReset();
   nav.router.push.mockReset();
@@ -197,6 +213,8 @@ beforeEach(() => {
   mapping = stateMapping();
   fixLabels = ["Bug"];
   fixLabelsSave = null;
+  featureMapping = "omniralph";
+  parentIssues = true;
   holdReads = false;
   rotateResponse = () =>
     jsonResponse({ health: { state: "expiring", expiresAt: "2026-11-02", problems: [] } });
@@ -216,6 +234,11 @@ beforeEach(() => {
       if (fixLabelsSave) return fixLabelsSave(body);
       fixLabels = body.fixLabels;
       return jsonResponse(fixLabelsView());
+    },
+    [`GET ${FEATURE_MAPPING_PATH}`]: held(featureMappingView),
+    [`PUT ${FEATURE_MAPPING_PATH}`]: (request) => {
+      featureMapping = (request.body as { featureMapping: typeof featureMapping }).featureMapping;
+      return jsonResponse(featureMappingView());
     },
     [`POST /api/ui/connections/gitlab/${IDS.gitlab}/rotate`]: () => rotateResponse(),
     [`PUT /api/ui/connections/gitlab/${IDS.gitlab}`]: () =>
@@ -838,6 +861,66 @@ describe("fix label", () => {
   it("is read-only for members", async () => {
     renderConnection("linear", { user: member });
     expect((await input()).disabled).toBe(true);
+    expect(within(await card()).queryByRole("button", { name: "Save" })).toBeNull();
+  });
+});
+
+describe("features", () => {
+  const card = () => screen.findByRole("region", { name: "Features" });
+  // The card is replaced once the setting loads: look the radios up again each time.
+  const radio = (name: RegExp) =>
+    waitFor(() =>
+      within(screen.getByRole("region", { name: "Features" })).getByRole<HTMLButtonElement>(
+        "radio",
+        { name },
+      ),
+    );
+
+  it("is only on the Linear connection", async () => {
+    renderConnection("gitlab");
+    await page();
+    expect(screen.queryByRole("region", { name: "Features" })).toBeNull();
+  });
+
+  it("shows both choices with a one-line explanation each, Omniralph only by default", async () => {
+    renderConnection("linear");
+    expect((await radio(/^Omniralph only/)).getAttribute("aria-checked")).toBe("true");
+    expect((await radio(/^Parent issue in the tracker/)).getAttribute("aria-checked")).toBe(
+      "false",
+    );
+    const text = (await card()).textContent;
+    expect(text).toContain(FEATURE_MAPPING_HELP);
+    expect(text).toContain(FEATURE_MAPPING_EXPLANATIONS.omniralph);
+    expect(text).toContain(FEATURE_MAPPING_EXPLANATIONS["parent-issue"]);
+    expect(within(await card()).getByRole("button", { name: "Change history" })).toBeTruthy();
+  });
+
+  it("stages the parent issue choice and saves it, shown before any refetch", async () => {
+    renderConnection("linear");
+    await userEvent.click(await radio(/^Parent issue in the tracker/));
+    holdReads = true;
+    await userEvent.click(within(await card()).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(requests("PUT", FEATURE_MAPPING_PATH)).toHaveLength(1));
+    expect(requests("PUT", FEATURE_MAPPING_PATH)[0]!.body).toEqual({
+      featureMapping: "parent-issue",
+    });
+    await waitFor(async () =>
+      expect(within(await card()).queryByRole("button", { name: "Save" })).toBeNull(),
+    );
+    expect((await radio(/^Parent issue in the tracker/)).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("offers only Omniralph when the tracker can't hold parent issues", async () => {
+    parentIssues = false;
+    renderConnection("linear");
+    expect((await radio(/^Parent issue in the tracker/)).disabled).toBe(true);
+    expect((await card()).textContent).toContain(NO_PARENT_ISSUES_NOTE);
+  });
+
+  it("is read-only for members", async () => {
+    renderConnection("linear", { user: member });
+    expect((await radio(/^Omniralph only/)).disabled).toBe(true);
+    expect((await radio(/^Parent issue in the tracker/)).disabled).toBe(true);
     expect(within(await card()).queryByRole("button", { name: "Save" })).toBeNull();
   });
 });

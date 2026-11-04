@@ -43,6 +43,7 @@ import { ROUTING_FIELDS } from "@/lib/routing/fields";
 import { describeQuery } from "@/lib/routing/describe";
 import { matchSentence } from "@/lib/routing/match";
 import { userDisplayName } from "@/lib/user-display";
+import { FEATURE_MAPPING_LABELS } from "@/lib/api/trackers";
 
 /**
  * The tracked settings sections of the change history (Design rule 11): each section's
@@ -341,6 +342,7 @@ const CONNECTION_FIELDS: SettingsFields = {
   ready: { label: "Ready to start" },
   needsRefining: { label: "Needs refining" },
   fixLabels: { label: "Fix labels" },
+  featureMapping: { label: "Features" },
 };
 
 async function readScmConnection(
@@ -387,6 +389,7 @@ async function readIntegration(
     ready: ready.types,
     needsRefining: needsRefining.types,
     fixLabels: integration.fixLabels,
+    featureMapping: FEATURE_MAPPING_LABELS[integration.featureMapping],
     ...Object.fromEntries(
       Object.entries(teams).map(([team, states]) => [
         `team:${team}|States of team ${team}`,

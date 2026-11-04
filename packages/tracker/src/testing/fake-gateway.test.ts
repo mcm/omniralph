@@ -226,6 +226,7 @@ describe("FakeTrackerGateway optional capabilities", () => {
       delegation: true,
       documents: false,
       uploads: true,
+      parentIssues: true,
     });
   });
 
@@ -324,6 +325,27 @@ describe("FakeTrackerGateway optional capabilities", () => {
       TrackerCapabilityError,
     );
     expect(fake.issues.size).toBe(0);
+  });
+
+  it("files issues under a parent issue it creates", async () => {
+    const fake = new FakeTrackerGateway();
+    const epic = fake.add({ title: "Epic" });
+    const parentIssues = requireCapability(fake, "parentIssues");
+    const parent = await parentIssues.createParentIssue({
+      teamId: "team-1",
+      title: "Feature",
+      description: "",
+    });
+    await parentIssues.fileUnder(parent.id, epic.id);
+    expect((await fake.getIssue(epic.id)).parentId).toBe(parent.id);
+    expect((await fake.getChildren(parent.id)).map((child) => child.id)).toEqual([epic.id]);
+  });
+
+  it("without parent issues, reports that it can't hold them", () => {
+    const fake = new FakeTrackerGateway({ capabilities: { parentIssues: false } });
+    expect(() => requireCapability(fake, "parentIssues")).toThrow(
+      new TrackerCapabilityError("linear", "parentIssues"),
+    );
   });
 
   it("without any capability, a caller that checks first falls back to comments", async () => {

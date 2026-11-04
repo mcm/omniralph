@@ -362,12 +362,33 @@ export interface TrackerUploads {
   uploadFile(input: UploadFileInput): Promise<string>;
 }
 
+/** The issue `parentIssues.createParentIssue` creates (e.g. for a feature). */
+export interface CreateParentIssueInput {
+  teamId: string;
+  title: string;
+  /** Markdown. */
+  description: string;
+  projectId?: string;
+}
+
+/**
+ * Parent issues that group other issues under them (e.g. a feature's epics). Without it,
+ * a feature exists only in Omniralph.
+ */
+export interface TrackerParentIssues {
+  /** Creates an issue to file others under. */
+  createParentIssue(input: CreateParentIssueInput): Promise<IssueSummary>;
+  /** Files the issue under the parent, replacing any parent it had. */
+  fileUnder(parentId: string, issueId: string): Promise<void>;
+}
+
 /** The optional capabilities, by the gateway property that holds each. */
 export interface TrackerCapabilityMap {
   sessions: TrackerSessions;
   delegation: TrackerDelegation;
   documents: TrackerDocuments;
   uploads: TrackerUploads;
+  parentIssues: TrackerParentIssues;
 }
 
 export type TrackerCapability = keyof TrackerCapabilityMap;
@@ -377,6 +398,7 @@ export const TRACKER_CAPABILITIES = [
   "delegation",
   "documents",
   "uploads",
+  "parentIssues",
 ] as const satisfies readonly TrackerCapability[];
 
 /**

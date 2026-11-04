@@ -219,6 +219,8 @@ export const LIVE_INVALIDATIONS = {
     connectionKeys(keys).stateMappings,
     // A tracker connection's fix labels (a save by another admin, a disconnect).
     connectionKeys(keys).fixLabelsAll,
+    // A tracker connection's feature mapping (a save by another admin, a disconnect).
+    connectionKeys(keys).featureMappingAll,
     // The chat connections whose channels Advanced › Chat channel overrides lists.
     chatPlaybooksKey(keys),
     // Connection health problems are repositories' problems.
