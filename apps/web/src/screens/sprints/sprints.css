@@ -1,0 +1,329 @@
+/*
+ * The Sprints screen (Design board Sprints): the list pane with "Sprints", the + and the
+ * sprints grouped by repo, beside the open sprint (its actions, settings, epics in order and
+ * the repo's backlog to add from). The panes and their widths are SplitView's. Only `--or-`
+ * tokens.
+ */
+.or-sprints {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.or-sprints__pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.or-sprints__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 16px 16px 12px 20px;
+  border-bottom: 1px solid var(--or-line);
+}
+
+.or-sprints__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.or-sprints__list {
+  min-height: 0;
+  padding-bottom: 8px;
+}
+
+.or-sprints__list .or-empty {
+  padding: 40px 20px;
+}
+
+.or-sprints__group-title {
+  margin: 0;
+  padding: 16px 20px 6px;
+  color: var(--or-ter);
+  font-family: var(--or-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* Loading: a group heading and rows shaped like the list's, as the other skeletons. */
+.or-sprints-skeleton__heading {
+  width: 120px;
+  height: 10px;
+  margin: 20px 20px 10px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-sprints-skeleton__row,
+.or-sprint-skeleton__row {
+  height: 44px;
+  margin: 8px 14px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+/* One sprint. */
+.or-sprint {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 760px;
+  padding: 20px 28px 32px;
+}
+
+.or-sprint__empty {
+  padding: 64px 28px;
+}
+
+.or-sprint__head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.or-sprint__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.or-sprint__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.or-sprint__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.or-sprint__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.or-sprint__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.or-sprint__section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--or-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.or-sprint__switch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.or-sprint__setting {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-sprint__setting strong {
+  color: var(--or-text);
+  font-weight: 500;
+}
+
+.or-sprint__hint,
+.or-sprint__note,
+.or-sprint__placeholder {
+  margin: 0;
+  color: var(--or-ter);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.or-sprint__note {
+  padding: 8px 12px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-sprint__placeholder {
+  padding: 16px 12px;
+  border: 1px dashed var(--or-line);
+  border-radius: var(--or-radius);
+  text-align: center;
+}
+
+.or-sprint__error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--or-fail);
+  border-radius: var(--or-radius);
+  background: var(--or-fail-tint);
+  color: var(--or-text);
+  font-size: 13px;
+}
+
+.or-sprint__error p {
+  margin: 0;
+}
+
+.or-sprint__epics,
+.or-sprint__candidates {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+  list-style: none;
+}
+
+/* An epic in the order, or a backlog row to add: handle, identifier, title, state, action. */
+.or-sprint-epic {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--or-line);
+  background: var(--or-surf);
+}
+
+.or-sprint-epic:first-child {
+  border-top-left-radius: var(--or-radius);
+  border-top-right-radius: var(--or-radius);
+}
+
+.or-sprint-epic:last-child {
+  border-bottom: 0;
+  border-bottom-left-radius: var(--or-radius);
+  border-bottom-right-radius: var(--or-radius);
+}
+
+.or-sprint-epic--dragging {
+  opacity: 0.5;
+}
+
+.or-sprint-epic--over {
+  box-shadow: inset 0 2px 0 var(--or-acc);
+}
+
+.or-sprint-epic__handle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--or-radius-sm);
+  background: transparent;
+  color: var(--or-ter);
+  cursor: grab;
+}
+
+.or-sprint-epic__handle:hover {
+  background: var(--or-hover);
+  color: var(--or-text);
+}
+
+.or-sprint-epic__handle:focus-visible {
+  outline: 2px solid var(--or-acc);
+  outline-offset: 1px;
+}
+
+.or-sprint-epic__position {
+  flex: none;
+  width: 24px;
+  color: var(--or-ter);
+  font-size: 12px;
+  text-align: center;
+}
+
+.or-sprint-epic__identifier {
+  flex: none;
+  color: var(--or-sec);
+  font-size: 12px;
+}
+
+.or-sprint-epic__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--or-text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-sprint-epic__state {
+  flex: none;
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+.or-sprint-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.or-sprint-skeleton__line {
+  height: 12px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-sprint-skeleton__line--title {
+  width: 40%;
+  height: 20px;
+}
+
+.or-sprint-skeleton__line--short {
+  width: 60%;
+}
+
+.or-sprint-skeleton .or-sprint-skeleton__row {
+  margin: 0;
+}
+
+.or-new-sprint {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .or-sprint {
+    padding: 16px 16px 24px;
+  }
+
+  .or-sprint-epic__state {
+    display: none;
+  }
+}

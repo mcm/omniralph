@@ -79,6 +79,20 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
   { name: "runs", path: "/runs", page: "(app)/runs/page.tsx", auth: "signed-in" },
   // The Backlog (the fixture Linear workspace's FIX items), and one item open beside it.
   { name: "backlog", path: "/backlog", page: "(app)/backlog/page.tsx", auth: "signed-in" },
+  // Sprints: the control panel's draft and running sprints, the draft open beside them.
+  { name: "sprints", path: "/sprints", page: "(app)/sprints/page.tsx", auth: "signed-in" },
+  {
+    name: "sprint-draft",
+    path: `/sprints/${ids.sprints.draft}`,
+    page: "(app)/sprints/[id]/page.tsx",
+    auth: "signed-in",
+  },
+  {
+    name: "sprint-running",
+    path: `/sprints/${ids.sprints.running}`,
+    page: "(app)/sprints/[id]/page.tsx",
+    auth: "signed-in",
+  },
   // Ask: the member's chats.
   { name: "ask", path: "/ask", page: "(app)/ask/page.tsx", auth: "signed-in" },
   { name: "ask-new", path: "/ask/new", page: "(app)/ask/new/page.tsx", auth: "signed-in" },

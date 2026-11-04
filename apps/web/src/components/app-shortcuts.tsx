@@ -10,11 +10,12 @@ import { NewWorkItemSheet } from "@/screens/backlog/new-work-item-sheet";
 /** The Help page, opened from the user menu. */
 export const HELP_PATH = "/help";
 
-/** The key of each nav entry (`navigation.ts`), in the sidebar's order: 1–7, and Mod+J for Ask. */
+/** The key of each nav entry (`navigation.ts`), in the sidebar's order: 1–8, and Mod+J for Ask. */
 export const NAV_SHORTCUTS = {
   inbox: "goInbox",
   runs: "goRuns",
   backlog: "goBacklog",
+  sprints: "goSprints",
   repos: "goRepos",
   fleet: "goFleet",
   ask: "ask",
@@ -50,7 +51,7 @@ function selectNavEntry(id: string): boolean {
   return true;
 }
 
-/** One nav entry's key: 1–7 for the screens, Mod+J for Ask. */
+/** One nav entry's key: 1–8 for the screens, Mod+J for Ask. */
 function NavShortcut({ navId, id }: { navId: string; id: ShortcutId }) {
   useShortcut(id, () => selectNavEntry(navId));
   return null;

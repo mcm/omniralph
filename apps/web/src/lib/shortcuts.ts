@@ -13,6 +13,7 @@ export type ShortcutId =
   | "goInbox"
   | "goRuns"
   | "goBacklog"
+  | "goSprints"
   | "goRepos"
   | "goFleet"
   | "goAnalytics"
@@ -44,10 +45,11 @@ export const SHORTCUTS = {
   goInbox: { key: "1", label: "Go to Inbox", group: "goTo" },
   goRuns: { key: "2", label: "Go to Runs", group: "goTo" },
   goBacklog: { key: "3", label: "Go to Backlog", group: "goTo" },
-  goRepos: { key: "4", label: "Go to Repos", group: "goTo" },
-  goFleet: { key: "5", label: "Go to Fleet", group: "goTo" },
-  goAnalytics: { key: "6", label: "Go to Analytics", group: "goTo" },
-  goSettings: { key: "7", label: "Go to Settings", group: "goTo" },
+  goSprints: { key: "4", label: "Go to Sprints", group: "goTo" },
+  goRepos: { key: "5", label: "Go to Repos", group: "goTo" },
+  goFleet: { key: "6", label: "Go to Fleet", group: "goTo" },
+  goAnalytics: { key: "7", label: "Go to Analytics", group: "goTo" },
+  goSettings: { key: "8", label: "Go to Settings", group: "goTo" },
   search: { key: "k", mod: true, label: "Search", group: "goTo" },
   ask: { key: "j", mod: true, label: "Open or close Ask", group: "goTo" },
   help: { key: "?", label: "Open Help", group: "goTo" },

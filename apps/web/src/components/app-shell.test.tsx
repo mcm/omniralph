@@ -81,7 +81,7 @@ describe("AppShell", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 
-  it("lists Inbox, Runs, Backlog, Repos and Fleet, then Ask, Analytics and Settings, each linking its 2.0 page", () => {
+  it("lists Inbox, Runs, Backlog, Sprints, Repos and Fleet, then Ask, Analytics and Settings, each linking its 2.0 page", () => {
     renderShell("/analytics");
     const links = within(sidebar())
       .getAllByRole("link")
@@ -91,6 +91,7 @@ describe("AppShell", () => {
       ["Inbox", "/"],
       ["Runs", "/runs"],
       ["Backlog", "/backlog"],
+      ["Sprints", "/sprints"],
       ["Repos", "/repos"],
       ["Fleet", "/fleet"],
       ["Ask", "/ask"],
@@ -105,6 +106,8 @@ describe("AppShell", () => {
     ["/runs/123", "Runs"],
     ["/backlog", "Backlog"],
     ["/backlog/linear-1", "Backlog"],
+    ["/sprints", "Sprints"],
+    ["/sprints/abc", "Sprints"],
     ["/repos", "Repos"],
     ["/repos/abc", "Repos"],
     ["/fleet/abc", "Fleet"],
@@ -138,7 +141,7 @@ describe("AppShell", () => {
     expect(current(drawer)).toEqual(["Analytics"]);
   });
 
-  it("puts Inbox, Runs, Backlog and Ask in the tab bar and Repos, Fleet, Analytics and Settings in the drawer", async () => {
+  it("puts Inbox, Runs, Backlog and Ask in the tab bar and Sprints, Repos, Fleet, Analytics and Settings in the drawer", async () => {
     renderShell("/settings/routing");
     expect(
       within(tabBar())
@@ -150,6 +153,7 @@ describe("AppShell", () => {
       .getAllByRole("link")
       .filter((link) => link.classList.contains("or-nav__item"));
     expect(entries.map((link) => link.getAttribute("aria-label"))).toEqual([
+      "Sprints",
       "Repos",
       "Fleet",
       "Analytics",
@@ -334,18 +338,25 @@ describe("AppShell shortcuts", () => {
       inbox: "1",
       runs: "2",
       backlog: "3",
-      repos: "4",
-      fleet: "5",
+      sprints: "4",
+      repos: "5",
+      fleet: "6",
       ask: "Control+J",
-      analytics: "6",
-      settings: "7",
+      analytics: "7",
+      settings: "8",
     });
     expect(keys(tabBar())).toEqual({ inbox: "1", runs: "2", backlog: "3", ask: "Control+J" });
     for (const button of screen.getAllByRole("button", { name: "Search or jump to…" })) {
       expect(button.getAttribute("aria-keyshortcuts")).toBe("Control+K");
     }
     const { drawer } = await openDrawer();
-    expect(keys(drawer)).toEqual({ repos: "4", fleet: "5", analytics: "6", settings: "7" });
+    expect(keys(drawer)).toEqual({
+      sprints: "4",
+      repos: "5",
+      fleet: "6",
+      analytics: "7",
+      settings: "8",
+    });
   });
 
   it("opens a nav entry with its digit, as a click on the sidebar's entry does", async () => {
@@ -358,11 +369,12 @@ describe("AppShell shortcuts", () => {
       });
     }
     const user = userEvent.setup();
-    await user.keyboard("1234567");
+    await user.keyboard("12345678");
     expect(clicked).toEqual([
       "inbox",
       "runs",
       "backlog",
+      "sprints",
       "repos",
       "fleet",
       "analytics",
