@@ -27,7 +27,7 @@ import { useCurrentUser } from "@/components/current-user";
 import { ApiError } from "@/lib/api/client";
 import type { SprintEpicRow, SprintRow } from "@/lib/api/sprints";
 import type { WorkItemRow } from "@/lib/api/work-items";
-import { useDeleteSprint, useUpdateSprint, type SprintChange } from "./mutations";
+import { useDeleteSprint, useSprintAction, useUpdateSprint, type SprintChange } from "./mutations";
 import { useRepoBacklog, useSprint } from "./queries";
 import {
   SPRINT_ACTION_LABELS,
@@ -51,9 +51,9 @@ export const ADD_EXPLANATION =
   "Open work items of this repo that aren't in the sprint. Add an epic to put it at the end.";
 export const READ_ONLY_MEMBER = "Only admins can change sprints.";
 export const READ_ONLY_STARTED = "A started sprint keeps its name, setting and order.";
-export const ACTIONS_NOT_AVAILABLE = "Sprint runs aren't available yet.";
+export const PAUSED_HINT = "Fix what's in the way, then resume: Om retries the stalled epic first.";
 
-/** Handles a sprint action (Start, Pause, Resume, Cancel); without one the buttons are disabled. */
+/** Handles a sprint action (Start, Pause, Resume, Cancel); by default it's sent to the API. */
 export type SprintActionHandler = (sprint: SprintRow, action: SprintAction) => void;
 
 /** The epic states as a person reads them. */
@@ -144,6 +144,9 @@ function SprintActions({
   onAction?: SprintActionHandler;
   onDelete: () => void;
 }) {
+  const sprintAction = useSprintAction();
+  const act: SprintActionHandler =
+    onAction ?? ((target, action) => sprintAction.mutate({ sprint: target, action }));
   const { actions, explanation } = SPRINT_ACTIONS[sprint.status];
   if (actions.length === 0 && sprint.status !== "draft") return null;
   return (
@@ -154,15 +157,11 @@ function SprintActions({
             key={action}
             variant={action === "start" || action === "resume" ? "solid" : "outline"}
             size="sm"
-            disabled={onAction === undefined || (action === "start" && sprint.epics.length === 0)}
+            disabled={sprintAction.isPending || (action === "start" && sprint.epics.length === 0)}
             disabledReason={
-              onAction === undefined
-                ? ACTIONS_NOT_AVAILABLE
-                : action === "start" && sprint.epics.length === 0
-                  ? "Add an epic first."
-                  : undefined
+              action === "start" && sprint.epics.length === 0 ? "Add an epic first." : undefined
             }
-            onClick={() => onAction?.(sprint, action)}
+            onClick={() => act(sprint, action)}
           >
             {SPRINT_ACTION_LABELS[action]}
           </Button>
@@ -337,6 +336,13 @@ export function SprintEditor({ sprint, onAction }: SprintEditorProps) {
           {sprint.sprintBranch ? <BranchBadge name={sprint.sprintBranch} /> : null}
         </div>
       </header>
+
+      {sprint.status === "paused" && sprint.pausedReason ? (
+        <div className="or-sprint__paused" role="status">
+          <p className="or-sprint__paused-reason">{sprint.pausedReason}</p>
+          {admin ? <p className="or-sprint__hint">{PAUSED_HINT}</p> : null}
+        </div>
+      ) : null}
 
       {admin ? (
         <SprintActions

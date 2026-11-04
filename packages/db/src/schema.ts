@@ -1300,6 +1300,8 @@ export const sprints = pgTable(
     status: sprintStatus("status").notNull().default("draft"),
     /** The branch its epics' PRs target (merge-together sprints), set when the sprint starts. */
     sprintBranch: text("sprint_branch"),
+    /** Why the sprint is paused (a person paused it, or an epic was refused or stalled). */
+    pausedReason: text("paused_reason"),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

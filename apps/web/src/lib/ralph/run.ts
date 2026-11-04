@@ -128,6 +128,7 @@ import {
   withPullRequestLinks,
   type PublishedLane,
 } from "./publish";
+import { sprintEpicRunEnded } from "@/lib/sprints/run";
 import { scheduleAdvancedRun, scheduleRunSafetyCheck } from "./due";
 import {
   applyRequestJob,
@@ -302,6 +303,8 @@ async function advance(runId: string, deps: RalphDeps): Promise<AdvanceResult> {
   if (result?.action === "completed" || result?.action === "failed") {
     await deleteRunHiddenRefs(deps, result.run);
   }
+  // A failed run's sprint epic stalls, which pauses its sprint.
+  if (result?.action === "failed") await sprintEpicRunEnded(deps, result.run);
   return result ?? { action: "gone" };
 }
 

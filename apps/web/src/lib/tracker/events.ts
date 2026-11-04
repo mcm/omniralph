@@ -14,6 +14,7 @@ import { handleReply } from "@/lib/ralph/reply";
 import type { RalphDeps } from "@/lib/ralph/run";
 import { ACKNOWLEDGEMENT, isMention, startRun, type SessionCreatedEvent } from "@/lib/ralph/start";
 import { scmAdapterFor } from "@/lib/scm/adapters";
+import { NEEDS_REFINING_WHY, sprintEpicStartRefused, startRefusal } from "@/lib/sprints/run";
 import { isOwnTriageSession, startLabelTriage } from "@/lib/triage/label";
 import { handleTriageReply, type SessionPromptedEvent } from "@/lib/triage/reply";
 import { postActivity } from "@/lib/ralph/notify";
@@ -88,6 +89,12 @@ export function stillNeedsRefiningMessage(identifier: string): string {
   return `${identifier} still has open questions, so Om didn't start building it. Answer them here to triage it again, then delegate it to Om again.`;
 }
 
+/** Starts a delegation's run; one refused stalls the work item's sprint epic (if any). */
+async function startDelegatedRun(event: SessionCreatedEvent, ralph: RalphDeps): Promise<void> {
+  const why = startRefusal(await startRun(event, ralph));
+  if (why) await sprintEpicStartRefused(ralph, event.issueId, why);
+}
+
 /**
  * A new agent session: `/triage` always starts triage; a mention runs what it asks for
  * (`startRun`); a session that already has its run (a redelivery) goes to that run; a
@@ -121,12 +128,14 @@ async function startSession(event: SessionCreatedEvent, ralph: RalphDeps): Promi
       `Reading the readiness of ${event.issueIdentifier ?? event.issueId} failed; starting a run`,
       error,
     );
-    await startRun(event, ralph);
+    await startDelegatedRun(event, ralph);
     return;
   }
   if (item.readiness !== "needs_refining") {
-    await startRun(event, ralph);
-  } else if (triage) {
+    await startDelegatedRun(event, ralph);
+    return;
+  }
+  if (triage) {
     await postActivity(trackerConversation(ralph.tracker, event.sessionId, event.issueId), {
       type: "response",
       body: stillNeedsRefiningMessage(item.identifier),
@@ -134,6 +143,7 @@ async function startSession(event: SessionCreatedEvent, ralph: RalphDeps): Promi
   } else {
     await startTriage(event, ralph, { delegation: { identifier: item.identifier } });
   }
+  await sprintEpicStartRefused(ralph, event.issueId, NEEDS_REFINING_WHY);
 }
 
 /**

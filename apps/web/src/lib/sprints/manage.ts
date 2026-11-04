@@ -1,10 +1,15 @@
 import "server-only";
 import {
+  cancelSprint as cancelSprintRow,
   createSprint as createSprintRow,
   deleteDraftSprint,
   getSprint,
   listSprints,
+  pauseSprint as pauseSprintRow,
+  resumeSprint as resumeSprintRow,
+  startSprint as startSprintRow,
   updateDraftSprint,
+  type SprintTransitionResult,
   workItemUrlId,
   type Database,
   type SprintEpicConflict,
@@ -16,12 +21,15 @@ import type { OrgUser } from "@/lib/auth/session";
 import type {
   CreateSprintBody,
   SavedSprint,
+  SprintActionName,
   SprintList,
   SprintRow,
   UpdateSprintBody,
 } from "@/lib/api/sprints";
+import { userDisplayName } from "@/lib/user-display";
 import { getWorkItemTracker } from "@/lib/work-items/get-tracker";
 import { parseWorkItemId, trackerFailedMessage } from "@/lib/work-items/item";
+import { advanceSprint, pausedByReason } from "./run";
 import {
   TrackerNotConnectedError,
   WorkItemNotFoundError,
@@ -55,6 +63,7 @@ function sprintRow(sprint: SprintWithEpics): SprintRow {
     repository: { id: sprint.repositoryId, fullPath: sprint.repositoryFullPath },
     mergeTogether: sprint.mergeTogether,
     status: sprint.status,
+    pausedReason: sprint.pausedReason,
     sprintBranch: sprint.sprintBranch,
     epics: sprint.epics.map((epic) => ({
       workItemId: workItemUrlId(epic.tracker, epic.externalId),
@@ -313,4 +322,72 @@ export async function deleteSprint(db: Database, user: OrgUser, id: string): Pro
     case "deleted":
       return { ok: true };
   }
+}
+
+/** The statuses each action starts from, as the refusal of another status says them. */
+const ACTION_FROM: Record<SprintActionName, string> = {
+  start: "only a draft sprint can be started",
+  pause: "only a running sprint can be paused",
+  resume: "only a paused sprint can be resumed",
+  cancel: "only a running or paused sprint can be canceled",
+};
+
+/** The saved sprint of a status change, or the API's refusal of it. */
+function transitioned(result: SprintTransitionResult, action: SprintActionName): SprintWithEpics {
+  switch (result.status) {
+    case "not_found":
+      throw ApiRouteError.notFound(SPRINT_NOT_FOUND_MESSAGE);
+    case "wrong_status":
+      throw new ApiRouteError(
+        409,
+        `“${result.sprint.name}” is ${result.sprint.status}: ${ACTION_FROM[action]}.`,
+        "wrong_status",
+      );
+    case "empty":
+      throw new ApiRouteError(400, "Add an epic before starting the sprint.", "empty");
+    case "updated":
+      return result.sprint;
+  }
+}
+
+/**
+ * Start, Pause, Resume or Cancel (admins). Starting a draft with epics runs it and starts its
+ * first epic as Start epic does; resuming a paused sprint queues its stalled epic again and
+ * starts it. A refused start pauses the sprint with the reason, which the answer shows.
+ * Pausing starts no new epic; canceling ends the sprint, leaving running epics alone.
+ */
+export async function runSprintAction(
+  deps: SprintDeps,
+  user: OrgUser,
+  id: string,
+  action: SprintActionName,
+): Promise<SavedSprint> {
+  const organizationId = user.organization.id;
+  if (!isUuid(id)) throw ApiRouteError.notFound(SPRINT_NOT_FOUND_MESSAGE);
+  const actor = { userId: user.id, name: userDisplayName(user) };
+  let sprint: SprintWithEpics;
+  switch (action) {
+    case "start":
+      sprint = transitioned(await startSprintRow(deps.db, organizationId, id), action);
+      break;
+    case "resume":
+      sprint = transitioned(await resumeSprintRow(deps.db, organizationId, id), action);
+      break;
+    case "pause":
+      sprint = transitioned(
+        await pauseSprintRow(deps.db, organizationId, id, pausedByReason(actor.name)),
+        action,
+      );
+      return { ok: true, sprint: sprintRow(sprint) };
+    case "cancel":
+      sprint = transitioned(await cancelSprintRow(deps.db, organizationId, id), action);
+      return { ok: true, sprint: sprintRow(sprint) };
+  }
+  const loadTracker = deps.loadTracker ?? defaultTracker(deps.db);
+  await advanceSprint(
+    { db: deps.db, organizationId, loadTracker: () => loadTracker(organizationId) },
+    sprint.id,
+    actor,
+  );
+  return { ok: true, sprint: sprintRow((await getSprint(deps.db, organizationId, id)) ?? sprint) };
 }

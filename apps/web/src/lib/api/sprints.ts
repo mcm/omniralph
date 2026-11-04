@@ -34,6 +34,8 @@ export const sprintRowSchema = z.object({
   repository: z.object({ id: z.string(), fullPath: z.string() }),
   mergeTogether: z.boolean(),
   status: z.enum(SPRINT_STATUSES),
+  /** Why the sprint is paused: a person paused it, or an epic was refused or stalled. */
+  pausedReason: z.string().nullable(),
   /** The branch the epics' PRs target (merge-together sprints, once started). */
   sprintBranch: z.string().nullable(),
   epics: z.array(sprintEpicRowSchema),
@@ -86,3 +88,7 @@ export const updateSprintBodySchema = z
     error: "Nothing to change.",
   });
 export type UpdateSprintBody = z.input<typeof updateSprintBodySchema>;
+
+/** `POST /api/ui/sprints/{id}/{action}` (admins): a sprint's status changes. */
+export const SPRINT_ACTION_NAMES = ["start", "pause", "resume", "cancel"] as const;
+export type SprintActionName = (typeof SPRINT_ACTION_NAMES)[number];
