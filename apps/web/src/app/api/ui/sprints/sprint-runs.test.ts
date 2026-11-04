@@ -9,6 +9,9 @@ import {
   ensureLane,
   getMainLane,
   getSprint,
+  ralphRuns,
+  setSprintEpicState,
+  sprintEpics,
   saveIntegration,
   sprints,
   updateLane,
@@ -26,6 +29,7 @@ import {
 } from "@omniralph/db/testing";
 import { FakeLinearGateway } from "@omniralph/tracker/linear/testing";
 import type { IssueSummary } from "@omniralph/tracker";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { savedSprintSchema, type SprintRow } from "@/lib/api/sprints";
 import { assertRole, type Role } from "@/lib/auth/roles";
@@ -74,6 +78,7 @@ vi.mock("@/lib/tracker/linear/client", async (importOriginal) => {
 });
 
 process.env.ENCRYPTION_KEY = randomBytes(32).toString("base64");
+process.env.CRON_SECRET = "cron-secret";
 
 const routes = {
   start: await import("./[id]/start/route"),
@@ -81,6 +86,7 @@ const routes = {
   resume: await import("./[id]/resume/route"),
   cancel: await import("./[id]/cancel/route"),
 };
+const { GET: sprintCheck } = await import("../../cron/sprint-check/route");
 
 type Handler = (
   request: Request,
@@ -478,5 +484,157 @@ describe.skipIf(!databaseAvailable)("running a sprint", () => {
     state.role = "member";
     expect((await act("start", id)).status).toBe(403);
     expect((await stored(id)).status).toBe("draft");
+  });
+
+  describe("the sprint check cron", () => {
+    /** Runs the cron; answers its counts. */
+    const check = async () => {
+      const response = await sprintCheck(
+        new Request("http://localhost/api/cron/sprint-check", {
+          headers: { authorization: "Bearer cron-secret" },
+        }),
+      );
+      expect(response.status).toBe(200);
+      return (await response.json()) as Record<string, number>;
+    };
+    /** Moves when the sprint's running epic was claimed `ms` into the past. */
+    const claimedAgo = async (id: string, ms: number) => {
+      const running = (await stored(id)).epics.find((e) => e.state === "running")!;
+      await db
+        .update(sprintEpics)
+        .set({ updatedAt: new Date(Date.now() - ms) })
+        .where(eq(sprintEpics.id, running.id));
+    };
+
+    it("pauses a sprint whose running epic's run never began, once it's been a while", async () => {
+      const [a, b] = [epic("ENG-100"), epic("ENG-101")];
+      const id = await sprintOf([a, b]);
+      await accepted("start", id);
+
+      // Just claimed: its run may still begin.
+      expect(await check()).toMatchObject({ checked: 1, paused: 0 });
+      expect((await stored(id)).status).toBe("running");
+
+      // 40 minutes without a run: Om died before delegating it, or the webhook never came.
+      await claimedAgo(id, 40 * 60_000);
+      expect(await check()).toMatchObject({ checked: 1, paused: 1 });
+      const paused = await stored(id);
+      expect(paused.status).toBe("paused");
+      expect(paused.pausedReason).toBe("Om started ENG-100, but its run never began.");
+      expect(paused.epics.map((e) => e.state)).toEqual(["stalled", "queued"]);
+      // A paused sprint isn't checked again.
+      expect(await check()).toMatchObject({ checked: 0 });
+
+      // Resuming starts it again.
+      const resumed = await accepted("resume", id);
+      expect(resumed.epics.map((e) => e.state)).toEqual(["running", "queued"]);
+      expect(delegated(a)).toBe(true);
+      expect(delegated(b)).toBe(false);
+    });
+
+    it("leaves an epic whose run is working alone, however long ago it started", async () => {
+      const [a, b] = [epic("ENG-105"), epic("ENG-106")];
+      const id = await sprintOf([a, b]);
+      await accepted("start", id);
+      await runOf(a);
+      await claimedAgo(id, 5 * 3600_000);
+      expect(await check()).toMatchObject({ checked: 1, paused: 0, merged: 0 });
+      expect((await stored(id)).status).toBe("running");
+      expect(await epicStates(id)).toEqual(["running", "queued"]);
+    });
+
+    it("waits for a retried epic's new run, ignoring the failed run before it", async () => {
+      const [a, b] = [epic("ENG-110"), epic("ENG-111")];
+      // An earlier attempt of the epic failed, before the sprint started.
+      const { run } = await runOf(a);
+      await updateRun(db, run.id, { status: "failed", error: "Out of retries." });
+      const hourAgo = new Date(Date.now() - 3600_000);
+      await db
+        .update(ralphRuns)
+        .set({ createdAt: hourAgo, updatedAt: hourAgo })
+        .where(eq(ralphRuns.id, run.id));
+      const id = await sprintOf([a, b]);
+      await accepted("start", id);
+      expect(delegated(a)).toBe(true);
+
+      expect(await check()).toMatchObject({ checked: 1, paused: 0 });
+      expect((await stored(id)).status).toBe("running");
+
+      // Its new run never began either.
+      await claimedAgo(id, 40 * 60_000);
+      await check();
+      expect((await stored(id)).pausedReason).toBe("Om started ENG-110, but its run never began.");
+    });
+
+    it.each([
+      ["failed", "ENG-120's run failed: The agent crashed."],
+      ["stopped", "ENG-120's run was stopped."],
+    ] as const)(
+      "pauses the sprint when the epic's run %s without its hook pausing it",
+      async (status, reason) => {
+        const [a, b] = [epic("ENG-120"), epic("ENG-121")];
+        const id = await sprintOf([a, b]);
+        await accepted("start", id);
+        const { run } = await runOf(a);
+        // The run ended, but `sprintEpicRunEnded` never ran.
+        await updateRun(db, run.id, {
+          status,
+          error: status === "failed" ? "The agent crashed." : null,
+        });
+        expect((await stored(id)).status).toBe("running");
+
+        expect(await check()).toMatchObject({ checked: 1, paused: 1 });
+        const paused = await stored(id);
+        expect(paused.status).toBe("paused");
+        expect(paused.pausedReason).toBe(reason);
+        expect(paused.epics.map((e) => e.state)).toEqual(["stalled", "queued"]);
+        expect(delegated(b)).toBe(false);
+      },
+    );
+
+    it("pauses when the epic's run completed without opening a PR", async () => {
+      const a = epic("ENG-125");
+      const id = await sprintOf([a, epic("ENG-126")]);
+      await accepted("start", id);
+      const { run, lane } = await runOf(a);
+      await updateLane(db, lane.id, { prNumber: null, prUrl: null });
+      await updateRun(db, run.id, { status: "completed" });
+      await check();
+      expect((await stored(id)).pausedReason).toBe("ENG-125's run finished without opening a PR.");
+    });
+
+    it("counts a merge whose hook never ran, and starts the next epic", async () => {
+      const [a, b] = [epic("ENG-130"), epic("ENG-131")];
+      const id = await sprintOf([a, b]);
+      await accepted("start", id);
+      const { run, lane } = await runOf(a);
+      await updateRun(db, run.id, { status: "completed" });
+      // Waiting for its PR's merge.
+      expect(await check()).toMatchObject({ checked: 1, merged: 0, paused: 0 });
+      await updateLane(db, lane.id, { prClosed: true, prMerged: true });
+
+      expect(await check()).toMatchObject({ checked: 1, merged: 1 });
+      expect(await epicStates(id)).toEqual(["merged", "running"]);
+      expect(delegated(b)).toBe(true);
+    });
+
+    it("starts the next epic of a running sprint with nothing running", async () => {
+      const [a, b] = [epic("ENG-140"), epic("ENG-141")];
+      const id = await sprintOf([a, b]);
+      await accepted("start", id);
+      // The merge was recorded, but the next start was lost.
+      const running = (await stored(id)).epics[0]!;
+      await setSprintEpicState(db, {
+        organizationId: orgId,
+        epicId: running.id,
+        from: ["running"],
+        state: "merged",
+      });
+      expect(delegated(b)).toBe(false);
+
+      expect(await check()).toMatchObject({ checked: 1, advanced: 1 });
+      expect(await epicStates(id)).toEqual(["merged", "running"]);
+      expect(delegated(b)).toBe(true);
+    });
   });
 });

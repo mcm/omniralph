@@ -108,6 +108,17 @@ export async function getSprint(
   return sprint ?? null;
 }
 
+/** Every organization's running sprints (ID and organization), oldest first. */
+export async function listRunningSprints(
+  db: Pick<Database, "select">,
+): Promise<{ id: string; organizationId: string }[]> {
+  return db
+    .select({ id: sprints.id, organizationId: sprints.organizationId })
+    .from(sprints)
+    .where(eq(sprints.status, "running"))
+    .orderBy(asc(sprints.createdAt), asc(sprints.id));
+}
+
 /** The epics of `items` already in an active sprint other than `exceptSprintId`. */
 async function activeSprintConflicts(
   tx: Pick<Database, "select">,
