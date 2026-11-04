@@ -38,6 +38,26 @@ or create the feature (`GET`/`POST /api/ui/features`), load the current document
 they loaded (`PUT …` with `{ body, baseVersion }`, handling `409 stale_version` by asking).
 Otherwise they hand the person the document to paste into the feature in the control panel.
 
+### Connecting them to Omniralph
+
+1. In the control panel, open **Settings › You › API tokens** (`/settings/api-tokens`), name a
+   token (where you'll use it, e.g. "PRD plugin on my laptop") and choose **Create token**.
+   Copy the token (`omr_…`) right away: it is shown once, and only its hash is stored.
+2. Set both variables where Claude Code runs, e.g. in your shell profile:
+
+   ```sh
+   export OMNIRALPH_URL="https://omniralph.example.com"   # the control panel's address, no trailing slash
+   export OMNIRALPH_API_TOKEN="omr_…"
+   ```
+
+A token acts as you, with your member access, in the organization that was active when you
+created it, and reaches no other organization: create one per organization you plan for. It
+works on the four feature routes above only (`GET`/`POST /api/ui/features`,
+`GET`/`PUT /api/ui/features/<id>/documents/<kind>`); every other route still needs a signed-in
+session. Revoke a token on the same page when you no longer need it. A revoked or unknown
+token, one whose member left the organization, or a malformed one gets `401`, and the modes
+fall back to paste.
+
 ## Building it
 
 ```sh

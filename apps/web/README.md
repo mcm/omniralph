@@ -50,6 +50,14 @@ a schema mismatch or a failed `ActionResult`, 404 for `ApiRouteError.notFound()`
 (moved out of the old `actions.ts` files) and may keep returning `ActionResult`, whose `error`
 and `warning` wording reaches the UI unchanged. Scope every query to `user.organization.id`.
 
+`apiTokens: true` also accepts a personal API token (`Authorization: Bearer omr_…`, created in
+Settings › You › API tokens) as that member in the token's organization, with the same `access`
+check; a request carrying an `Authorization` header is judged by it alone (401 when the token is
+malformed, unknown or revoked). Only the omniralph-prd plugin's feature routes take tokens
+(`GET`/`POST /api/ui/features`, `GET`/`PUT /api/ui/features/[id]/documents/[kind]`); keep it off
+routes tools don't need. The proxy lets Bearer requests without a session cookie through to the
+route, which checks the token.
+
 **Schemas** (`src/lib/api/schemas.ts`, plus one module per area in `src/lib/api/`). Request and
 response bodies are zod schemas imported by both the handler and the client. Dates cross the wire
 as ISO strings (`isoDate`); mutations answer `mutationResultSchema` (`{ ok: true, warning? }`),

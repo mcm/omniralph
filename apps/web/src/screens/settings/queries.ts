@@ -3,6 +3,7 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/components/current-user";
 import { useQueryKeys } from "@/components/query-provider";
+import { apiTokenListSchema, type ApiTokenList } from "@/lib/api/api-tokens";
 import { api } from "@/lib/api/client";
 import { connectionListSchema, type ConnectionList } from "@/lib/api/connections";
 import { deliveryListSchema, type DeliveryRow } from "@/lib/api/deliveries";
@@ -116,6 +117,29 @@ export function useChatAccounts() {
     queryKey: chatAccountsKey(keys),
     queryFn: ({ signal }) =>
       api.get("/api/ui/chat-accounts", chatAccountsSchema, {
+        organizationId: organization.id,
+        signal,
+      }),
+  });
+}
+
+/** The signed-in member's API tokens' query key (for the active organization). */
+export function apiTokensKey(keys: QueryKeys) {
+  return keys.settings.detail("api-tokens");
+}
+
+/**
+ * The signed-in member's active API tokens for the active organization
+ * (`GET /api/ui/api-tokens`), for You › API tokens. Only this member changes them, so
+ * creating and revoking update it; no change event does.
+ */
+export function useApiTokens() {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery<ApiTokenList>({
+    queryKey: apiTokensKey(keys),
+    queryFn: ({ signal }) =>
+      api.get("/api/ui/api-tokens", apiTokenListSchema, {
         organizationId: organization.id,
         signal,
       }),

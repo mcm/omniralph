@@ -232,6 +232,7 @@ describe("the section nav", () => {
     expect(entries("You")).toEqual([
       ["Profile & theme", "/settings/profile"],
       ["Linked chat accounts", "/settings/linked-accounts"],
+      ["API tokens", "/settings/api-tokens"],
     ]);
     expect(group("Advanced")).toBeNull();
   });

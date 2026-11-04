@@ -4,13 +4,15 @@ import { unstable_rethrow } from "next/navigation";
 import { NextResponse } from "next/server";
 import type { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
-import { AuthorizationError, type Role } from "@/lib/auth/roles";
+import { hasAuthorizationHeader, requireApiTokenUser } from "@/lib/auth/api-tokens";
+import { assertRole, AuthorizationError, type Role } from "@/lib/auth/roles";
 import {
   requireSignedInUser,
   requireUser,
   type CurrentUser,
   type OrgUser,
 } from "@/lib/auth/session";
+import { getDb } from "@/lib/db";
 import { withLiveChanges } from "@/lib/live/request";
 import { ORGANIZATION_HEADER, ORGANIZATION_SWITCHED, type ApiErrorBody } from "./schemas";
 
@@ -67,6 +69,14 @@ export interface ApiContext<A extends Access, B, Q, P extends Params> {
 export interface ApiHandlerOptions<A extends Access, BS, QS> {
   /** Default `member`. */
   access?: A;
+  /**
+   * Also accept a personal API token (`Authorization: Bearer <token>`, You › API tokens) in
+   * place of a session, acting as the token's member in the token's organization with the
+   * same `access` check. A request with an `Authorization` header is judged by it alone: a
+   * malformed, unknown or revoked token answers 401 even with a session cookie. Only for
+   * routes tools need (the omniralph-prd plugin's feature routes); default `false`.
+   */
+  apiTokens?: A extends Role ? boolean : never;
   /** Validates the JSON body; a mismatch answers 400 with `fieldErrors`. */
   body?: BS;
   /** Validates the search params (single values as strings); a mismatch answers 400. */
@@ -84,7 +94,7 @@ type HandlerResult = Response | ActionResult | object;
 
 /**
  * Builds an `/api/ui` route handler. It resolves the signed-in user with the session
- * helpers (`requireUser(access)`), refuses a request for an organization other than the
+ * helpers (`requireUser(access)`), or the API token's member with `apiTokens`, refuses a request for an organization other than the
  * active one (`ORGANIZATION_HEADER`, sent by `apiRequest`), validates the body and search
  * params with the shared zod schemas, runs `fn`, and serializes its result. Every failure
  * is JSON in one shape (`{ error, code?, fieldErrors? }`):
@@ -111,7 +121,12 @@ export function apiHandler<
   return (request, route) => withLiveChanges(() => handle(request, route));
   async function handle(request: Request, route: { params: Promise<P> }): Promise<Response> {
     try {
-      const user = access === "signed-in" ? await requireSignedInUser() : await requireUser(access);
+      const user =
+        access === "signed-in"
+          ? await requireSignedInUser()
+          : options.apiTokens && hasAuthorizationHeader(request)
+            ? assertRole(await requireApiTokenUser(getDb(), request), access)
+            : await requireUser(access);
       const expected = request.headers.get(ORGANIZATION_HEADER);
       if (access !== "signed-in" && expected && expected !== user.organization?.id) {
         return apiError(409, { error: ORGANIZATION_SWITCHED_MESSAGE, code: ORGANIZATION_SWITCHED });

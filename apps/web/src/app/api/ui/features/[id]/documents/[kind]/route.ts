@@ -12,10 +12,11 @@ type Params = { id: string; kind: string };
 
 /**
  * A feature's PRFAQ (`prfaq`) or Plan (`plan`): its latest version (version 0 and empty when
- * never saved), or `?version=` (404 when there is no such version).
+ * never saved), or `?version=` (404 when there is no such version). With a session or an API
+ * token (the omniralph-prd plugin).
  */
 export const GET = apiHandler<"member", undefined, typeof featureDocumentQuerySchema, Params>(
-  { query: featureDocumentQuerySchema },
+  { apiTokens: true, query: featureDocumentQuerySchema },
   async ({ user, params, query }): Promise<FeatureDocumentRow> =>
     loadFeatureDocument(getDb(), user, params.id, documentKind(params.kind), query.version),
 );
@@ -23,10 +24,11 @@ export const GET = apiHandler<"member", undefined, typeof featureDocumentQuerySc
 /**
  * Saves a new version of the document (members): `{ body, baseVersion }`, `baseVersion` the
  * version the edit started from. Earlier versions are kept. 409 `stale_version` when someone
- * saved a later version, 409 `archived` for an archived feature.
+ * saved a later version, 409 `archived` for an archived feature. With a session or an API
+ * token (the omniralph-prd plugin).
  */
 export const PUT = apiHandler<"member", typeof saveFeatureDocumentBodySchema, undefined, Params>(
-  { body: saveFeatureDocumentBodySchema },
+  { apiTokens: true, body: saveFeatureDocumentBodySchema },
   async ({ user, params, body }): Promise<SavedFeatureDocument> =>
     saveDocument(getDb(), user, params.id, documentKind(params.kind), body),
 );

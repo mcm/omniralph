@@ -17,6 +17,8 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 const READERS = new Set([
   "apps/web/src/auth.ts",
   "apps/web/src/lib/auth/session.ts",
+  // An API token's member, filled in like the session's user; no token route reads it.
+  "apps/web/src/lib/auth/api-tokens.ts",
   "apps/web/src/app/(app)/layout.tsx",
   "apps/web/src/components/app-shell.tsx",
   "apps/web/src/components/show-advanced.tsx",

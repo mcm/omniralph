@@ -104,6 +104,37 @@
   gap: 8px;
 }
 
+/* You › API tokens */
+.or-api-tokens,
+.or-api-tokens__create,
+.or-api-tokens__created {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.or-api-tokens {
+  gap: 20px;
+}
+
+.or-api-tokens__value {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.or-api-tokens__value > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.or-api-tokens__note {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* Organization › Members */
 .or-member {
   display: inline-flex;

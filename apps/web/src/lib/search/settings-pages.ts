@@ -45,6 +45,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     keywords: ["slack", "discord", "chat", "accounts"],
   },
   {
+    path: SETTINGS_PATHS.apiTokens,
+    title: "API tokens",
+    section: "You",
+    keywords: ["api", "token", "tokens", "prd plugin", "access", "keys"],
+  },
+  {
     path: SETTINGS_PATHS.routing,
     title: "Routing rules",
     section: "Advanced",

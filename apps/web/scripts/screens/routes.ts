@@ -269,6 +269,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
       ["members", "members"],
       ["profile", "profile"],
       ["linked-accounts", "linked-accounts"],
+      ["api-tokens", "api-tokens"],
       ["add-connection", "connections/new"],
       ["advanced-routing", "advanced/routing"],
       ["advanced-playbooks", "advanced/playbooks"],

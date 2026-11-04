@@ -277,6 +277,16 @@ export {
   type WorkItemShareLinkWithCreator,
 } from "./work-item-share-links.js";
 export {
+  MAX_ACTIVE_API_TOKENS,
+  authenticateApiToken,
+  createApiToken,
+  listApiTokens,
+  revokeApiToken,
+  type ApiToken,
+  type ApiTokenIdentity,
+  type CreateApiTokenInput,
+} from "./api-tokens.js";
+export {
   CHAT_PLAYBOOKS_KEY,
   DEFAULT_CHAT_PLAYBOOKS,
   DESIRED_AGENT_VERSION_KEY,

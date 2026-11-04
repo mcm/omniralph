@@ -11,6 +11,7 @@ import { and, asc, count, eq, exists, gt, inArray, isNull, notExists, sql } from
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
 import {
+  apiTokens,
   organizationEmailDomains,
   organizationInvitations,
   organizationMembers,
@@ -480,6 +481,17 @@ export async function removeMember(
       return "last_admin";
     }
     await tx.delete(organizationMembers).where(where);
+    // Their API tokens for the organization stop for good, even if they're added back.
+    await tx
+      .update(apiTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(apiTokens.organizationId, input.organizationId),
+          eq(apiTokens.userId, input.userId),
+          isNull(apiTokens.revokedAt),
+        ),
+      );
     recordOrganizationChange(tx, input.organizationId, input.userId);
     return "removed";
   });
