@@ -1302,6 +1302,12 @@ export const sprints = pgTable(
     sprintBranch: text("sprint_branch"),
     /** Why the sprint is paused (a person paused it, or an epic was refused or stalled). */
     pausedReason: text("paused_reason"),
+    /**
+     * The sprint PR/MR from the sprint branch to the default branch (merge-together sprints),
+     * opened once every epic merged; a person approves and merges it, never Om.
+     */
+    sprintPrNumber: integer("sprint_pr_number"),
+    sprintPrUrl: text("sprint_pr_url"),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -1309,6 +1315,7 @@ export const sprints = pgTable(
   (t) => [
     index("sprints_organization_id_idx").on(t.organizationId),
     index("sprints_repository_id_idx").on(t.repositoryId),
+    index("sprints_repository_pr_idx").on(t.repositoryId, t.sprintPrNumber),
   ],
 );
 

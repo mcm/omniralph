@@ -407,16 +407,92 @@ export async function startSprint(
   );
 }
 
-/** Pauses a running sprint with `reason`: no new epic starts; running ones carry on. */
+/**
+ * Pauses a running sprint with `reason`: no new epic starts; running ones carry on. With
+ * `alsoPaused`, a paused sprint takes the new reason.
+ */
 export async function pauseSprint(
   db: Database,
   organizationId: string,
   sprintId: string,
   reason: string,
+  options: { alsoPaused?: boolean } = {},
 ): Promise<SprintTransitionResult> {
-  return transitionSprint(db, organizationId, sprintId, ["running"], "paused", {
-    pausedReason: reason,
+  return transitionSprint(
+    db,
+    organizationId,
+    sprintId,
+    options.alsoPaused ? STARTED_SPRINT_STATUSES : ["running"],
+    "paused",
+    { pausedReason: reason },
+  );
+}
+
+/**
+ * Ends a started sprint whose work all landed (a merge-together sprint's PR merged): it is
+ * `done`, and its epics' work items leave it.
+ */
+export async function finishSprint(
+  db: Database,
+  organizationId: string,
+  sprintId: string,
+): Promise<SprintTransitionResult> {
+  return transitionSprint(
+    db,
+    organizationId,
+    sprintId,
+    STARTED_SPRINT_STATUSES,
+    "done",
+    { pausedReason: null },
+    async (tx, sprint) => recordItemChanges(tx, organizationId, sprint.epics),
+  );
+}
+
+/**
+ * Records the sprint PR/MR Om opened from a merge-together sprint's branch (replacing one that
+ * closed without merging). Answers the sprint, or null when it is gone.
+ */
+export async function setSprintPullRequest(
+  db: Database,
+  organizationId: string,
+  sprintId: string,
+  pullRequest: { number: number; url: string },
+): Promise<SprintWithEpics | null> {
+  return db.transaction(async (tx) => {
+    await lockSprints(tx, organizationId);
+    const updated = await tx
+      .update(sprints)
+      .set({
+        sprintPrNumber: pullRequest.number,
+        sprintPrUrl: pullRequest.url,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(sprints.id, sprintId), eq(sprints.organizationId, organizationId)))
+      .returning({ id: sprints.id });
+    if (updated.length === 0) return null;
+    recordChange(tx, { resource: "sprint", ids: [sprintId], organizationId });
+    return getSprint(tx, organizationId, sprintId);
   });
+}
+
+/** The started (running or paused) sprint whose sprint PR/MR is `prNumber` in the repository. */
+export async function findSprintByPullRequest(
+  db: Pick<Database, "select">,
+  repositoryId: string,
+  prNumber: number,
+): Promise<Sprint | null> {
+  const [row] = await db
+    .select()
+    .from(sprints)
+    .where(
+      and(
+        eq(sprints.repositoryId, repositoryId),
+        eq(sprints.sprintPrNumber, prNumber),
+        inArray(sprints.status, [...STARTED_SPRINT_STATUSES]),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }
 
 /**

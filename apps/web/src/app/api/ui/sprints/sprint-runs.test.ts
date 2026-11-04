@@ -49,6 +49,8 @@ import { FakeScmAdapter } from "@/lib/scm/fake-adapter";
 import type * as ScmAdapters from "@/lib/scm/adapters";
 import { laneBaseBranch, sprintBranchName } from "@/lib/sprints/branch";
 import { mergeSprintEpicWhenClean } from "@/lib/sprints/merge";
+import { sprintPullRequestClosedReason } from "@/lib/sprints/pull-request";
+import { handleWebhook } from "@/lib/webhooks/ingest";
 import type * as LinearClient from "@/lib/tracker/linear/client";
 
 vi.mock("server-only", () => ({}));
@@ -219,7 +221,8 @@ describe.skipIf(!databaseAvailable)("running a sprint", () => {
         provider: "github",
         name: "acme",
         baseUrl: "https://api.github.com",
-        externalId: "installation-acme",
+        // The installation the code host's webhooks name.
+        externalId: "1",
         credentials: {},
       },
       randomBytes(32),
@@ -228,7 +231,8 @@ describe.skipIf(!databaseAvailable)("running a sprint", () => {
       await connectRepository(db, {
         connectionId: connection.id,
         provider: "github",
-        externalId: "acme/api",
+        // The repository ID the code host's webhooks name.
+        externalId: "1",
         fullPath: "acme/api",
       })
     ).id;
@@ -306,6 +310,7 @@ describe.skipIf(!databaseAvailable)("running a sprint", () => {
     const sprint = await stored(id);
     expect(sprint.status).toBe("running");
     expect(sprint.epics.map((e) => e.state)).toEqual(["merged"]);
+    expect(sprint.sprintPrNumber).not.toBeNull();
   });
 
   it("waits for every PR of an epic's run to merge", async () => {
@@ -1021,6 +1026,197 @@ describe.skipIf(!databaseAvailable)("running a sprint", () => {
       );
       expect(await response.json()).toMatchObject({ checked: 1, merged: 1 });
       expect(await epicStates(id)).toEqual(["merged", "running"]);
+    });
+
+    describe("the sprint PR", () => {
+      /** Merges the epic's clean PR into the sprint branch, as Om does. */
+      const land = async (issue: IssueSummary, branch: string) => {
+        const { lane, number } = await openPullRequest(issue, branch);
+        ciOf(number, "passed");
+        expect(await mergeSprintEpicWhenClean(ralphDeps(), lane.id)).toEqual({ status: "merged" });
+        return number;
+      };
+      const sprintPullRequests = (branch: string) =>
+        scm.changeRequests.filter((c) => c.sourceBranch === branch);
+
+      /** The code host's close (or merge) webhook of PR `number`. */
+      const closedWebhook = async (number: number, merged: boolean) => {
+        const response = await handleWebhook(
+          "github",
+          new Request("http://localhost/api/webhooks/github", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-github-event": "pull_request",
+              "x-github-delivery": randomUUID(),
+            },
+            body: JSON.stringify({
+              action: "closed",
+              installation: { id: 1 },
+              repository: { id: 1, full_name: "acme/api" },
+              pull_request: { number, merged },
+            }),
+          }),
+          {
+            db,
+            dispatcher: new PostgresDispatcher({ db }),
+            adapterFor: () => scm.asAdapter(),
+            tracker: async () => linear,
+          },
+        );
+        return response.json();
+      };
+
+      /** A merge-together sprint of two epics whose PRs both merged; answers its sprint PR. */
+      const landedSprint = async () => {
+        const [a, b] = [
+          epic(`ENG-${randomUUID().slice(0, 4)}`),
+          epic(`ENG-${randomUUID().slice(0, 4)}`),
+        ];
+        const { id, branch } = await started([a, b]);
+        const first = await land(a, branch);
+        expect(sprintPullRequests(branch)).toEqual([]);
+        const second = await land(b, branch);
+        const [pr] = sprintPullRequests(branch);
+        return { id, branch, a, b, first, second, pr: pr! };
+      };
+
+      it("opens one PR from the sprint branch to the default branch after the last epic merges", async () => {
+        const { id, branch, a, b, first, second, pr } = await landedSprint();
+        expect(sprintPullRequests(branch)).toHaveLength(1);
+        expect(pr).toMatchObject({
+          sourceBranch: branch,
+          targetBranch: "main",
+          title: "Q4",
+          draft: false,
+          state: "open",
+        });
+        const sprint = await stored(id);
+        expect(sprint.status).toBe("running");
+        expect(sprint.sprintPrNumber).toBe(pr.number);
+        expect(sprint.sprintPrUrl).toBe(pr.url);
+        // The sprint branch was brought up to date with the default branch before it opened.
+        expect(scm.branchMerges.at(-1)).toMatchObject({ into: branch, from: "main" });
+
+        // Its description lists each epic in order, with its work item and its PR.
+        const lines = pr.body.split("\n");
+        const listed = lines.filter((line) => /^\d+\. /.test(line));
+        expect(listed).toEqual([
+          `1. ${a.identifier} Epic ${a.identifier}: [#${first}](https://github.com/acme/api/pull/${first})`,
+          `2. ${b.identifier} Epic ${b.identifier}: [#${second}](https://github.com/acme/api/pull/${second})`,
+        ]);
+        expect(pr.body).toContain(`every epic below merged into \`${branch}\``);
+
+        // The sprint check finds it open: nothing new opens.
+        const response = await sprintCheck(
+          new Request("http://localhost/api/cron/sprint-check", {
+            headers: { authorization: "Bearer cron-secret" },
+          }),
+        );
+        expect(await response.json()).toMatchObject({ checked: 1, paused: 0 });
+        expect(sprintPullRequests(branch)).toHaveLength(1);
+        expect((await stored(id)).status).toBe("running");
+      });
+
+      it("links each epic's work item when its run knows the tracker URL", async () => {
+        const a = epic("ENG-280");
+        const { branch } = await started([a]);
+        const { run, lane, number } = await openPullRequest(a, branch);
+        await db
+          .update(ralphRuns)
+          .set({ trackerUrl: "https://linear.app/acme/issue/ENG-280" })
+          .where(eq(ralphRuns.id, run.id));
+        ciOf(number, "passed");
+        await mergeSprintEpicWhenClean(ralphDeps(), lane.id);
+        const [pr] = sprintPullRequests(branch);
+        expect(pr!.body).toContain(
+          `1. [ENG-280](https://linear.app/acme/issue/ENG-280) Epic ENG-280: [#${number}](https://github.com/acme/api/pull/${number})`,
+        );
+      });
+
+      it("never approves or merges the sprint PR, even once it is clean", async () => {
+        const { id, first, second, pr } = await landedSprint();
+        // Green CI, a finished review with nothing open.
+        ciOf(pr.number, "passed");
+        await reviewWithFinding(pr.number, "resolved");
+        // Every path that merges a clean epic PR runs.
+        await sprintCheck(
+          new Request("http://localhost/api/cron/sprint-check", {
+            headers: { authorization: "Bearer cron-secret" },
+          }),
+        );
+        await accepted("pause", id);
+        await accepted("resume", id);
+
+        expect(scm.approvals).toEqual([`acme/api#${first}@head-1`, `acme/api#${second}@head-1`]);
+        expect(pr.state).toBe("open");
+        expect((await stored(id)).status).toBe("running");
+      });
+
+      it("is done when the sprint PR merges", async () => {
+        const { id, pr } = await landedSprint();
+        pr.state = "merged";
+        expect(await closedWebhook(pr.number, true)).toEqual({
+          status: "accepted",
+          event: "merged",
+        });
+        const sprint = await stored(id);
+        expect(sprint.status).toBe("done");
+        expect(sprint.pausedReason).toBeNull();
+      });
+
+      it("finishes from the sprint check when the merge webhook was missed", async () => {
+        const { id, pr } = await landedSprint();
+        pr.state = "merged";
+        await sprintCheck(
+          new Request("http://localhost/api/cron/sprint-check", {
+            headers: { authorization: "Bearer cron-secret" },
+          }),
+        );
+        expect((await stored(id)).status).toBe("done");
+      });
+
+      it("pauses when the sprint PR closes without merging, and resuming opens a new one", async () => {
+        const { id, branch, pr } = await landedSprint();
+        // A close event for a PR the code host still has open (reopened since) does nothing.
+        await closedWebhook(pr.number, false);
+        expect((await stored(id)).status).toBe("running");
+
+        pr.state = "closed";
+        expect(await closedWebhook(pr.number, false)).toEqual({
+          status: "accepted",
+          event: "closed",
+        });
+        const paused = await stored(id);
+        expect(paused.status).toBe("paused");
+        expect(paused.pausedReason).toBe(sprintPullRequestClosedReason("Q4"));
+        expect(paused.epics.map((e) => e.state)).toEqual(["merged", "merged"]);
+
+        await accepted("resume", id);
+        const reopened = sprintPullRequests(branch).filter((c) => c.state === "open");
+        expect(reopened).toHaveLength(1);
+        expect(reopened[0]!.number).not.toBe(pr.number);
+        const sprint = await stored(id);
+        expect(sprint.status).toBe("running");
+        expect(sprint.sprintPrNumber).toBe(reopened[0]!.number);
+      });
+
+      it("pauses with the reason when the code host refuses to open it", async () => {
+        const a = epic("ENG-290");
+        const { id, branch } = await started([a]);
+        scm.failures.set("createChangeRequest", "Validation Failed");
+        await land(a, branch);
+        const sprint = await stored(id);
+        expect(sprint.status).toBe("paused");
+        expect(sprint.pausedReason).toBe(
+          "Om couldn't open the sprint PR (Validation Failed). Resume the sprint to try again.",
+        );
+
+        scm.failures.delete("createChangeRequest");
+        await accepted("resume", id);
+        expect(sprintPullRequests(branch)).toHaveLength(1);
+        expect((await stored(id)).status).toBe("running");
+      });
     });
   });
 });

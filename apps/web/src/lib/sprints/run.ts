@@ -29,6 +29,7 @@ import type { WorkItemActor } from "@/lib/work-items/actions";
 import { workItemTrackerFor } from "@/lib/work-items/get-tracker";
 import type { WorkItemTracker } from "@/lib/work-items/tracker";
 import { prepareSprintBranch } from "./branch";
+import { openSprintPullRequest } from "./pull-request";
 
 /**
  * Running a sprint: each epic starts through the Backlog's Start epic (`startWorkItem`, with
@@ -256,8 +257,8 @@ const MAX_STEPS = 50;
 /**
  * Starts the running sprint's next queued epic, unless one is running or stalled: an epic
  * already merged is marked so and the next one tried; a refusal stalls it and pauses the
- * sprint. With every epic merged the sprint is done (or, merging together, waits for its
- * sprint PR). `actor`: who started it (Om, unless a person started or resumed the sprint).
+ * sprint. With every epic merged the sprint is done (or, merging together, Om opens its
+ * sprint PR, and it waits for a person to merge it: `./pull-request`). `actor`: who started it (Om, unless a person started or resumed the sprint).
  */
 export async function advanceSprint(
   deps: SprintRunDeps,
@@ -267,6 +268,11 @@ export async function advanceSprint(
   for (let step = 0; step < MAX_STEPS; step += 1) {
     if (!(await readySprintBranch(deps, sprintId))) return;
     const claim = await claimNextSprintEpic(deps.db, deps.organizationId, sprintId);
+    if (claim.status === "all_merged") {
+      // Merging together, its last epic landed on the sprint branch: the sprint PR opens.
+      await openSprintPullRequest(deps, sprintId);
+      return;
+    }
     if (claim.status !== "claimed") return;
     const { epic } = claim;
     const started = await startEpic(deps, epic, actor);
@@ -472,8 +478,12 @@ export async function checkSprint(
   if (sprint.epics.some((epic) => epic.state === "stalled")) return "ok";
   const epic = sprint.epics.find((e) => e.state === "running");
   if (!epic) {
-    // Every epic merged, merging together: it waits for its sprint PR.
-    if (sprint.mergeTogether && sprint.epics.every((e) => e.state === "merged")) return "ok";
+    // Every epic merged, merging together: its sprint PR opens (if it didn't), or its merge
+    // that was missed finishes the sprint.
+    if (sprint.mergeTogether && sprint.epics.every((e) => e.state === "merged")) {
+      const opened = await openSprintPullRequest(deps, sprintId);
+      return opened.status === "paused" ? "paused" : "ok";
+    }
     await advanceSprint(deps, sprintId);
     return "advanced";
   }

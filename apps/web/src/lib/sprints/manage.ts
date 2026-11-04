@@ -72,6 +72,10 @@ function sprintRow(sprint: SprintWithEpics): SprintRow {
     status: sprint.status,
     pausedReason: sprint.pausedReason,
     sprintBranch: sprint.sprintBranch,
+    sprintPullRequest:
+      sprint.sprintPrNumber !== null && sprint.sprintPrUrl !== null
+        ? { number: sprint.sprintPrNumber, url: sprint.sprintPrUrl }
+        : null,
     epics: sprint.epics.map((epic) => ({
       workItemId: workItemUrlId(epic.tracker, epic.externalId),
       identifier: epic.identifier,
