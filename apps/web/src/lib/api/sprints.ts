@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RUN_STATUSES, repositoryRefSchema } from "./runs";
 import { isoDate } from "./schemas";
 
 /**
@@ -16,6 +17,18 @@ export const SPRINT_NAME_MAX_LENGTH = 100;
 /** The most epics one sprint holds. */
 export const SPRINT_MAX_EPICS = 50;
 
+export const SPRINT_EPIC_PR_STATES = ["open", "draft", "merged", "closed"] as const;
+
+/** One PR/MR of a sprint epic's run. */
+export const sprintEpicPullRequestSchema = z.object({
+  number: z.number(),
+  url: z.string(),
+  state: z.enum(SPRINT_EPIC_PR_STATES),
+  /** The branch it targets: the sprint branch when the sprint merges together. */
+  baseBranch: z.string(),
+});
+export type SprintEpicPullRequest = z.infer<typeof sprintEpicPullRequestSchema>;
+
 /** One epic of a sprint, at its 0-based `position`. */
 export const sprintEpicRowSchema = z.object({
   /** The work item's URL ID (`<tracker>-<issue id>`). */
@@ -25,13 +38,20 @@ export const sprintEpicRowSchema = z.object({
   title: z.string(),
   position: z.number(),
   state: z.enum(SPRINT_EPIC_STATES),
+  /** The run Om started for it (a started sprint's epic that isn't queued), else null. */
+  run: z
+    .object({ id: z.string(), status: z.enum(RUN_STATUSES) })
+    .nullable()
+    .default(null),
+  /** The PRs/MRs that run opened, in lane order. */
+  pullRequests: z.array(sprintEpicPullRequestSchema).default([]),
 });
 export type SprintEpicRow = z.infer<typeof sprintEpicRowSchema>;
 
 export const sprintRowSchema = z.object({
   id: z.string(),
   name: z.string(),
-  repository: z.object({ id: z.string(), fullPath: z.string() }),
+  repository: repositoryRefSchema,
   mergeTogether: z.boolean(),
   status: z.enum(SPRINT_STATUSES),
   /** Why the sprint is paused: a person paused it, or an epic was refused or stalled. */

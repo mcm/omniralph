@@ -5,12 +5,14 @@ import {
   connectRepository,
   createDb,
   createOrganization,
+  createSprint,
   ralphRuns,
   saveIntegration,
   saveWorkItemMatch,
   setIntegrationStateMapping,
   setTrackerLabels,
   setWorkItemRepository,
+  sprints,
   triageRuns,
   upsertScmConnection,
   users,
@@ -404,6 +406,7 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       manualLabels: [],
       triageRunning: false,
       source: { kind: "team", id: "team-1", name: "ENG" },
+      sprint: null,
     });
     // Two matches tie: no repo yet.
     expect(byIdentifier.get("ENG-5")).toMatchObject({
@@ -444,6 +447,41 @@ describe.skipIf(!databaseAvailable)("GET /api/ui/backlog", () => {
       expect(triaging).toEqual(["ENG-7"]);
     } finally {
       await db.delete(triageRuns).where(eq(triageRuns.id, run!.id));
+    }
+  });
+
+  it("names the active sprint of each epic in one, and its place there, past the cache", async () => {
+    const created = await createSprint(db, {
+      organizationId: orgs.Acme!,
+      repositoryId: repos["acme/api"]!,
+      name: "Q4",
+      mergeTogether: false,
+      epics: [items.olderHigh!, items.urgent!].map((item) => ({
+        tracker: "linear" as const,
+        externalId: item.id,
+        identifier: item.identifier,
+        title: item.title,
+      })),
+      createdBy: null,
+    });
+    if (created.status !== "created") throw new Error(created.status);
+    const sprintId = created.sprint.id;
+    try {
+      const placed = (backlog: Backlog) =>
+        Object.fromEntries(
+          allRows(backlog.groups)
+            .filter((row) => row.sprint)
+            .map((row) => [row.identifier, row.sprint]),
+        );
+      expect(placed(await getBacklog())).toEqual({
+        "ENG-1": { id: sprintId, name: "Q4", position: 0, epicCount: 2 },
+        "ENG-2": { id: sprintId, name: "Q4", position: 1, epicCount: 2 },
+      });
+      // A sprint that's over holds no epics: read again, though the list is cached.
+      await db.update(sprints).set({ status: "done" }).where(eq(sprints.id, sprintId));
+      expect(placed(await getBacklog())).toEqual({});
+    } finally {
+      await db.delete(sprints).where(eq(sprints.id, sprintId));
     }
   });
 

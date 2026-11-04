@@ -2,6 +2,7 @@ import "server-only";
 import {
   getTrackerLabels,
   latestTriageSizes,
+  listActiveSprintPlaces,
   listActiveTriageIssueIds,
   listLatestIssueRuns,
   listRoutingRepositories,
@@ -383,10 +384,36 @@ async function loadScope(
     if (result.backlog.truncated) scoped.truncatedOrganizations.push(organization);
     for (const entry of result.backlog.entries) entries.push({ entry, organization });
   }
+  // Sprints change more often than the cached list: their places are read every time.
+  const places = await sprintPlaces(
+    deps.db,
+    results.flatMap((result) => (result.backlog ? [result.organization.id] : [])),
+  );
   scoped.rows = entries
     .sort((a, b) => compareBacklogEntries(a.entry, b.entry))
-    .map(({ entry, organization }) => ({ ...entry.row, organization }));
+    .map(({ entry, organization }) => ({
+      ...entry.row,
+      organization,
+      sprint: places.get(`${organization.id}:${entry.row.id}`) ?? null,
+    }));
   return scoped;
+}
+
+/** The organizations' work items in an active sprint, by `<organization ID>:<work item URL ID>`. */
+async function sprintPlaces(
+  db: Database,
+  organizationIds: readonly string[],
+): Promise<Map<string, NonNullable<WorkItemRow["sprint"]>>> {
+  const places = new Map<string, NonNullable<WorkItemRow["sprint"]>>();
+  for (const place of await listActiveSprintPlaces(db, organizationIds)) {
+    places.set(`${place.organizationId}:${workItemUrlId(place.tracker, place.externalId)}`, {
+      id: place.sprintId,
+      name: place.sprintName,
+      position: place.position,
+      epicCount: place.epicCount,
+    });
+  }
+  return places;
 }
 
 /**

@@ -3,6 +3,7 @@
 import {
   BranchBadge,
   Button,
+  ChangeBadge,
   ConfirmDialog,
   EmptyState,
   Field,
@@ -11,6 +12,8 @@ import {
   StatusText,
   Switch,
   TextInput,
+  TextLink,
+  type StatusTone,
 } from "@omniralph/ui";
 import { IconGripVertical, IconX } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
@@ -24,8 +27,10 @@ import {
   type ReactNode,
 } from "react";
 import { useCurrentUser } from "@/components/current-user";
+import { RUN_STATUS_LABELS, RUN_STATUS_TONES } from "@/components/runs/run-status";
 import { ApiError } from "@/lib/api/client";
-import type { SprintEpicRow, SprintRow } from "@/lib/api/sprints";
+import type { SprintEpicPullRequest, SprintEpicRow, SprintRow } from "@/lib/api/sprints";
+import { runHref } from "@/lib/runs/links";
 import type { WorkItemRow } from "@/lib/api/work-items";
 import { useDeleteSprint, useSprintAction, useUpdateSprint, type SprintChange } from "./mutations";
 import { useRepoBacklog, useSprint } from "./queries";
@@ -56,13 +61,41 @@ export const PAUSED_HINT = "Fix what's in the way, then resume: Om retries the s
 /** Handles a sprint action (Start, Pause, Resume, Cancel); by default it's sent to the API. */
 export type SprintActionHandler = (sprint: SprintRow, action: SprintAction) => void;
 
-/** The epic states as a person reads them. */
-const EPIC_STATE_LABELS: Record<SprintEpicRow["state"], string> = {
-  queued: "Queued",
-  running: "Running",
-  merged: "Merged",
-  stalled: "Stalled",
+/** The epic states as a person reads them, and their tones (Design rule 15). */
+export const EPIC_STATES: Record<SprintEpicRow["state"], { label: string; tone: StatusTone }> = {
+  queued: { label: "Queued", tone: "neutral" },
+  running: { label: "Building", tone: "run" },
+  merged: { label: "Merged", tone: "good" },
+  stalled: { label: "Stalled", tone: "fail" },
 };
+
+/** A PR's state as the sprint view reads it. */
+const PULL_REQUEST_STATES: Record<SprintEpicPullRequest["state"], string> = {
+  open: "Open",
+  draft: "Draft",
+  merged: "Merged",
+  closed: "Closed without merging",
+};
+
+export const SPRINT_BRANCH_EXPLANATION = "Every epic's PR targets this branch.";
+export const SPRINT_BRANCH_PENDING = "Om creates it when the first epic starts.";
+export const SPRINT_PR_EXPLANATION =
+  "Merges the sprint branch into the default branch. Om never approves it: a person does.";
+export const SPRINT_PR_PENDING = "Om opens it once the last epic merges.";
+export const SPRINT_DONE = "Every epic merged.";
+
+/**
+ * The epic a paused sprint stopped on: its stalled epic, else the one still running (a
+ * person paused it), else the next queued one (the one resuming starts).
+ */
+export function stoppedOnEpic(sprint: Pick<SprintRow, "epics">): SprintEpicRow | null {
+  return (
+    sprint.epics.find((epic) => epic.state === "stalled") ??
+    sprint.epics.find((epic) => epic.state === "running") ??
+    sprint.epics.find((epic) => epic.state === "queued") ??
+    null
+  );
+}
 
 /** `items` with the one at `from` moved to `to`. */
 export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
@@ -325,6 +358,7 @@ export function SprintEditor({ sprint, onAction }: SprintEditorProps) {
     change({ epics: epics.filter((_, position) => position !== index) });
 
   const status = SPRINT_STATUS[sprint.status];
+  const stoppedOn = sprint.status === "paused" ? stoppedOnEpic(sprint) : null;
 
   return (
     <article className="or-sprint" aria-label={sprint.name}>
@@ -333,16 +367,25 @@ export function SprintEditor({ sprint, onAction }: SprintEditorProps) {
         <div className="or-sprint__badges">
           <StatusText tone={status.tone}>{status.label}</StatusText>
           <MetaBadge text={sprint.repository.fullPath} mono />
-          {sprint.sprintBranch ? <BranchBadge name={sprint.sprintBranch} /> : null}
         </div>
       </header>
 
-      {sprint.status === "paused" && sprint.pausedReason ? (
+      {sprint.status === "paused" ? (
         <div className="or-sprint__paused" role="status">
-          <p className="or-sprint__paused-reason">{sprint.pausedReason}</p>
+          {sprint.pausedReason ? (
+            <p className="or-sprint__paused-reason">{sprint.pausedReason}</p>
+          ) : null}
+          {stoppedOn ? (
+            <p className="or-sprint__paused-epic">
+              Stopped on <span className="or-mono">{stoppedOn.identifier}</span> {stoppedOn.title}{" "}
+              (epic {stoppedOn.position + 1} of {epics.length})
+            </p>
+          ) : null}
           {admin ? <p className="or-sprint__hint">{PAUSED_HINT}</p> : null}
         </div>
       ) : null}
+
+      {sprint.status === "done" ? <p className="or-sprint__note">{SPRINT_DONE}</p> : null}
 
       {admin ? (
         <SprintActions
@@ -406,6 +449,8 @@ export function SprintEditor({ sprint, onAction }: SprintEditorProps) {
         </div>
       </section>
 
+      {sprint.mergeTogether && sprint.status !== "draft" ? <MergeTogether sprint={sprint} /> : null}
+
       <section className="or-sprint__section" aria-labelledby={`${nameId}-epics`}>
         <h3 id={`${nameId}-epics`} className="or-sprint__section-title">
           Epics <MetaBadge text={String(epics.length)} mono />
@@ -429,6 +474,17 @@ export function SprintEditor({ sprint, onAction }: SprintEditorProps) {
               ? "No epics yet. Add them from the repo's backlog below."
               : "This sprint has no epics."}
           </p>
+        ) : sprint.status !== "draft" ? (
+          <ol className="or-sprint__epics" aria-label="Epics in order">
+            {epics.map((epic) => (
+              <StartedSprintEpic
+                key={epic.workItemId}
+                sprint={sprint}
+                epic={epic}
+                stoppedOn={epic.workItemId === stoppedOn?.workItemId}
+              />
+            ))}
+          </ol>
         ) : (
           <ol className="or-sprint__epics" aria-label="Epics in order">
             {epics.map((epic, index) => (
@@ -466,9 +522,6 @@ export function SprintEditor({ sprint, onAction }: SprintEditorProps) {
                 )}
                 <span className="or-sprint-epic__identifier or-mono">{epic.identifier}</span>
                 <span className="or-sprint-epic__title">{epic.title}</span>
-                {sprint.status !== "draft" ? (
-                  <span className="or-sprint-epic__state">{EPIC_STATE_LABELS[epic.state]}</span>
-                ) : null}
                 {editable ? (
                   <IconButton
                     icon={IconX}
@@ -499,6 +552,121 @@ export function SprintEditor({ sprint, onAction }: SprintEditorProps) {
         />
       ) : null}
     </article>
+  );
+}
+
+/** A merge-together sprint's branch and, once Om opened it, its sprint PR. */
+function MergeTogether({ sprint }: { sprint: SprintRow }) {
+  const headingId = useId();
+  const pullRequest = sprint.sprintPullRequest;
+  return (
+    <section className="or-sprint__section" aria-labelledby={headingId}>
+      <h3 id={headingId} className="or-sprint__section-title">
+        Merging together
+      </h3>
+      <dl className="or-sprint__merge">
+        <div className="or-sprint__merge-item">
+          <dt>Sprint branch</dt>
+          <dd>
+            {sprint.sprintBranch ? (
+              <>
+                <BranchBadge name={sprint.sprintBranch} />
+                <span className="or-sprint__hint">{SPRINT_BRANCH_EXPLANATION}</span>
+              </>
+            ) : (
+              <span className="or-sprint__hint">{SPRINT_BRANCH_PENDING}</span>
+            )}
+          </dd>
+        </div>
+        <div className="or-sprint__merge-item">
+          <dt>Sprint PR</dt>
+          <dd>
+            {pullRequest ? (
+              <>
+                <ChangeBadge
+                  host={sprint.repository.provider}
+                  number={pullRequest.number}
+                  href={pullRequest.url}
+                />
+                <span className="or-sprint__hint">{SPRINT_PR_EXPLANATION}</span>
+              </>
+            ) : (
+              <span className="or-sprint__hint">{SPRINT_PR_PENDING}</span>
+            )}
+          </dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
+/**
+ * One epic of a started sprint: its position, identifier and title, its state in the sprint,
+ * the run Om started for it (linking to the run) and each PR the run opened with whether it
+ * merged. The epic a paused sprint stopped on is marked.
+ */
+function StartedSprintEpic({
+  sprint,
+  epic,
+  stoppedOn,
+}: {
+  sprint: SprintRow;
+  epic: SprintEpicRow;
+  stoppedOn: boolean;
+}) {
+  const state = EPIC_STATES[epic.state];
+  const intoSprintBranch = (pullRequest: SprintEpicPullRequest) =>
+    sprint.sprintBranch !== null && pullRequest.baseBranch === sprint.sprintBranch;
+  return (
+    <li
+      className={[
+        "or-sprint-epic",
+        "or-sprint-epic--progress",
+        stoppedOn && "or-sprint-epic--stopped",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      aria-current={stoppedOn ? "step" : undefined}
+    >
+      <span className="or-sprint-epic__position or-mono" aria-hidden="true">
+        {epic.position + 1}
+      </span>
+      <div className="or-sprint-epic__main">
+        <div className="or-sprint-epic__line">
+          <span className="or-sprint-epic__identifier or-mono">{epic.identifier}</span>
+          <span className="or-sprint-epic__title">{epic.title}</span>
+        </div>
+        {epic.run || epic.pullRequests.length > 0 ? (
+          <div className="or-sprint-epic__meta">
+            {epic.run ? (
+              <TextLink href={runHref(epic.run.id)} className="or-sprint-epic__run">
+                <StatusText tone={RUN_STATUS_TONES[epic.run.status]}>
+                  Run {RUN_STATUS_LABELS[epic.run.status].toLowerCase()}
+                </StatusText>
+              </TextLink>
+            ) : null}
+            {epic.pullRequests.map((pullRequest) => (
+              <span key={pullRequest.url} className="or-sprint-epic__pr">
+                <ChangeBadge
+                  host={sprint.repository.provider}
+                  number={pullRequest.number}
+                  href={pullRequest.url}
+                />
+                <span className="or-sprint-epic__pr-state">
+                  {PULL_REQUEST_STATES[pullRequest.state]}
+                  {pullRequest.state === "merged" && intoSprintBranch(pullRequest)
+                    ? ` into ${pullRequest.baseBranch}`
+                    : null}
+                </span>
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <StatusText tone={state.tone} className="or-sprint-epic__state">
+        {state.label}
+      </StatusText>
+    </li>
   );
 }
 

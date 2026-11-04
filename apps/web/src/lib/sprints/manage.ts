@@ -4,16 +4,20 @@ import {
   createSprint as createSprintRow,
   deleteDraftSprint,
   getSprint,
+  listSprintEpicProgress,
   listSprints,
   pauseSprint as pauseSprintRow,
   resumeSprint as resumeSprintRow,
   startSprint as startSprintRow,
   updateDraftSprint,
   type SprintTransitionResult,
+  unifiedRunStatus,
   workItemUrlId,
   type Database,
   type SprintEpicConflict,
+  type SprintEpic,
   type SprintEpicInput,
+  type SprintEpicProgress,
   type SprintWithEpics,
 } from "@omniralph/db";
 import { ApiRouteError } from "@/lib/api/handler";
@@ -63,11 +67,52 @@ const defaultTracker =
   (organizationId) =>
     getWorkItemTracker({ db, organizationId });
 
-function sprintRow(sprint: SprintWithEpics): SprintRow {
+/** The epics' latest runs and PRs, by `<tracker>:<external ID>`. */
+type EpicProgress = Map<string, SprintEpicProgress>;
+
+const progressKey = (epic: Pick<SprintEpic, "tracker" | "externalId">) =>
+  `${epic.tracker}:${epic.externalId}`;
+
+/**
+ * The latest run (and its PRs) of every epic of `sprints` that Om started: a started
+ * sprint's epic that isn't queued. A draft's or a queued epic's run, if any, is an earlier
+ * one the sprint didn't start.
+ */
+async function loadEpicProgress(
+  db: Database,
+  organizationId: string,
+  sprints: readonly SprintWithEpics[],
+): Promise<EpicProgress> {
+  const byTracker = new Map<SprintEpic["tracker"], Set<string>>();
+  for (const sprint of sprints) {
+    if (sprint.status === "draft") continue;
+    for (const epic of sprint.epics) {
+      if (epic.state === "queued") continue;
+      const ids = byTracker.get(epic.tracker) ?? new Set<string>();
+      ids.add(epic.externalId);
+      byTracker.set(epic.tracker, ids);
+    }
+  }
+  const progress: EpicProgress = new Map();
+  for (const [tracker, ids] of byTracker) {
+    const found = await listSprintEpicProgress(db, organizationId, tracker, [...ids]);
+    for (const [externalId, entry] of found) {
+      progress.set(progressKey({ tracker, externalId }), entry);
+    }
+  }
+  return progress;
+}
+
+function sprintRow(sprint: SprintWithEpics, progress: EpicProgress = new Map()): SprintRow {
+  const started = sprint.status !== "draft";
   return {
     id: sprint.id,
     name: sprint.name,
-    repository: { id: sprint.repositoryId, fullPath: sprint.repositoryFullPath },
+    repository: {
+      id: sprint.repositoryId,
+      provider: sprint.repositoryProvider,
+      fullPath: sprint.repositoryFullPath,
+    },
     mergeTogether: sprint.mergeTogether,
     status: sprint.status,
     pausedReason: sprint.pausedReason,
@@ -76,29 +121,44 @@ function sprintRow(sprint: SprintWithEpics): SprintRow {
       sprint.sprintPrNumber !== null && sprint.sprintPrUrl !== null
         ? { number: sprint.sprintPrNumber, url: sprint.sprintPrUrl }
         : null,
-    epics: sprint.epics.map((epic) => ({
-      workItemId: workItemUrlId(epic.tracker, epic.externalId),
-      identifier: epic.identifier,
-      title: epic.title,
-      position: epic.position,
-      state: epic.state,
-    })),
+    epics: sprint.epics.map((epic) => {
+      const entry = started && epic.state !== "queued" ? progress.get(progressKey(epic)) : null;
+      return {
+        workItemId: workItemUrlId(epic.tracker, epic.externalId),
+        identifier: epic.identifier,
+        title: epic.title,
+        position: epic.position,
+        state: epic.state,
+        run: entry ? { id: entry.runId, status: unifiedRunStatus("epic", entry.status) } : null,
+        pullRequests: entry?.pullRequests ?? [],
+      };
+    }),
     createdAt: sprint.createdAt.toISOString(),
     updatedAt: sprint.updatedAt.toISOString(),
   };
 }
 
+/** `sprint` as the API answers it, with its epics' runs and PRs. */
+async function sprintRowWithProgress(
+  db: Database,
+  organizationId: string,
+  sprint: SprintWithEpics,
+): Promise<SprintRow> {
+  return sprintRow(sprint, await loadEpicProgress(db, organizationId, [sprint]));
+}
+
 /** The organization's sprints, newest first. */
 export async function loadSprintList(db: Database, user: OrgUser): Promise<SprintList> {
   const sprints = await listSprints(db, user.organization.id);
-  return { sprints: sprints.map(sprintRow) };
+  const progress = await loadEpicProgress(db, user.organization.id, sprints);
+  return { sprints: sprints.map((sprint) => sprintRow(sprint, progress)) };
 }
 
 /** One sprint of the organization; another organization's or an unknown ID is 404. */
 export async function loadSprint(db: Database, user: OrgUser, id: string): Promise<SprintRow> {
   const sprint = isUuid(id) ? await getSprint(db, user.organization.id, id) : null;
   if (!sprint) throw ApiRouteError.notFound(SPRINT_NOT_FOUND_MESSAGE);
-  return sprintRow(sprint);
+  return sprintRowWithProgress(db, user.organization.id, sprint);
 }
 
 const isUuid = (id: string) =>
@@ -389,10 +449,10 @@ export async function runSprintAction(
         await pauseSprintRow(deps.db, organizationId, id, pausedByReason(actor.name)),
         action,
       );
-      return { ok: true, sprint: sprintRow(sprint) };
+      return { ok: true, sprint: await sprintRowWithProgress(deps.db, organizationId, sprint) };
     case "cancel":
       sprint = transitioned(await cancelSprintRow(deps.db, organizationId, id), action);
-      return { ok: true, sprint: sprintRow(sprint) };
+      return { ok: true, sprint: await sprintRowWithProgress(deps.db, organizationId, sprint) };
   }
   const loadTracker = deps.loadTracker ?? defaultTracker(deps.db);
   const runDeps: SprintRunDeps = {
@@ -406,5 +466,12 @@ export async function runSprintAction(
   await advanceSprint(runDeps, sprint.id, actor);
   // A resumed sprint's epic whose PR got clean while it was paused merges now.
   if (action === "resume") await mergeRunningSprintEpic(runDeps, sprint.id);
-  return { ok: true, sprint: sprintRow((await getSprint(deps.db, organizationId, id)) ?? sprint) };
+  return {
+    ok: true,
+    sprint: await sprintRowWithProgress(
+      deps.db,
+      organizationId,
+      (await getSprint(deps.db, organizationId, id)) ?? sprint,
+    ),
+  };
 }

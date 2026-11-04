@@ -62,6 +62,15 @@ export const workItemRowSchema = z.object({
   /** Om is triaging it (a triage queued or running): Triage now is disabled. */
   triageRunning: z.boolean().default(false),
   source: workItemSourceSchema,
+  /**
+   * The draft, running or paused sprint it's in, with its 0-based position there and the
+   * sprint's number of epics. Absent or null when it's in none (rows outside the Backlog's
+   * list leave it out).
+   */
+  sprint: z
+    .object({ id: z.string(), name: z.string(), position: z.number(), epicCount: z.number() })
+    .nullable()
+    .optional(),
 });
 export type WorkItemRow = z.infer<typeof workItemRowSchema>;
 

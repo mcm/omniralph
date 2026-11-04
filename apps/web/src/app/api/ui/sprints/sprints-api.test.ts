@@ -342,11 +342,19 @@ describe.skipIf(!databaseAvailable)("/api/ui/sprints", () => {
       ["ENG-1", 1],
       ["ENG-4", 2],
     ]);
-    // The sprint, and the work items that left or joined it.
+    // The sprint, and every work item that was or is in it (the Backlog shows positions).
     expect(changes.map((c) => [c.resource, [...c.ids].sort()])).toEqual(
       expect.arrayContaining([
         ["sprint", [sprint.id]],
-        ["work_item", [workItemId(issues.b!), workItemId(issues.standalone!)].sort()],
+        [
+          "work_item",
+          [
+            workItemId(issues.a!),
+            workItemId(issues.b!),
+            workItemId(issues.c!),
+            workItemId(issues.standalone!),
+          ].sort(),
+        ],
       ]),
     );
 

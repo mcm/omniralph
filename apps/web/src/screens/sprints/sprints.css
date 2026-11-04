@@ -303,6 +303,90 @@
   font-size: 12px;
 }
 
+.or-sprint-epic--progress {
+  align-items: flex-start;
+}
+
+.or-sprint-epic--progress .or-sprint-epic__position,
+.or-sprint-epic--progress .or-sprint-epic__state {
+  margin-top: 2px;
+}
+
+.or-sprint-epic--stopped {
+  box-shadow: inset 3px 0 0 var(--or-warn);
+}
+
+.or-sprint-epic__main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.or-sprint-epic__line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.or-sprint-epic__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 12px;
+}
+
+.or-sprint-epic__run {
+  font-size: 12px;
+}
+
+.or-sprint-epic__pr {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.or-sprint-epic__pr-state {
+  color: var(--or-sec);
+}
+
+.or-sprint__paused-epic {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-sprint__merge {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.or-sprint__merge-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.or-sprint__merge-item dt {
+  width: 96px;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-sprint__merge-item dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+}
+
 .or-sprint-skeleton {
   display: flex;
   flex-direction: column;
@@ -341,5 +425,10 @@
 
   .or-sprint-epic__state {
     display: none;
+  }
+
+  /* A started sprint's epic keeps its state: it's what the row is for. */
+  .or-sprint-epic--progress .or-sprint-epic__state {
+    display: inline-flex;
   }
 }

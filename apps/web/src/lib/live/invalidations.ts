@@ -146,6 +146,8 @@ export const LIVE_INVALIDATIONS = {
           ...repositoryViews(keys),
           // A work item's detail shows its run (whether its PRD can be edited).
           backlogKeys(keys).details,
+          // A sprint shows each epic's run status.
+          keys.sprints.all,
         ]
       : // System work (a repository sync, a cleanup) belongs to no run: its attempts count
         // in Analytics, and a failed repository sync is a problem of its repository.
@@ -154,10 +156,11 @@ export const LIVE_INVALIDATIONS = {
     event.runId
       ? [keys.transcripts.detail(event.runId)]
       : event.ids.map((jobId) => keys.transcripts.detail(jobId)),
+  // A sprint shows each epic's PRs and whether they merged.
   pull_request: (event, keys) =>
     event.runId
-      ? [keys.runs.lists, keys.runs.detail(event.runId), keys.inbox.all]
-      : [keys.runs.all, keys.inbox.all],
+      ? [keys.runs.lists, keys.runs.detail(event.runId), keys.inbox.all, keys.sprints.all]
+      : [keys.runs.all, keys.inbox.all, keys.sprints.all],
   inbox_state: (_event, keys) => [keys.inbox.all],
   webhook_event: (event, keys) => [
     // The delivery's own detail and its connection's log (`ids` name both, and a replay's

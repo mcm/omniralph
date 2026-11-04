@@ -291,6 +291,23 @@ describe("the Backlog list", () => {
     expect(badges(epic)).toEqual(["SOC-420", "Size S"]);
   });
 
+  it("shows an epic in a sprint with a chip naming the sprint and its place, linking to the sprint", async () => {
+    const SPRINT = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1";
+    backlog = backlogOf([
+      workItemRow({ sprint: { id: SPRINT, name: "Invoicing", position: 1, epicCount: 3 } }),
+      refineRow(),
+    ]);
+    renderBacklog();
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    const [inSprint, other] = rows() as [HTMLElement, HTMLElement];
+    expect(badges(inSprint)).toEqual(["SOC-412", "acme/portal", "Size M", "Invoicing · 2 of 3"]);
+    const chip = within(inSprint).getByRole("link", { name: /Invoicing · 2 of 3/ });
+    expect(chip.getAttribute("href")).toBe(`/sprints/${SPRINT}`);
+    // The chip is its own link beside the row's.
+    expect(within(inSprint).getByRole("link", { name: "Export invoices as CSV" })).not.toBe(chip);
+    expect(within(other).queryByText(/Invoicing/)).toBeNull();
+  });
+
   it("leads the badges with the organization under All organizations", async () => {
     backlog = backlogOf([
       workItemRow(),
