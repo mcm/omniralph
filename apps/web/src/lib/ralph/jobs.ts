@@ -17,6 +17,7 @@ import { getDispatcher } from "@/lib/dispatch";
 import { lazyTrackerGateway } from "@/lib/tracker/client";
 import { scmAdapterFor } from "@/lib/scm/adapters";
 import { checkRunCi } from "./ci";
+import { mergeSprintEpicQuietly } from "@/lib/sprints/merge";
 import { applyCleanupJob, startPendingCleanups } from "./cleanup";
 import { cleanupJobLaneId, rescheduleLane, scheduleRun } from "./due";
 import { applyHiddenRefsJob } from "./hidden-refs";
@@ -164,7 +165,10 @@ export async function onReviewForRalph(
     const run = await getReviewRun(db, reviewRunId);
     const found = run && (await findLaneByPullRequest(db, run.repositoryId, run.prNumber));
     if (!found) return;
-    await respondToReview(deps ?? (await defaultDeps(db, found.run.organizationId)), reviewRunId);
+    const ralphDeps = deps ?? (await defaultDeps(db, found.run.organizationId));
+    await respondToReview(ralphDeps, reviewRunId);
+    // A finished review of a merge-together sprint's epic PR: without open findings it may merge.
+    await mergeSprintEpicQuietly(ralphDeps, found.lane.id);
   } catch (error) {
     console.error(`Handing review run ${reviewRunId} to its ralph run failed`, error);
   }

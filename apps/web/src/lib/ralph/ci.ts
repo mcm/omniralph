@@ -12,6 +12,8 @@
  * - Skipped: repositories with `respondToReviewsAndCi` off, stopped (or failed)
  *   runs, and runs with an active job (it may push again; the job's outcome
  *   checks again). A closed or merged PR/MR is recorded and left to cleanup.
+ * - A merge-together sprint's epic PR/MR is merged into its sprint branch
+ *   after each check once it is clean (`mergeSprintEpicWhenClean`).
  * - Only `failed` acts, once per head commit (`handled_ci_shas`), at most
  *   `maxFixRounds` times per PR/MR; after that the run says it's leaving it
  *   for a person.
@@ -34,6 +36,7 @@ import {
 import { buildCiFailureRequest, type ChangeRequestWord } from "@omniralph/ralph";
 import type { CiFailedJob, CiState } from "@omniralph/scm";
 import { organizationPlaybooks } from "@/lib/playbooks";
+import { mergeSprintEpicQuietly } from "@/lib/sprints/merge";
 import { roundLimits } from "./coding";
 import { conversationFor } from "./conversation";
 import { recordClosedPullRequest } from "./cleanup";
@@ -237,6 +240,8 @@ export async function respondToCiEvent(
   const responses: CiResponse[] = [];
   for (const found of lanes.values()) {
     responses.push(await respondToCi(deps, found, { busyRunIds }));
+    // CI finished on a merge-together sprint's epic PR: it may be clean now.
+    await mergeSprintEpicQuietly(deps, found.lane.id);
   }
   return responses;
 }
@@ -265,6 +270,8 @@ export async function checkRunCi(
       failed += 1;
       console.error(`Checking the CI of ralph lane ${lane.id} failed`, error);
     }
+    // The job may have pushed (or finished the epic): a sprint epic PR may be clean now.
+    await mergeSprintEpicQuietly(deps, lane.id);
   }
   return { checked: lanes.length - failed, failed };
 }
@@ -287,6 +294,7 @@ export async function reconcileCi(
       failed += 1;
       console.error(`Checking the CI of ralph lane ${found.lane.id} failed`, error);
     }
+    await mergeSprintEpicQuietly(deps, found.lane.id);
   }
   return { checked: lanes.length - failed, failed };
 }

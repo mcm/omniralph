@@ -20,6 +20,8 @@ import {
   CloneCredentialPermissionError,
   CommitNotFoundError,
   getHeader,
+  type BranchMerge,
+  type BranchMergeResult,
   type ChangeRequest,
   type ChangeRequestActionOptions,
   type ChangeRequestRefusalReason,
@@ -103,6 +105,8 @@ export interface GitLabAdapterOptions {
   /** Where minted clone tokens are kept; defaults to an in-memory cache. */
   credentialCache?: CredentialCache;
   now?: () => number;
+  /** How long `mergeBranch` waits between reads of its MR's merge status (default 1s). */
+  mergeStatusPollMs?: number;
 }
 
 function statusOf(error: unknown): number | undefined {
@@ -133,6 +137,16 @@ function hostMessage(error: unknown): string {
 
 /** `detailed_merge_status` values that mean the source branch must be fixed first. */
 const GITLAB_CONFLICT_STATUSES = new Set(["conflict", "broken_status", "need_rebase"]);
+
+/** `detailed_merge_status` values while GitLab is still working out whether an MR merges. */
+const GITLAB_CHECKING_STATUSES = new Set([
+  "unchecked",
+  "checking",
+  "preparing",
+  "approvals_syncing",
+]);
+/** The most reads of a new MR's merge status `mergeBranch` waits for. */
+const MERGE_STATUS_POLLS = 10;
 
 /** An external status check's state; GitLab has called `passed` `approved`. */
 function externalCheckState(status: string): RequiredCheckState {
@@ -245,6 +259,7 @@ export class GitLabAdapter implements ScmAdapter {
   private readonly webhookSecret: string;
   private readonly credentialCache: CredentialCache;
   private readonly now: () => number;
+  private readonly mergeStatusPollMs: number;
   private readonly pendingTokens = new Map<string, Promise<CachedCredential>>();
 
   constructor(options: GitLabAdapterOptions) {
@@ -253,6 +268,7 @@ export class GitLabAdapter implements ScmAdapter {
     this.webhookSecret = options.webhookSecret;
     this.credentialCache = options.credentialCache ?? new MemoryCredentialCache();
     this.now = options.now ?? Date.now;
+    this.mergeStatusPollMs = options.mergeStatusPollMs ?? 1000;
   }
 
   async getChangeRequest(repo: RepoRef, number: number): Promise<ChangeRequest> {
@@ -440,6 +456,105 @@ export class GitLabAdapter implements ScmAdapter {
     } catch (error) {
       if (statusOf(error) === 404) return null;
       throw error;
+    }
+  }
+
+  /** GitLab's 400 "Branch already exists" means it exists. */
+  async createBranch(repo: RepoRef, branch: string, sha: string): Promise<{ created: boolean }> {
+    try {
+      await this.api.Branches.create(projectId(repo), branch, sha);
+      return { created: true };
+    } catch (error) {
+      if (statusOf(error) === 400 && /already exists/i.test(hostMessage(error))) {
+        return { created: false };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * GitLab merges branches only through an MR: when `from` has commits `into`
+   * lacks, an MR from `from` into `into` is opened (or the open one reused)
+   * and merged as a merge commit, keeping `from`. One that conflicts, or that
+   * GitLab won't merge, is closed again.
+   */
+  async mergeBranch(repo: RepoRef, merge: BranchMerge): Promise<BranchMergeResult> {
+    const project = projectId(repo);
+    const compared = await this.api.Repositories.compare(project, merge.into, merge.from);
+    if ((compared.commits ?? []).length === 0) return { status: "up_to_date" };
+
+    const open = await this.api.MergeRequests.all({
+      projectId: project,
+      sourceBranch: merge.from,
+      targetBranch: merge.into,
+      state: "opened",
+      perPage: 20,
+      maxPages: 1,
+    });
+    const existing = open.find((m) => m.source_project_id === m.target_project_id);
+    const iid =
+      existing?.iid ??
+      (
+        await this.api.MergeRequests.create(
+          project,
+          merge.from,
+          merge.into,
+          mrTitle(merge.message, false),
+          {
+            description: merge.message,
+            removeSourceBranch: false,
+            squash: false,
+          },
+        )
+      ).iid;
+
+    let mr = await this.api.MergeRequests.show(project, iid);
+    for (
+      let poll = 1;
+      poll < MERGE_STATUS_POLLS &&
+      GITLAB_CHECKING_STATUSES.has(String(mr.detailed_merge_status ?? ""));
+      poll += 1
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, this.mergeStatusPollMs));
+      mr = await this.api.MergeRequests.show(project, iid);
+    }
+    const close = () =>
+      this.api.MergeRequests.edit(project, iid, { stateEvent: "close" }).catch((error: unknown) => {
+        console.warn(`Closing ${repo.fullPath}!${iid} failed`, error);
+      });
+    const detailed = String(mr.detailed_merge_status ?? "");
+    if (GITLAB_CONFLICT_STATUSES.has(detailed) || mr.has_conflicts === true) {
+      await close();
+      return {
+        status: "conflicts",
+        hostMessage: `${merge.from} doesn't merge cleanly into ${merge.into} (detailed_merge_status: ${detailed || "conflict"}).`,
+      };
+    }
+    try {
+      const merged = await this.api.MergeRequests.merge(project, iid, {
+        sha: mr.sha,
+        squash: false,
+        shouldRemoveSourceBranch: false,
+        mergeCommitMessage: merge.message,
+      });
+      return { status: "merged", sha: (merged.merge_commit_sha as string | null) ?? null };
+    } catch (error) {
+      const status = statusOf(error);
+      if (status !== 401 && status !== 403 && status !== 405 && status !== 406 && status !== 422) {
+        throw error;
+      }
+      const message = hostMessage(error);
+      await close();
+      if (/conflict|cannot be merged/i.test(message)) {
+        return { status: "conflicts", hostMessage: message };
+      }
+      return {
+        status: "refused",
+        hostMessage:
+          detailed && detailed !== "mergeable"
+            ? `${message} (detailed_merge_status: ${detailed})`
+            : message,
+      };
     }
   }
 

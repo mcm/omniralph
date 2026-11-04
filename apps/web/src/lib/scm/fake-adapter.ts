@@ -1,6 +1,11 @@
 import {
+  type BranchMerge,
+  type BranchMergeResult,
   type ChangeRequest,
+  type ChangeRequestActionOptions,
   ChangeRequestNotFoundError,
+  ChangeRequestRefusedError,
+  type ChangeRequestRefusalReason,
   type ChangeRequestStatus,
   type ChangeRequestUpdate,
   type CiStatus,
@@ -10,7 +15,9 @@ import {
   type CreatedChangeRequest,
   type NewChangeRequest,
   type OpenChangeRequest,
+  type MergedChangeRequest,
   type RepoRef,
+  type RequiredChecksStatus,
   type ScmAdapter,
   type ScmProvider,
 } from "@omniralph/scm";
@@ -258,6 +265,92 @@ export class FakeScmAdapter {
     const diff = this.commitDiffs.get(`${repo.fullPath}@${sha}`);
     if (!diff) throw new CommitNotFoundError(repo, sha);
     return diff;
+  }
+
+  /** Branches `createBranch` created, as `fullPath:branch` → the commit it was created at. */
+  readonly createdBranches = new Map<string, string>();
+
+  async createBranch(repo: RepoRef, branch: string, sha: string): Promise<{ created: boolean }> {
+    this.call("createBranch");
+    const key = `${repo.fullPath}:${branch}`;
+    if (this.branchHeads.has(key)) return { created: false };
+    this.branchHeads.set(key, sha);
+    this.createdBranches.set(key, sha);
+    return { created: true };
+  }
+
+  /** `mergeBranch` calls, in order. */
+  readonly branchMerges: (BranchMerge & { fullPath: string })[] = [];
+  /** What `mergeBranch` answers next (default: merged, the head becoming `merged-N`). */
+  branchMergeResult: BranchMergeResult | null = null;
+
+  async mergeBranch(repo: RepoRef, merge: BranchMerge): Promise<BranchMergeResult> {
+    this.call("mergeBranch");
+    this.branchMerges.push({ ...merge, fullPath: repo.fullPath });
+    if (this.branchMergeResult) return this.branchMergeResult;
+    const sha = `merged-${this.branchMerges.length}`;
+    this.branchHeads.set(`${repo.fullPath}:${merge.into}`, sha);
+    return { status: "merged", sha };
+  }
+
+  /** `getRequiredChecks` answers, keyed by `fullPath#number`; `none` when missing. */
+  readonly requiredChecks = new Map<string, RequiredChecksStatus>();
+
+  async getRequiredChecks(repo: RepoRef, number: number): Promise<RequiredChecksStatus> {
+    this.call("getRequiredChecks");
+    const request = this.find(repo, number);
+    return (
+      this.requiredChecks.get(`${repo.fullPath}#${number}`) ?? {
+        state: "none",
+        headSha: request.headSha ?? "head",
+        checks: [],
+      }
+    );
+  }
+
+  /** PRs/MRs approved, as `fullPath#number@headSha`. */
+  readonly approvals: string[] = [];
+  /** Refusals `approvePullRequest` / `mergePullRequest` throw, by action. */
+  readonly refusals = new Map<
+    "approve" | "merge",
+    { reason: ChangeRequestRefusalReason; message: string }
+  >();
+
+  private refuse(repo: RepoRef, number: number, action: "approve" | "merge"): void {
+    const refusal = this.refusals.get(action);
+    if (refusal) {
+      throw new ChangeRequestRefusedError(repo, number, action, refusal.reason, refusal.message);
+    }
+  }
+
+  async approvePullRequest(
+    repo: RepoRef,
+    number: number,
+    options?: ChangeRequestActionOptions,
+  ): Promise<void> {
+    this.call("approvePullRequest");
+    const request = this.find(repo, number);
+    this.refuse(repo, number, "approve");
+    this.approvals.push(
+      `${repo.fullPath}#${number}@${options?.headSha ?? request.headSha ?? "head"}`,
+    );
+  }
+
+  async mergePullRequest(
+    repo: RepoRef,
+    number: number,
+    options?: ChangeRequestActionOptions,
+  ): Promise<MergedChangeRequest> {
+    this.call("mergePullRequest");
+    const request = this.find(repo, number);
+    this.refuse(repo, number, "merge");
+    const head = request.headSha ?? "head";
+    if (options?.headSha && options.headSha !== head) {
+      throw new ChangeRequestRefusedError(repo, number, "merge", "head_changed", "The head moved.");
+    }
+    request.state = "merged";
+    request.mergeSha = `merge-of-${number}`;
+    return { mergeSha: request.mergeSha };
   }
 
   /** As the `ScmAdapter` the orchestrator expects. */

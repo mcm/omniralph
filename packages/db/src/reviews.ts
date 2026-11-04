@@ -8,7 +8,7 @@
  * failure note) was posted to the code host, which makes posting idempotent
  * per review.
  */
-import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, notInArray } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, notInArray, sql } from "drizzle-orm";
 import type { DocumentationUpdate, ReviewDepth, ReviewPassRecord } from "@omniralph/shared";
 import { currentChangeCollector, recordChange } from "./changes.js";
 import type { Database } from "./client.js";
@@ -466,6 +466,45 @@ export async function listActiveReviewRuns(
         inArray(reviewRuns.status, ACTIVE_REVIEW_RUN_STATUSES),
       ),
     );
+}
+
+/** Where a PR/MR's reviews stand for merging it (a merge-together sprint's epic PR). */
+export interface PullRequestReviewGate {
+  /** A review run of it is still queued, running or correlating: it may report findings. */
+  reviewing: boolean;
+  /** Open findings of its finished reviews (none dismissed, resolved, superseded or merged). */
+  openFindings: number;
+}
+
+/** Whether a PR/MR is still being reviewed, and how many of its review findings are open. */
+export async function pullRequestReviewGate(
+  db: Pick<Database, "select">,
+  input: { repositoryId: string; prNumber: number },
+): Promise<PullRequestReviewGate> {
+  const [active] = await db
+    .select({ id: reviewRuns.id })
+    .from(reviewRuns)
+    .where(
+      and(
+        eq(reviewRuns.repositoryId, input.repositoryId),
+        eq(reviewRuns.prNumber, input.prNumber),
+        inArray(reviewRuns.status, ACTIVE_REVIEW_RUN_STATUSES),
+      ),
+    )
+    .limit(1);
+  const [open] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(findings)
+    .innerJoin(reviews, eq(reviews.id, findings.reviewId))
+    .where(
+      and(
+        eq(reviews.repositoryId, input.repositoryId),
+        eq(reviews.prNumber, input.prNumber),
+        inArray(reviews.status, FINISHED_REVIEW_STATUSES),
+        eq(findings.status, "open"),
+      ),
+    );
+  return { reviewing: active !== undefined, openFindings: open?.count ?? 0 };
 }
 
 export interface NewReviewInput {

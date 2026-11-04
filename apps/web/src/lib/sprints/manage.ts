@@ -29,7 +29,14 @@ import type {
 import { userDisplayName } from "@/lib/user-display";
 import { getWorkItemTracker } from "@/lib/work-items/get-tracker";
 import { parseWorkItemId, trackerFailedMessage } from "@/lib/work-items/item";
-import { advanceSprint, pausedByReason } from "./run";
+import { lazyTrackerGateway } from "@/lib/tracker/client";
+import {
+  advanceSprint,
+  mergeRunningSprintEpic,
+  pausedByReason,
+  sprintRunDeps,
+  type SprintRunDeps,
+} from "./run";
 import {
   TrackerNotConnectedError,
   WorkItemNotFoundError,
@@ -384,10 +391,16 @@ export async function runSprintAction(
       return { ok: true, sprint: sprintRow(sprint) };
   }
   const loadTracker = deps.loadTracker ?? defaultTracker(deps.db);
-  await advanceSprint(
-    { db: deps.db, organizationId, loadTracker: () => loadTracker(organizationId) },
-    sprint.id,
-    actor,
-  );
+  const runDeps: SprintRunDeps = {
+    ...sprintRunDeps({
+      db: deps.db,
+      organizationId,
+      tracker: lazyTrackerGateway({ db: deps.db, organizationId }),
+    }),
+    loadTracker: () => loadTracker(organizationId),
+  };
+  await advanceSprint(runDeps, sprint.id, actor);
+  // A resumed sprint's epic whose PR got clean while it was paused merges now.
+  if (action === "resume") await mergeRunningSprintEpic(runDeps, sprint.id);
   return { ok: true, sprint: sprintRow((await getSprint(deps.db, organizationId, id)) ?? sprint) };
 }
