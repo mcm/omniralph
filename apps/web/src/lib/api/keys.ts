@@ -23,6 +23,7 @@ export const QUERY_AREAS = [
   "runs",
   "settings",
   "settingsHistory",
+  "sprints",
   "transcripts",
   "workItems",
 ] as const;

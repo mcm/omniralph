@@ -1252,6 +1252,93 @@ export const workItemShareLinks = pgTable(
   (t) => [index("work_item_share_links_item_idx").on(t.organizationId, t.tracker, t.externalId)],
 );
 
+// ── Sprints ──────────────────────────────────────────────────────────────
+
+/**
+ * A sprint's lifecycle: `draft` while it is planned, `running` once started (each epic starts
+ * when the one before it merges), `paused` when an epic was refused or stalled, then `done` or
+ * `canceled`. `draft`, `running` and `paused` are active: a work item is in at most one
+ * active sprint.
+ */
+export const sprintStatus = pgEnum("sprint_status", [
+  "draft",
+  "running",
+  "paused",
+  "done",
+  "canceled",
+]);
+
+/**
+ * Where one epic of a sprint stands: `queued` until it starts, `running` while its run works
+ * (and its PR is open), `merged` once its PR merged, `stalled` when it was refused or stopped.
+ */
+export const sprintEpicState = pgEnum("sprint_epic_state", [
+  "queued",
+  "running",
+  "merged",
+  "stalled",
+]);
+
+/**
+ * A sprint: an ordered queue of epics (top-level work items, a standalone task counting as an
+ * epic of one) that build in one repository, one after the other. With `merge_together`, every
+ * epic's PR targets the sprint branch, and one sprint PR lands them on the default branch.
+ */
+export const sprints = pgTable(
+  "sprints",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** The repository its epics build in; deleting it deletes its sprints. */
+    repositoryId: uuid("repository_id")
+      .notNull()
+      .references(() => repositories.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    mergeTogether: boolean("merge_together").notNull().default(false),
+    status: sprintStatus("status").notNull().default("draft"),
+    /** The branch its epics' PRs target (merge-together sprints), set when the sprint starts. */
+    sprintBranch: text("sprint_branch"),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("sprints_organization_id_idx").on(t.organizationId),
+    index("sprints_repository_id_idx").on(t.repositoryId),
+  ],
+);
+
+/** One epic of a sprint, at its 0-based `position` in the sprint's order. */
+export const sprintEpics = pgTable(
+  "sprint_epics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sprintId: uuid("sprint_id")
+      .notNull()
+      .references(() => sprints.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    tracker: workItemTracker("tracker").notNull(),
+    /** The work item's ID in its tracker (a tracker issue ID). */
+    externalId: text("external_id").notNull(),
+    /** The work item's identifier (`ENG-12`) and title when the sprint's epics were last saved. */
+    identifier: text("identifier").notNull(),
+    title: text("title").notNull(),
+    position: integer("position").notNull(),
+    state: sprintEpicState("state").notNull().default("queued"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("sprint_epics_sprint_position_uq").on(t.sprintId, t.position),
+    uniqueIndex("sprint_epics_sprint_item_uq").on(t.sprintId, t.tracker, t.externalId),
+    index("sprint_epics_item_idx").on(t.organizationId, t.tracker, t.externalId),
+  ],
+);
+
 // ── Agents ───────────────────────────────────────────────────────────────
 
 /** An agent's self-update progress (mirrors `AgentUpdateReport` in @omniralph/shared). */
