@@ -148,18 +148,20 @@ async function blockersOver(
   deps: RalphDeps,
   blockers: readonly RalphCrossEpicBlocker[],
 ): Promise<{ completed: RalphCrossEpicBlocker[] } | null> {
-  const completed: RalphCrossEpicBlocker[] = [];
-  for (const blocker of blockers) {
-    let stateType: string;
-    try {
-      stateType = (await deps.tracker.getIssue(blocker.id)).stateType;
-    } catch (error) {
-      console.warn(`Could not read ${blocker.identifier}`, error);
-      return null;
-    }
-    if (stateType === "completed") completed.push(blocker);
-    else if (stateType !== "canceled") return null;
-  }
+  // Independent reads, so they run together rather than one round trip after another.
+  const states = await Promise.all(
+    blockers.map((blocker) =>
+      deps.tracker.getIssue(blocker.id).then(
+        (issue): string | null => issue.stateType,
+        (error) => {
+          console.warn(`Could not read ${blocker.identifier}`, error);
+          return null;
+        },
+      ),
+    ),
+  );
+  if (states.some((state) => state !== "completed" && state !== "canceled")) return null;
+  const completed = blockers.filter((_, i) => states[i] === "completed");
   return { completed };
 }
 
