@@ -3098,6 +3098,162 @@ Tasks have no priority.
     expect(thoughts).toContain(`blocking **ENG-74**`);
   });
 
+  describe("blockers a story's session reports", () => {
+    const crossEpicBlockers = async (runId: string, identifier: string) =>
+      (await listStories(db, runId))
+        .find((s) => s.identifier === identifier)!
+        .crossEpicBlockers.map((b) => [b.identifier, b.reported]);
+
+    it("blocks the story on a task of its own epic and runs it again once that task is done", async () => {
+      const epic = tracker.add({ identifier: "ENG-80", title: "Epic" });
+      const story = tracker.add({
+        identifier: "ENG-81",
+        title: "Widgets",
+        parentId: epic.id,
+        priority: 1,
+      });
+      const helper = tracker.add({ identifier: "ENG-82", title: "Helper", parentId: epic.id });
+      const run = await delegate(epic.id);
+
+      await work(run.id, {
+        status: "blocked",
+        summary: "Needs the helper.",
+        blockedBy: ["ENG-82"],
+      });
+      expect(tracker.blocks.get(story.id)).toEqual([helper.id]);
+      expect(await crossEpicBlockers(run.id, "ENG-81")).toEqual([]);
+      expect(await storyRounds(run.id, "ENG-81")).toEqual({
+        status: "pending",
+        attempts: 0,
+        rounds: 0,
+      });
+      const thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
+      expect(thoughts).toContain("**ENG-81** is now blocked by **ENG-82**: its session reported");
+      expect(thoughts).toContain("🚧 **ENG-81** is blocked by **ENG-82**, so I'm setting it aside");
+
+      // The helper runs first, then the story again (no rebase within an epic).
+      expect((await work(run.id)).story.identifier).toBe("ENG-82");
+      expect((await work(run.id)).story.identifier).toBe("ENG-81");
+      expect((await getRun(db, run.id))?.status).toBe("completed");
+    });
+
+    it("blocks the story on another epic, never on its task, and waits for that epic", async () => {
+      const other = tracker.add({ identifier: "ENG-90", title: "Other epic" });
+      const otherTask = tracker.add({ identifier: "ENG-91", title: "Auth", parentId: other.id });
+      tracker.add({ identifier: "ENG-92", title: "Sessions", parentId: other.id });
+      const epic = tracker.add({ identifier: "ENG-85", title: "Epic" });
+      const story = tracker.add({
+        identifier: "ENG-86",
+        title: "Widgets",
+        parentId: epic.id,
+        priority: 1,
+      });
+      tracker.add({ identifier: "ENG-87", title: "Gadgets", parentId: epic.id });
+      const run = await delegate(epic.id);
+
+      // Two tasks of the same epic make one relation, from that epic.
+      await work(run.id, {
+        status: "blocked",
+        summary: "Needs the auth work.",
+        blockedBy: ["ENG-91", "ENG-92"],
+      });
+      expect(tracker.blocks.get(story.id)).toEqual([other.id]);
+      expect(tracker.blocks.get(story.id)).not.toContain(otherTask.id);
+      expect(await crossEpicBlockers(run.id, "ENG-86")).toEqual([["ENG-90", "ENG-91"]]);
+      expect(await storyRounds(run.id, "ENG-86")).toMatchObject({ status: "pending", attempts: 0 });
+      const thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
+      expect(thoughts).toContain(
+        "**ENG-86** is now blocked by **ENG-90** (the epic of **ENG-91**)",
+      );
+
+      // The other story carries on, then the run waits on the other epic.
+      expect((await work(run.id)).story.identifier).toBe("ENG-87");
+      expect(await activeJobs(run.id)).toEqual([]);
+      expect(await getRun(db, run.id)).toMatchObject({
+        status: "waiting",
+        waitingOn: { blockers: [expect.objectContaining({ identifier: "ENG-90" })], manual: [] },
+      });
+      expect(await relationViolations(tracker, epic.id)).toEqual([]);
+
+      // Once it's done the story runs again; reporting the same blocker changes nothing, and
+      // with nothing left to wait for it's set aside.
+      await tracker.setIssueState(other.id, { type: "completed" });
+      await handleTrackerEvent(
+        { kind: "issue_state_changed", issueId: other.id, removed: false },
+        { db, organizationId: orgId, workspaceId: "org-1" },
+        { tracker, dispatcher },
+      );
+      await work(run.id, { status: "blocked", summary: "Still.", blockedBy: ["ENG-91"] });
+      expect(tracker.blocks.get(story.id)).toEqual([other.id]);
+      expect(await crossEpicBlockers(run.id, "ENG-86")).toEqual([["ENG-90", "ENG-91"]]);
+      expect((await storyRounds(run.id, "ENG-86")).status).toBe("exhausted");
+    });
+
+    it("blocks the story on a standalone task and on an epic as they are", async () => {
+      const standalone = tracker.add({ identifier: "ENG-97", title: "Standalone" });
+      const other = tracker.add({ identifier: "ENG-98", title: "Other epic" });
+      tracker.add({ identifier: "ENG-99", title: "Its task", parentId: other.id });
+      const epic = tracker.add({ identifier: "ENG-95", title: "Epic" });
+      const story = tracker.add({ identifier: "ENG-96", title: "Widgets", parentId: epic.id });
+      const run = await delegate(epic.id);
+
+      await work(run.id, {
+        status: "blocked",
+        summary: "Needs both.",
+        blockedBy: ["ENG-97", "ENG-98"],
+      });
+      expect(tracker.blocks.get(story.id)).toEqual([standalone.id, other.id]);
+      expect(await crossEpicBlockers(run.id, "ENG-96")).toEqual([
+        ["ENG-97", "ENG-97"],
+        ["ENG-98", "ENG-98"],
+      ]);
+      expect(await getRun(db, run.id)).toMatchObject({
+        status: "waiting",
+        waitingOn: {
+          blockers: [
+            expect.objectContaining({ identifier: "ENG-97" }),
+            expect.objectContaining({ identifier: "ENG-98" }),
+          ],
+        },
+      });
+      const thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
+      expect(thoughts).toContain("**ENG-96** is now blocked by **ENG-97**, **ENG-98**");
+    });
+
+    it("skips the story itself, its own epic, a feature and unreadable identifiers with a note", async () => {
+      const feature = tracker.add({ identifier: "ENG-100", title: "Feature" });
+      const featureEpic = tracker.add({
+        identifier: "ENG-101",
+        title: "Feature epic",
+        parentId: feature.id,
+      });
+      tracker.add({ identifier: "ENG-102", title: "Its task", parentId: featureEpic.id });
+      const epic = tracker.add({ identifier: "ENG-103", title: "Epic" });
+      const story = tracker.add({ identifier: "ENG-104", title: "Widgets", parentId: epic.id });
+      const run = await delegate(epic.id);
+
+      await work(run.id, {
+        status: "blocked",
+        summary: "Needs things.",
+        blockedBy: ["ENG-104", "ENG-103", "ENG-100", "NOPE-1"],
+      });
+      expect(tracker.blocks.get(story.id)).toBeUndefined();
+      expect(await crossEpicBlockers(run.id, "ENG-104")).toEqual([]);
+      // Nothing blocks it, so it's set aside as blocked, as before.
+      expect((await storyRounds(run.id, "ENG-104")).status).toBe("exhausted");
+      const thoughts = tracker.bodies(run.trackerSessionId, "thought").join("\n");
+      expect(thoughts).toContain("I skipped **ENG-104**: **ENG-104** is the task itself.");
+      expect(thoughts).toContain(
+        "I skipped **ENG-103**: **ENG-103** is the epic **ENG-104** belongs to.",
+      );
+      expect(thoughts).toContain(
+        "I skipped **ENG-100**: **ENG-100** is a feature, not an epic or a task: reply with the epic in it that **ENG-104** waits on",
+      );
+      expect(thoughts).toContain("I skipped **NOPE-1**: I couldn't read **NOPE-1** in Linear.");
+      expect(thoughts).not.toContain("is now blocked by");
+    });
+  });
+
   it("counts a blocked result as a round when one of its follow-ups doesn't follow the epic", async () => {
     const epic = tracker.add({ identifier: "ENG-67", title: "Epic" });
     const story = tracker.add({ identifier: "ENG-68", title: "Validate", parentId: epic.id });

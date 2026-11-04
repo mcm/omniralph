@@ -2430,6 +2430,20 @@ export const chatRunEvents = pgTable(
   ],
 );
 
+/**
+ * An outside blocker a story was blocked on after its session reported it
+ * (`ralph_stories.cross_epic_blockers`): another epic, or a standalone task.
+ */
+export interface RalphCrossEpicBlocker {
+  /** Tracker issue id and identifier of the blocker. */
+  id: string;
+  identifier: string;
+  /** The identifier the session reported (a task of that epic, or the blocker itself). */
+  reported: string;
+  /** ISO timestamp of when it was recorded. */
+  at: string;
+}
+
 /** The history of the progress metric a story reported in its rounds (`ralph_stories.round_metrics`). */
 export interface RalphRoundMetrics {
   name: string;
@@ -2709,6 +2723,22 @@ export const ralphStories = pgTable(
      * routes to a repository with coding off (cyralph's `elsewhere`).
      */
     elsewhere: text("elsewhere"),
+    /**
+     * The outside blockers (another epic, or a standalone task) its session reported and the
+     * orchestrator blocked it on: its cross-epic dependencies. Their work lands on the default
+     * branch, so the lane is rebased onto it before the task runs again.
+     */
+    crossEpicBlockers: jsonb("cross_epic_blockers")
+      .$type<RalphCrossEpicBlocker[]>()
+      .notNull()
+      .default([]),
+    /** A recorded blocker was completed: the lane's branch is rebased before the task runs again. */
+    rebasePending: boolean("rebase_pending").notNull().default(false),
+    /**
+     * It runs again because its recorded blockers were all canceled (no rebase): a rerun that
+     * doesn't complete files a follow-up for a person, once.
+     */
+    rerunAfterCancel: boolean("rerun_after_cancel").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
