@@ -28,6 +28,7 @@ export const CHANGE_RESOURCES = [
   "chat",
   "model_prices",
   "sprint",
+  "feature",
 ] as const;
 export type ChangeResource = (typeof CHANGE_RESOURCES)[number];
 

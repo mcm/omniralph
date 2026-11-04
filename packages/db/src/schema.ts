@@ -1348,6 +1348,106 @@ export const sprintEpics = pgTable(
   ],
 );
 
+// ── Features ─────────────────────────────────────────────────────────────
+
+/** A feature's lifecycle: `planning` while its PRFAQ and Plan are written, `archived` when put away. */
+export const featureStatus = pgEnum("feature_status", ["planning", "archived"]);
+
+/** A feature's planning documents: its PRFAQ and its Plan. */
+export const featureDocumentKind = pgEnum("feature_document_kind", ["prfaq", "plan"]);
+
+/**
+ * A feature: a group of epics planned together from one PRFAQ and one Plan, kept in
+ * Omniralph whatever the tracker.
+ */
+export const features = pgTable(
+  "features",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    status: featureStatus("status").notNull().default("planning"),
+    /**
+     * The repo the feature's epics build in, null when it isn't scoped to one; a disconnected
+     * or deleted repo leaves the feature unscoped.
+     */
+    repositoryId: uuid("repository_id").references(() => repositories.id, {
+      onDelete: "set null",
+    }),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("features_organization_id_idx").on(t.organizationId),
+    index("features_repository_id_idx").on(t.repositoryId),
+  ],
+);
+
+/**
+ * One saved version of a feature's PRFAQ or Plan. Every save adds a version (1, 2, …) and
+ * keeps the earlier ones; the highest version is the document.
+ */
+export const featureDocuments = pgTable(
+  "feature_documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    featureId: uuid("feature_id")
+      .notNull()
+      .references(() => features.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    kind: featureDocumentKind("kind").notNull(),
+    version: integer("version").notNull(),
+    body: text("body").notNull(),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("feature_documents_feature_kind_version_uq").on(t.featureId, t.kind, t.version),
+    check("feature_documents_version_positive", sql`${t.version} > 0`),
+  ],
+);
+
+/**
+ * A file attached to a feature or to a work item (mockups, design boards, specs). The file
+ * itself is in object storage under `storage_key`; only its metadata is kept here.
+ */
+export const attachments = pgTable(
+  "attachments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** The feature it belongs to, or null when it belongs to a work item. */
+    featureId: uuid("feature_id").references(() => features.id, { onDelete: "cascade" }),
+    /** The work item it belongs to (its tracker and ID there), or null for a feature's. */
+    tracker: workItemTracker("tracker"),
+    externalId: text("external_id"),
+    fileName: text("file_name").notNull(),
+    contentType: text("content_type").notNull(),
+    /** In bytes. */
+    size: integer("size").notNull(),
+    /** Where the file is in object storage. */
+    storageKey: text("storage_key").notNull().unique(),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("attachments_feature_idx").on(t.featureId),
+    index("attachments_work_item_idx").on(t.organizationId, t.tracker, t.externalId),
+    check(
+      "attachments_one_owner",
+      sql`(${t.featureId} is not null and ${t.tracker} is null and ${t.externalId} is null) or (${t.featureId} is null and ${t.tracker} is not null and ${t.externalId} is not null)`,
+    ),
+    check("attachments_size_nonnegative", sql`${t.size} >= 0`),
+  ],
+);
+
 // ── Agents ───────────────────────────────────────────────────────────────
 
 /** An agent's self-update progress (mirrors `AgentUpdateReport` in @omniralph/shared). */

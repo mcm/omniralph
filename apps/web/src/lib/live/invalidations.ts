@@ -248,6 +248,11 @@ export const LIVE_INVALIDATIONS = {
     keys.sprints.lists,
     ...event.ids.map((sprintId) => keys.sprints.detail(sprintId)),
   ],
+  // The Features screen's list and the named features (their documents and attachments).
+  feature: (event, keys) => [
+    keys.features.lists,
+    ...event.ids.map((featureId) => keys.features.detail(featureId)),
+  ],
 } satisfies Record<ChangeEvent["resource"], Invalidator<never>> & {
   [R in ChangeEventResource]: Invalidator<R>;
 };

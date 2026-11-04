@@ -147,6 +147,23 @@ See [ADR 0006](adr/0006-postgres-job-queue.md).
 | `CRON_SECRET`  | yes      | —            | Vercel Cron sends `Authorization: Bearer $CRON_SECRET` to `/api/cron/*`; requests without it get 401.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `ABLY_API_KEY` | no       | — (Ably off) | Ably API key, `<keyName>:<keySecret>` (Ably dashboard › your app › **API Keys**; needs publish and subscribe). When set, each heartbeat hands the agent a 12-hour, subscribe-only JWT for its wake channels (`agent:<agentId>`, `org:<organizationId>`), signed locally with the key secret; agents never see the key. Unset (or malformed, which is logged) means `ably: null` in heartbeats, and agents long-poll their claims as before. See [ADR 0009](adr/0009-ably-wake-signals.md). The same key publishes the control panel's live change events and signs the browsers' 1-hour, subscribe-only tokens for them (`GET /api/ui/live/token`); unset, screens fall back to polling. See [live-events.md](live-events.md). |
 
+### Attachments
+
+Files attached to features and work items (mockups, design boards, specs) go to an
+S3-compatible bucket, addressed path-style (`<endpoint>/<bucket>/<key>`) and signed with SigV4:
+Amazon S3, Cloudflare R2, Neon object storage or MinIO. The database keeps only each file's
+name, type, size and key. Uploads go through the control panel, so a file can be up to 4 MB
+(Vercel functions take request bodies up to 4.5 MB). Without all four required variables,
+uploads and downloads answer 503.
+
+| Variable                           | Required        | Default | Description                                                                                |
+| ---------------------------------- | --------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `OBJECT_STORAGE_ENDPOINT`          | for attachments | —       | The service's base URL, e.g. `https://<account>.r2.cloudflarestorage.com`.                 |
+| `OBJECT_STORAGE_BUCKET`            | for attachments | —       | The bucket attachments are stored in. Keep it private: files are served through the panel. |
+| `OBJECT_STORAGE_ACCESS_KEY_ID`     | for attachments | —       | Access key ID with read, write and delete on the bucket.                                   |
+| `OBJECT_STORAGE_SECRET_ACCESS_KEY` | for attachments | —       | The access key's secret.                                                                   |
+| `OBJECT_STORAGE_REGION`            | no              | `auto`  | The bucket's region for signing: `auto` suits R2; Amazon S3 needs the bucket's region.     |
+
 ### Set by Vercel
 
 The control panel also reads `VERCEL_ENV` (refuses the local agent-token signer in `production`),
