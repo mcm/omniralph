@@ -338,12 +338,12 @@ describe("AppShell shortcuts", () => {
       inbox: "1",
       runs: "2",
       backlog: "3",
-      sprints: "4",
-      repos: "5",
-      fleet: "6",
+      sprints: "8",
+      repos: "4",
+      fleet: "5",
       ask: "Control+J",
-      analytics: "7",
-      settings: "8",
+      analytics: "6",
+      settings: "7",
     });
     expect(keys(tabBar())).toEqual({ inbox: "1", runs: "2", backlog: "3", ask: "Control+J" });
     for (const button of screen.getAllByRole("button", { name: "Search or jump to…" })) {
@@ -351,11 +351,11 @@ describe("AppShell shortcuts", () => {
     }
     const { drawer } = await openDrawer();
     expect(keys(drawer)).toEqual({
-      sprints: "4",
-      repos: "5",
-      fleet: "6",
-      analytics: "7",
-      settings: "8",
+      sprints: "8",
+      repos: "4",
+      fleet: "5",
+      analytics: "6",
+      settings: "7",
     });
   });
 
@@ -374,11 +374,11 @@ describe("AppShell shortcuts", () => {
       "inbox",
       "runs",
       "backlog",
-      "sprints",
       "repos",
       "fleet",
       "analytics",
       "settings",
+      "sprints",
     ]);
   });
 

@@ -96,13 +96,13 @@ describe("SHORTCUTS", () => {
     ).toEqual([]);
   });
 
-  it("gives the Go to digits in the nav's order, Ask skipped, each to an entry whose page exists", () => {
+  it("gives each Go to entry a digit, Ask skipped, keeping the digits people knew before Sprints, each to an entry whose page exists", () => {
     const goIds = entries.map(([id]) => id).filter((id) => id.startsWith("go"));
     const navOrder = navItems
       .map((item) => NAV_SHORTCUTS[item.id as keyof typeof NAV_SHORTCUTS])
       .filter((id) => id !== "ask");
     expect(goIds).toEqual(navOrder);
-    expect(goIds.map((id) => SHORTCUTS[id].key)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
+    expect(goIds.map((id) => SHORTCUTS[id].key)).toEqual(["1", "2", "3", "8", "4", "5", "6", "7"]);
     for (const item of navItems) {
       const page = path.join(WEB_SRC, "app/(app)", item.href, "page.tsx");
       expect(existsSync(page), item.href).toBe(true);
