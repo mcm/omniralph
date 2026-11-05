@@ -15,6 +15,7 @@ import { IconPlus } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
 import { useCurrentUser } from "@/components/current-user";
+import { FeatureRollupBadge } from "./epic-progress";
 import { FeatureDetailView } from "./feature-page";
 import { epicCount, FEATURE_STATUS, featureHref, FEATURES_PATH } from "./feature-status";
 import { NEW_FEATURE, NewFeatureSheet } from "./new-feature-sheet";
@@ -49,7 +50,8 @@ function FeatureListSkeleton() {
 
 /**
  * The Features screen: the list with "Features", the + (New feature, admins) and the active
- * organization's features newest first, each with its name, status, repo and epic count,
+ * organization's features newest first, each with its name, status, repo, epic count and
+ * roll-up of epics and stories done,
  * beside the open feature (on `/features`, the first one, when both panes fit). Archived
  * features come after the others. The list is a live query.
  */
@@ -122,6 +124,7 @@ export function FeaturesView({ featureId = null, renderDetail }: FeaturesViewPro
                     meta={
                       <>
                         <MetaBadge text={epicCount(feature.epicCount)} />
+                        <FeatureRollupBadge feature={feature} />
                         {feature.repository ? (
                           <MetaBadge text={feature.repository.fullPath} mono />
                         ) : null}

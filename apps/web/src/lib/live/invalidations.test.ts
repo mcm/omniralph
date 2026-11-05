@@ -7,6 +7,7 @@ import {
   backlogKeys,
   chatPlaybooksKey,
   connectionKeys,
+  featureProgressKeys,
   inboxKeys,
   queryKeys,
   runsKeys,
@@ -38,6 +39,7 @@ const keys = queryKeys(ORG);
 const playbooks = playbookKeys(keys);
 const history = settingsHistoryKeys(keys);
 const backlog = backlogKeys(keys);
+const featureProgress = featureProgressKeys(keys);
 /** Analytics queries covering ORG: its own and the `all` ones. */
 const analyticsOfOrg = analyticsKeys(keys).covering(ORG);
 
@@ -61,6 +63,7 @@ describe("LIVE_INVALIDATIONS", () => {
       ...repositoryViews,
       backlog.details,
       keys.sprints.all,
+      featureProgress.all,
     ]);
   });
 
@@ -102,17 +105,19 @@ describe("LIVE_INVALIDATIONS", () => {
     ]);
   });
 
-  it("pull_request: the run and the lists, inbox and sprints that show it", () => {
+  it("pull_request: the run and the lists, inbox, sprints and feature progress that show it", () => {
     expect(liveInvalidations(event({ resource: "pull_request", runId: RUN }))).toEqual([
       keys.runs.lists,
       keys.runs.detail(RUN),
       keys.inbox.all,
       keys.sprints.all,
+      featureProgress.all,
     ]);
     expect(liveInvalidations(event({ resource: "pull_request" }))).toEqual([
       keys.runs.all,
       keys.inbox.all,
       keys.sprints.all,
+      featureProgress.all,
     ]);
   });
 
@@ -271,10 +276,15 @@ describe("LIVE_INVALIDATIONS", () => {
     ]);
   });
 
-  it("work_item: the Backlog's list, counts and Up next, and each named item's detail", () => {
+  it("work_item: the Backlog's list, counts and Up next, each named item's detail and every feature's progress", () => {
     const ids = [`linear-${ID}`, `linear-${RUN}`];
     const prefixes = liveInvalidations(event({ resource: "work_item", ids }));
-    expect(prefixes).toEqual([keys.backlog.all, backlog.detail(ids[0]!), backlog.detail(ids[1]!)]);
+    expect(prefixes).toEqual([
+      keys.backlog.all,
+      backlog.detail(ids[0]!),
+      backlog.detail(ids[1]!),
+      featureProgress.all,
+    ]);
     const under = (key: QueryKey) =>
       prefixes.some((prefix) => prefix.every((part, i) => key[i] === part));
     for (const key of [
@@ -335,13 +345,18 @@ describe("LIVE_INVALIDATIONS", () => {
     expect(under(keys.backlog.all)).toBe(false);
   });
 
-  it("feature: the Features lists and each named feature, never another feature", () => {
+  it("feature: the Features lists and each named feature with its progress, never another feature", () => {
     const prefixes = liveInvalidations(event({ resource: "feature", ids: [ID] }));
-    expect(prefixes).toEqual([keys.features.lists, keys.features.detail(ID)]);
+    expect(prefixes).toEqual([
+      keys.features.lists,
+      keys.features.detail(ID),
+      featureProgress.feature(ID),
+    ]);
     const under = (key: QueryKey) =>
       prefixes.some((prefix) => prefix.every((part, i) => key[i] === part));
     expect(under(keys.features.part(ID, "documents"))).toBe(true);
     expect(under(keys.features.detail(OTHER_RUN))).toBe(false);
+    expect(under(featureProgress.feature(OTHER_RUN))).toBe(false);
     expect(under(keys.sprints.all)).toBe(false);
   });
 

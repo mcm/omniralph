@@ -15,6 +15,7 @@ import {
   backlogKeys,
   chatPlaybooksKey,
   connectionKeys,
+  featureProgressKeys,
   queryKeys,
   runsKeys,
   settingsHistoryKeys,
@@ -146,8 +147,9 @@ export const LIVE_INVALIDATIONS = {
           ...repositoryViews(keys),
           // A work item's detail shows its run (whether its PRD can be edited).
           backlogKeys(keys).details,
-          // A sprint shows each epic's run status.
+          // A sprint shows each epic's run status, as a feature's progress does.
           keys.sprints.all,
+          featureProgressKeys(keys).all,
         ]
       : // System work (a repository sync, a cleanup) belongs to no run: its attempts count
         // in Analytics, and a failed repository sync is a problem of its repository.
@@ -156,11 +158,17 @@ export const LIVE_INVALIDATIONS = {
     event.runId
       ? [keys.transcripts.detail(event.runId)]
       : event.ids.map((jobId) => keys.transcripts.detail(jobId)),
-  // A sprint shows each epic's PRs and whether they merged.
+  // A sprint, and a feature's progress, show each epic's PRs and whether they merged.
   pull_request: (event, keys) =>
     event.runId
-      ? [keys.runs.lists, keys.runs.detail(event.runId), keys.inbox.all, keys.sprints.all]
-      : [keys.runs.all, keys.inbox.all, keys.sprints.all],
+      ? [
+          keys.runs.lists,
+          keys.runs.detail(event.runId),
+          keys.inbox.all,
+          keys.sprints.all,
+          featureProgressKeys(keys).all,
+        ]
+      : [keys.runs.all, keys.inbox.all, keys.sprints.all, featureProgressKeys(keys).all],
   inbox_state: (_event, keys) => [keys.inbox.all],
   webhook_event: (event, keys) => [
     // The delivery's own detail and its connection's log (`ids` name both, and a replay's
@@ -234,6 +242,9 @@ export const LIVE_INVALIDATIONS = {
   work_item: (event, keys) => [
     keys.backlog.all,
     ...event.ids.map((id) => backlogKeys(keys).detail(id)),
+    // A feature's progress shows its epics' states and their stories' (the event doesn't
+    // name the feature).
+    featureProgressKeys(keys).all,
   ],
   // The viewer's chats lists (a chat's title and activity order them) and the named chats.
   chat: (event, keys) => [
@@ -254,6 +265,8 @@ export const LIVE_INVALIDATIONS = {
   feature: (event, keys) => [
     keys.features.lists,
     ...event.ids.map((featureId) => keys.features.detail(featureId)),
+    // Its epics (one filed or linked).
+    ...event.ids.map((featureId) => featureProgressKeys(keys).feature(featureId)),
   ],
 } satisfies Record<ChangeEvent["resource"], Invalidator<never>> & {
   [R in ChangeEventResource]: Invalidator<R>;
