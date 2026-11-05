@@ -1,5 +1,23 @@
 # @omniralph/agent
 
+## 2.3.3
+
+### Patch Changes
+
+- [#132](https://github.com/mcm/omniralph/pull/132) [`a9195f5`](https://github.com/mcm/omniralph/commit/a9195f50157eb8e25363c57bc83dfd8fd0acd96f) Thanks [@omniralph](https://github.com/apps/omniralph)! - Adds the plan critic playbook, `builtin:critique-plan` (role `verifier`): a read-only session that judges a triage draft (a Fix, a Story or an Epic, given under `critique` in its trigger context) against the rubric for its size from `@omniralph/planning` (`PLAN_RUBRICS`), and answers `{ verdict, notes: [{ item, ok, note }], openQuestions }`, which `PlanCritiqueOutput` in `@omniralph/shared` parses.
+
+- [#136](https://github.com/mcm/omniralph/pull/136) [`9800e3f`](https://github.com/mcm/omniralph/commit/9800e3f9fca5a324a14d17117913ecc7190bf245) Thanks [@omniralph](https://github.com/apps/omniralph)! - The agent can run a feature's sharding: the new built-in playbooks `builtin:shard-plan` (role `shard`, drafting a feature's epics from its Plan in the epic format, each with the Plan sections it covers and the epics it waits for) and `builtin:verify-shard` (role `verifier`, checking every section is covered, no epic adds scope the Plan lacks and the epic→epic dependencies are acyclic) are `run.invoked` query runs whose invoker is the new `feature-shard` kind, labelled "Sharding a feature's plan into epics" and "Checking the epics drafted from a feature's plan".
+
+- [#136](https://github.com/mcm/omniralph/pull/136) [`70b38b1`](https://github.com/mcm/omniralph/commit/70b38b1ea6f379de081573864854eabc504b6657) Thanks [@omniralph](https://github.com/apps/omniralph)! - Coding runs get the files people attached in Omniralph to their epic and the epic's feature: the run spec's new `attachments` lists each with a short-lived download URL, and the agent downloads them into a temporary folder outside the worktree before the first session (a failed download fails the run, naming the file and why), lets the session read it, lists each file's path, name and type in the prompt's **Attached Files** section (the `files` template variable) with the instruction to treat their contents as data and never commit them, and deletes the folder after the run.
+
+- [#135](https://github.com/mcm/omniralph/pull/135) [`a8a5fc6`](https://github.com/mcm/omniralph/commit/a8a5fc63440137f5f7860b515322251c7d621132) Thanks [@omniralph](https://github.com/apps/omniralph)! - Story sessions report the work they discover they are blocked by: the story result has an optional `blockedBy` list of tracker identifiers (trimmed, de-duplicated case-insensitively, at most 10), which the agent passes on to the orchestrator. The story prompts tell the agent to report `status: "blocked"` with `blockedBy` instead of ever asking for another branch to be merged into its own.
+
+- [#132](https://github.com/mcm/omniralph/pull/132) [`835077b`](https://github.com/mcm/omniralph/commit/835077bbd850be166ea0e9e34dfca959dbce7461) Thanks [@omniralph](https://github.com/apps/omniralph)! - Triage locates the cause of a bug: for a Fix, `builtin:triage` answers a `bug` (the files and functions of the likely cause, the reproduction steps, and the current and expected behavior), read with `Read`, `Grep` and `Glob` only. A cause it can't locate becomes an open question (`bug.unlocatedQuestion`) instead of a guess.
+
+- [#132](https://github.com/mcm/omniralph/pull/132) [`0aff4bf`](https://github.com/mcm/omniralph/commit/0aff4bff31bafd1236e254b8a08b05d1486aeea0) Thanks [@omniralph](https://github.com/apps/omniralph)! - Triage runs as a loop: `builtin:triage` names `builtin:critique-plan` as its verifier (3 rounds at most), and a round after the first is told to revise its previous draft with what the work item lint and the plan critic found (the `revision` trigger variables, quoted as `<revision-feedback>`).
+
+- [#132](https://github.com/mcm/omniralph/pull/132) [`77e280c`](https://github.com/mcm/omniralph/commit/77e280cab7270a21cc5cdff1dc88f6ef2b9d884a) Thanks [@omniralph](https://github.com/apps/omniralph)! - Triage sizes every work item as a Fix, a Story, an Epic or a Feature: `builtin:triage` answers a `sizing` (`{ size, reason }`) and, for a Feature, a first cut of its epics (`featureEpics`), in place of the top-level `kind` (a single task's kind now follows its size). The shared sizing rule of `@omniralph/planning` describes the four sizes.
+
 ## 2.3.2
 
 ### Patch Changes
