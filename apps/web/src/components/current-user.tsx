@@ -21,6 +21,8 @@ export interface SessionUser {
   name: string | null;
   email: string | null;
   image: string | null;
+  /** How many invitations to other organizations wait for an answer (0 without an email). */
+  pendingInvitations: number;
 }
 
 const CurrentUserContext = React.createContext<SessionUser | null>(null);

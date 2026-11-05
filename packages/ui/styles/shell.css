@@ -63,6 +63,7 @@
 
 /* Organization picker trigger (the app's picker sits in `orgPicker`) */
 .or-org-picker {
+  position: relative;
   width: 100%;
   justify-content: flex-start;
 }
@@ -79,6 +80,11 @@
 .or-org-picker__chevron {
   flex: none;
   color: var(--or-ter);
+}
+
+/* A count badge (the `or-nav__count` pill) stays visible on the rail, in the icon's corner. */
+.or-org-picker__count {
+  flex: none;
 }
 
 /* Search and jump: a field-like button under the picker; on the rail, an icon. */

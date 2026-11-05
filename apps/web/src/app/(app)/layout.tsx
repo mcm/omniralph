@@ -1,3 +1,4 @@
+import { listPendingInvitationsForEmail } from "@omniralph/db";
 import { cookies } from "next/headers";
 import { AppShell } from "@/components/app-shell";
 import { ORGANIZATION_COOKIE, ORGANIZATION_SCOPE_COOKIE } from "@/lib/auth/routes";
@@ -6,6 +7,7 @@ import {
   getOrganizationScope,
   requirePageUser,
 } from "@/lib/auth/session";
+import { getDb } from "@/lib/db";
 import { themePreference } from "@/lib/theme";
 import { PageFrame } from "./page-frame";
 
@@ -15,10 +17,12 @@ import { PageFrame } from "./page-frame";
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requirePageUser();
-  const [organizations, scope, jar] = await Promise.all([
+  const [organizations, scope, jar, invitations] = await Promise.all([
     getOrganizationMemberships(),
     getOrganizationScope(),
     cookies(),
+    // Not accepted, revoked or expired. Accepting or declining one revalidates this layout.
+    user.email ? listPendingInvitationsForEmail(getDb(), user.email) : [],
   ]);
   return (
     <AppShell
@@ -31,6 +35,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         name: user.name,
         email: user.email,
         image: user.image,
+        pendingInvitations: invitations.length,
       }}
       themePreference={themePreference(user.theme)}
       organizationCookie={jar.get(ORGANIZATION_COOKIE)?.value ?? null}
