@@ -37,6 +37,7 @@ export const PLAYBOOK_ROLE_LABELS: Record<PlaybookRole, string> = {
   triage: "Triage",
   "learn-rule": "Learn rule",
   "reply-to-finding": "Reply to finding",
+  shard: "Shard a plan",
   verifier: "Verifier",
   audit: "Epic audit",
 };

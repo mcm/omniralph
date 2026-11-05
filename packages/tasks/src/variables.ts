@@ -582,6 +582,108 @@ export const VARIABLES: readonly VariableDefinition[] = [
     description:
       "An epic draft's stories as a JSON array (`index`, `title`, `body`, `kind`, `dependsOn`: 0-based indexes of the stories it is blocked by, `manual`); null for a Fix or a Story.",
   },
+  // Sharding a feature's Plan into epics: the worker drafts the epics, the verifier checks them.
+  {
+    name: "shard.feature",
+    source: "trigger",
+    trust: "untrusted",
+    quote: "feature-name",
+    triggers: ["run.invoked"],
+    description: "Name of the feature whose Plan is sharded into epics.",
+  },
+  {
+    name: "shard.prfaq",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "markdown",
+    triggers: ["run.invoked"],
+    description: "The feature's PRFAQ (null when it has none), for the sharding worker.",
+  },
+  {
+    name: "shard.plan",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "markdown",
+    triggers: ["run.invoked"],
+    description: "The feature's Plan, which is sharded into epics.",
+  },
+  {
+    name: "shard.sections",
+    source: "trigger",
+    trust: "untrusted",
+    quote: "plan-sections",
+    triggers: ["run.invoked"],
+    description:
+      "The Plan's sections an epic can cover, one `- ` line each (every `##` section but Epics and Success metrics).",
+  },
+  {
+    name: "shard.previousDraft",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "json",
+    triggers: ["run.invoked"],
+    description:
+      "From the second round on: the previous round's draft as JSON (`epics`, `exempt`); null on the first.",
+  },
+  {
+    name: "shard.revision.round",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description:
+      "The sharding round that revises the previous draft (2 or later; `shard.revision` is null on the first).",
+  },
+  {
+    name: "shard.revision.maxRounds",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description:
+      "The sharding loop's cap: after its last round, what still fails is listed for the person.",
+  },
+  {
+    name: "shard.revision.feedback",
+    source: "trigger",
+    trust: "untrusted",
+    quote: "revision-feedback",
+    triggers: ["run.invoked"],
+    description:
+      "What Om's check and the verifier found in the previous draft: uncovered sections, invented scope, dependency and format problems.",
+  },
+  {
+    name: "shard.round",
+    source: "trigger",
+    trust: "trusted",
+    triggers: ["run.invoked"],
+    description: "The sharding round whose draft the verifier checks (1 on the first).",
+  },
+  {
+    name: "shard.draft",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "json",
+    triggers: ["run.invoked"],
+    description:
+      "The draft's epics as a JSON array (`key`, `title`, `description`, `covers`: Plan sections, `dependsOn`: keys of the epics it waits for).",
+  },
+  {
+    name: "shard.exempt",
+    source: "trigger",
+    trust: "untrusted",
+    fence: "json",
+    triggers: ["run.invoked"],
+    description:
+      "The Plan sections the draft says need no epic, as a JSON array (`section`, `reason`); null when none.",
+  },
+  {
+    name: "shard.check",
+    source: "trigger",
+    trust: "untrusted",
+    quote: "structural-problems",
+    triggers: ["run.invoked"],
+    description:
+      "The structural problems Om's check found in the draft (uncovered or unknown sections, dependencies, cycles, epic format), one per line; null when it passed.",
+  },
   // Coding runs (story and request runs) and the PR description they invoke. Titles and
   // identifiers are put on one line and render as is; issue text, the PRD, requests, guidance,
   // progress and feedback are fenced.

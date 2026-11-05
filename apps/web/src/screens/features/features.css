@@ -382,3 +382,177 @@
   flex-direction: column;
   gap: 16px;
 }
+
+/* Epics: sharding the Plan into reviewed drafts. */
+.or-feature-shard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+}
+
+.or-feature-shard__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.or-feature-shard__rounds,
+.or-feature-shard__drafts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-feature-shard__drafts {
+  gap: 12px;
+}
+
+.or-feature-shard__round {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: 13px;
+}
+
+.or-feature-shard__round-summary {
+  color: var(--or-sec);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.or-feature-shard__leftovers {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+
+.or-feature-shard__summary {
+  margin: 0;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.or-feature-shard__file {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--or-line);
+}
+
+/* One drafted epic beside the Plan sections it covers. */
+.or-shard-draft {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+  background: var(--or-surf);
+}
+
+.or-shard-draft--removed {
+  opacity: 0.6;
+}
+
+@media (max-width: 768px) {
+  .or-shard-draft {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.or-shard-draft__main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.or-shard-draft__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.or-shard-draft__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.or-shard-draft__filed {
+  color: var(--or-acc);
+  font-size: 13px;
+}
+
+.or-shard-draft__description {
+  max-height: 320px;
+  overflow: auto;
+  font-size: 13px;
+}
+
+.or-shard-draft__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.or-shard-draft__label {
+  color: var(--or-ter);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.or-shard-draft__notes ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.or-shard-draft__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.or-shard-draft__covers {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 16px;
+  border-left: 1px solid var(--or-line);
+}
+
+@media (max-width: 768px) {
+  .or-shard-draft__covers {
+    padding: 12px 0 0;
+    border-top: 1px solid var(--or-line);
+    border-left: 0;
+  }
+}
+
+.or-shard-draft__section summary {
+  color: var(--or-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.or-shard-draft__section .or-markdown {
+  margin-top: 4px;
+  color: var(--or-sec);
+  font-size: 12px;
+}

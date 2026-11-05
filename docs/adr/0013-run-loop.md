@@ -56,7 +56,7 @@ model, so it can run on a different model or provider than the worker.
 ### Kinds of run plug in
 
 What a worker and a verifier are depends on the kind of run (`run_iterations.run_kind`: `review`,
-`triage`). Each kind registers a `LoopAdapter` (`registerLoopAdapter`): `startWorker` (the
+`triage`, `shard`). Each kind registers a `LoopAdapter` (`registerLoopAdapter`): `startWorker` (the
 iteration and its feedback), `startVerifier` (the iteration and the worker's job) and `finish`
 (the loop's outcome and every iteration). Reviews, documentation checks and triage register
 theirs as they move onto the loop (TOOL-952's epics 4 to 6).
@@ -127,6 +127,20 @@ without a verifier. `afterCommit` applies the loop's end to the tracker once it 
 usable draft, with every check still failing as an open question unless it passed. A run triages
 again on a reply, so each new loop starts after the last one's iterations (`startLoop`'s `number`,
 with `maxIterations` counted from it); an iteration without feedback is a loop's first.
+
+### Sharding: a feature's Plan into epic drafts
+
+Sharding registered its adapter (`lib/features/shard-loop.ts`, TOOL-994), run kind `shard`,
+`run_id` the `feature_shards` row. The worker is a `feature.shard-plan` job of
+`builtin:shard-plan` (role `shard`, a `run.invoked` query run with a `feature-shard` invoker, so the
+`run-result` sink leaves it to the driver); from the second round on it gets the last usable draft
+and the revision. `startVerifier` runs Om's structural check (`checkShard`: coverage, unknown
+sections, dependencies and cycles, the epic format) and records the round on the iteration
+(`details`, a `ShardRound`), then starts `builtin:verify-shard` (`feature.verify-shard`); `judge`
+records its coverage, invented scope and dependency verdict. The round converges only when both
+pass. `finish` puts the last usable round's drafts up for a person's review on the sharding, with
+what still failed as its `leftovers`; nothing is filed until a person approves the drafts
+(docs/linear.md, "Sharding a feature into epics").
 
 ### Coding: the task verifier
 

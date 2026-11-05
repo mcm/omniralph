@@ -117,6 +117,13 @@ describe("PLAYBOOK_ROLES", () => {
         builtinOnly: true,
         loop: "none",
       },
+      shard: {
+        taskType: "query",
+        triggers: ["run.invoked"],
+        sink: "run-result",
+        builtinOnly: true,
+        loop: "looped",
+      },
       verifier: {
         taskType: "query",
         triggers: ["run.invoked"],
@@ -153,6 +160,7 @@ describe("PLAYBOOK_ROLES", () => {
       "review",
       "docs-check",
       "triage",
+      "shard",
     ]);
   });
 

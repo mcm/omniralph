@@ -14,10 +14,12 @@ import { IMPLEMENT_STORY_PLAYBOOK } from "./builtin/implement-story.js";
 import { LEARN_RULE_PLAYBOOK } from "./builtin/learn-rule.js";
 import { REPLY_PLAYBOOK } from "./builtin/reply.js";
 import { REVIEW_PR_PLAYBOOK } from "./builtin/review-pr.js";
+import { SHARD_PLAN_PLAYBOOK } from "./builtin/shard-plan.js";
 import { SUMMARIZE_PR_PLAYBOOK } from "./builtin/summarize-pr.js";
 import { TRIAGE_PLAYBOOK } from "./builtin/triage.js";
 import { VERIFY_DOCS_PLAYBOOK } from "./builtin/verify-docs.js";
 import { VERIFY_FINDINGS_PLAYBOOK } from "./builtin/verify-findings.js";
+import { VERIFY_SHARD_PLAYBOOK } from "./builtin/verify-shard.js";
 import { VERIFY_TASK_PLAYBOOK } from "./builtin/verify-task.js";
 import { validateCodingTask } from "./coding.js";
 import type { TaskDefinition } from "./definitions.js";
@@ -48,6 +50,8 @@ const PLAYBOOK_INPUTS: readonly PlaybookInput[] = [
   CHECK_DOCS_PLAYBOOK,
   VERIFY_DOCS_PLAYBOOK,
   CRITIQUE_PLAN_PLAYBOOK,
+  SHARD_PLAN_PLAYBOOK,
+  VERIFY_SHARD_PLAYBOOK,
 ];
 
 export const BUILTIN_PLAYBOOKS: readonly Playbook[] = PLAYBOOK_INPUTS.map((playbook) =>

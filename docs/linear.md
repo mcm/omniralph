@@ -965,6 +965,44 @@ feature's project, if given) and `parentIssues.fileUnder` sets an issue's parent
 sub-issue. A gateway without it throws `TrackerCapabilityError` from
 `requireCapability(gateway, "parentIssues")`.
 
+### Sharding a feature into epics
+
+On a feature's page, **Shard into epics** (admins) has Om split the feature's latest Plan into epic
+drafts, as a loop (ADR 0013, run kind `shard`, a `feature_shards` row). The Plan's `##` sections,
+but `## Epics` and `## Success metrics`, are the sections an epic can cover; a Plan without any is
+refused (400 `no_sections`), and so is an empty one (`no_plan`). Each round:
+
+1. `builtin:shard-plan` (role `shard`, a `feature.shard-plan` job) drafts the epics in the epic
+   format, each with a key (`E1`), the sections it `covers` and the keys it waits for
+   (`dependsOn`), and exempts the sections that need no epic (context, what is left out) with why.
+2. Om's structural check (`checkShard` of `@omniralph/planning`) fails a section nothing covers or
+   exempts, covers or exemptions naming sections the Plan doesn't have, dependencies on unknown
+   epics or on itself, a dependency cycle, and an epic out of the epic format.
+3. `builtin:verify-shard` (role `verifier`, a `feature.verify-shard` job) gets the draft and Om's
+   problems and answers the sections no epic really covers, the scope an epic adds that the Plan
+   lacks, the dependency problems, a note per epic and a verdict.
+
+The round passes only when both pass; otherwise everything they found is the next round's
+revision, with the previous draft. After the cap (3 rounds) or a pass, the last usable round's
+drafts wait for review (`review`), each with the verifier's notes, and what still failed is listed
+on the page ("Still open after the last round"). Members read the drafts; admins edit a draft's
+title and description, remove it or approve it (`PATCH /api/ui/features/{id}/shard/drafts/{key}`),
+and once every draft is decided, **File N epics** (`POST /api/ui/features/{id}/shard/file`,
+`{ repositoryId }`) files the approved ones in the team, project and labels of that repo's work
+item match:
+
+- Each `dependsOn` between approved drafts becomes a blocks relation between their epics; filing
+  makes no other relation, and a dependency on a removed draft is dropped.
+- Each epic is linked to the feature (`feature_epics`) and gets the triage label, so the triage
+  loop gives it its tasks.
+- With the feature mapping set to `parent-issue`, the feature gets a parent issue in the tracker
+  the first time (kept on `features.parent_issue`) and every epic is filed under it.
+
+Filing records each epic on its draft as soon as it exists, so a tracker that fails part way sends
+the drafts back to review with the error, and filing again finishes the rest without filing
+anything twice. `DELETE /api/ui/features/{id}/shard` discards drafts that are drafting or waiting
+for review; `GET` reads the newest sharding with its rounds.
+
 ## Agents and concurrency
 
 Coding jobs are `coding` tasks in the `long` pool: they run on agents that accept the `coding`

@@ -65,7 +65,7 @@ const REVIEW_TRIGGERS = ["pr.updated", "pr.mention", "review.rerun"] as const;
 
 /**
  * Each playbook role with the task type, triggers and sink it fixes, and
- * whether its runs loop. `docs-check`, `triage`, `learn-rule`, `reply-to-finding` and the
+ * whether its runs loop. `docs-check`, `triage`, `shard`, `learn-rule`, `reply-to-finding` and the
  * loop's helpers (`verifier`, `audit`) are built-in only. The single-session
  * roles (`loop: "none"`) are the declared exceptions; a new role loops unless
  * it says otherwise.
@@ -151,6 +151,17 @@ export const PLAYBOOK_ROLES = {
     sink: "finding-thread",
     builtinOnly: true,
     loop: "none",
+  },
+  /**
+   * Shards a feature's Plan into epic drafts (`builtin:shard-plan`), checked each round by its
+   * verifier; the feature's sharding reads its result, which waits for a person's review.
+   */
+  shard: {
+    taskType: "query",
+    triggers: ["run.invoked"],
+    sink: "run-result",
+    builtinOnly: true,
+    loop: "looped",
   },
   /** Checks a worker's output (a task against its acceptance criteria): a loop's helper. */
   verifier: {
