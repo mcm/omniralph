@@ -7,6 +7,7 @@
 import { CHAT_ASK_JOB_TYPE } from "./chat-ask.js";
 import { CORRELATION_JOB_TYPE } from "./correlation.js";
 import { DOCUMENTATION_VERIFICATION_JOB_TYPE } from "./documentation-check.js";
+import { SHARD_PLAN_JOB_TYPE, SHARD_VERIFY_JOB_TYPE } from "./feature-shard.js";
 import { FINDING_VERIFICATION_JOB_TYPE } from "./finding-verification.js";
 import {
   INSTALL_JOB_TYPE,
@@ -217,6 +218,10 @@ const PHRASES: Record<string, (context: AttemptLabelContext) => Phrase> = {
       "Critiqued",
       `the triage draft of ${present(c.workItem) ?? RUN_FALLBACK}`,
     ),
+  [SHARD_PLAN_JOB_TYPE]: () =>
+    phrase("shard", "Sharding", "Sharded", "a feature's plan into epics"),
+  [SHARD_VERIFY_JOB_TYPE]: () =>
+    phrase("check", "Checking", "Checked", "the epics drafted from a feature's plan"),
   [CHAT_ASK_JOB_TYPE]: (c) => {
     const repo = repositoryName(c.repository);
     return phrase("answer", "Answering", "Answered", `a question${repo ? ` about ${repo}` : ""}`);

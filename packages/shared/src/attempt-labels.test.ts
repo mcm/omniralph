@@ -327,6 +327,25 @@ const CASES: [string, AttemptLabelContext, string, string, string][] = [
     "Couldn't answer a question about customer-portal",
   ],
   ["chat.ask", {}, "Answering a question", "Answered a question", "Couldn't answer a question"],
+  ...(["feature.shard-plan", "feature.verify-shard"] as const).flatMap((type) =>
+    [FULL, {}].map((context): [string, AttemptLabelContext, string, string, string] =>
+      type === "feature.shard-plan"
+        ? [
+            type,
+            context,
+            "Sharding a feature's plan into epics",
+            "Sharded a feature's plan into epics",
+            "Couldn't shard a feature's plan into epics",
+          ]
+        : [
+            type,
+            context,
+            "Checking the epics drafted from a feature's plan",
+            "Checked the epics drafted from a feature's plan",
+            "Couldn't check the epics drafted from a feature's plan",
+          ],
+    ),
+  ),
 ];
 
 describe("describeAttempt", () => {

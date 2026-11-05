@@ -123,3 +123,6 @@ export {
 export type { PluginFile } from "./plugin/render.js";
 export { PLUGIN_MODES } from "./plugin/modes.js";
 export type { PluginMode } from "./plugin/modes.js";
+
+export { checkShard, dependencyCycle, planSections } from "./methodology/shard.js";
+export type { PlanSection, ShardEpic, ShardExemption } from "./methodology/shard.js";

@@ -1392,6 +1392,14 @@ export const sprintEpics = pgTable(
 /** A feature's lifecycle: `planning` while its PRFAQ and Plan are written, `archived` when put away. */
 export const featureStatus = pgEnum("feature_status", ["planning", "archived"]);
 
+/** A feature's parent issue in the tracker (`features.parent_issue`). */
+export interface FeatureParentIssue {
+  tracker: "linear";
+  externalId: string;
+  identifier: string;
+  url: string;
+}
+
 /** A feature's planning documents: its PRFAQ and its Plan. */
 export const featureDocumentKind = pgEnum("feature_document_kind", ["prfaq", "plan"]);
 
@@ -1415,6 +1423,11 @@ export const features = pgTable(
     repositoryId: uuid("repository_id").references(() => repositories.id, {
       onDelete: "set null",
     }),
+    /**
+     * The feature's parent issue in the tracker, which its epics are filed under when the
+     * tracker's feature mapping is `parent-issue`; null until sharding first files under one.
+     */
+    parentIssue: jsonb("parent_issue").$type<FeatureParentIssue>(),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -1509,6 +1522,116 @@ export const featureEpics = pgTable(
   (t) => [
     index("feature_epics_feature_idx").on(t.featureId),
     uniqueIndex("feature_epics_item_uq").on(t.organizationId, t.tracker, t.externalId),
+  ],
+);
+
+/**
+ * Where a feature's sharding is: Om drafts the epics as a loop (`drafting`), the drafts wait
+ * for a person's review (`review`), the approved ones are being filed (`filing`) or were
+ * (`filed`), no usable draft came out of the loop (`failed`), or a person discarded it
+ * (`canceled`).
+ */
+export const FEATURE_SHARD_STATUSES = [
+  "drafting",
+  "review",
+  "filing",
+  "filed",
+  "failed",
+  "canceled",
+] as const;
+export type FeatureShardStatus = (typeof FEATURE_SHARD_STATUSES)[number];
+export const featureShardStatus = pgEnum("feature_shard_status", FEATURE_SHARD_STATUSES);
+
+/** What a person decided about a drafted epic: nothing yet, file it, or leave it out. */
+export const FEATURE_SHARD_DECISIONS = ["pending", "approved", "removed"] as const;
+export type FeatureShardDecision = (typeof FEATURE_SHARD_DECISIONS)[number];
+
+/** A section of the Plan when it was sharded. */
+export interface FeatureShardSection {
+  name: string;
+  body: string;
+}
+
+/** The epic a draft was filed as. */
+export interface FeatureShardFiled {
+  tracker: "linear";
+  externalId: string;
+  identifier: string;
+  url: string;
+  /**
+   * Its relations, parent issue, feature link and triage are done too (a filing that failed
+   * after creating the epic finishes them on the next try without creating it again).
+   */
+  linked: boolean;
+}
+
+/** A drafted epic of a sharding, as the loop left it and the person reviewed it. */
+export interface FeatureShardDraft {
+  /** Its key in the draft (`E1`), which other drafts' `dependsOn` name. */
+  key: string;
+  title: string;
+  /** The epic in the epic format. */
+  description: string;
+  /** The Plan sections it covers. */
+  covers: string[];
+  /** The keys of the drafts it waits for: epic→epic blocks relations once filed. */
+  dependsOn: string[];
+  /** The verifier's notes on it (its note, and any scope it adds that the Plan lacks). */
+  notes: string[];
+  decision: FeatureShardDecision;
+  /** A person changed its title or description. */
+  edited: boolean;
+  filed: FeatureShardFiled | null;
+}
+
+/**
+ * A sharding of a feature's Plan into epics (`lib/features/shard.ts`): a loop
+ * (`run_iterations`, run kind `shard`) drafts the epics, then they wait here for a person to
+ * edit, remove or approve each one, and the approved ones are filed as epics in the tracker
+ * and linked to the feature (`feature_epics`). At most one sharding of a feature is active.
+ */
+export const featureShards = pgTable(
+  "feature_shards",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    featureId: uuid("feature_id")
+      .notNull()
+      .references(() => features.id, { onDelete: "cascade" }),
+    status: featureShardStatus("status").notNull().default("drafting"),
+    /** The Plan version it shards. */
+    planVersion: integer("plan_version").notNull(),
+    /** The Plan's sections an epic can cover, as they were when it started. */
+    sections: jsonb("sections").$type<FeatureShardSection[]>().notNull(),
+    /** The drafts of the loop's last usable round, as the person reviews them. */
+    drafts: jsonb("drafts").$type<FeatureShardDraft[]>().notNull().default([]),
+    /** The sections the drafts exempt from coverage, with why. */
+    exempt: jsonb("exempt").$type<{ section: string; reason: string }[]>().notNull().default([]),
+    /** The worker's summary of the drafts, then the verifier's. */
+    summary: text("summary"),
+    /** What still failed the checks when the loop stopped at its cap (empty when it passed). */
+    leftovers: jsonb("leftovers").$type<string[]>().notNull().default([]),
+    /** Why the loop stopped (`run_iterations.outcome` of its last iteration). */
+    outcome: text("outcome").$type<RunLoopOutcome>(),
+    /** Why drafting or the last filing failed. */
+    error: text("error"),
+    /** The repo whose work item match the drafts were filed in (its team and project). */
+    repositoryId: uuid("repository_id").references(() => repositories.id, {
+      onDelete: "set null",
+    }),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    filedBy: text("filed_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    filedAt: timestamp("filed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("feature_shards_feature_idx").on(t.featureId, t.createdAt),
+    uniqueIndex("feature_shards_feature_active_uq")
+      .on(t.featureId)
+      .where(sql`status in ('drafting', 'review', 'filing')`),
   ],
 );
 
@@ -3005,9 +3128,9 @@ export const triageRuns = pgTable(
 /**
  * The kinds of run the loop driver iterates (`run_iterations.run_kind`): `review` is one
  * review task run of a review run (a `reviews` row: one check type of a looped review),
- * `triage` a `triage_runs` row.
+ * `triage` a `triage_runs` row, `shard` a `feature_shards` row.
  */
-export const LOOP_RUN_KINDS = ["review", "triage"] as const;
+export const LOOP_RUN_KINDS = ["review", "triage", "shard"] as const;
 export type LoopRunKind = (typeof LOOP_RUN_KINDS)[number];
 
 /**
@@ -3094,7 +3217,7 @@ export const runIterations = pgTable(
     uniqueIndex("run_iterations_run_number_uq").on(t.runKind, t.runId, t.number),
     index("run_iterations_worker_job_id_idx").on(t.workerJobId),
     index("run_iterations_verifier_job_id_idx").on(t.verifierJobId),
-    check("run_iterations_run_kind_valid", sql`${t.runKind} in ('review', 'triage')`),
+    check("run_iterations_run_kind_valid", sql`${t.runKind} in ('review', 'triage', 'shard')`),
     check(
       "run_iterations_status_valid",
       sql`${t.status} in ('working', 'verifying', 'done', 'failed')`,

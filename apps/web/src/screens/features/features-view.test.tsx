@@ -193,6 +193,8 @@ function serve(
     "GET /api/ui/repositories": () =>
       jsonResponse({ repositories: [portalRow()], truncated: false }),
     [`GET /api/ui/features/${FEATURE_ID}/attachments`]: () => jsonResponse({ attachments }),
+    [`GET /api/ui/features/${FEATURE_ID}/shard`]: () =>
+      jsonResponse({ shard: null, featureMapping: null, parentIssue: null }),
     [`POST /api/ui/features/${FEATURE_ID}/attachments`]: (request) => {
       const file = (request.body as FormData).get("file") as File;
       const created = attachmentRow({

@@ -10,6 +10,7 @@ import { DocumentEditor } from "./document-editor";
 import { epicCount, FEATURE_DOCUMENTS, FEATURE_STATUS, FEATURES_PATH } from "./feature-status";
 import { useArchiveFeature } from "./mutations";
 import { useFeature } from "./queries";
+import { ShardPanel } from "./shard-review";
 
 export const FEATURE_NOT_FOUND = "That feature doesn't exist";
 export const FEATURE_LOAD_FAILED = "Couldn't load the feature";
@@ -77,7 +78,8 @@ export function FeatureDetailView({ featureId, autosaveDelay }: FeatureDetailVie
 
 /**
  * A feature: its name, status, repo and epic count; its PRFAQ and Plan, one tab each (kept
- * mounted, so an edit survives switching); and its attachments. Admins edit everything and
+ * mounted, so an edit survives switching); its attachments; and its epics, sharded from the
+ * Plan and reviewed before they are filed (`ShardPanel`). Admins edit everything and
  * archive or restore it; members read. An archived feature reads only until restored.
  */
 function FeaturePage({ feature, autosaveDelay }: { feature: FeatureRow; autosaveDelay?: number }) {
@@ -135,6 +137,8 @@ function FeaturePage({ feature, autosaveDelay }: { feature: FeatureRow; autosave
       </Tabs>
 
       <AttachmentsPanel featureId={feature.id} editable={editable} />
+
+      <ShardPanel feature={feature} editable={editable} />
     </article>
   );
 }

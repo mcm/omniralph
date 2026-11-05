@@ -16,8 +16,14 @@ import {
   type SavedFeatureDocument,
   type UploadedAttachment,
 } from "@/lib/api/features";
+import {
+  featureShardViewSchema,
+  type FeatureShardView,
+  type FileShardBody,
+  type UpdateShardDraftBody,
+} from "@/lib/api/feature-shards";
 import { mutationResultSchema, type MutationResult } from "@/lib/api/schemas";
-import { documentPath, featuresKeys } from "./queries";
+import { documentPath, featurePath, featuresKeys } from "./queries";
 
 /** Writes `feature` into its detail and every cached list (new ones first). */
 async function writeFeature(cache: MutationCache, feature: FeatureRow) {
@@ -135,5 +141,88 @@ export function useDeleteAttachment(featureId: string) {
       ),
     invalidate: (keys) => [featuresKeys(keys).attachments(featureId)],
     success: (_result, attachment) => `Removed ${attachment.fileName}`,
+  });
+}
+
+/** Writes the answer of a sharding change into the feature's sharding. */
+function writeShard(cache: MutationCache, featureId: string, view: FeatureShardView) {
+  return cache.set<FeatureShardView>(featuresKeys(cache.keys).shard(featureId), () => view, {
+    exact: true,
+  });
+}
+
+/** `POST /api/ui/features/{id}/shard`: Om starts drafting the feature's epics from its Plan. */
+export function useStartShard(featureId: string) {
+  return useApiMutation<FeatureShardView, void>({
+    mutationFn: (_variables, { organizationId }) =>
+      api.post(`${featurePath(featureId)}/shard`, featureShardViewSchema, { organizationId }),
+    applyResult: (result, cache) => writeShard(cache, featureId, result),
+    invalidate: (keys) => [featuresKeys(keys).shard(featureId)],
+    success: "Om is drafting the epics",
+  });
+}
+
+/** `DELETE /api/ui/features/{id}/shard`: discards the drafts (or the drafting). */
+export function useDiscardShard(featureId: string) {
+  return useApiMutation<FeatureShardView, void>({
+    mutationFn: (_variables, { organizationId }) =>
+      api.delete(`${featurePath(featureId)}/shard`, featureShardViewSchema, { organizationId }),
+    applyResult: (result, cache) => writeShard(cache, featureId, result),
+    invalidate: (keys) => [featuresKeys(keys).shard(featureId)],
+    success: "Discarded the drafts",
+  });
+}
+
+export type UpdateShardDraftVariables = UpdateShardDraftBody & { key: string };
+
+/** `PATCH /api/ui/features/{id}/shard/drafts/{key}`: edits, removes or approves one draft. */
+export function useUpdateShardDraft(featureId: string) {
+  return useApiMutation<FeatureShardView, UpdateShardDraftVariables>({
+    mutationFn: ({ key, ...body }, { organizationId }) =>
+      api.patch(
+        `${featurePath(featureId)}/shard/drafts/${encodeURIComponent(key)}`,
+        featureShardViewSchema,
+        { body, organizationId },
+      ),
+    optimistic: ({ key, ...body }, cache) =>
+      cache.set<FeatureShardView>(featuresKeys(cache.keys).shard(featureId), (previous) =>
+        previous?.shard
+          ? {
+              ...previous,
+              shard: {
+                ...previous.shard,
+                drafts: previous.shard.drafts.map((draft) =>
+                  draft.key === key ? { ...draft, ...body } : draft,
+                ),
+              },
+            }
+          : previous,
+      ),
+    applyResult: (result, cache) => writeShard(cache, featureId, result),
+    invalidate: (keys) => [featuresKeys(keys).shard(featureId)],
+    success: null,
+  });
+}
+
+/** `POST /api/ui/features/{id}/shard/file`: files the approved drafts as epics. */
+export function useFileShard(featureId: string) {
+  return useApiMutation<FeatureShardView, FileShardBody>({
+    mutationFn: (body, { organizationId }) =>
+      api.post(`${featurePath(featureId)}/shard/file`, featureShardViewSchema, {
+        body,
+        organizationId,
+      }),
+    applyResult: (result, cache) => writeShard(cache, featureId, result),
+    invalidate: (keys) => [
+      featuresKeys(keys).shard(featureId),
+      featuresKeys(keys).detail(featureId),
+      featuresKeys(keys).lists,
+    ],
+    success: (result) => {
+      const filed = result.shard?.drafts.filter((draft) => draft.filed).length ?? 0;
+      return filed === 1
+        ? "Filed 1 epic. Om is triaging it into tasks."
+        : `Filed ${filed} epics. Om is triaging them into tasks.`;
+    },
   });
 }

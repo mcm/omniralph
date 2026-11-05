@@ -1042,3 +1042,14 @@ export {
   type UpdateFeatureInput,
   type UpdateFeatureResult,
 } from "./features.js";
+export {
+  ACTIVE_FEATURE_SHARD_STATUSES,
+  createFeatureShard,
+  getFeatureShard,
+  getLatestFeatureShard,
+  setFeatureParentIssue,
+  updateFeatureShard,
+  type CreateFeatureShardInput,
+  type FeatureShard,
+  type FeatureShardPatch,
+} from "./feature-shards.js";

@@ -431,6 +431,8 @@ describe("model and budget of every built-in playbook", () => {
     "builtin:check-docs": { model: "claude-sonnet-5-5", tokenBudget: 250_000 },
     "builtin:verify-docs": { model: "claude-sonnet-5-5", tokenBudget: 100_000 },
     "builtin:critique-plan": { model: "claude-sonnet-5-5", tokenBudget: 150_000 },
+    "builtin:shard-plan": { model: "opus", tokenBudget: null },
+    "builtin:verify-shard": { model: "claude-sonnet-5-5", tokenBudget: 150_000 },
   };
 
   /** A run of a built-in playbook on a repository of `depth` (a review's preset comes from it). */

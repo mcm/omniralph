@@ -20,6 +20,7 @@ export * from "./usage.js";
 export * from "./run-tracker.js";
 export * from "./change-request-url.js";
 export * from "./correlation.js";
+export * from "./feature-shard.js";
 export * from "./claude-code-tools.js";
 export * from "./text.js";
 export * from "./routing.js";

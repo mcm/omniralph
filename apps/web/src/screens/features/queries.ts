@@ -17,6 +17,7 @@ import {
   type FeatureList,
   type FeatureRow,
 } from "@/lib/api/features";
+import { featureShardViewSchema, type FeatureShardView } from "@/lib/api/feature-shards";
 import type { QueryKeys } from "@/lib/api/keys";
 
 /**
@@ -38,10 +39,12 @@ export function featuresKeys(keys: QueryKeys) {
     version: (featureId: string, kind: FeatureDocumentKindValue, version: number): QueryKey =>
       keys.features.part(featureId, "version", { kind, version }),
     attachments: (featureId: string): QueryKey => keys.features.part(featureId, "attachments"),
+    shard: (featureId: string): QueryKey => keys.features.part(featureId, "shard"),
   };
 }
 
-const featurePath = (featureId: string) => `/api/ui/features/${encodeURIComponent(featureId)}`;
+export const featurePath = (featureId: string) =>
+  `/api/ui/features/${encodeURIComponent(featureId)}`;
 export const documentPath = (featureId: string, kind: FeatureDocumentKindValue) =>
   `${featurePath(featureId)}/documents/${kind}`;
 
@@ -133,6 +136,23 @@ export function useFeatureAttachments(featureId: string) {
     queryKey: featuresKeys(keys).attachments(featureId),
     queryFn: ({ signal }) =>
       api.get(`${featurePath(featureId)}/attachments`, attachmentListSchema, {
+        organizationId: organization.id,
+        signal,
+      }),
+  });
+}
+
+/**
+ * The feature's newest sharding into epics, with its rounds and drafts
+ * (`GET /api/ui/features/{id}/shard`). A live query.
+ */
+export function useFeatureShard(featureId: string) {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery<FeatureShardView>({
+    queryKey: featuresKeys(keys).shard(featureId),
+    queryFn: ({ signal }) =>
+      api.get(`${featurePath(featureId)}/shard`, featureShardViewSchema, {
         organizationId: organization.id,
         signal,
       }),
