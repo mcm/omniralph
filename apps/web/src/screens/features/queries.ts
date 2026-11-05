@@ -9,16 +9,18 @@ import {
   featureDocumentSchema,
   featureDocumentVersionsSchema,
   featureListSchema,
+  featureProgressSchema,
   featureRowSchema,
   type AttachmentList,
   type FeatureDocumentKindValue,
   type FeatureDocumentRow,
   type FeatureDocumentVersions,
   type FeatureList,
+  type FeatureProgress,
   type FeatureRow,
 } from "@/lib/api/features";
 import { featureShardViewSchema, type FeatureShardView } from "@/lib/api/feature-shards";
-import type { QueryKeys } from "@/lib/api/keys";
+import { featureProgressKeys, type QueryKeys } from "@/lib/api/keys";
 
 /**
  * Query keys of the Features screen: the active organization's list under
@@ -40,6 +42,7 @@ export function featuresKeys(keys: QueryKeys) {
       keys.features.part(featureId, "version", { kind, version }),
     attachments: (featureId: string): QueryKey => keys.features.part(featureId, "attachments"),
     shard: (featureId: string): QueryKey => keys.features.part(featureId, "shard"),
+    progress: (featureId: string): QueryKey => featureProgressKeys(keys).feature(featureId),
   };
 }
 
@@ -156,5 +159,31 @@ export function useFeatureShard(featureId: string) {
         organizationId: organization.id,
         signal,
       }),
+  });
+}
+
+/**
+ * At most how often a feature's progress refetches on live events: every run, PR and tracker
+ * change of the organization refetches it (the events don't name a feature), and each fetch
+ * reads the tracker.
+ */
+export const FEATURE_PROGRESS_LIVE_THROTTLE_MS = 5_000;
+
+/**
+ * How far along a feature is: each epic's state, stories, run and PRs, and the roll-up
+ * (`GET /api/ui/features/{id}/progress`); only while `enabled`. A live query, throttled.
+ */
+export function useFeatureProgress(featureId: string, enabled = true) {
+  const keys = useQueryKeys();
+  const { organization } = useCurrentUser();
+  return useQuery<FeatureProgress>({
+    queryKey: featuresKeys(keys).progress(featureId),
+    queryFn: ({ signal }) =>
+      api.get(`${featurePath(featureId)}/progress`, featureProgressSchema, {
+        organizationId: organization.id,
+        signal,
+      }),
+    enabled,
+    meta: { liveThrottleMs: FEATURE_PROGRESS_LIVE_THROTTLE_MS },
   });
 }

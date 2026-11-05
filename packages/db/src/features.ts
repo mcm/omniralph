@@ -358,6 +358,31 @@ export async function linkFeatureEpic(
   recordChange(db, { resource: "feature", ids, organizationId: input.organizationId });
 }
 
+/** One epic of a feature: the work item, and when it was linked. */
+export type FeatureEpic = Pick<
+  typeof featureEpics.$inferSelect,
+  "tracker" | "externalId" | "createdAt"
+>;
+
+/** The feature's epics, in the order they were linked (filing order). */
+export async function listFeatureEpics(
+  db: Pick<Database, "select">,
+  organizationId: string,
+  featureId: string,
+): Promise<FeatureEpic[]> {
+  return db
+    .select({
+      tracker: featureEpics.tracker,
+      externalId: featureEpics.externalId,
+      createdAt: featureEpics.createdAt,
+    })
+    .from(featureEpics)
+    .where(
+      and(eq(featureEpics.organizationId, organizationId), eq(featureEpics.featureId, featureId)),
+    )
+    .orderBy(asc(featureEpics.createdAt), asc(featureEpics.id));
+}
+
 /** The feature the work item is an epic of, or null when it belongs to none. */
 export async function getEpicFeature(
   db: Pick<Database, "select">,

@@ -773,6 +773,12 @@ export interface SprintEpicPullRequest {
 export interface SprintEpicProgress {
   runId: string;
   status: typeof ralphRuns.$inferSelect.status;
+  /** The work item's identifier, title and tracker URL when the run started. */
+  identifier: string | null;
+  title: string | null;
+  url: string | null;
+  /** The provider of the run's repository (its PRs/MRs' host), null before it has one. */
+  repositoryProvider: (typeof repositories.$inferSelect)["provider"] | null;
   pullRequests: SprintEpicPullRequest[];
 }
 
@@ -790,8 +796,17 @@ export async function listSprintEpicProgress(
   const progress = new Map<string, SprintEpicProgress>();
   if (externalIds.length === 0) return progress;
   const runs = await db
-    .select({ id: ralphRuns.id, issueId: ralphRuns.trackerIssueId, status: ralphRuns.status })
+    .select({
+      id: ralphRuns.id,
+      issueId: ralphRuns.trackerIssueId,
+      status: ralphRuns.status,
+      identifier: ralphRuns.trackerIdentifier,
+      title: ralphRuns.trackerTitle,
+      url: ralphRuns.trackerUrl,
+      repositoryProvider: repositories.provider,
+    })
     .from(ralphRuns)
+    .leftJoin(repositories, eq(repositories.id, ralphRuns.repositoryId))
     .where(
       and(
         eq(ralphRuns.organizationId, organizationId),
@@ -803,7 +818,15 @@ export async function listSprintEpicProgress(
     .orderBy(desc(ralphRuns.createdAt), desc(ralphRuns.id));
   for (const run of runs) {
     if (run.issueId === null || progress.has(run.issueId)) continue;
-    progress.set(run.issueId, { runId: run.id, status: run.status, pullRequests: [] });
+    progress.set(run.issueId, {
+      runId: run.id,
+      status: run.status,
+      identifier: run.identifier,
+      title: run.title,
+      url: run.url,
+      repositoryProvider: run.repositoryProvider,
+      pullRequests: [],
+    });
   }
   if (progress.size === 0) return progress;
   const byRun = new Map([...progress.values()].map((entry) => [entry.runId, entry]));

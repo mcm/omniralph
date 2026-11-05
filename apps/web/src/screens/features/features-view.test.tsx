@@ -96,6 +96,12 @@ function attachmentRow(overrides: Partial<AttachmentRow> = {}): AttachmentRow {
   };
 }
 
+const NO_PROGRESS = {
+  epics: [],
+  rollup: { epicsDone: 0, epicsTotal: 0, storiesDone: 0, storiesTotal: 0 },
+  trackerProblem: null,
+};
+
 /** The server: features, every version of each document, and attachments. */
 let features: FeatureRow[];
 let versions: Record<FeatureDocumentKindValue, { body: string; savedAt: string }[]>;
@@ -193,6 +199,9 @@ function serve(
     "GET /api/ui/repositories": () =>
       jsonResponse({ repositories: [portalRow()], truncated: false }),
     [`GET /api/ui/features/${FEATURE_ID}/attachments`]: () => jsonResponse({ attachments }),
+    // Progress is covered by epic-progress.test.tsx: here every feature's epics are unread.
+    [`GET /api/ui/features/${FEATURE_ID}/progress`]: () => jsonResponse(NO_PROGRESS),
+    [`GET /api/ui/features/${OTHER_FEATURE_ID}/progress`]: () => jsonResponse(NO_PROGRESS),
     [`GET /api/ui/features/${FEATURE_ID}/shard`]: () =>
       jsonResponse({ shard: null, featureMapping: null, parentIssue: null }),
     [`POST /api/ui/features/${FEATURE_ID}/attachments`]: (request) => {

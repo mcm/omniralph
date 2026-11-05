@@ -556,3 +556,112 @@
   color: var(--or-sec);
   font-size: 12px;
 }
+
+/* A feature's progress: the roll-up, then one row per epic with its state, run and PRs. */
+.or-feature-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+}
+
+.or-feature-progress__rollup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.or-feature-progress__count {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--or-sec);
+  font-size: 13px;
+}
+
+.or-feature-progress__bar {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-feature-progress__fill {
+  display: block;
+  height: 100%;
+  background: var(--or-good);
+}
+
+.or-feature-progress__epics {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+  list-style: none;
+}
+
+.or-feature-epic {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--or-line);
+  background: var(--or-surf);
+}
+
+.or-feature-epic:first-child {
+  border-top-left-radius: var(--or-radius);
+  border-top-right-radius: var(--or-radius);
+}
+
+.or-feature-epic:last-child {
+  border-bottom: 0;
+  border-bottom-left-radius: var(--or-radius);
+  border-bottom-right-radius: var(--or-radius);
+}
+
+.or-feature-epic__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.or-feature-epic__identifier {
+  flex: none;
+  color: var(--or-sec);
+  font-size: 12px;
+}
+
+.or-feature-epic__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-feature-epic__state {
+  flex: none;
+  font-size: 12px;
+}
+
+.or-feature-epic__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+.or-feature-epic__pr {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

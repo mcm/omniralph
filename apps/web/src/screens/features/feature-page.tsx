@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api/client";
 import type { FeatureRow } from "@/lib/api/features";
 import { AttachmentsPanel } from "./attachments-panel";
 import { DocumentEditor } from "./document-editor";
+import { FeatureEpicsPanel } from "./epic-progress";
 import { epicCount, FEATURE_DOCUMENTS, FEATURE_STATUS, FEATURES_PATH } from "./feature-status";
 import { useArchiveFeature } from "./mutations";
 import { useFeature } from "./queries";
@@ -77,7 +78,7 @@ export function FeatureDetailView({ featureId, autosaveDelay }: FeatureDetailVie
 }
 
 /**
- * A feature: its name, status, repo and epic count; its PRFAQ and Plan, one tab each (kept
+ * A feature: its name, status, repo and epic count; its epics' progress; its PRFAQ and Plan, one tab each (kept
  * mounted, so an edit survives switching); its attachments; and its epics, sharded from the
  * Plan and reviewed before they are filed (`ShardPanel`). Admins edit everything and
  * archive or restore it; members read. An archived feature reads only until restored.
@@ -118,6 +119,8 @@ function FeaturePage({ feature, autosaveDelay }: { feature: FeatureRow; autosave
       ) : !admin ? (
         <p className="or-feature__note">{READ_ONLY_MEMBER}</p>
       ) : null}
+
+      <FeatureEpicsPanel feature={feature} />
 
       <Tabs
         aria-label="Documents"

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { repositoryRefSchema } from "./runs";
+import { RUN_STATUSES, repositoryRefSchema, scmProviderSchema } from "./runs";
+import { SPRINT_EPIC_PR_STATES } from "./sprints";
 import { isoDate } from "./schemas";
 
 /**
@@ -73,6 +74,58 @@ export type FeatureRow = z.infer<typeof featureRowSchema>;
 /** `GET /api/ui/features`: the organization's features, newest first. */
 export const featureListSchema = z.object({ features: z.array(featureRowSchema) });
 export type FeatureList = z.infer<typeof featureListSchema>;
+
+// ── Progress (`GET /api/ui/features/{id}/progress`) ───────────────────────
+
+/** One epic of a feature and how far along it is. */
+export const featureEpicProgressSchema = z.object({
+  /** The work item's URL ID (`<tracker>-<issue id>`, its Backlog page). */
+  workItemId: z.string(),
+  /** Its identifier and title: from the tracker, else from its latest run; null when neither knows. */
+  identifier: z.string().nullable(),
+  title: z.string().nullable(),
+  /** Its page in the tracker, null when unknown. */
+  url: z.string().nullable(),
+  /** Its state in the tracker; null when the tracker couldn't be read. */
+  state: z
+    .object({
+      category: z.enum(["triage", "backlog", "todo", "in_progress", "done", "canceled"]),
+      name: z.string(),
+    })
+    .nullable(),
+  /** Its stories done and in all (canceled ones left out); null when the tracker couldn't be read. */
+  stories: z.object({ done: z.number(), total: z.number() }).nullable(),
+  /** Its latest run, null when Om never ran it. */
+  run: z.object({ id: z.string(), status: z.enum(RUN_STATUSES) }).nullable(),
+  /** The PRs/MRs that run opened, in lane order, with their code host. */
+  pullRequests: z.array(
+    z.object({
+      number: z.number(),
+      url: z.string(),
+      state: z.enum(SPRINT_EPIC_PR_STATES),
+      host: scmProviderSchema,
+    }),
+  ),
+});
+export type FeatureEpicProgress = z.infer<typeof featureEpicProgressSchema>;
+
+/** A feature's epics done and in all, and their stories done and in all (canceled ones left out). */
+export const featureRollupSchema = z.object({
+  epicsDone: z.number(),
+  epicsTotal: z.number(),
+  storiesDone: z.number(),
+  storiesTotal: z.number(),
+});
+export type FeatureRollup = z.infer<typeof featureRollupSchema>;
+
+/** `GET /api/ui/features/{id}/progress`: each epic in filing order, and the roll-up. */
+export const featureProgressSchema = z.object({
+  epics: z.array(featureEpicProgressSchema),
+  rollup: featureRollupSchema,
+  /** Why the tracker couldn't be read (states and stories are then missing); null when it could. */
+  trackerProblem: z.string().nullable(),
+});
+export type FeatureProgress = z.infer<typeof featureProgressSchema>;
 
 /** The answer to a create or an update. */
 export const savedFeatureSchema = z.object({ ok: z.literal(true), feature: featureRowSchema });

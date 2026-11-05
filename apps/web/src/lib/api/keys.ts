@@ -90,6 +90,19 @@ export function inboxKeys(keys: QueryKeys) {
 }
 
 /**
+ * Query keys of a feature's progress (`GET /api/ui/features/{id}/progress`), beside the
+ * feature's own keys rather than under its detail: `run`, `pull_request` and `work_item`
+ * events (which don't name a feature) refetch every feature's progress, never its documents.
+ */
+export function featureProgressKeys(keys: QueryKeys) {
+  const all: QueryKey = [...keys.features.all, "progress"];
+  return {
+    all,
+    feature: (featureId: string): QueryKey => [...all, featureId],
+  };
+}
+
+/**
  * Query keys of Analytics (`GET /api/ui/analytics/runs`): one per window, repository and
  * organization scope (`all`, or an organization's id). A `run` change event of an
  * organization invalidates the queries covering it (`covering`): those of that organization

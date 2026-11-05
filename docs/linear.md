@@ -1003,6 +1003,18 @@ the drafts back to review with the error, and filing again finishes the rest wit
 anything twice. `DELETE /api/ui/features/{id}/shard` discards drafts that are drafting or waiting
 for review; `GET` reads the newest sharding with its rounds.
 
+### A feature's progress
+
+A feature's page shows **Progress**: one row per epic in filing order with its state in the
+tracker, its stories done of all, its latest run (linking to it) and that run's PRs/MRs, and a
+roll-up of epics done of all and stories done of all; the Features list shows each feature's
+roll-up. `GET /api/ui/features/{id}/progress` (members) reads every epic from the tracker (four at
+a time) and its latest run from Omniralph. Canceled epics and stories count in neither total. When
+the tracker isn't connected or a read fails, the epics still list with their runs and PRs (named
+from their latest run) and `trackerProblem` says why states are missing. The page and the list
+refetch it on `run`, `pull_request` and `work_item` events (at most once every 5 seconds, since
+those events don't name a feature) and on the feature's own `feature` events.
+
 ## Agents and concurrency
 
 Coding jobs are `coding` tasks in the `long` pool: they run on agents that accept the `coding`
