@@ -1,10 +1,11 @@
 import "server-only";
-import { BlobError, del, get, put } from "@vercel/blob";
+import { BlobError, del, get, issueSignedToken, presignUrl, put } from "@vercel/blob";
 
 /**
  * Object storage for attachment files: a private Vercel Blob store. Files never go in the
- * database; the `attachments` table keeps their keys (blob pathnames), and every download
- * goes through the control panel, which checks the reader's access first.
+ * database; the `attachments` table keeps their keys (blob pathnames). People download through
+ * the control panel, which checks the reader's access first; runs get short-lived presigned
+ * URLs (`downloadUrls`) the control panel hands out only in their run spec.
  */
 
 /** A stored file read back. */
@@ -18,6 +19,11 @@ export interface ObjectStorage {
   get(key: string): Promise<StoredObject | null>;
   /** Deletes the file under `key`; a missing file is not an error. */
   delete(key: string): Promise<void>;
+  /**
+   * A URL per key that reads that file without credentials until `validUntil`, and only
+   * that file (an empty map for no keys).
+   */
+  downloadUrls(keys: readonly string[], validUntil: Date): Promise<Map<string, string>>;
 }
 
 /** Object storage answered with an error. */
@@ -68,6 +74,26 @@ export function vercelBlobStorage(token: string): ObjectStorage {
     async delete(key) {
       await wrap("delete", key, () => del(key, { token }));
     },
+    async downloadUrls(keys, validUntil) {
+      const urls = new Map<string, string>();
+      if (keys.length === 0) return urls;
+      // One read-only delegation for the batch; each URL is signed for its own pathname.
+      const signed = await wrap("signing", keys.join(", "), () =>
+        issueSignedToken({ token, operations: ["get"], validUntil: validUntil.getTime() }),
+      );
+      for (const key of keys) {
+        const { presignedUrl } = await wrap("signing", key, () =>
+          presignUrl(signed, {
+            operation: "get",
+            pathname: key,
+            access: "private",
+            validUntil: validUntil.getTime(),
+          }),
+        );
+        urls.set(key, presignedUrl);
+      }
+      return urls;
+    },
   };
 }
 
@@ -88,6 +114,12 @@ export function memoryObjectStorage(): ObjectStorage & {
     },
     async delete(key) {
       files.delete(key);
+    },
+    async downloadUrls(keys, validUntil) {
+      const expires = String(validUntil.getTime());
+      return new Map(
+        keys.map((key) => [key, `https://blob.test/${key}?expires=${expires}`] as const),
+      );
     },
   };
 }

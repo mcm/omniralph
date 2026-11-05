@@ -22,6 +22,7 @@ import {
   type RalphStoryPayload,
   type RalphStoryResult,
   type RalphStoryStatus,
+  type RunAttachment,
 } from "@omniralph/shared";
 import type { FetchFn } from "../api.js";
 import { RetryableJobError, type JobContext } from "../capabilities/index.js";
@@ -35,6 +36,7 @@ import {
 } from "../session/session.js";
 import { ActivityRelay } from "../tools/activities.js";
 import { controlPanelFetcher, jobAttachments } from "../tools/attachments.js";
+import { downloadRunAttachments, type DownloadedRunAttachments } from "../tools/run-attachments.js";
 import type { BranchWorktree } from "../workspace/repoCache.js";
 import { CommandError, GitError, runShell } from "../workspace/git.js";
 
@@ -182,6 +184,8 @@ export interface StoryAttemptPrepared {
   offered: OfferedStash[];
   /** What the prompt says about the downloaded attachments; undefined without any. */
   attachments?: string;
+  /** What the prompt says about the run's Omniralph attachments (`formatRunFiles`); undefined without any. */
+  files?: string;
   /** The progress log the session may update (in `progressDir`). */
   progressFile: string;
   progressDir: string;
@@ -211,6 +215,12 @@ export interface StoryAttemptArgs {
   payload: RalphStoryPayload;
   /** The job (or run) whose activities and attachments the control panel serves. */
   jobId: string;
+  /**
+   * The files attached in Omniralph to the run's epic and its feature (the run spec's
+   * `attachments`), downloaded outside the repo before the worktree is prepared; a failed
+   * download fails the attempt (`RunAttachmentDownloadError`).
+   */
+  attachments?: readonly RunAttachment[];
   ctx: JobContext;
   options: StoryOptions;
   /** The session's prompt and settings, from what the attempt prepared. */
@@ -270,7 +280,16 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
   const prefix = stashPrefix(payload);
   const label = (reason: string) => `${prefix}${reason} (attempt ${payload.attempt})`;
 
+  let files: DownloadedRunAttachments | undefined;
   try {
+    // Their links are short-lived: downloaded first, before the worktree's setup command runs.
+    files = await downloadRunAttachments({
+      attachments: args.attachments ?? [],
+      signal: ctx.signal,
+      logger: log,
+      ...(options.fetch && { fetch: options.fetch }),
+    });
+    const runFiles = files;
     return await ctx.repos.withBranchWorktree(
       payload.repository,
       {
@@ -318,6 +337,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
           const settings = await args.session({
             offered,
             ...(attachments.prompt && { attachments: attachments.prompt }),
+            ...(runFiles.prompt && { files: runFiles.prompt }),
             progressFile,
             progressDir,
             cwd: worktree.path,
@@ -330,6 +350,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
             additionalDirectories: [
               progressDir,
               ...(attachments.files.length > 0 ? [attachments.dir] : []),
+              ...(runFiles.dir ? [runFiles.dir] : []),
             ],
             signal: ctx.signal,
             onEvent: (event) => relay.event(event),
@@ -496,6 +517,7 @@ export async function runStoryAttempt(args: StoryAttemptArgs): Promise<RalphStor
       },
     );
   } finally {
+    await files?.remove();
     await git.close();
     await relay.flush();
   }

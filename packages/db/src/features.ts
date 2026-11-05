@@ -358,6 +358,25 @@ export async function linkFeatureEpic(
   recordChange(db, { resource: "feature", ids, organizationId: input.organizationId });
 }
 
+/** The feature the work item is an epic of, or null when it belongs to none. */
+export async function getEpicFeature(
+  db: Pick<Database, "select">,
+  key: WorkItemKey,
+): Promise<Feature | null> {
+  const [row] = await db
+    .select({ feature: features })
+    .from(featureEpics)
+    .innerJoin(features, eq(features.id, featureEpics.featureId))
+    .where(
+      and(
+        eq(featureEpics.organizationId, key.organizationId),
+        eq(featureEpics.tracker, key.tracker),
+        eq(featureEpics.externalId, key.externalId),
+      ),
+    );
+  return row?.feature ?? null;
+}
+
 // ── Attachments ──────────────────────────────────────────────────────────
 
 /** What an attachment belongs to: a feature of the organization, or a work item. */

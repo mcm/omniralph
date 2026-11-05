@@ -156,3 +156,44 @@ export function failedAttachmentsNote(
     )
     .join("\n")}`;
 }
+
+/**
+ * A file attached in Omniralph to the run's epic or its feature, downloaded for the run
+ * (outside the repo checkout).
+ */
+export interface RunFile {
+  /** Local file. */
+  path: string;
+  /** The file's name as uploaded. */
+  name: string;
+  contentType: string;
+  owner: "epic" | "feature";
+  /** The epic's identifier or the feature's name. */
+  ownerName: string;
+}
+
+/** `text` on one line, without backticks or control characters, cut to `max`. */
+function inline(text: string, max = 200): string {
+  const clean = text
+    // eslint-disable-next-line no-control-regex -- stripping control characters is the point
+    .replace(/[\x00-\x1f\x7f`]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+}
+
+/**
+ * Markdown list of the run's Omniralph attachments for prompts: each file's path, name and
+ * type, and what it is attached to; undefined without any. Names are flattened to one line
+ * (they're typed by people), so they can't break out of the list.
+ */
+export function formatRunFiles(files: readonly RunFile[]): string | undefined {
+  if (files.length === 0) return undefined;
+  return files
+    .map((f) => {
+      const owner =
+        f.owner === "feature" ? `the feature "${inline(f.ownerName)}"` : inline(f.ownerName);
+      return `- \`${f.path}\`: ${inline(f.name)} (${inline(f.contentType, 100)}), attached to ${owner}`;
+    })
+    .join("\n");
+}

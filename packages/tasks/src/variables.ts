@@ -862,6 +862,10 @@ export const VARIABLES: readonly VariableDefinition[] = [
         "Markdown list of the tracker attachments the session can open, with their paths (null without any).",
       ],
       [
+        "files",
+        "Markdown list of the files attached in Omniralph to the run's epic and its feature, downloaded outside the repo: each one's path, name and type, and what it is attached to (null without any).",
+      ],
+      [
         "appendInstruction",
         "Extra instructions from the repository's settings (null without any).",
       ],

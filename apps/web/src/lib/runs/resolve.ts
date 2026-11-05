@@ -23,6 +23,7 @@ import { organizationPlaybooks, type PlaybookSource } from "@/lib/playbooks";
 import { jobRepository } from "@/lib/scm/adapters";
 import { trackerProviderCapabilities } from "@/lib/tracker/adapters";
 import { DEFAULT_TRACKER_PROVIDER } from "@/lib/tracker/client";
+import { resolveRunAttachments, RunAttachmentsError } from "./spec-attachments";
 
 /**
  * A run spec that can't be resolved however often it is tried (unknown task,
@@ -44,7 +45,9 @@ export class RunSpecError extends Error {
  * allows), the repository, the model, the token budget and the job's
  * `tokens`. The playbook's tools are its runs' tools, but for the tracker
  * tools the organization's tracker can't serve (`tracker_get_document`
- * without the documents capability, among `trackerCapabilities`).
+ * without the documents capability, among `trackerCapabilities`). A coding run
+ * of a ralph run also lists the files attached in Omniralph to its epic and the
+ * epic's feature, with short-lived download URLs (`resolveRunAttachments`).
  *
  * Model and budget come from one place per kind of run:
  * - a review run: its depth preset (from its trigger context: the
@@ -61,7 +64,8 @@ export class RunSpecError extends Error {
  */
 export async function resolveRunSpec(
   db: Database,
-  job: Pick<Job, "id" | "organizationId" | "taskType" | "taskId" | "repositoryId" | "payload">,
+  job: Pick<Job, "id" | "organizationId" | "taskType" | "taskId" | "repositoryId" | "payload"> &
+    Partial<Pick<Job, "ralphRunId">>,
   tokens: { lifecycle: JobToken; session: JobToken },
   playbooks: PlaybookSource = organizationPlaybooks(db, job.organizationId),
   trackerCapabilities: readonly TrackerCapability[] = trackerProviderCapabilities(
@@ -112,6 +116,10 @@ export async function resolveRunSpec(
     tokenBudget: runTokenBudget(playbook),
     tokens,
   };
+  if (task.taskType === "coding") {
+    const attachments = await codingRunAttachments(db, job.ralphRunId ?? null);
+    return attachments.length > 0 ? { ...spec, attachments } : spec;
+  }
   if (task.taskType !== "review") return spec;
   const reviewConfig = ReviewTaskContext.shape.reviewConfig.safeParse(
     payload.trigger.context.reviewConfig,
@@ -131,6 +139,16 @@ export async function resolveRunSpec(
     return narrowByDocumentationDepth(spec, documentation.data);
   }
   return narrowByReviewDepth(spec, reviewConfig.data.profile);
+}
+
+/** A coding run's attachments; a run whose attachments can never be listed fails. */
+async function codingRunAttachments(db: Database, ralphRunId: string | null) {
+  try {
+    return await resolveRunAttachments(db, { ralphRunId });
+  } catch (error) {
+    if (error instanceof RunAttachmentsError) throw new RunSpecError(error.message);
+    throw error;
+  }
 }
 
 /**

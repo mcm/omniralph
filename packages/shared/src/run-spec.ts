@@ -97,6 +97,30 @@ export const RunToolRestrictions = z.object({
 });
 export type RunToolRestrictions = z.infer<typeof RunToolRestrictions>;
 
+/** Files a run downloads at most: its epic's and its feature's attachments. */
+export const MAX_RUN_ATTACHMENTS = 50;
+
+/**
+ * A file attached in Omniralph to the epic a run works on (or the epic of its
+ * task) or to that epic's feature, with a short-lived URL the agent downloads
+ * it from (no credentials needed until `expiresAt`).
+ */
+export const RunAttachment = z.object({
+  id: z.uuid(),
+  /** What it is attached to: the run's epic, or the epic's feature. */
+  owner: z.enum(["epic", "feature"]),
+  /** The epic's identifier (e.g. `ENG-10`) or the feature's name. */
+  ownerName: z.string().min(1).max(500),
+  fileName: z.string().min(1).max(500),
+  contentType: z.string().min(1).max(255),
+  /** In bytes. */
+  size: z.int().min(0),
+  url: z.url(),
+  /** When `url` stops working (ISO 8601). */
+  expiresAt: z.iso.datetime(),
+});
+export type RunAttachment = z.infer<typeof RunAttachment>;
+
 export const RunSpec = z.object({
   jobId: z.uuid(),
   taskType: TaskTypeSchema,
@@ -132,6 +156,12 @@ export const RunSpec = z.object({
   tokenBudget: z.int().min(1).nullable(),
   /** Most files a review run covers (its review depth's `maxFiles`); null or absent for other runs. */
   maxFiles: z.int().min(1).nullable().optional(),
+  /**
+   * The files attached in Omniralph to the run's epic and its feature, which
+   * coding runs download outside the repo before their first session; absent
+   * from control panels before it was added, and for runs on no epic.
+   */
+  attachments: z.array(RunAttachment).max(MAX_RUN_ATTACHMENTS).optional(),
   tokens: z.object({ lifecycle: JobToken, session: JobToken }),
 });
 export type RunSpec = z.infer<typeof RunSpec>;

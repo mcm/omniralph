@@ -151,10 +151,16 @@ See [ADR 0006](adr/0006-postgres-job-queue.md).
 
 Files attached to features and work items (mockups, design boards, specs) go to a private
 [Vercel Blob](https://vercel.com/docs/vercel-blob) store. The database keeps only each file's
-name, type, size and key; every download goes through the control panel, which checks the
-reader's access first. Uploads go through the control panel too, so a file can be up to 4 MB
-(Vercel functions take request bodies up to 4.5 MB). Without `BLOB_READ_WRITE_TOKEN`, uploads
-and downloads answer 503.
+name, type, size and key; every download by a person goes through the control panel, which
+checks the reader's access first. Uploads go through the control panel too, so a file can be up
+to 4 MB (Vercel functions take request bodies up to 4.5 MB). Without `BLOB_READ_WRITE_TOKEN`,
+uploads and downloads answer 503.
+
+Coding runs on an epic get the epic's and its feature's files: the run spec lists each one with a
+presigned URL that reads only that file for 30 minutes (one read-only delegation from the store
+per claim), and the agent downloads them before its first session. See
+[linear.md](linear.md#feature-and-epic-attachments). With attachments but no
+`BLOB_READ_WRITE_TOKEN`, such runs fail with that reason.
 
 | Variable                | Required        | Default | Description                                                                                                                                       |
 | ----------------------- | --------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |

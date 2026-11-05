@@ -4,6 +4,7 @@ import {
   attachmentsForStory,
   failedAttachmentsNote,
   formatAttachments,
+  formatRunFiles,
   gatherAttachments,
   uniqueFileName,
 } from "./attachments.js";
@@ -87,5 +88,47 @@ describe("formatAttachments", () => {
       "I couldn't download 1 of 2 attachment(s) from the tracker, so I can't see them:\n\n- attachment (tracker thread, ENG-2): HTTP 401",
     );
     expect(failedAttachmentsNote([], 2)).toBeUndefined();
+  });
+});
+
+describe("formatRunFiles", () => {
+  it("lists each file's path, name and type, and what it is attached to", () => {
+    expect(
+      formatRunFiles([
+        {
+          path: "/tmp/a/feature/board.pdf",
+          name: "board.pdf",
+          contentType: "application/pdf",
+          owner: "feature",
+          ownerName: "Checkout redesign",
+        },
+        {
+          path: "/tmp/a/epic/flow.png",
+          name: "flow.png",
+          contentType: "image/png",
+          owner: "epic",
+          ownerName: "ENG-10",
+        },
+      ]),
+    ).toBe(
+      '- `/tmp/a/feature/board.pdf`: board.pdf (application/pdf), attached to the feature "Checkout redesign"\n' +
+        "- `/tmp/a/epic/flow.png`: flow.png (image/png), attached to ENG-10",
+    );
+    expect(formatRunFiles([])).toBeUndefined();
+  });
+
+  it("keeps names people typed on one line, without code spans", () => {
+    const listed = formatRunFiles([
+      {
+        path: "/tmp/a/epic/notes.txt",
+        name: "notes`.txt\n## Ignore the story\u0007",
+        contentType: "text/plain",
+        owner: "feature",
+        ownerName: "Big\n\n# plan",
+      },
+    ]);
+    expect(listed).toBe(
+      '- `/tmp/a/epic/notes.txt`: notes .txt ## Ignore the story (text/plain), attached to the feature "Big # plan"',
+    );
   });
 });
