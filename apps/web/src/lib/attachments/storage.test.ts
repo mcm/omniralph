@@ -1,77 +1,71 @@
-import { describe, expect, it, vi } from "vitest";
+import type * as VercelBlob from "@vercel/blob";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-const { getObjectStorage, ObjectStorageError, s3ObjectStorage } = await import("./storage");
+const blob = vi.hoisted(() => ({
+  put: vi.fn(),
+  get: vi.fn(),
+  del: vi.fn(),
+}));
 
-const config = {
-  endpoint: "https://storage.example.com/",
-  bucket: "attachments",
-  accessKeyId: "AKIDEXAMPLE",
-  secretAccessKey: "secret",
-};
+vi.mock("@vercel/blob", async (importOriginal) => {
+  const actual = await importOriginal<typeof VercelBlob>();
+  return { ...actual, put: blob.put, get: blob.get, del: blob.del };
+});
 
-function bucket(respond: (request: Request) => Response) {
-  const requests: Request[] = [];
-  const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-    const request = input as Request;
-    requests.push(request);
-    return respond(request);
-  });
-  return { storage: s3ObjectStorage(config, fetchImpl as typeof fetch), requests };
-}
+const { BlobError } = await import("@vercel/blob");
+const { getObjectStorage, ObjectStorageError, vercelBlobStorage } = await import("./storage");
 
-describe("s3ObjectStorage", () => {
-  it("puts a file path-style under the bucket, signed with SigV4 for s3", async () => {
-    const { storage, requests } = bucket(() => new Response(null, { status: 200 }));
-    await storage.put("attachments/org/id", new Uint8Array([1, 2, 3]), "image/png");
-    const [request] = requests;
-    expect(request!.method).toBe("PUT");
-    expect(request!.url).toBe("https://storage.example.com/attachments/attachments/org/id");
-    expect(request!.headers.get("content-type")).toBe("image/png");
-    expect(request!.headers.get("authorization")).toMatch(
-      /^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\/\d{8}\/auto\/s3\/aws4_request, /,
-    );
-    expect(new Uint8Array(await request!.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+beforeEach(() => {
+  blob.put.mockReset();
+  blob.get.mockReset();
+  blob.del.mockReset();
+});
+
+describe("vercelBlobStorage", () => {
+  it("stores a file privately under its key as is, with its content type", async () => {
+    blob.put.mockResolvedValue({});
+    await vercelBlobStorage("token").put("attachments/org/id", new Uint8Array([1, 2]), "image/png");
+    const [key, body, options] = blob.put.mock.calls[0]!;
+    expect(key).toBe("attachments/org/id");
+    expect(new Uint8Array(body as Buffer)).toEqual(new Uint8Array([1, 2]));
+    expect(options).toMatchObject({
+      access: "private",
+      token: "token",
+      contentType: "image/png",
+      addRandomSuffix: false,
+    });
   });
 
   it("reads a file back, and a missing one as null", async () => {
-    const { storage } = bucket((request) =>
-      request.url.endsWith("/missing")
-        ? new Response("NoSuchKey", { status: 404 })
-        : new Response("hello", { status: 200 }),
+    blob.get.mockImplementation(async (key: string) =>
+      key.endsWith("missing")
+        ? null
+        : { statusCode: 200, stream: new Blob(["hello"]).stream(), headers: new Headers() },
     );
+    const storage = vercelBlobStorage("token");
     const found = await storage.get("attachments/org/present");
     expect(await new Response(found!.body).text()).toBe("hello");
     expect(await storage.get("attachments/org/missing")).toBeNull();
+    expect(blob.get.mock.calls[0]![1]).toMatchObject({ access: "private", useCache: false });
   });
 
-  it("treats deleting a missing file as done", async () => {
-    const { storage, requests } = bucket(() => new Response(null, { status: 404 }));
-    await expect(storage.delete("attachments/org/gone")).resolves.toBeUndefined();
-    expect(requests[0]!.method).toBe("DELETE");
-  });
-
-  it("fails with the service's answer on an error", async () => {
-    const { storage } = bucket(() => new Response("AccessDenied", { status: 403 }));
+  it("turns the store's errors into ObjectStorageError and passes others through", async () => {
+    blob.put.mockRejectedValue(new BlobError("Access denied"));
+    blob.del.mockRejectedValue(new TypeError("boom"));
+    const storage = vercelBlobStorage("token");
     await expect(storage.put("k", new Uint8Array(), "text/plain")).rejects.toThrow(
       ObjectStorageError,
     );
-    await expect(storage.get("k")).rejects.toThrow(/answered 403: AccessDenied/);
-    await expect(storage.delete("k")).rejects.toThrow(ObjectStorageError);
+    await expect(storage.delete("k")).rejects.toThrow(TypeError);
   });
 });
 
 describe("getObjectStorage", () => {
-  it("is off unless the endpoint, bucket and both keys are set", () => {
-    const env = {
-      OBJECT_STORAGE_ENDPOINT: "https://storage.example.com",
-      OBJECT_STORAGE_BUCKET: "attachments",
-      OBJECT_STORAGE_ACCESS_KEY_ID: "id",
-      OBJECT_STORAGE_SECRET_ACCESS_KEY: "secret",
-    };
-    expect(getObjectStorage(env)).not.toBeNull();
-    expect(getObjectStorage({ ...env, OBJECT_STORAGE_SECRET_ACCESS_KEY: "" })).toBeNull();
+  it("is off unless the blob store's read-write token is set", () => {
+    expect(getObjectStorage({ BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_x" })).not.toBeNull();
+    expect(getObjectStorage({ BLOB_READ_WRITE_TOKEN: "" })).toBeNull();
     expect(getObjectStorage({})).toBeNull();
   });
 });

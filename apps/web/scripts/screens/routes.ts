@@ -93,6 +93,14 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
     page: "(app)/sprints/[id]/page.tsx",
     auth: "signed-in",
   },
+  // Features: the main organization's features, the planning one open beside them.
+  { name: "features", path: "/features", page: "(app)/features/page.tsx", auth: "signed-in" },
+  {
+    name: "feature",
+    path: `/features/${ids.features.planning}`,
+    page: "(app)/features/[id]/page.tsx",
+    auth: "signed-in",
+  },
   // Ask: the member's chats.
   { name: "ask", path: "/ask", page: "(app)/ask/page.tsx", auth: "signed-in" },
   { name: "ask-new", path: "/ask/new", page: "(app)/ask/new/page.tsx", auth: "signed-in" },

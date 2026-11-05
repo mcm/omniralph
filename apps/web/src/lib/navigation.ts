@@ -1,5 +1,6 @@
 import type { NavItem } from "@omniralph/ui";
 import {
+  IconBulb,
   IconChartBar,
   IconGitFork,
   IconInbox,
@@ -26,7 +27,8 @@ import type { NavIndicators } from "@/lib/api/nav-indicators";
  * General beside the section nav when wide) and lights up for every `/settings/**` page.
  *
  * Inbox comes first (a phone tab), then Runs and Backlog (`/backlog/**`, work that hasn't
- * started; phone tabs), then Sprints (`/sprints/**`, ordered queues of epics; phone drawer).
+ * started; phone tabs), then Sprints (`/sprints/**`, ordered queues of epics; phone drawer),
+ * then Features (`/features/**`, groups of epics planned together; phone drawer).
  * Ask (`/ask/**`) sits at the top of the bottom group and is the fourth
  * phone tab; on desktop the app shell gives it an `onSelect` that opens the Ask panel
  * instead (`components/ask/ask-panel.tsx`). It never has an indicator: nothing in Ask needs
@@ -67,6 +69,15 @@ export const navItems: readonly NavItem[] = [
     placement: "main",
     phone: "drawer",
     activeFor: ["/sprints"],
+  },
+  {
+    id: "features",
+    label: "Features",
+    href: "/features",
+    icon: IconBulb,
+    placement: "main",
+    phone: "drawer",
+    activeFor: ["/features"],
   },
   {
     id: "repos",

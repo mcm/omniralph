@@ -14,6 +14,7 @@ export type ShortcutId =
   | "goRuns"
   | "goBacklog"
   | "goSprints"
+  | "goFeatures"
   | "goRepos"
   | "goFleet"
   | "goAnalytics"
@@ -45,8 +46,10 @@ export const SHORTCUTS = {
   goInbox: { key: "1", label: "Go to Inbox", group: "goTo" },
   goRuns: { key: "2", label: "Go to Runs", group: "goTo" },
   goBacklog: { key: "3", label: "Go to Backlog", group: "goTo" },
-  // Sprints came after the others, so it takes the next free digit rather than renumbering them.
+  // Sprints and Features came after the others, so they take the next free digits rather than
+  // renumbering them.
   goSprints: { key: "8", label: "Go to Sprints", group: "goTo" },
+  goFeatures: { key: "9", label: "Go to Features", group: "goTo" },
   goRepos: { key: "4", label: "Go to Repos", group: "goTo" },
   goFleet: { key: "5", label: "Go to Fleet", group: "goTo" },
   goAnalytics: { key: "6", label: "Go to Analytics", group: "goTo" },

@@ -7,10 +7,17 @@
  * Every write records a live change: `feature` for a feature, its documents and its
  * attachments (`ids` = the feature), `work_item` for a work item's attachments.
  */
-import { and, asc, desc, eq, isNull, max } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, max, sql } from "drizzle-orm";
 import { recordChange } from "./changes.js";
 import type { Database } from "./client.js";
-import { attachments, featureDocuments, features, repositories } from "./schema.js";
+import {
+  attachments,
+  featureDocuments,
+  featureEpics,
+  features,
+  repositories,
+  users,
+} from "./schema.js";
 import type { WorkItemTracker } from "./work-item-matches.js";
 import { workItemUrlId, type WorkItemKey } from "./work-items.js";
 
@@ -20,8 +27,9 @@ export type FeatureDocument = typeof featureDocuments.$inferSelect;
 export type FeatureDocumentKind = FeatureDocument["kind"];
 export type Attachment = typeof attachments.$inferSelect;
 
-/** A feature with the repo it's scoped to, if any. */
+/** A feature with the repo it's scoped to, if any, and how many epics it has. */
 export interface FeatureWithRepository extends Feature {
+  epicCount: number;
   repository: {
     id: string;
     provider: (typeof repositories.$inferSelect)["provider"];
@@ -39,6 +47,7 @@ async function loadFeatures(
       feature: features,
       repositoryProvider: repositories.provider,
       repositoryFullPath: repositories.fullPath,
+      epicCount: sql<number>`(select count(*)::int from ${featureEpics} where ${featureEpics.featureId} = ${features.id})`,
     })
     .from(features)
     .leftJoin(repositories, eq(repositories.id, features.repositoryId))
@@ -49,8 +58,9 @@ async function loadFeatures(
       ),
     )
     .orderBy(desc(features.createdAt), desc(features.id));
-  return rows.map(({ feature, repositoryProvider, repositoryFullPath }) => ({
+  return rows.map(({ feature, repositoryProvider, repositoryFullPath, epicCount }) => ({
     ...feature,
+    epicCount: Number(epicCount),
     repository:
       feature.repositoryId && repositoryProvider && repositoryFullPath
         ? { id: feature.repositoryId, provider: repositoryProvider, fullPath: repositoryFullPath }
@@ -215,7 +225,13 @@ export async function getFeatureDocument(
 }
 
 /** One saved version of a document, without its body. */
-export type FeatureDocumentVersion = Pick<FeatureDocument, "version" | "createdBy" | "createdAt">;
+export type FeatureDocumentVersion = Pick<
+  FeatureDocument,
+  "version" | "createdBy" | "createdAt"
+> & {
+  /** The saver's name, null when unknown (no name, or the user is gone). */
+  createdByName: string | null;
+};
 
 /** Every saved version of a feature's PRFAQ or Plan, newest first. */
 export async function listFeatureDocumentVersions(
@@ -229,8 +245,10 @@ export async function listFeatureDocumentVersions(
       version: featureDocuments.version,
       createdBy: featureDocuments.createdBy,
       createdAt: featureDocuments.createdAt,
+      createdByName: users.name,
     })
     .from(featureDocuments)
+    .leftJoin(users, eq(users.id, featureDocuments.createdBy))
     .where(
       and(
         eq(featureDocuments.organizationId, organizationId),
@@ -300,6 +318,44 @@ export async function saveFeatureDocument(
     recordChange(tx, { resource: "feature", ids: [featureId], organizationId });
     return { status: "saved" as const, document: document! };
   });
+}
+
+// ── Epics ────────────────────────────────────────────────────────────────
+
+/**
+ * Makes the work item one of the feature's epics (a work item has at most one feature: it
+ * moves from any other; the caller checked the feature is the organization's). Records a
+ * `feature` change for the feature (and the one it left).
+ */
+export async function linkFeatureEpic(
+  db: Database,
+  input: { featureId: string } & WorkItemKey,
+): Promise<void> {
+  const [previous] = await db
+    .select({ featureId: featureEpics.featureId })
+    .from(featureEpics)
+    .where(
+      and(
+        eq(featureEpics.organizationId, input.organizationId),
+        eq(featureEpics.tracker, input.tracker),
+        eq(featureEpics.externalId, input.externalId),
+      ),
+    );
+  await db
+    .insert(featureEpics)
+    .values({
+      featureId: input.featureId,
+      organizationId: input.organizationId,
+      tracker: input.tracker,
+      externalId: input.externalId,
+    })
+    .onConflictDoUpdate({
+      target: [featureEpics.organizationId, featureEpics.tracker, featureEpics.externalId],
+      set: { featureId: input.featureId },
+    });
+  const ids = [input.featureId];
+  if (previous && previous.featureId !== input.featureId) ids.push(previous.featureId);
+  recordChange(db, { resource: "feature", ids, organizationId: input.organizationId });
 }
 
 // ── Attachments ──────────────────────────────────────────────────────────

@@ -52,7 +52,7 @@ export function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-/** One request `mockFetch` saw: its method, path (no query), query and parsed JSON body. */
+/** One request `mockFetch` saw: its method, path (no query), query and parsed JSON body (or its `FormData`). */
 export interface SeenRequest {
   method: string;
   path: string;
@@ -81,7 +81,12 @@ export function mockFetch(routes: Record<string, Route>): SeenRequest[] {
         method,
         path: url.pathname,
         query: url.searchParams,
-        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+        body:
+          typeof init?.body === "string"
+            ? JSON.parse(init.body)
+            : init?.body instanceof FormData
+              ? init.body
+              : undefined,
       };
       seen.push(request);
       const route = routes[`${method} ${url.pathname}`] ?? routes[url.pathname];

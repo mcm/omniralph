@@ -10,12 +10,13 @@ import { NewWorkItemSheet } from "@/screens/backlog/new-work-item-sheet";
 /** The Help page, opened from the user menu. */
 export const HELP_PATH = "/help";
 
-/** The key of each nav entry (`navigation.ts`), in the sidebar's order: 1–8, and Mod+J for Ask. */
+/** The key of each nav entry (`navigation.ts`), in the sidebar's order: 1–9, and Mod+J for Ask. */
 export const NAV_SHORTCUTS = {
   inbox: "goInbox",
   runs: "goRuns",
   backlog: "goBacklog",
   sprints: "goSprints",
+  features: "goFeatures",
   repos: "goRepos",
   fleet: "goFleet",
   ask: "ask",

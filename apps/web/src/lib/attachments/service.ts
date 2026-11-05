@@ -11,7 +11,7 @@ import {
 } from "@omniralph/db";
 import { NextResponse } from "next/server";
 import {
-  ATTACHMENT_TYPES,
+  attachmentContentType,
   MAX_ATTACHMENT_BYTES,
   type AttachmentContentType,
   type AttachmentList,
@@ -79,25 +79,6 @@ export function cleanFileName(name: string): string {
   // oxlint-disable-next-line no-control-regex -- stripping control characters is the point
   const cleaned = base.replace(/[\u0000-\u001f\u007f"]/g, "").trim();
   return cleaned.slice(0, FILE_NAME_MAX_LENGTH) || "attachment";
-}
-
-/**
- * The attachment type of a file: its declared type when it is one we take, else (no type,
- * or a generic one) the type its extension names. Null when it isn't a type we take.
- */
-export function attachmentContentType(
-  fileName: string,
-  declared: string,
-): AttachmentContentType | null {
-  const type = declared.split(";")[0]!.trim().toLowerCase();
-  if (type in ATTACHMENT_TYPES) return type as AttachmentContentType;
-  if (type && type !== "application/octet-stream") return null;
-  const extension = /\.[^.]+$/.exec(fileName.toLowerCase())?.[0];
-  if (!extension) return null;
-  const found = Object.entries(ATTACHMENT_TYPES).find(([, extensions]) =>
-    (extensions as readonly string[]).includes(extension),
-  );
-  return (found?.[0] as AttachmentContentType | undefined) ?? null;
 }
 
 const tooLarge = () => new ApiRouteError(413, TOO_LARGE_MESSAGE, "too_large");

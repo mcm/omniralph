@@ -149,20 +149,16 @@ See [ADR 0006](adr/0006-postgres-job-queue.md).
 
 ### Attachments
 
-Files attached to features and work items (mockups, design boards, specs) go to an
-S3-compatible bucket, addressed path-style (`<endpoint>/<bucket>/<key>`) and signed with SigV4:
-Amazon S3, Cloudflare R2, Neon object storage or MinIO. The database keeps only each file's
-name, type, size and key. Uploads go through the control panel, so a file can be up to 4 MB
-(Vercel functions take request bodies up to 4.5 MB). Without all four required variables,
-uploads and downloads answer 503.
+Files attached to features and work items (mockups, design boards, specs) go to a private
+[Vercel Blob](https://vercel.com/docs/vercel-blob) store. The database keeps only each file's
+name, type, size and key; every download goes through the control panel, which checks the
+reader's access first. Uploads go through the control panel too, so a file can be up to 4 MB
+(Vercel functions take request bodies up to 4.5 MB). Without `BLOB_READ_WRITE_TOKEN`, uploads
+and downloads answer 503.
 
-| Variable                           | Required        | Default | Description                                                                                |
-| ---------------------------------- | --------------- | ------- | ------------------------------------------------------------------------------------------ |
-| `OBJECT_STORAGE_ENDPOINT`          | for attachments | —       | The service's base URL, e.g. `https://<account>.r2.cloudflarestorage.com`.                 |
-| `OBJECT_STORAGE_BUCKET`            | for attachments | —       | The bucket attachments are stored in. Keep it private: files are served through the panel. |
-| `OBJECT_STORAGE_ACCESS_KEY_ID`     | for attachments | —       | Access key ID with read, write and delete on the bucket.                                   |
-| `OBJECT_STORAGE_SECRET_ACCESS_KEY` | for attachments | —       | The access key's secret.                                                                   |
-| `OBJECT_STORAGE_REGION`            | no              | `auto`  | The bucket's region for signing: `auto` suits R2; Amazon S3 needs the bucket's region.     |
+| Variable                | Required        | Default | Description                                                                                                                                       |
+| ----------------------- | --------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BLOB_READ_WRITE_TOKEN` | for attachments | —       | The Blob store's read-write token. Vercel sets it (with `BLOB_STORE_ID` and `BLOB_WEBHOOK_PUBLIC_KEY`, unused) when a private store is connected. |
 
 ### Set by Vercel
 
