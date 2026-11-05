@@ -16,6 +16,7 @@ import {
   type RalphPullRequestAction,
   type RalphRequestPayload,
   type RalphRequestResult,
+  type RunAttachment,
 } from "@omniralph/shared";
 import { RetryableJobError, type JobContext } from "../capabilities/index.js";
 import {
@@ -25,6 +26,7 @@ import {
 } from "../session/session.js";
 import { ActivityRelay } from "../tools/activities.js";
 import { controlPanelFetcher, jobAttachments } from "../tools/attachments.js";
+import { downloadRunAttachments, type DownloadedRunAttachments } from "../tools/run-attachments.js";
 import type { BranchWorktree } from "../workspace/repoCache.js";
 import type { StoryOptions } from "./story-attempt.js";
 
@@ -96,6 +98,8 @@ export interface RequestAttemptPrepared {
   cwd: string;
   /** What the prompt says about the downloaded attachments; undefined without any. */
   attachments?: string;
+  /** What the prompt says about the run's Omniralph attachments (`formatRunFiles`); undefined without any. */
+  files?: string;
   /** `/ship`: the run's request stash entries offered to the session, newest first. */
   shipStashes: ShipStash[];
   /**
@@ -128,6 +132,12 @@ export interface RequestAttemptArgs {
   payload: RalphRequestPayload;
   /** The job (or run) whose activities and attachments the control panel serves. */
   jobId: string;
+  /**
+   * The files attached in Omniralph to the run's epic and its feature (the run spec's
+   * `attachments`), downloaded outside the repo before the worktree is prepared; a failed
+   * download fails the attempt (`RunAttachmentDownloadError`).
+   */
+  attachments?: readonly RunAttachment[];
   ctx: JobContext;
   options: StoryOptions;
   /** The environment of the lifecycle's git commands: the worktree, and `/ship`'s and `ship`'s pushes. */
@@ -186,7 +196,16 @@ export async function runRequestAttempt(args: RequestAttemptArgs): Promise<Ralph
   const runSession = ctx.sessions?.runner(baseRunner) ?? baseRunner;
   const label = (reason: string) => `${requestStashPrefix(payload)}${reason}`;
 
+  let files: DownloadedRunAttachments | undefined;
   try {
+    // Their links are short-lived: downloaded first, before the worktree's setup command runs.
+    files = await downloadRunAttachments({
+      attachments: args.attachments ?? [],
+      signal: ctx.signal,
+      logger: log,
+      ...(options.fetch && { fetch: options.fetch }),
+    });
+    const runFiles = files;
     return await ctx.repos.withBranchWorktree(
       payload.repository,
       {
@@ -274,6 +293,7 @@ export async function runRequestAttempt(args: RequestAttemptArgs): Promise<Ralph
             progressDir,
             cwd: worktree.path,
             ...(attachments.prompt && { attachments: attachments.prompt }),
+            ...(runFiles.prompt && { files: runFiles.prompt }),
             shipStashes,
             ship: shipTool,
           });
@@ -285,6 +305,7 @@ export async function runRequestAttempt(args: RequestAttemptArgs): Promise<Ralph
             additionalDirectories: [
               progressDir,
               ...(attachments.files.length > 0 ? [attachments.dir] : []),
+              ...(runFiles.dir ? [runFiles.dir] : []),
             ],
             signal: ctx.signal,
             onEvent: (event) => relay.event(event),
@@ -403,6 +424,7 @@ export async function runRequestAttempt(args: RequestAttemptArgs): Promise<Ralph
       },
     );
   } finally {
+    await files?.remove();
     await relay.flush();
   }
 }

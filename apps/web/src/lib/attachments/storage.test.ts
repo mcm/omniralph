@@ -7,11 +7,18 @@ const blob = vi.hoisted(() => ({
   put: vi.fn(),
   get: vi.fn(),
   del: vi.fn(),
+  issueSignedToken: vi.fn(),
 }));
 
 vi.mock("@vercel/blob", async (importOriginal) => {
   const actual = await importOriginal<typeof VercelBlob>();
-  return { ...actual, put: blob.put, get: blob.get, del: blob.del };
+  return {
+    ...actual,
+    put: blob.put,
+    get: blob.get,
+    del: blob.del,
+    issueSignedToken: blob.issueSignedToken,
+  };
 });
 
 const { BlobError } = await import("@vercel/blob");
@@ -21,6 +28,7 @@ beforeEach(() => {
   blob.put.mockReset();
   blob.get.mockReset();
   blob.del.mockReset();
+  blob.issueSignedToken.mockReset();
 });
 
 describe("vercelBlobStorage", () => {
@@ -59,6 +67,55 @@ describe("vercelBlobStorage", () => {
       ObjectStorageError,
     );
     await expect(storage.delete("k")).rejects.toThrow(TypeError);
+  });
+});
+
+describe("download URLs for runs", () => {
+  /** A delegation token as the store issues it: its payload names the store and scope. */
+  function delegation(validUntil: number): string {
+    const payload = Buffer.from(
+      JSON.stringify({ storeId: "store_abc", pathname: "*", operations: ["get"], validUntil }),
+    ).toString("base64url");
+    return `${payload}.signature`;
+  }
+
+  it("signs each file's URL from one read-only delegation that expires when they do", async () => {
+    const validUntil = new Date(Date.now() + 30 * 60_000);
+    blob.issueSignedToken.mockResolvedValue({
+      delegationToken: delegation(validUntil.getTime()),
+      clientSigningToken: "c2lnbmluZy1rZXk",
+      validUntil: validUntil.getTime(),
+    });
+    const urls = await vercelBlobStorage("token").downloadUrls(
+      ["attachments/org/a", "attachments/org/b"],
+      validUntil,
+    );
+    expect(blob.issueSignedToken).toHaveBeenCalledTimes(1);
+    expect(blob.issueSignedToken.mock.calls[0]![0]).toEqual({
+      token: "token",
+      operations: ["get"],
+      validUntil: validUntil.getTime(),
+    });
+    const a = new URL(urls.get("attachments/org/a")!);
+    const b = new URL(urls.get("attachments/org/b")!);
+    expect(a.pathname).toBe("/attachments/org/a");
+    expect(b.pathname).toBe("/attachments/org/b");
+    // Each URL carries its own signature, so one file's URL never reads another.
+    const signature = (url: URL) => url.searchParams.get("vercel-blob-signature");
+    expect(signature(a)).toBeTruthy();
+    expect(signature(a)).not.toBe(signature(b));
+  });
+
+  it("asks the store for nothing without files", async () => {
+    expect(await vercelBlobStorage("token").downloadUrls([], new Date())).toEqual(new Map());
+    expect(blob.issueSignedToken).not.toHaveBeenCalled();
+  });
+
+  it("turns a refused delegation into ObjectStorageError", async () => {
+    blob.issueSignedToken.mockRejectedValue(new BlobError("Access denied"));
+    await expect(
+      vercelBlobStorage("token").downloadUrls(["attachments/org/a"], new Date(Date.now() + 60_000)),
+    ).rejects.toThrow(ObjectStorageError);
   });
 });
 

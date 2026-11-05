@@ -1016,6 +1016,7 @@ export {
   createFeature,
   deleteAttachment,
   getAttachment,
+  getEpicFeature,
   getFeature,
   getFeatureDocument,
   insertAttachment,

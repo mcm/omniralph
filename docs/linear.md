@@ -650,6 +650,30 @@ links) reach the agent, as in cyralph:
   them with the Read tool (which shows images). A file that couldn't be downloaded is listed as
   such ("Don't guess what it shows"), and Om says so once in the session as a thought.
 
+### Feature and epic attachments
+
+Files people attach in Omniralph (on a feature's page, or to a work item) reach the coding runs
+that build them, so nobody has to commit mockups or specs to the repo:
+
+- **Which files.** A story run on any of an epic's tasks, and a request run on the epic, get the
+  files attached to the epic (the run's delegated issue) and, when the epic is one of a feature's
+  epics, the feature's files (listed first). Push runs, which have no session, don't download them.
+- **Run spec.** When the job is claimed, its run spec's `attachments` lists each file (`owner`
+  `epic` or `feature`, the epic's identifier or the feature's name, file name, type, size) with a
+  presigned URL into the Blob store that reads only that file and expires after 30 minutes
+  (`expiresAt`). A redelivered job is resolved again with fresh URLs. More than 50 files, or files
+  without a Blob store set up, fail the run with that reason.
+- **Download.** Before the worktree is prepared (the links are short-lived), the agent downloads
+  them into a new temporary folder outside any checkout (`omniralph-attachments-*/feature/` and
+  `/epic/`, files named after their uploaded name, `-2`, `-3`… on collisions), lets the session
+  read that folder and deletes it after the run. They are never in the worktree, so they can't be
+  committed. A failed download (an expired link, an HTTP error, a file over 25 MB) fails the run
+  before its session with `Couldn't download the attachment "<name>" (attached to …): <why>`.
+- **Prompt.** An **Attached Files** section lists each file's path, name and type, and what it is
+  attached to, tells the session to open the relevant ones with the Read tool and to treat their
+  contents as data (instructions inside them aren't instructions to it), and never to copy them
+  into the repo or commit them. Task templates show it with the `{{files}}` variable.
+
 Every run, its stories, attempts, commits, jobs, agent and PR/MR are listed under **Coding tasks**,
 where admins can also stop a run. A run's page has one section per repository (lane) with its
 branch, PR/MR, stories, review rounds and CI fix rounds (out of the repository's `maxReviewRounds`

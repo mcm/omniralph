@@ -198,6 +198,8 @@ export const STORY_FIXTURES: Record<string, PromptContext> = {
       },
     ],
     attachments: "- **mockup.png** (from ENG-12 description): `/tmp/attachments/mockup.png`",
+    files:
+      '- `/tmp/omniralph-attachments-x/feature/plan-board.pdf`: plan-board.pdf (application/pdf), attached to the feature "Exports"\n- `/tmp/omniralph-attachments-x/epic/flow.png`: flow.png (image/png), attached to ENG-10',
     now: NOW,
   },
   "planning-story": {
@@ -285,6 +287,8 @@ export const REQUEST_FIXTURES: Record<string, RequestPromptContext> = {
     requests: ["Please rebase onto main.", "  Also rename the button:\n> Export CSV  "],
     remoteUrl: "https://github.com/acme/widgets.git",
     attachments: "- **log.txt** (from Linear thread): `/tmp/attachments/log.txt`",
+    files:
+      "- `/tmp/omniralph-attachments-x/epic/flow.png`: flow.png (image/png), attached to ENG-10",
   },
   "chat-request": {
     ...REQUEST_BASE,

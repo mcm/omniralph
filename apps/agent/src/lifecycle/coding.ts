@@ -50,7 +50,7 @@ export interface CodingTaskOptions extends StoryOptions {
 export function storyRunPrompt(
   spec: Pick<RunSpec, "task">,
   payload: RalphStoryPayload,
-  prepared: Pick<StoryAttemptPrepared, "offered" | "attachments" | "progressFile">,
+  prepared: Pick<StoryAttemptPrepared, "offered" | "attachments" | "files" | "progressFile">,
   now?: Date,
   setup: Record<string, string> = {},
 ): string {
@@ -72,6 +72,7 @@ export function storyRunPrompt(
     }),
     stashes: prepared.offered,
     ...(prepared.attachments && { attachments: prepared.attachments }),
+    ...(prepared.files && { files: prepared.files }),
     ...(now && { now }),
   });
   return renderTemplate(
@@ -92,7 +93,7 @@ export function storyRunPrompt(
 export function requestRunPrompt(
   spec: Pick<RunSpec, "task">,
   payload: RalphRequestPayload,
-  prepared: Pick<RequestAttemptPrepared, "attachments" | "progressFile" | "shipStashes">,
+  prepared: Pick<RequestAttemptPrepared, "attachments" | "files" | "progressFile" | "shipStashes">,
   setup: Record<string, string> = {},
 ): string {
   const context = requestTemplateContext({
@@ -109,6 +110,7 @@ export function requestRunPrompt(
     prTerm: payload.repository.provider === "gitlab" ? "merge request" : "pull request",
     historyRewrite: payload.historyRewrite,
     ...(prepared.attachments && { attachments: prepared.attachments }),
+    ...(prepared.files && { files: prepared.files }),
     ...(payload.settings.appendInstruction && {
       appendInstruction: payload.settings.appendInstruction,
     }),
@@ -267,6 +269,7 @@ export async function runStoryRun(
   return runStoryAttempt({
     payload,
     jobId: spec.jobId,
+    ...(spec.attachments && { attachments: spec.attachments }),
     ctx,
     options,
     // Pushing only at the end keeps the story commits on the run's hidden ref meanwhile.
@@ -358,6 +361,7 @@ export async function runRequestRun(
     return await runRequestAttempt({
       payload,
       jobId: spec.jobId,
+      ...(spec.attachments && { attachments: spec.attachments }),
       ctx,
       options,
       gitEnv: git.env,
