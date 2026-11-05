@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Menu, type MenuItem } from "@omniralph/ui";
-import { IconBuilding, IconPlus, IconSelector } from "@tabler/icons-react";
+import { IconBuilding, IconMail, IconPlus, IconSelector } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import * as React from "react";
@@ -30,7 +30,7 @@ function choiceKey(choice: Choice): string {
 export function OrganizationPicker() {
   const router = useRouter();
   const client = useQueryClient();
-  const { organization, organizations, scope } = useCurrentUser();
+  const { organization, organizations, scope, pendingInvitations } = useCurrentUser();
   const expectSwitch = useExpectOrganizationSwitch();
   const rendered: Choice =
     scope === "all"
@@ -68,6 +68,10 @@ export function OrganizationPicker() {
   };
 
   const label = current.kind === "all" ? ALL_ORGANIZATIONS_LABEL : current.name;
+  const invitationsLabel =
+    pendingInvitations > 0
+      ? `, ${pendingInvitations} pending ${pendingInvitations === 1 ? "invitation" : "invitations"}`
+      : "";
   const items: MenuItem[] = [
     ...(organizations.length >= 2
       ? [
@@ -84,6 +88,15 @@ export function OrganizationPicker() {
       onSelect: () => select({ kind: "single", id: option.id, name: option.name }),
     })),
     "separator",
+    ...(pendingInvitations > 0
+      ? [
+          {
+            label: `Invitations (${pendingInvitations})`,
+            icon: IconMail,
+            onSelect: () => router.push(ONBOARDING_PATH),
+          },
+        ]
+      : []),
     { label: "New organization", icon: IconPlus, onSelect: () => router.push(ONBOARDING_PATH) },
   ];
 
@@ -97,9 +110,15 @@ export function OrganizationPicker() {
           variant="ghost"
           icon={IconBuilding}
           className="or-org-picker"
-          aria-label={`Organization: ${label}`}
+          aria-label={`Organization: ${label}${invitationsLabel}`}
         >
           <span className="or-org-picker__label or-rail-hidden">{label}</span>
+          {pendingInvitations > 0 ? (
+            // Not rail-hidden: on the icon rail it moves to the icon's corner.
+            <span className="or-nav__count or-org-picker__count" aria-hidden="true">
+              {pendingInvitations}
+            </span>
+          ) : null}
           <IconSelector
             className="or-org-picker__chevron or-rail-hidden"
             size={14}

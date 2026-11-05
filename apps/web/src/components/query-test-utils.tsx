@@ -16,6 +16,7 @@ export const testUser: SessionUser = {
   name: "Ada",
   email: "ada@example.com",
   image: null,
+  pendingInvitations: 0,
 };
 
 /** A client for one test: no polling, no retries, no garbage collection mid-test. */

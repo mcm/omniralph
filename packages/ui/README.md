@@ -434,7 +434,9 @@ const card = useStagedCard<Draft, Result>({
   footer, the phone avatar and the drawer footer) and `children` (in the `main`
   landmark). It knows nothing about routes or sessions. An `orgPicker` trigger takes the
   `or-org-picker` class (full width; on the rail, centered), with its label and chevron in
-  `or-org-picker__label` / `or-org-picker__chevron` plus `or-rail-hidden`.
+  `or-org-picker__label` / `or-org-picker__chevron` plus `or-rail-hidden`. A count badge
+  on the trigger takes `or-nav__count or-org-picker__count` (not `or-rail-hidden`): on the
+  rail it moves to the icon's corner like the nav counts.
   - 1200 px and wider: a 232 px `nav` "Primary" sidebar: `BrandLockup`, `orgPicker`, the
     `placement: "main"` entries, a flexible gap, the `bottom` entries and the user
     footer button (avatar and name).

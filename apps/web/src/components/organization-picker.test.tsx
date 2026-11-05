@@ -169,4 +169,47 @@ describe("OrganizationPicker", () => {
     await userEvent.click(screen.getByRole("menuitem", { name: "New organization" }));
     expect(router.push).toHaveBeenCalledWith("/onboarding");
   });
+
+  it("shows no invitations badge or item without pending invitations", async () => {
+    renderPicker(testUser);
+    expect(trigger("Acme").querySelector(".or-org-picker__count")).toBeNull();
+    const menu = await open("Acme");
+    expect(entries(menu)).toEqual(["Acme ✓", "New organization"]);
+  });
+
+  it("counts pending invitations on the trigger and in its accessible name", async () => {
+    renderPicker({ ...testUser, pendingInvitations: 3 });
+    const button = screen.getByRole("button", {
+      name: "Organization: Acme, 3 pending invitations",
+    });
+    const badge = button.querySelector(".or-org-picker__count");
+    expect(badge?.textContent).toBe("3");
+    // The badge stays out of `or-rail-hidden`, so the icon rail still shows it.
+    expect(badge?.closest(".or-rail-hidden")).toBeNull();
+    expect(badge?.classList.contains("or-rail-hidden")).toBe(false);
+  });
+
+  it("names a single pending invitation in the singular", () => {
+    renderPicker({ ...testUser, pendingInvitations: 1 });
+    expect(
+      screen.getByRole("button", { name: "Organization: Acme, 1 pending invitation" }),
+    ).toBeTruthy();
+  });
+
+  it("offers the pending invitations before New organization and goes to onboarding", async () => {
+    renderPicker({ ...twoOrganizations, pendingInvitations: 2 });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Organization: Acme, 2 pending invitations" }),
+    );
+    const menu = await screen.findByRole("menu");
+    expect(entries(menu)).toEqual([
+      "All organizations",
+      "Acme ✓",
+      "Beta",
+      "Invitations (2)",
+      "New organization",
+    ]);
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Invitations (2)" }));
+    expect(router.push).toHaveBeenCalledWith("/onboarding");
+  });
 });
