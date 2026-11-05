@@ -1019,6 +1019,7 @@ export {
   getFeature,
   getFeatureDocument,
   insertAttachment,
+  linkFeatureEpic,
   listAttachments,
   listFeatureDocumentVersions,
   listFeatures,

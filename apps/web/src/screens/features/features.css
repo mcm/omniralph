@@ -1,0 +1,384 @@
+/*
+ * The Features screen: the list pane with "Features", the + and the features, beside the open
+ * feature (its PRFAQ and Plan, one tab each, and its attachments). The panes and their widths
+ * are SplitView's. Only `--or-` tokens.
+ */
+.or-features {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.or-features__pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.or-features__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 16px 16px 12px 20px;
+  border-bottom: 1px solid var(--or-line);
+}
+
+.or-features__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.or-features__list {
+  min-height: 0;
+  padding: 8px 0;
+}
+
+.or-features__list .or-empty {
+  padding: 40px 20px;
+}
+
+/* Loading: rows and lines shaped like what they stand for. */
+.or-feature-skeleton__row {
+  height: 44px;
+  margin: 8px 14px;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-feature-skeleton__line {
+  height: 12px;
+  margin: 12px 0;
+  border-radius: var(--or-radius-sm);
+  background: var(--or-hover);
+}
+
+.or-feature-skeleton__line--title {
+  width: 40%;
+  height: 20px;
+}
+
+.or-feature-skeleton__line--short {
+  width: 25%;
+}
+
+/* One feature. */
+.or-feature {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 880px;
+  padding: 20px 28px 32px;
+}
+
+.or-feature__empty {
+  padding: 64px 28px;
+}
+
+.or-feature__head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.or-feature__title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.or-feature__title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.or-feature__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.or-feature__section-title {
+  margin: 0;
+  color: var(--or-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.or-feature__hint {
+  margin: 0;
+  color: var(--or-ter);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.or-feature__note {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius);
+  color: var(--or-sec);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.or-feature__error {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--or-fail);
+  border-radius: var(--or-radius);
+  background: var(--or-fail-tint);
+  color: var(--or-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* A PRFAQ or Plan. */
+.or-feature-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.or-feature-doc__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.or-feature-doc__formats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding-left: 8px;
+  border-left: 1px solid var(--or-line);
+}
+
+.or-feature-doc__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--or-ter);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.or-feature-doc__input {
+  min-height: 360px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.or-feature-doc__preview {
+  min-height: 120px;
+}
+
+.or-feature-doc__placeholder {
+  margin: 0;
+  color: var(--or-ter);
+  font-size: 13px;
+}
+
+.or-feature-doc__conflict {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--or-warn);
+  border-radius: var(--or-radius);
+  color: var(--or-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.or-feature-doc__conflict p {
+  margin: 0;
+}
+
+.or-feature-doc__conflict-title {
+  font-weight: 600;
+}
+
+.or-feature-doc__conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* History. */
+.or-feature-history {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.or-feature-history__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-feature-history__version {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--or-radius-sm);
+  background: none;
+  color: var(--or-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.or-feature-history__version:hover {
+  background: var(--or-hover);
+}
+
+.or-feature-history__version[aria-pressed="true"] {
+  border-color: var(--or-line);
+  background: var(--or-sel);
+}
+
+.or-feature-history__name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.or-feature-history__meta {
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+.or-feature-history__preview {
+  padding-top: 12px;
+  border-top: 1px solid var(--or-line);
+}
+
+/* Attachments. */
+.or-feature-files {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px dashed var(--or-line);
+  border-radius: var(--or-radius);
+}
+
+.or-feature-files--dragging {
+  border-color: var(--or-acc);
+  background: var(--or-hover);
+}
+
+.or-feature-files__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.or-feature-files__problems {
+  padding-left: 28px;
+}
+
+.or-feature-files__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.or-feature-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: var(--or-radius-sm);
+}
+
+.or-feature-file:hover {
+  background: var(--or-hover);
+}
+
+.or-feature-file--uploading {
+  color: var(--or-ter);
+}
+
+.or-feature-file__thumb,
+.or-feature-file__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-sm);
+  background: var(--or-surf);
+  color: var(--or-sec);
+  object-fit: cover;
+}
+
+.or-feature-file__text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.or-feature-file__name {
+  overflow: hidden;
+  color: var(--or-text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.or-feature-file__size {
+  color: var(--or-ter);
+  font-size: 12px;
+}
+
+.or-feature-file__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.or-feature-preview__image {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--or-radius-sm);
+}
+
+.or-feature-preview__pdf {
+  width: 100%;
+  height: 70vh;
+  border: 1px solid var(--or-line);
+  border-radius: var(--or-radius-sm);
+}
+
+.or-new-feature {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}

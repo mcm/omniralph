@@ -71,7 +71,7 @@ describe("navItems", () => {
     }
   });
 
-  it("lists Inbox, Runs, Backlog, Sprints, Repos and Fleet, then Ask, Analytics and Settings at the bottom", () => {
+  it("lists Inbox, Runs, Backlog, Sprints, Features, Repos and Fleet, then Ask, Analytics and Settings at the bottom", () => {
     expect(
       navItems.map(({ id, label, href, placement, phone }) => ({
         id,
@@ -85,6 +85,7 @@ describe("navItems", () => {
       { id: "runs", label: "Runs", href: "/runs", placement: "main", phone: "tab" },
       { id: "backlog", label: "Backlog", href: "/backlog", placement: "main", phone: "tab" },
       { id: "sprints", label: "Sprints", href: "/sprints", placement: "main", phone: "drawer" },
+      { id: "features", label: "Features", href: "/features", placement: "main", phone: "drawer" },
       { id: "repos", label: "Repos", href: "/repos", placement: "main", phone: "drawer" },
       { id: "fleet", label: "Fleet", href: "/fleet", placement: "main", phone: "drawer" },
       { id: "ask", label: "Ask", href: "/ask", placement: "bottom", phone: "tab" },
@@ -199,6 +200,7 @@ describe("navItems", () => {
     expect(bottom).toEqual(["ask", "analytics", "settings"]);
     expect(navItems.filter((item) => item.phone === "drawer").map((item) => item.label)).toEqual([
       "Sprints",
+      "Features",
       "Repos",
       "Fleet",
       "Analytics",

@@ -11,6 +11,8 @@ import {
   appSettings,
   DESIRED_AGENT_VERSION_KEY,
   encrypt,
+  featureDocuments,
+  features,
   feedback,
   findings,
   agentAudit,
@@ -457,6 +459,7 @@ export async function seedFixtures(db: Database, now = new Date()): Promise<void
     await seedTriage(tx, now);
     await seedAsk(tx, now);
     await seedSprints(tx, now);
+    await seedFeatures(tx, now);
   });
 }
 
@@ -546,6 +549,65 @@ async function seedSprints(tx: Tx, now: Date): Promise<void> {
       epic(S.running, 0, "FIX-90", "Add pagination to the jobs page", "merged"),
       epic(S.running, 1, "FIX-100", "Rebuild the onboarding flow", "running"),
     ]);
+}
+
+// ── Features ────────────────────────────────────────────────────────────────
+
+/** A feature in planning with a PRFAQ (two versions) and a Plan, and an archived one. */
+async function seedFeatures(tx: Tx, now: Date): Promise<void> {
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+  const featureId = FIXTURE_IDS.features.planning;
+  await tx.insert(features).values([
+    {
+      id: featureId,
+      organizationId: O.main,
+      repositoryId: R.controlPanel,
+      name: "Invoicing",
+      createdBy: U.admin,
+      createdAt: ago(2 * DAY),
+    },
+    {
+      id: fixtureId("feature", 2),
+      organizationId: O.main,
+      name: "Legacy exports",
+      status: "archived",
+      createdBy: U.admin,
+      createdAt: ago(20 * DAY),
+    },
+  ]);
+  const prfaq = "# Invoicing\n\nTeams can bill customers from the control panel.\n";
+  await tx.insert(featureDocuments).values([
+    {
+      id: fixtureId("featureDocument", 1),
+      featureId,
+      organizationId: O.main,
+      kind: "prfaq",
+      version: 1,
+      body: prfaq,
+      createdBy: U.admin,
+      createdAt: ago(2 * DAY),
+    },
+    {
+      id: fixtureId("featureDocument", 2),
+      featureId,
+      organizationId: O.main,
+      kind: "prfaq",
+      version: 2,
+      body: `${prfaq}\n## FAQ\n\n**Who sends the invoices?** Om does, when a sprint merges.\n`,
+      createdBy: U.admin,
+      createdAt: ago(DAY),
+    },
+    {
+      id: fixtureId("featureDocument", 3),
+      featureId,
+      organizationId: O.main,
+      kind: "plan",
+      version: 1,
+      body: "## Approach\n\nStore invoices, render PDFs, then email them.\n\n## Epics\n\n### Invoice model\n\nStore invoices.\n\n- Covers: Approach\n",
+      createdBy: U.admin,
+      createdAt: ago(DAY),
+    },
+  ]);
 }
 
 // ── Ask ─────────────────────────────────────────────────────────────────────

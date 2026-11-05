@@ -45,6 +45,7 @@ export function featureRow(feature: FeatureWithRepository): FeatureRow {
     name: feature.name,
     status: feature.status,
     repository: feature.repository,
+    epicCount: feature.epicCount,
     createdAt: feature.createdAt.toISOString(),
     updatedAt: feature.updatedAt.toISOString(),
   };
@@ -156,7 +157,7 @@ export async function loadFeatureDocumentVersions(
     versions: versions.map((version) => ({
       version: version.version,
       savedAt: version.createdAt.toISOString(),
-      savedBy: version.createdBy,
+      savedBy: version.createdByName,
     })),
   };
 }

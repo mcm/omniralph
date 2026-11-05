@@ -29,7 +29,7 @@ export class ApiError extends Error {
 
 export interface ApiRequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
-  /** Sent as JSON. */
+  /** Sent as JSON; `FormData` is sent as is (multipart, e.g. an upload). */
   body?: unknown;
   /** Query string values; `undefined` and `null` are left out, lists repeat their key. */
   params?: Record<string, string | number | boolean | readonly string[] | null | undefined>;
@@ -62,14 +62,15 @@ export async function apiRequest<S extends z.ZodType>(
   { method = "GET", body, params, organizationId, signal }: ApiRequestOptions = {},
 ): Promise<z.infer<S>> {
   const headers: Record<string, string> = { accept: "application/json" };
-  if (body !== undefined) headers["content-type"] = "application/json";
+  const form = body instanceof FormData;
+  if (body !== undefined && !form) headers["content-type"] = "application/json";
   if (organizationId) headers[ORGANIZATION_HEADER] = organizationId;
   let response: Response;
   try {
     response = await fetch(withParams(path, params), {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : form ? body : JSON.stringify(body),
       signal,
       credentials: "same-origin",
     });

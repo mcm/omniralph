@@ -47,6 +47,7 @@ describe("HelpView", () => {
         ["Go to Runs", "2"],
         ["Go to Backlog", "3"],
         ["Go to Sprints", "8"],
+        ["Go to Features", "9"],
         ["Go to Repos", "4"],
         ["Go to Fleet", "5"],
         ["Go to Analytics", "6"],
@@ -81,7 +82,7 @@ describe("HelpView", () => {
     expect(listed).toBe(Object.keys(SHORTCUTS).length);
     // Each key is a kbd, in the table and on the phone cards.
     const table = screen.getAllByRole("table")[0]!;
-    expect(table.querySelectorAll("kbd").length).toBe(11);
+    expect(table.querySelectorAll("kbd").length).toBe(12);
     expect(document.querySelectorAll("kbd").length).toBe(2 * Object.keys(SHORTCUTS).length);
   });
 

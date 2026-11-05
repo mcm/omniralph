@@ -81,7 +81,7 @@ describe("AppShell", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   });
 
-  it("lists Inbox, Runs, Backlog, Sprints, Repos and Fleet, then Ask, Analytics and Settings, each linking its 2.0 page", () => {
+  it("lists Inbox, Runs, Backlog, Sprints, Features, Repos and Fleet, then Ask, Analytics and Settings, each linking its 2.0 page", () => {
     renderShell("/analytics");
     const links = within(sidebar())
       .getAllByRole("link")
@@ -92,6 +92,7 @@ describe("AppShell", () => {
       ["Runs", "/runs"],
       ["Backlog", "/backlog"],
       ["Sprints", "/sprints"],
+      ["Features", "/features"],
       ["Repos", "/repos"],
       ["Fleet", "/fleet"],
       ["Ask", "/ask"],
@@ -108,6 +109,8 @@ describe("AppShell", () => {
     ["/backlog/linear-1", "Backlog"],
     ["/sprints", "Sprints"],
     ["/sprints/abc", "Sprints"],
+    ["/features", "Features"],
+    ["/features/abc", "Features"],
     ["/repos", "Repos"],
     ["/repos/abc", "Repos"],
     ["/fleet/abc", "Fleet"],
@@ -141,7 +144,7 @@ describe("AppShell", () => {
     expect(current(drawer)).toEqual(["Analytics"]);
   });
 
-  it("puts Inbox, Runs, Backlog and Ask in the tab bar and Sprints, Repos, Fleet, Analytics and Settings in the drawer", async () => {
+  it("puts Inbox, Runs, Backlog and Ask in the tab bar and Sprints, Features, Repos, Fleet, Analytics and Settings in the drawer", async () => {
     renderShell("/settings/routing");
     expect(
       within(tabBar())
@@ -154,6 +157,7 @@ describe("AppShell", () => {
       .filter((link) => link.classList.contains("or-nav__item"));
     expect(entries.map((link) => link.getAttribute("aria-label"))).toEqual([
       "Sprints",
+      "Features",
       "Repos",
       "Fleet",
       "Analytics",
@@ -339,6 +343,7 @@ describe("AppShell shortcuts", () => {
       runs: "2",
       backlog: "3",
       sprints: "8",
+      features: "9",
       repos: "4",
       fleet: "5",
       ask: "Control+J",
@@ -352,6 +357,7 @@ describe("AppShell shortcuts", () => {
     const { drawer } = await openDrawer();
     expect(keys(drawer)).toEqual({
       sprints: "8",
+      features: "9",
       repos: "4",
       fleet: "5",
       analytics: "6",

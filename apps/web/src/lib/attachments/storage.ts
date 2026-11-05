@@ -1,10 +1,10 @@
 import "server-only";
-import { AwsClient } from "aws4fetch";
+import { BlobError, del, get, put } from "@vercel/blob";
 
 /**
- * Object storage for attachment files: any S3-compatible bucket (Amazon S3, Cloudflare R2,
- * Neon object storage, MinIO), addressed path-style (`<endpoint>/<bucket>/<key>`) and signed
- * with SigV4. Files never go in the database; the `attachments` table keeps their keys.
+ * Object storage for attachment files: a private Vercel Blob store. Files never go in the
+ * database; the `attachments` table keeps their keys (blob pathnames), and every download
+ * goes through the control panel, which checks the reader's access first.
  */
 
 /** A stored file read back. */
@@ -22,70 +22,51 @@ export interface ObjectStorage {
 
 /** Object storage answered with an error. */
 export class ObjectStorageError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
     this.name = "ObjectStorageError";
   }
 }
 
-export interface S3StorageConfig {
-  /** The service's base URL, e.g. `https://<account>.r2.cloudflarestorage.com`. */
-  endpoint: string;
-  bucket: string;
-  accessKeyId: string;
-  secretAccessKey: string;
-  /** Default `auto` (R2); Amazon S3 needs the bucket's region. */
-  region?: string;
+async function wrap<T>(what: string, key: string, operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof BlobError) {
+      throw new ObjectStorageError(`Object storage ${what} of ${key} failed: ${error.message}`, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
 }
 
-/** An S3-compatible bucket. `fetch` is injectable for tests. */
-export function s3ObjectStorage(
-  config: S3StorageConfig,
-  fetchImpl: typeof fetch = fetch,
-): ObjectStorage {
-  const client = new AwsClient({
-    accessKeyId: config.accessKeyId,
-    secretAccessKey: config.secretAccessKey,
-    service: "s3",
-    region: config.region || "auto",
-  });
-  const base = `${config.endpoint.replace(/\/+$/, "")}/${encodeURIComponent(config.bucket)}`;
-  const url = (key: string) => `${base}/${key.split("/").map(encodeURIComponent).join("/")}`;
-
-  const send = async (key: string, init: RequestInit): Promise<Response> => {
-    const signed = await client.sign(url(key), init);
-    return fetchImpl(signed);
-  };
-  const fail = async (what: string, key: string, response: Response): Promise<never> => {
-    const detail = (await response.text().catch(() => "")).slice(0, 300);
-    throw new ObjectStorageError(
-      `Object storage ${what} of ${key} answered ${response.status}${detail ? `: ${detail}` : ""}`,
-    );
-  };
-
+/**
+ * A private Vercel Blob store, reached with its read-write token. Keys are stored as the
+ * blob's pathname as is: no random suffix (keys are already unique attachment ids), and
+ * private access so a blob URL alone never serves the file.
+ */
+export function vercelBlobStorage(token: string): ObjectStorage {
   return {
     async put(key, body, contentType) {
-      const response = await send(key, {
-        method: "PUT",
-        body,
-        headers: { "content-type": contentType, "content-length": String(body.byteLength) },
-      });
-      if (!response.ok) await fail("upload", key, response);
-      await response.body?.cancel();
+      await wrap("upload", key, () =>
+        put(key, Buffer.from(body.buffer, body.byteOffset, body.byteLength), {
+          access: "private",
+          token,
+          contentType,
+          addRandomSuffix: false,
+        }),
+      );
     },
     async get(key) {
-      const response = await send(key, { method: "GET" });
-      if (response.status === 404) {
-        await response.body?.cancel();
-        return null;
-      }
-      if (!response.ok || !response.body) return fail("download", key, response);
-      return { body: response.body };
+      const result = await wrap("download", key, () =>
+        get(key, { access: "private", token, useCache: false }),
+      );
+      if (!result || result.statusCode !== 200) return null;
+      return { body: result.stream };
     },
     async delete(key) {
-      const response = await send(key, { method: "DELETE" });
-      if (!response.ok && response.status !== 404) await fail("delete", key, response);
-      await response.body?.cancel();
+      await wrap("delete", key, () => del(key, { token }));
     },
   };
 }
@@ -111,20 +92,14 @@ export function memoryObjectStorage(): ObjectStorage & {
   };
 }
 
-/** The configured bucket (`OBJECT_STORAGE_*`), or null when attachments aren't set up. */
+/**
+ * The configured blob store (`BLOB_READ_WRITE_TOKEN`, set by Vercel when a Blob store is
+ * connected to the project), or null when attachments aren't set up.
+ */
 export function getObjectStorage(
   env: Record<string, string | undefined> = process.env,
 ): ObjectStorage | null {
-  const endpoint = env.OBJECT_STORAGE_ENDPOINT;
-  const bucket = env.OBJECT_STORAGE_BUCKET;
-  const accessKeyId = env.OBJECT_STORAGE_ACCESS_KEY_ID;
-  const secretAccessKey = env.OBJECT_STORAGE_SECRET_ACCESS_KEY;
-  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) return null;
-  return s3ObjectStorage({
-    endpoint,
-    bucket,
-    accessKeyId,
-    secretAccessKey,
-    region: env.OBJECT_STORAGE_REGION,
-  });
+  const token = env.BLOB_READ_WRITE_TOKEN;
+  if (!token) return null;
+  return vercelBlobStorage(token);
 }

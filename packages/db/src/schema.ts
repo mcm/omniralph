@@ -1487,6 +1487,31 @@ export const attachments = pgTable(
   ],
 );
 
+/**
+ * An epic of a feature: a work item filed from the feature's plan (or linked to it later).
+ * A work item belongs to at most one feature.
+ */
+export const featureEpics = pgTable(
+  "feature_epics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    featureId: uuid("feature_id")
+      .notNull()
+      .references(() => features.id, { onDelete: "cascade" }),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    tracker: workItemTracker("tracker").notNull(),
+    /** The work item's ID in its tracker (a tracker issue ID). */
+    externalId: text("external_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("feature_epics_feature_idx").on(t.featureId),
+    uniqueIndex("feature_epics_item_uq").on(t.organizationId, t.tracker, t.externalId),
+  ],
+);
+
 // ── Agents ───────────────────────────────────────────────────────────────
 
 /** An agent's self-update progress (mirrors `AgentUpdateReport` in @omniralph/shared). */

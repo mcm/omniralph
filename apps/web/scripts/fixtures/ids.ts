@@ -30,6 +30,8 @@ const KINDS = {
   chatThread: 0x109,
   chatWebMessage: 0x10a,
   sprint: 0x10b,
+  feature: 0x10c,
+  featureDocument: 0x10d,
 } as const;
 
 /** The fixture UUID `n` of a kind of row. */
@@ -97,6 +99,11 @@ export const FIXTURE_IDS = {
     draft: fixtureId("sprint", 1),
     /** Running: its first epic merged, the second running. */
     running: fixtureId("sprint", 2),
+  },
+  /** Features of the main organization. */
+  features: {
+    /** Planning, scoped to the control panel, with a PRFAQ (two versions) and a Plan. */
+    planning: fixtureId("feature", 1),
   },
   /** The admin's web chats (Ask). */
   askChats: {

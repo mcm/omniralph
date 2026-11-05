@@ -7,6 +7,7 @@ import {
   createOrganization,
   featureDocuments,
   features,
+  linkFeatureEpic,
   saveIntegration,
   upsertScmConnection,
   users,
@@ -260,6 +261,29 @@ describe.skipIf(!databaseAvailable)("/api/ui/features and attachments", () => {
       expect(listed.map((f) => f.id)).toEqual([second.id, first.id]);
     });
 
+    it("counts each feature's epics, moving an epic linked to another feature", async () => {
+      const first = await created({ name: "First" });
+      const second = await created({ name: "Second" });
+      expect(first.epicCount).toBe(0);
+      const epic = (externalId: string, featureId: string) =>
+        linkFeatureEpic(db, {
+          organizationId: state.orgId,
+          tracker: "linear",
+          externalId,
+          featureId,
+        });
+      await epic("issue-1", first.id);
+      await epic("issue-2", first.id);
+      await epic("issue-3", second.id);
+      const { changes } = await captureChanges(() => epic("issue-2", second.id));
+      expect(changes.map((c) => c.ids)).toEqual([[second.id, first.id]]);
+      const listed = featureListSchema.parse((await call(list.GET, "GET")).body).features;
+      expect(Object.fromEntries(listed.map((f) => [f.name, f.epicCount]))).toEqual({
+        First: 1,
+        Second: 2,
+      });
+    });
+
     it("reads one feature; another organization's is 404", async () => {
       const feature = await created();
       const result = await call(one.GET, "GET", { id: feature.id });
@@ -377,8 +401,8 @@ describe.skipIf(!databaseAvailable)("/api/ui/features and attachments", () => {
           .parse(history.body)
           .versions.map((v) => [v.version, v.savedBy]),
       ).toEqual([
-        [2, "feature-user"],
-        [1, "feature-user"],
+        [2, "Ada"],
+        [1, "Ada"],
       ]);
     });
 

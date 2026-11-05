@@ -55,6 +55,16 @@ describe("apiRequest", () => {
     });
   });
 
+  it("sends FormData as is, letting fetch set the multipart content type", async () => {
+    const fetchMock = respond(JSON.stringify({ name: "x" }));
+    const form = new FormData();
+    form.set("file", new File(["hi"], "a.txt", { type: "text/plain" }));
+    await api.post("/api/ui/features/f/attachments", schema, { body: form });
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.body).toBe(form);
+    expect(init.headers).not.toHaveProperty("content-type");
+  });
+
   it("throws the server's message, code and field errors on a 4xx", async () => {
     respond(
       JSON.stringify({

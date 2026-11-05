@@ -38,12 +38,33 @@ export const ATTACHMENT_TYPES = {
 } as const satisfies Record<string, readonly string[]>;
 export type AttachmentContentType = keyof typeof ATTACHMENT_TYPES;
 
+/**
+ * The attachment type of a file: its declared type when it is one we take, else (no type,
+ * or a generic one) the type its extension names. Null when it isn't a type we take.
+ */
+export function attachmentContentType(
+  fileName: string,
+  declared: string,
+): AttachmentContentType | null {
+  const type = declared.split(";")[0]!.trim().toLowerCase();
+  if (type in ATTACHMENT_TYPES) return type as AttachmentContentType;
+  if (type && type !== "application/octet-stream") return null;
+  const extension = /\.[^.]+$/.exec(fileName.toLowerCase())?.[0];
+  if (!extension) return null;
+  const found = Object.entries(ATTACHMENT_TYPES).find(([, extensions]) =>
+    (extensions as readonly string[]).includes(extension),
+  );
+  return (found?.[0] as AttachmentContentType | undefined) ?? null;
+}
+
 export const featureRowSchema = z.object({
   id: z.string(),
   name: z.string(),
   status: z.enum(FEATURE_STATUSES),
   /** The repo the feature's epics build in, null when it isn't scoped to one. */
   repository: repositoryRefSchema.nullable(),
+  /** How many epics the feature has. */
+  epicCount: z.number(),
   createdAt: isoDate,
   updatedAt: isoDate,
 });
@@ -120,6 +141,7 @@ export type SavedFeatureDocument = z.infer<typeof savedFeatureDocumentSchema>;
 /** `GET /api/ui/features/{id}/documents/{kind}/versions`: every saved version, newest first. */
 export const featureDocumentVersionsSchema = z.object({
   versions: z.array(
+    // `savedBy`: the name of who saved it, null when unknown.
     z.object({ version: z.number(), savedAt: isoDate, savedBy: z.string().nullable() }),
   ),
 });

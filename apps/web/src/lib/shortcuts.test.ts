@@ -51,8 +51,8 @@ const relative = (file: string) => path.relative(path.resolve(WEB_SRC, "../../..
 const entries = Object.entries(SHORTCUTS) as [ShortcutId, ShortcutDefinition][];
 
 describe("SHORTCUTS", () => {
-  it("has 26 actions, each with one key that no other action answers", () => {
-    expect(entries).toHaveLength(26);
+  it("has 27 actions, each with one key that no other action answers", () => {
+    expect(entries).toHaveLength(27);
     expect(entries.filter(([, definition]) => !isOneKey(definition.key))).toEqual([]);
     expect(conflicts(SHORTCUTS)).toEqual([]);
   });
@@ -96,13 +96,23 @@ describe("SHORTCUTS", () => {
     ).toEqual([]);
   });
 
-  it("gives each Go to entry a digit, Ask skipped, keeping the digits people knew before Sprints, each to an entry whose page exists", () => {
+  it("gives each Go to entry a digit, Ask skipped, keeping the digits people knew before Sprints and Features, each to an entry whose page exists", () => {
     const goIds = entries.map(([id]) => id).filter((id) => id.startsWith("go"));
     const navOrder = navItems
       .map((item) => NAV_SHORTCUTS[item.id as keyof typeof NAV_SHORTCUTS])
       .filter((id) => id !== "ask");
     expect(goIds).toEqual(navOrder);
-    expect(goIds.map((id) => SHORTCUTS[id].key)).toEqual(["1", "2", "3", "8", "4", "5", "6", "7"]);
+    expect(goIds.map((id) => SHORTCUTS[id].key)).toEqual([
+      "1",
+      "2",
+      "3",
+      "8",
+      "9",
+      "4",
+      "5",
+      "6",
+      "7",
+    ]);
     for (const item of navItems) {
       const page = path.join(WEB_SRC, "app/(app)", item.href, "page.tsx");
       expect(existsSync(page), item.href).toBe(true);
