@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClaudeSignInError } from "../claude-credentials.js";
 import type { ClaudeStatus } from "../claude-status.js";
+import { silentLogger } from "../logger.js";
 import { claudeRoutes } from "./machine-routes.js";
 import { UiHttpError, type UiApiRequest, type UiRoute } from "./server.js";
 
@@ -75,5 +76,31 @@ describe("claudeRoutes' sign-in", () => {
     await expect(complete.handle(post({}))).rejects.toMatchObject({ status: 400 });
     await expect(complete.handle(post({ code: "  " }))).rejects.toMatchObject({ status: 400 });
     expect(check).not.toHaveBeenCalled();
+  });
+
+  it("logs a warning when the account in ~/.claude.json wasn't updated, and still succeeds", async () => {
+    const logger = silentLogger();
+    const warn = vi.spyOn(logger, "warn");
+    const routes = claudeRoutes(
+      { check: async () => SIGNED_IN },
+      {
+        signIn: {
+          start: () => ({ authorizeUrl: "https://x", expiresAt: "2026-11-06T05:15:00.000Z" }),
+          complete: async () => ({
+            email: null,
+            subscriptionType: null,
+            accountNotUpdated: "Can't read /home/coder/.claude.json (bad)",
+          }),
+        },
+        logger,
+      },
+    );
+    expect(await route(routes, "/api/claude/sign-in/complete").handle(post({ code: "c" }))).toEqual(
+      { status: 200, body: { claude: SIGNED_IN } },
+    );
+    expect(warn).toHaveBeenCalledWith(
+      { reason: "Can't read /home/coder/.claude.json (bad)" },
+      "Claude's tokens are stored, but its account in ~/.claude.json wasn't updated",
+    );
   });
 });

@@ -102,6 +102,12 @@ export function claudeRoutes(
         try {
           const result = await signIn.complete(code);
           logger?.info({ subscriptionType: result.subscriptionType }, "Claude signed in again");
+          if (result.accountNotUpdated) {
+            logger?.warn(
+              { reason: result.accountNotUpdated },
+              "Claude's tokens are stored, but its account in ~/.claude.json wasn't updated",
+            );
+          }
         } catch (error) {
           signInError(error);
         }
