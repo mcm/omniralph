@@ -18,6 +18,7 @@ import type {
   ClaudeLoginStatus,
   ReportedModel,
 } from "@omniralph/shared";
+import type { CheckStoredLogin } from "./claude-credentials.js";
 import type { Logger } from "./logger.js";
 import { InputQueue } from "./session/session.js";
 
@@ -102,6 +103,11 @@ export interface ClaudeStatus {
   checkedAt: string;
   /** Why the check didn't find a working login. */
   error?: string;
+  /**
+   * The `claude` login is still named on the machine, but its tokens are
+   * expired or were cleared after a failed refresh: "Refresh sign-in" fixes it.
+   */
+  expired?: true;
 }
 
 /**
@@ -126,6 +132,12 @@ export function isClaudeAuthError(error: unknown): boolean {
 
 export interface ClaudeStatusReporterOptions {
   read: ReadClaude;
+  /**
+   * Checks the `claude` login's stored tokens after a read that found one: the
+   * SDK names the account from `~/.claude.json` even when the CLI has cleared
+   * the tokens, so the read alone says "signed in".
+   */
+  checkStoredLogin?: CheckStoredLogin;
   logger: Logger;
   refreshIntervalMs?: number;
   readTimeoutMs?: number;
@@ -178,10 +190,20 @@ export class ClaudeStatusReporter extends EventEmitter<{ change: [ClaudeStatus] 
    * Checks again at once ("Check again"): a read already running is shared,
    * and one that started less than `checkMinIntervalMs` ago answers instead.
    */
-  async check(): Promise<ClaudeStatus> {
-    if (this.reading !== null) return this.reading;
+  async check(options: { force?: boolean } = {}): Promise<ClaudeStatus> {
+    if (this.reading !== null) {
+      if (!options.force) return this.reading;
+      // A read that started before a sign-in may have seen the old tokens.
+      await this.reading.catch(() => undefined);
+      return this.start();
+    }
     const minInterval = this.options.checkMinIntervalMs ?? CLAUDE_STATUS_CHECK_MIN_INTERVAL_MS;
-    if (this.last !== null && this.readAt !== null && this.now() - this.readAt < minInterval) {
+    if (
+      !options.force &&
+      this.last !== null &&
+      this.readAt !== null &&
+      this.now() - this.readAt < minInterval
+    ) {
       return this.last;
     }
     return this.start();
@@ -245,6 +267,19 @@ export class ClaudeStatusReporter extends EventEmitter<{ change: [ClaudeStatus] 
               models: reported,
               checkedAt,
             };
+      if (status.status === "signed_in" && status.source === "login") {
+        const problem = (await this.options.checkStoredLogin?.()) ?? null;
+        if (problem !== null) {
+          status = {
+            status: "signed_out",
+            source: null,
+            models: [],
+            checkedAt,
+            error: problem,
+            expired: true,
+          };
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       status = {

@@ -487,8 +487,10 @@ now** is disabled there.
 steve@example.com · Max") and where the credentials come from (the Claude login, an API key from
 `ANTHROPIC_API_KEY` or an OAuth token from `CLAUDE_CODE_OAUTH_TOKEN`), or **Not signed in** with
 the OS user to sign in as. It also lists the models the login can run and when it was last checked.
-**Check again** checks at once (at most once every 10 seconds). Signing in stays on the machine:
-see [Claude auth](claude-auth.md).
+**Check again** checks at once (at most once every 10 seconds). A login whose tokens `claude`
+cleared after a failed refresh shows as **Sign-in expired**. **Refresh sign-in…** signs it in again
+from the page: it opens Claude's sign-in in a new tab, and you paste back the code that page shows
+(see [Claude auth](claude-auth.md#refresh-sign-in)).
 
 **Storage** is read-only. It shows the free space of each filesystem the agent writes to (low under
 5 GB or 10 % free, which also puts a dot on the nav item), what the agent stores (**Repo cache**,

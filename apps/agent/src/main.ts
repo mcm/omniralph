@@ -41,6 +41,7 @@ import {
 import { createLogger, type Logger } from "./logger.js";
 import { logDirectory } from "./logs/rotating-file.js";
 import type { LogRing } from "./logs/ring.js";
+import { ClaudeSignIn, claudeLoginPaths, storedLoginChecker } from "./claude-credentials.js";
 import { ClaudeStatusReporter, sdkReadClaude, type ReadClaude } from "./claude-status.js";
 import { InstallHistory, installsPath } from "./packages/history.js";
 import { PackageManager } from "./packages/manager.js";
@@ -471,7 +472,13 @@ async function runAgent(
     history: installs,
     logger,
   });
-  const claude = new ClaudeStatusReporter({ read: deps.readClaude ?? sdkReadClaude(), logger });
+  const claudePaths = claudeLoginPaths(deps.env, deps.homeDir ?? homedir());
+  const claude = new ClaudeStatusReporter({
+    read: deps.readClaude ?? sdkReadClaude(),
+    checkStoredLogin: storedLoginChecker({ paths: claudePaths }),
+    logger,
+  });
+  const claudeSignIn = new ClaudeSignIn({ paths: claudePaths, fetch: deps.fetch, env: deps.env });
   const hub = new UiEventHub();
   // Set right after the daemon exists (it reads the daemon); nothing heartbeats before `run()`.
   let onHeartbeat = () => {};
@@ -534,7 +541,11 @@ async function runAgent(
       ...settingsRoutes(settings),
       ...packageRoutes({ packages, history: installs, logger }),
       ...updateRoutes({ updater, daemon }),
-      ...claudeRoutes(claude),
+      ...claudeRoutes(claude, {
+        signIn: claudeSignIn,
+        heartbeatSoon: () => daemon.heartbeatSoon(),
+        logger,
+      }),
       ...storageRoutes({ storage, logger }),
       ...attemptRoutes({ history, log: logSources, logger }),
       ...logRoutes({ log: logSources, logger }),
