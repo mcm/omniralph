@@ -281,3 +281,54 @@ describe("sdkReadClaude", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("ClaudeStatusReporter's stored-login check", () => {
+  it("reports a cleared claude login as expired even though the SDK names the account", async () => {
+    const checkStoredLogin = vi.fn(
+      async () => "Claude's sign-in expired and couldn't be refreshed",
+    );
+    const claude = new ClaudeStatusReporter({
+      read: async () => read(firstParty),
+      checkStoredLogin,
+      logger: silentLogger(),
+      now: () => START,
+    });
+    expect(await claude.current()).toEqual({
+      status: "signed_out",
+      source: null,
+      models: [],
+      checkedAt: "2026-10-28T10:00:00.000Z",
+      error: "Claude's sign-in expired and couldn't be refreshed",
+      expired: true,
+    } satisfies ClaudeStatus);
+    expect(checkStoredLogin).toHaveBeenCalledTimes(1);
+  });
+
+  it("only checks the claude login, not an env var's credentials", async () => {
+    const checkStoredLogin = vi.fn(async () => "expired");
+    const claude = new ClaudeStatusReporter({
+      read: async () => read({ ...firstParty, apiKeySource: "ANTHROPIC_API_KEY" }),
+      checkStoredLogin,
+      logger: silentLogger(),
+    });
+    expect((await claude.current()).status).toBe("signed_in");
+    expect(checkStoredLogin).not.toHaveBeenCalled();
+  });
+
+  it("check({ force }) reads again inside the minimum interval and after a running read", async () => {
+    let calls = 0;
+    const claude = new ClaudeStatusReporter({
+      read: async () => {
+        calls += 1;
+        return read(firstParty);
+      },
+      logger: silentLogger(),
+      now: () => START,
+    });
+    await claude.current();
+    await claude.check();
+    expect(calls).toBe(1);
+    await claude.check({ force: true });
+    expect(calls).toBe(2);
+  });
+});

@@ -12,6 +12,7 @@ export const SOURCE_LABELS: Record<ClaudeLoginSource, string> = {
 };
 
 export const NOT_SIGNED_IN = "Not signed in";
+export const SIGN_IN_EXPIRED = "Sign-in expired";
 export const NOT_CHECKED = "Not checked yet";
 export const CHECK_FAILED = "Couldn't check whether Claude is signed in";
 export const NO_MODELS = "None reported";
@@ -25,10 +26,22 @@ export function subscriptionLabel(type: string): string {
 /** The headline: "Signed in as steve@example.com · Max", "Not signed in", … */
 export function loginHeadline(claude: ClaudeStatus | null): { text: string; tone?: StatusTone } {
   if (claude === null) return { text: NOT_CHECKED };
-  if (claude.status === "signed_out") return { text: NOT_SIGNED_IN, tone: "fail" };
+  if (claude.status === "signed_out") {
+    return { text: claude.expired ? SIGN_IN_EXPIRED : NOT_SIGNED_IN, tone: "fail" };
+  }
   if (claude.status === "unknown") return { text: CHECK_FAILED };
   const email = claude.account?.email ?? null;
   const plan = claude.account?.subscriptionType ?? null;
   const who = email === null ? "Signed in" : `Signed in as ${email}`;
   return { text: plan === null ? who : `${who} · ${subscriptionLabel(plan)}` };
+}
+
+/**
+ * Whether "Refresh sign-in…" can help: not when an env var or a third-party
+ * provider supplies the credentials (the agent says why otherwise).
+ */
+export function canRefreshSignIn(claude: ClaudeStatus | null): boolean {
+  if (claude === null) return false;
+  if (claude.status === "signed_in") return claude.source === "login";
+  return true;
 }
