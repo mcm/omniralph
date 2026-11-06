@@ -36,7 +36,12 @@ function memoryFs(files: Record<string, unknown> = {}) {
       store.set(file, JSON.stringify(value));
     },
   };
-  return { fs, json: (file: string) => JSON.parse(store.get(file) ?? "null") as unknown };
+  return {
+    fs,
+    json: (file: string) => JSON.parse(store.get(file) ?? "null") as unknown,
+    raw: (file: string) => store.get(file),
+    setRaw: (file: string, text: string) => store.set(file, text),
+  };
 }
 
 describe("claudeLoginPaths", () => {
@@ -286,5 +291,99 @@ describe("ClaudeSignIn", () => {
     expect(() =>
       signIn({ fetch: stubFetch(), env: { CLAUDE_CODE_OAUTH_TOKEN: "t" } }).flow.start(),
     ).toThrow(/CLAUDE_CODE_OAUTH_TOKEN is set/);
+  });
+
+  it("stops before spending the code when .credentials.json can't be read, then accepts the same code", async () => {
+    const fetch = stubFetch();
+    const { flow, setRaw, json } = signIn({ fetch });
+    setRaw(PATHS.credentials, '{"mcpOAuth": {"server": {"token": "keep"}}');
+    flow.start();
+    const error = await flow.complete("the-code").catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ClaudeSignInError);
+    expect((error as ClaudeSignInError).status).toBe(409);
+    expect((error as Error).message).toMatch(
+      /^Can't read \/home\/coder\/\.claude\/\.credentials\.json \(.+\): fix or move it, then save again$/,
+    );
+    expect(fetch).not.toHaveBeenCalled();
+
+    setRaw(PATHS.credentials, '{"mcpOAuth": {"server": {"token": "keep"}}}');
+    await flow.complete("the-code");
+    expect(json(PATHS.credentials)).toMatchObject({
+      mcpOAuth: { server: { token: "keep" } },
+      claudeAiOauth: { accessToken: "sk-ant-oat01-new" },
+    });
+  });
+
+  it("refuses a .credentials.json that isn't a JSON object", async () => {
+    const { flow, setRaw } = signIn({ fetch: stubFetch() });
+    setRaw(PATHS.credentials, "[]");
+    flow.start();
+    await expect(flow.complete("the-code")).rejects.toThrow(/not a JSON object/);
+  });
+
+  it("stores the tokens but leaves an unreadable ~/.claude.json alone, and says so", async () => {
+    const { flow, setRaw, raw, json } = signIn({ fetch: stubFetch() });
+    setRaw(PATHS.globalConfig, '{"numStartups": 12,');
+    flow.start();
+    const result = await flow.complete("the-code");
+    expect(result.email).toBe("steve@example.com");
+    expect(result.accountNotUpdated).toMatch(/^Can't read \/home\/coder\/\.claude\.json \(/);
+    expect(raw(PATHS.globalConfig)).toBe('{"numStartups": 12,');
+    expect(json(PATHS.credentials)).toMatchObject({
+      claudeAiOauth: { accessToken: "sk-ant-oat01-new" },
+    });
+  });
+
+  it("stores the tokens when ~/.claude.json can't be written, and says so", async () => {
+    const memory = memoryFs({ [PATHS.globalConfig]: { numStartups: 12 } });
+    const writes: string[] = [];
+    const fs: ClaudeCredentialsFs = {
+      readFile: memory.fs.readFile,
+      writePrivateJson: async (file, value) => {
+        writes.push(file);
+        if (file === PATHS.globalConfig) throw new Error("EACCES: permission denied");
+        await memory.fs.writePrivateJson(file, value);
+      },
+    };
+    const flow = new ClaudeSignIn({
+      paths: PATHS,
+      fetch: stubFetch(),
+      fs,
+      now: () => NOW,
+      env: {},
+      platform: "linux",
+    });
+    flow.start();
+    const result = await flow.complete("the-code");
+    expect(result.accountNotUpdated).toBe(
+      "Can't write /home/coder/.claude.json (EACCES: permission denied)",
+    );
+    expect(writes).toEqual([PATHS.credentials, PATHS.globalConfig]);
+    expect(memory.json(PATHS.credentials)).toMatchObject({
+      claudeAiOauth: { accessToken: "sk-ant-oat01-new" },
+    });
+  });
+
+  it("keeps keys claude wrote to .credentials.json while the code was being exchanged", async () => {
+    const memory = memoryFs({ [PATHS.credentials]: { mcpOAuth: { a: 1 } } });
+    const token = tokenResponse();
+    const fetch = vi.fn<FetchFn>(async (input) => {
+      if (String(input) === CLAUDE_OAUTH_TOKEN_URL) {
+        await memory.fs.writePrivateJson(PATHS.credentials, { mcpOAuth: { a: 1, b: 2 } });
+        return Response.json(token);
+      }
+      return new Response(null, { status: 500 });
+    });
+    const flow = new ClaudeSignIn({
+      paths: PATHS,
+      fetch,
+      fs: memory.fs,
+      now: () => NOW,
+      env: {},
+      platform: "linux",
+    });
+    flow.start();
+    await flow.complete("the-code");
+    expect(memory.json(PATHS.credentials)).toMatchObject({ mcpOAuth: { a: 1, b: 2 } });
   });
 });

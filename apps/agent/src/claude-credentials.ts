@@ -89,6 +89,11 @@ export const nodeClaudeCredentialsFs: ClaudeCredentialsFs = {
   writePrivateJson,
 };
 
+/**
+ * A JSON object file; null only when it doesn't exist. A file that can't be
+ * read, isn't JSON or isn't an object throws: writing over it would lose what
+ * it holds.
+ */
 async function readJsonObject(
   fs: ClaudeCredentialsFs,
   file: string,
@@ -101,9 +106,14 @@ async function readJsonObject(
     throw error;
   }
   const value: unknown = JSON.parse(text);
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("not a JSON object");
+  }
+  return value as Record<string, unknown>;
+}
+
+function reason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** The stored `claudeAiOauth`; null when there's no file or no login in it. */
@@ -175,6 +185,11 @@ export interface ClaudeSignInStart {
 export interface ClaudeSignInResult {
   email: string | null;
   subscriptionType: string | null;
+  /**
+   * Why `~/.claude.json`'s `oauthAccount` wasn't updated (it can't be read or
+   * written); the tokens are stored either way. Absent when it was.
+   */
+  accountNotUpdated?: string;
 }
 
 /** A failure the page shows as it is (a 4xx/5xx with this message). */
@@ -298,6 +313,21 @@ export class ClaudeSignIn {
     if (state !== undefined && state !== pending.state) {
       throw new ClaudeSignInError(400, "That code is from another sign-in: start again");
     }
+    const fs = this.options.fs ?? nodeClaudeCredentialsFs;
+    const { credentials, globalConfig } = this.options.paths;
+    // Before the code is spent: a `.credentials.json` that can't be read would
+    // lose its other keys (MCP logins) to the write, so it stops the sign-in
+    // while the same code can still be tried again once the file is fixed.
+    let stored: Record<string, unknown>;
+    try {
+      stored = (await readJsonObject(fs, credentials)) ?? {};
+    } catch (error) {
+      throw new ClaudeSignInError(
+        409,
+        `Can't read ${credentials} (${reason(error)}): fix or move it, then save again`,
+      );
+    }
+
     const tokens = await this.exchange(code, pending);
     // A code works once: whatever happens next, this sign-in is done.
     this.pending = null;
@@ -306,10 +336,10 @@ export class ClaudeSignIn {
     const subscriptionType = orgType ? (SUBSCRIPTION_TYPES[orgType] ?? null) : null;
     const rateLimitTier = profile?.organization?.rate_limit_tier ?? null;
     const now = this.now();
-    const fs = this.options.fs ?? nodeClaudeCredentialsFs;
-    const { credentials, globalConfig } = this.options.paths;
 
-    const stored = (await readJsonObject(fs, credentials).catch(() => null)) ?? {};
+    // `claude` may have rewritten the file during the exchange (up to 2 minutes):
+    // keep what it holds now, or what it held before if it can't be read now.
+    stored = (await readJsonObject(fs, credentials).catch(() => stored)) ?? {};
     await fs.writePrivateJson(credentials, {
       ...stored,
       claudeAiOauth: {
@@ -329,14 +359,25 @@ export class ClaudeSignIn {
     const email = tokens.account?.email_address ?? profile?.account?.email ?? null;
     const accountUuid = tokens.account?.uuid ?? profile?.account?.uuid;
     const organizationUuid = tokens.organization?.uuid ?? profile?.organization?.uuid;
-    // `~/.claude.json` is the CLI's big config file: only `oauthAccount` changes.
-    const config = await readJsonObject(fs, globalConfig);
+    // `~/.claude.json` is the CLI's big config file: only `oauthAccount` changes. It only
+    // names the account, so when it can't be read it's left alone: writing over it would
+    // lose the rest, and the tokens are already stored.
+    let config: Record<string, unknown> | null;
+    try {
+      config = await readJsonObject(fs, globalConfig);
+    } catch (error) {
+      return {
+        email,
+        subscriptionType,
+        accountNotUpdated: `Can't read ${globalConfig} (${reason(error)})`,
+      };
+    }
     if (config !== null || accountUuid !== undefined) {
       const previous =
         config?.oauthAccount !== null && typeof config?.oauthAccount === "object"
           ? (config.oauthAccount as Record<string, unknown>)
           : {};
-      await fs.writePrivateJson(globalConfig, {
+      const account = {
         ...config,
         hasCompletedOnboarding: true,
         oauthAccount: {
@@ -348,7 +389,16 @@ export class ClaudeSignIn {
             organizationName: tokens.organization.name,
           }),
         },
-      });
+      };
+      try {
+        await fs.writePrivateJson(globalConfig, account);
+      } catch (error) {
+        return {
+          email,
+          subscriptionType,
+          accountNotUpdated: `Can't write ${globalConfig} (${reason(error)})`,
+        };
+      }
     }
     return { email, subscriptionType };
   }
