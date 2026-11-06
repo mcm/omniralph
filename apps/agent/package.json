@@ -1,6 +1,6 @@
 {
   "name": "@omniralph/agent",
-  "version": "2.3.3",
+  "version": "2.3.4",
   "description": "Omniralph agent daemon",
   "type": "module",
   "repository": {
