@@ -190,6 +190,7 @@ was enrolled into (sent with each heartbeat; there's no variable for it). See
 | `OMNIRALPH_LOG_LEVEL`     | no       | `info`                           | pino log level: `trace`, `debug`, `info`, `warn`, `error`.                                                   |
 | `ANTHROPIC_API_KEY`       | no       | — (the host's `claude` login)    | Use an Anthropic API key for Claude instead of the logged-in `claude`. See [claude-auth.md](claude-auth.md). |
 | `CLAUDE_CODE_OAUTH_TOKEN` | no       | — (the host's `claude` login)    | A long-lived Claude Code OAuth token (`claude setup-token`) instead of the login on disk.                    |
+| `CLAUDE_CONFIG_DIR`       | no       | `~/.claude`                      | Where `claude` keeps its login, if moved. See [claude-auth.md](claude-auth.md#refresh-sign-in).              |
 
 The agent sets `OMNIRALPH_JOB_TOKEN`, `OMNIRALPH_JOB_ID`, `OMNIRALPH_SERVER` and, for Claude
 sessions, `OMNIRALPH_JOB_TOKEN_FILE` itself for processes inside a job (the `git-credential`
