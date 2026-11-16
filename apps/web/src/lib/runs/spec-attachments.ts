@@ -1,11 +1,14 @@
 /**
  * The files people attached in Omniralph to the epic a run works on and to that epic's
- * feature, as the run spec lists them: each with a short-lived presigned URL into the blob
- * store, so the agent downloads them without credentials (and only those files).
+ * feature, or to the feature a sharding round plans, as the run spec lists them: each with a
+ * short-lived presigned URL into the blob store, so the agent downloads them without
+ * credentials (and only those files).
  */
 import "server-only";
 import {
   getEpicFeature,
+  getFeature,
+  getFeatureShard,
   getRun,
   listAttachments,
   type Attachment,
@@ -13,7 +16,7 @@ import {
   type Job,
   type WorkItemKey,
 } from "@omniralph/db";
-import { MAX_RUN_ATTACHMENTS, type RunAttachment } from "@omniralph/shared";
+import { FeatureShardInvoker, MAX_RUN_ATTACHMENTS, type RunAttachment } from "@omniralph/shared";
 import { WORK_ITEM_TRACKERS } from "@/lib/api/work-item-matches";
 import { getObjectStorage, type ObjectStorage } from "@/lib/attachments/storage";
 
@@ -29,6 +32,19 @@ export class RunAttachmentsError extends Error {
     super(message);
     this.name = "RunAttachmentsError";
   }
+}
+
+/** How attachments are listed: file storage, and the time their URLs count from (tests). */
+export interface ResolveAttachmentsOptions {
+  storage?: ObjectStorage | null;
+  now?: Date;
+}
+
+/** An attachment to list, with what it is attached to. */
+interface ListedAttachment {
+  attachment: Attachment;
+  owner: RunAttachment["owner"];
+  name: string;
 }
 
 function isWorkItemTracker(provider: string): provider is WorkItemKey["tracker"] {
@@ -48,7 +64,7 @@ function isWorkItemTracker(provider: string): provider is WorkItemKey["tracker"]
 export async function resolveRunAttachments(
   db: Database,
   job: Pick<Job, "ralphRunId">,
-  options: { storage?: ObjectStorage | null; now?: Date } = {},
+  options: ResolveAttachmentsOptions = {},
 ): Promise<RunAttachment[]> {
   if (!job.ralphRunId) return [];
   const run = await getRun(db, job.ralphRunId);
@@ -59,31 +75,70 @@ export async function resolveRunAttachments(
     externalId: run.trackerIssueId,
   };
   const feature = await getEpicFeature(db, key);
-  const listed: Array<{ attachment: Attachment; owner: RunAttachment["owner"]; name: string }> = [
-    ...(feature
-      ? await listAttachments(db, {
-          kind: "feature",
-          organizationId: run.organizationId,
-          featureId: feature.id,
-        })
-      : []
-    ).map((attachment) => ({ attachment, owner: "feature" as const, name: feature!.name })),
+  const listed: ListedAttachment[] = [
+    ...(feature ? await featureAttachments(db, run.organizationId, feature.id, feature.name) : []),
     ...(await listAttachments(db, { kind: "work_item", ...key })).map((attachment) => ({
       attachment,
       owner: "epic" as const,
       name: run.trackerIdentifier || "the epic",
     })),
   ];
+  return presign(listed, "the epic and its feature", options);
+}
+
+/**
+ * The attachments of the feature a sharding round plans: a run whose trigger context names a
+ * feature's sharding as its invoker (`feature-shard`: the round's worker, or its verifier,
+ * whichever playbook that is). None for any other run, or a sharding that no longer exists.
+ *
+ * Throws as `resolveRunAttachments` does.
+ */
+export async function resolveShardAttachments(
+  db: Database,
+  job: Pick<Job, "organizationId">,
+  context: Record<string, unknown>,
+  options: ResolveAttachmentsOptions = {},
+): Promise<RunAttachment[]> {
+  const invoker = FeatureShardInvoker.safeParse(context.invoker);
+  if (!invoker.success) return [];
+  const shard = await getFeatureShard(db, job.organizationId, invoker.data.id);
+  if (!shard) return [];
+  const feature = await getFeature(db, job.organizationId, shard.featureId);
+  if (!feature) return [];
+  const listed = await featureAttachments(db, job.organizationId, feature.id, feature.name);
+  return presign(listed, "the feature", options);
+}
+
+async function featureAttachments(
+  db: Database,
+  organizationId: string,
+  featureId: string,
+  name: string,
+): Promise<ListedAttachment[]> {
+  const attachments = await listAttachments(db, { kind: "feature", organizationId, featureId });
+  return attachments.map((attachment) => ({ attachment, owner: "feature" as const, name }));
+}
+
+/**
+ * `listed` as the run spec lists them, each with a URL that works for
+ * `RUN_ATTACHMENT_URL_TTL_SECONDS`; the errors name what they are attached to (`owners`,
+ * e.g. "the feature").
+ */
+async function presign(
+  listed: readonly ListedAttachment[],
+  owners: string,
+  options: ResolveAttachmentsOptions,
+): Promise<RunAttachment[]> {
   if (listed.length === 0) return [];
   if (listed.length > MAX_RUN_ATTACHMENTS) {
     throw new RunAttachmentsError(
-      `The epic and its feature have ${listed.length} attachments, more than the ${MAX_RUN_ATTACHMENTS} a run downloads. Remove some, then retry.`,
+      `There are ${listed.length} attachments on ${owners}, more than the ${MAX_RUN_ATTACHMENTS} a run downloads. Remove some, then retry.`,
     );
   }
   const storage = options.storage === undefined ? getObjectStorage() : options.storage;
   if (!storage) {
     throw new RunAttachmentsError(
-      "The epic or its feature has attachments, but file storage isn't set up on the control panel (BLOB_READ_WRITE_TOKEN), so the run can't download them.",
+      `There are attachments on ${owners}, but file storage isn't set up on the control panel (BLOB_READ_WRITE_TOKEN), so the run can't download them.`,
     );
   }
   const expiresAt = new Date(

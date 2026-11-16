@@ -38,11 +38,11 @@ describe("VARIABLES", () => {
     expect(findVariable("nope")).toBeUndefined();
   });
 
-  it("gives query tasks question, hunk, conventions and checkout", () => {
+  it("gives query tasks question, hunk, conventions, checkout and attachedFiles", () => {
     const query = VARIABLES.filter(
       (variable) => variable.source === "taskType" && variable.taskTypes.includes("query"),
     ).map((variable) => variable.name);
-    expect(query).toEqual(["question", "hunk", "conventions", "checkout"]);
+    expect(query).toEqual(["question", "hunk", "conventions", "checkout", "attachedFiles"]);
   });
 
   it("gives review tasks the depth, check, rubric, rules, diff, plan, risk, conventions, previous findings and earlier passes", () => {
@@ -234,6 +234,7 @@ describe("availableVariables", () => {
       "hunk",
       "conventions",
       "checkout",
+      "attachedFiles",
     ]);
   });
 });

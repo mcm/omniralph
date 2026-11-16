@@ -658,6 +658,12 @@ that build them, so nobody has to commit mockups or specs to the repo:
 - **Which files.** A story run on any of an epic's tasks, and a request run on the epic, get the
   files attached to the epic (the run's delegated issue) and, when the epic is one of a feature's
   epics, the feature's files (listed first). Push runs, which have no session, don't download them.
+- **Sharding.** Each round of a feature's sharding (the worker drafting the epics and the
+  verifier judging them, whichever playbook that is) gets the feature's files, so mockups and specs
+  shape the epics before anything is filed. The query run downloads them the same way, keeps the
+  file tools for them even when the repo's ref can't be checked out, and lists them in the
+  prompt's **Attached files** section with the `{{attachedFiles}}` variable. Using that variable
+  needs agent 2.4.0 or later.
 - **Run spec.** When the job is claimed, its run spec's `attachments` lists each file (`owner`
   `epic` or `feature`, the epic's identifier or the feature's name, file name, type, size) with a
   presigned URL into the Blob store that reads only that file and expires after 30 minutes

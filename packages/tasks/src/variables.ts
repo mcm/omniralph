@@ -1198,6 +1198,15 @@ export const VARIABLES: readonly VariableDefinition[] = [
     taskTypes: ["query"],
     description: "True when the working directory holds a checkout of the run's ref.",
   },
+  {
+    name: "attachedFiles",
+    source: "taskType",
+    trust: "trusted",
+    taskTypes: ["query"],
+    minAgentVersion: "2.4.0",
+    description:
+      "Markdown list of the files attached in Omniralph to the feature a sharding plans, downloaded outside any checkout: each one's path, name and type, and what it is attached to (null without any, and for every other query).",
+  },
 ];
 
 /** The catalog entry named `name`, if any. */

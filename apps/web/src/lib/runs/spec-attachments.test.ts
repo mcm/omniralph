@@ -3,6 +3,7 @@ import {
   closeDb,
   createDb,
   createFeature,
+  createFeatureShard,
   createOrganization,
   createRun,
   insertAttachment,
@@ -28,8 +29,12 @@ vi.mock("@/lib/attachments/storage", async (importOriginal) => {
 });
 
 const { memoryObjectStorage } = await import("@/lib/attachments/storage");
-const { RUN_ATTACHMENT_URL_TTL_SECONDS, resolveRunAttachments, RunAttachmentsError } =
-  await import("./spec-attachments");
+const {
+  RUN_ATTACHMENT_URL_TTL_SECONDS,
+  resolveRunAttachments,
+  resolveShardAttachments,
+  RunAttachmentsError,
+} = await import("./spec-attachments");
 const { resolveRunSpec, RunSpecError } = await import("./resolve");
 const { BUILTIN_PLAYBOOK_SOURCE } = await import("@/lib/playbooks");
 
@@ -83,6 +88,18 @@ describe.skipIf(!databaseAvailable)("the attachments a run spec lists", () => {
     });
     if (created.status !== "created") throw new Error(created.status);
     return created.feature;
+  }
+
+  /** A sharding of `featureId`, as its rounds' trigger contexts name it. */
+  async function sharding(featureId: string) {
+    const { shard } = await createFeatureShard(db, {
+      organizationId: orgId,
+      featureId,
+      planVersion: 1,
+      sections: [],
+      createdBy: "planner",
+    });
+    return { invoker: { kind: "feature-shard", id: shard.id } };
   }
 
   async function attach(
@@ -175,6 +192,30 @@ describe.skipIf(!databaseAvailable)("the attachments a run spec lists", () => {
     );
   });
 
+  it("lists the files of the feature a sharding plans, and nothing for another run", async () => {
+    const checkout = await feature("Sharded checkout");
+    const board = await attach(
+      { kind: "feature", organizationId: orgId, featureId: checkout.id },
+      "board.pdf",
+      "application/pdf",
+    );
+    const elsewhere = await feature("Elsewhere again");
+    await attach({ kind: "feature", organizationId: orgId, featureId: elsewhere.id }, "other.png");
+    const context = await sharding(checkout.id);
+
+    const listed = await resolveShardAttachments(db, { organizationId: orgId }, context, {
+      now: NOW,
+    });
+    expect(listed.map((a) => [a.id, a.owner, a.ownerName, a.fileName])).toEqual([
+      [board.id, "feature", "Sharded checkout", "board.pdf"],
+    ]);
+    const other = { invoker: { kind: "review-run", id: context.invoker.id } };
+    expect(await resolveShardAttachments(db, { organizationId: orgId }, other)).toEqual([]);
+    expect(await resolveShardAttachments(db, { organizationId: orgId }, {})).toEqual([]);
+    const unknown = { invoker: { kind: "feature-shard", id: randomUUID() } };
+    expect(await resolveShardAttachments(db, { organizationId: orgId }, unknown)).toEqual([]);
+  });
+
   describe("in the run spec", () => {
     const tokens = (jobId: string): { lifecycle: JobToken; session: JobToken } => ({
       lifecycle: { jobId, token: "lifecycle", expiresIn: 900, kind: "lifecycle" },
@@ -203,6 +244,27 @@ describe.skipIf(!databaseAvailable)("the attachments a run spec lists", () => {
         ["feature", "board.png"],
         ["epic", "flow.png"],
       ]);
+    });
+
+    it("gives a sharding round's worker and verifier the feature's files", async () => {
+      const planned = await feature("Planned");
+      await attach({ kind: "feature", organizationId: orgId, featureId: planned.id }, "board.png");
+      const context = await sharding(planned.id);
+      for (const taskId of ["builtin:shard-plan", "builtin:verify-shard"]) {
+        const round = {
+          id: randomUUID(),
+          organizationId: orgId,
+          taskType: "query",
+          taskId,
+          repositoryId: null,
+          ralphRunId: null,
+          payload: { trigger: { kind: "run.invoked", context } },
+        } as unknown as Job;
+        const spec = await resolveRunSpec(db, round, tokens(round.id), BUILTIN_PLAYBOOK_SOURCE);
+        expect(RunSpec.parse(spec).attachments?.map((a) => [a.owner, a.fileName])).toEqual([
+          ["feature", "board.png"],
+        ]);
+      }
     });
 
     it("leaves attachments out of a run on an epic without any", async () => {
