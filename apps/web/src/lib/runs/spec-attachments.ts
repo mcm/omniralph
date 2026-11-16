@@ -83,7 +83,11 @@ export async function resolveRunAttachments(
       name: run.trackerIdentifier || "the epic",
     })),
   ];
-  return presign(listed, "the epic and its feature", options);
+  return presign(
+    listed,
+    { all: "The epic and its feature have", some: "The epic or its feature has" },
+    options,
+  );
 }
 
 /**
@@ -106,7 +110,7 @@ export async function resolveShardAttachments(
   const feature = await getFeature(db, job.organizationId, shard.featureId);
   if (!feature) return [];
   const listed = await featureAttachments(db, job.organizationId, feature.id, feature.name);
-  return presign(listed, "the feature", options);
+  return presign(listed, { all: "The feature has", some: "The feature has" }, options);
 }
 
 async function featureAttachments(
@@ -121,24 +125,24 @@ async function featureAttachments(
 
 /**
  * `listed` as the run spec lists them, each with a URL that works for
- * `RUN_ATTACHMENT_URL_TTL_SECONDS`; the errors name what they are attached to (`owners`,
- * e.g. "the feature").
+ * `RUN_ATTACHMENT_URL_TTL_SECONDS`. The errors start with what the files are attached to:
+ * `owners.all` before their count, `owners.some` when any of them has files.
  */
 async function presign(
   listed: readonly ListedAttachment[],
-  owners: string,
+  owners: { all: string; some: string },
   options: ResolveAttachmentsOptions,
 ): Promise<RunAttachment[]> {
   if (listed.length === 0) return [];
   if (listed.length > MAX_RUN_ATTACHMENTS) {
     throw new RunAttachmentsError(
-      `There are ${listed.length} attachments on ${owners}, more than the ${MAX_RUN_ATTACHMENTS} a run downloads. Remove some, then retry.`,
+      `${owners.all} ${listed.length} attachments, more than the ${MAX_RUN_ATTACHMENTS} a run downloads. Remove some, then retry.`,
     );
   }
   const storage = options.storage === undefined ? getObjectStorage() : options.storage;
   if (!storage) {
     throw new RunAttachmentsError(
-      `There are attachments on ${owners}, but file storage isn't set up on the control panel (BLOB_READ_WRITE_TOKEN), so the run can't download them.`,
+      `${owners.some} attachments, but file storage isn't set up on the control panel (BLOB_READ_WRITE_TOKEN), so the run can't download them.`,
     );
   }
   const expiresAt = new Date(
