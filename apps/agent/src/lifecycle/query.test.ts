@@ -349,6 +349,75 @@ describe("runQueryTask", () => {
     await expectTornDown();
   });
 
+  describe("the run's attachments", () => {
+    const BOARD = "https://blob.test/attachments/board.png?expires=1";
+    const withFiles = (overrides: Partial<RunSpecType> = {}) =>
+      spec({
+        task: taskFixture({
+          promptTemplate: `${TEMPLATE}\n{{#attachedFiles}}\nFiles:\n{{attachedFiles}}\n{{/attachedFiles}}`,
+        }),
+        attachments: [
+          {
+            id: randomUUID(),
+            owner: "feature",
+            ownerName: "Checkout redesign",
+            fileName: "board.png",
+            contentType: "image/png",
+            size: 5,
+            url: BOARD,
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          },
+        ],
+        ...overrides,
+      });
+    /** Serves the attachment (or answers `status` for it) and records the activities. */
+    const serving = (status = 200) =>
+      (async (input: string | URL | Request, init?: RequestInit) =>
+        String(input) === BOARD
+          ? new Response(status === 200 ? "board" : "gone", { status })
+          : recordingFetch(input, init)) as typeof fetch;
+
+    it("downloads them outside the checkout, lists them and lets the session read them", async () => {
+      let during: string | null = null;
+      const fake = scriptedQuery(async function* (call) {
+        const file = /`([^`]+board\.png)`/.exec(call.prompt)?.[1];
+        during = file ? await readFile(file, "utf8") : null;
+        yield resultMessage(ANSWER);
+      });
+      const { calls } = await run(withFiles(), fake, serving());
+      const options = calls[0]?.options;
+      expect(during).toBe("board");
+      expect(calls[0]?.prompt).toMatch(
+        /Files:\n- `[^`]+\/feature\/board\.png`: board\.png \(image\/png\), attached to the feature "Checkout redesign"/,
+      );
+      const [dir] = options?.additionalDirectories ?? [];
+      expect(path.dirname(dir ?? "")).toBe(tmp);
+      expect(options?.cwd).not.toBe(dir);
+      await expectTornDown();
+    });
+
+    it("leaves the list out of a run without any", async () => {
+      const { calls } = await run(withFiles({ attachments: [] }));
+      expect(calls[0]?.prompt).not.toContain("Files:");
+      expect(calls[0]?.options.additionalDirectories).toBeUndefined();
+    });
+
+    it("keeps the file tools for them when the ref can't be checked out", async () => {
+      const { calls } = await run(withFiles({ ref: "no-such-branch" }), answering(), serving());
+      expect(calls[0]?.options.tools).toEqual(["Read", "Grep", "Glob"]);
+      await expectTornDown();
+    });
+
+    it("fails before the session when one can't be downloaded", async () => {
+      const fake = answering();
+      await expect(run(withFiles(), fake, serving(404))).rejects.toThrow(
+        'Couldn\'t download the attachment "board.png" (attached to the feature "Checkout redesign"): the file store answered HTTP 404',
+      );
+      expect(fake.calls).toEqual([]);
+      await expectTornDown();
+    });
+  });
+
   it("finishes with no_checkout and no session when a checkout is required", async () => {
     const fake = answering();
     const { result } = await run(spec({ ref: "no-such-branch", requireCheckout: true }), fake);

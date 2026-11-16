@@ -22,6 +22,7 @@ import {
   type SessionRunner,
 } from "../session/session.js";
 import { ActivityRelay } from "../tools/activities.js";
+import { downloadRunAttachments, type DownloadedRunAttachments } from "../tools/run-attachments.js";
 import {
   createOmniralphServer,
   offeredAgentTools,
@@ -130,7 +131,11 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
 /**
  * Runs a `query` task through the fixed lifecycle, with no per-task code:
  *
- * 1. Prepare: without a `ref`, an empty temp directory; with one, the
+ * 1. Prepare: the run spec's `attachments` (a feature's sharding: the files attached
+ *    to the feature) are downloaded first, their links being short-lived, into a
+ *    temporary folder of their own the session may read (`downloadRunAttachments`;
+ *    a failed download fails the run before anything else). Then, without a `ref`,
+ *    an empty temp directory; with one, the
  *    repository is synced and a disposable worktree of the ref checked out.
  *    A ref that can't be fetched leaves an empty directory without file
  *    tools, or, with `requireCheckout`, finishes with `no_checkout` and no
@@ -142,7 +147,8 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
  *    `setup.<name>`. A failing one fails the run, unless it's `optional`
  *    (see `runSetupCommands`).
  * 2. Render the task's prompt template over the trigger context, the
- *    query variables (`question`, `hunk`, `conventions`, `checkout`) and the
+ *    query variables (`question`, `hunk`, `conventions`, `checkout`,
+ *    `attachedFiles`) and the
  *    `setup` variables; values over the task's `variableLimits` are cut, and
  *    untrusted values are fenced, by `renderTemplate`.
  * 3. One session: the agent's system prompt, its tools ∩ the task's tool
@@ -161,7 +167,8 @@ function validateOutput(schema: Record<string, unknown>, structured: unknown): u
  *    schema; otherwise the answer is the final Markdown text, with the files
  *    of the checkout it cites. A rate limit throws `RetryableJobError`.
  * 5. Teardown: the task's teardown commands run (their failures are only
- *    logged), then the worktree or temp directory is removed, whatever happened.
+ *    logged), then the worktree or temp directory and the downloaded attachments
+ *    are removed, whatever happened.
  */
 export async function runQueryTask(
   spec: RunSpec,
@@ -199,6 +206,8 @@ export async function runQueryTask(
     executableEnv: executables.commandEnv,
   });
 
+  let files: DownloadedRunAttachments = { dir: null, files: [], remove: async () => {} };
+
   const run = async (workspace: Workspace): Promise<QueryRunResult> => {
     try {
       return await prepared(workspace);
@@ -218,6 +227,7 @@ export async function runQueryTask(
       hunk: await hunkVariable(ctx.repos, spec.repository, context, git),
       conventions: await conventionsVariable(workspace.checkout, ctx.repos.gitEnv(ctx.env())),
       checkout: workspace.checkout !== null,
+      attachedFiles: files.prompt ?? null,
       setup,
     };
     const prompt = renderTemplate(
@@ -257,10 +267,17 @@ export async function runQueryTask(
       ...options.agentTools,
     });
     const mcpServers = sessionMcpServers(omniralph, executables);
+    const additionalDirectories = [
+      ...(runTmpDir !== workspace.cwd ? [runTmpDir] : []),
+      ...(files.dir ? [files.dir] : []),
+    ];
     const result = await runner({
       prompt,
       cwd: workspace.cwd,
-      policy: queryToolPolicy(spec.agent, spec.task.toolSettings, { files: workspace.files }),
+      // The downloaded attachments are read with the file tools, even where a checkout failed.
+      policy: queryToolPolicy(spec.agent, spec.task.toolSettings, {
+        files: workspace.files || files.dir !== null,
+      }),
       tools: spec.tools,
       ...querySystemPrompt(spec),
       ...(spec.task.outputSchema && { outputSchema: spec.task.outputSchema }),
@@ -271,7 +288,7 @@ export async function runQueryTask(
       ...(spec.task.idleTimeoutMs !== undefined && { idleTimeoutMs: spec.task.idleTimeoutMs }),
       ...(mcpServers && { mcpServers }),
       ...(executables.skills && { skills: executables.skills }),
-      ...(runTmpDir !== workspace.cwd && { additionalDirectories: [runTmpDir] }),
+      ...(additionalDirectories.length > 0 && { additionalDirectories }),
       env: ctx.sessionEnv(),
       signal: ctx.signal,
       onEvent: (event) => relay.event(event),
@@ -352,8 +369,16 @@ export async function runQueryTask(
   };
 
   try {
+    files = await downloadRunAttachments({
+      attachments: spec.attachments ?? [],
+      signal: ctx.signal,
+      logger: log,
+      ...(options.tmpDir && { tmpDir: options.tmpDir }),
+      ...(options.fetch && { fetch: options.fetch }),
+    });
     return await runInWorkspace();
   } finally {
+    await files.remove();
     await relay.flush();
   }
 }

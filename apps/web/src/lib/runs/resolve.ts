@@ -9,6 +9,7 @@ import {
   type JobRepository,
   type JobToken,
   type PoolName,
+  type RunAttachment,
   type RunSpec,
   type ReviewProfileConfig,
 } from "@omniralph/shared";
@@ -23,7 +24,11 @@ import { organizationPlaybooks, type PlaybookSource } from "@/lib/playbooks";
 import { jobRepository } from "@/lib/scm/adapters";
 import { trackerProviderCapabilities } from "@/lib/tracker/adapters";
 import { DEFAULT_TRACKER_PROVIDER } from "@/lib/tracker/client";
-import { resolveRunAttachments, RunAttachmentsError } from "./spec-attachments";
+import {
+  resolveRunAttachments,
+  resolveShardAttachments,
+  RunAttachmentsError,
+} from "./spec-attachments";
 
 /**
  * A run spec that can't be resolved however often it is tried (unknown task,
@@ -47,7 +52,9 @@ export class RunSpecError extends Error {
  * tools the organization's tracker can't serve (`tracker_get_document`
  * without the documents capability, among `trackerCapabilities`). A coding run
  * of a ralph run also lists the files attached in Omniralph to its epic and the
- * epic's feature, with short-lived download URLs (`resolveRunAttachments`).
+ * epic's feature, with short-lived download URLs (`resolveRunAttachments`); a query
+ * run of a feature's sharding (its rounds' worker and verifier) lists the feature's
+ * (`resolveShardAttachments`).
  *
  * Model and budget come from one place per kind of run:
  * - a review run: its depth preset (from its trigger context: the
@@ -116,8 +123,12 @@ export async function resolveRunSpec(
     tokenBudget: runTokenBudget(playbook),
     tokens,
   };
-  if (task.taskType === "coding") {
-    const attachments = await codingRunAttachments(db, job.ralphRunId ?? null);
+  if (task.taskType === "coding" || task.taskType === "query") {
+    const attachments = await runAttachments(() =>
+      task.taskType === "coding"
+        ? resolveRunAttachments(db, { ralphRunId: job.ralphRunId ?? null })
+        : resolveShardAttachments(db, job, payload.trigger.context),
+    );
     return attachments.length > 0 ? { ...spec, attachments } : spec;
   }
   if (task.taskType !== "review") return spec;
@@ -141,10 +152,10 @@ export async function resolveRunSpec(
   return narrowByReviewDepth(spec, reviewConfig.data.profile);
 }
 
-/** A coding run's attachments; a run whose attachments can never be listed fails. */
-async function codingRunAttachments(db: Database, ralphRunId: string | null) {
+/** A run's attachments; a run whose attachments can never be listed fails. */
+async function runAttachments(resolve: () => Promise<RunAttachment[]>) {
   try {
-    return await resolveRunAttachments(db, { ralphRunId });
+    return await resolve();
   } catch (error) {
     if (error instanceof RunAttachmentsError) throw new RunSpecError(error.message);
     throw error;
