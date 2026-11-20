@@ -123,6 +123,14 @@ describe("inboxItemLabel", () => {
       WAITING,
     ],
     [
+      "prd_ready (blocked)",
+      { kind: "prd_ready", run: run("triage"), blockedBy: ["TOOL-7"] },
+      "Blocked",
+      "Triage, waiting on you",
+      "need",
+      WAITING,
+    ],
+    [
       "pr_waiting (GitLab)",
       {
         kind: "pr_waiting",

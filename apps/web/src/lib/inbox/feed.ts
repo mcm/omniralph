@@ -25,6 +25,9 @@ import { changeRequestWebUrl } from "@/lib/repositories/web-url";
 import { describeAttempt, type AttemptLabelContext } from "@omniralph/shared";
 import { siblingIssueUrl } from "@/lib/tracker/adapters";
 import { runRow } from "@/lib/runs/list";
+import { organizationBacklog, type BacklogEntry } from "@/lib/work-items/backlog";
+import { getWorkItemTracker } from "@/lib/work-items/get-tracker";
+import { TrackerNotConnectedError, type TrackerKind } from "@/lib/work-items/tracker";
 import { questionView } from "@/lib/runs/question";
 import {
   changeRequestName,
@@ -97,6 +100,8 @@ interface Context {
   row: RunRow | null;
   entry: RunListEntry | null;
   references: InboxReferences;
+  /** The organization's Backlog, when it has a ready PRD and its tracker could be read. */
+  backlog: ListedBacklog | null;
 }
 
 const REVIEW_STATE_REASONS = {
@@ -110,7 +115,7 @@ const REVIEW_STATE_REASONS = {
 /** The item's own fields: what differs from the run's row. */
 function itemFields(
   item: InboxCandidate,
-  { row, entry, references }: Context,
+  { row, entry, references, backlog }: Context,
 ): Pick<
   InboxItem,
   | "title"
@@ -127,6 +132,7 @@ function itemFields(
   | "review"
   | "size"
   | "openQuestions"
+  | "blockedBy"
   | "version"
 > {
   const { facts } = item;
@@ -144,6 +150,7 @@ function itemFields(
     review: null,
     size: null,
     openQuestions: 0,
+    blockedBy: [],
     version: null,
   };
   const prName = row?.pullRequest
@@ -210,16 +217,22 @@ function itemFields(
       };
     case "prd_ready": {
       const identifier = row?.workItem?.identifier ?? "The work item";
-      const { openQuestions } = facts;
+      // The tracker's word now, where the Backlog lists the item: a person may have answered
+      // or removed the questions, and its blockers may not be done.
+      const listed = backlog?.entries.get(workItemUrlId(backlog.tracker, facts.trackerIssueId));
+      const openQuestions = listed?.openQuestions ?? facts.openQuestions;
+      const blockedBy = listed?.row.blockers ?? [];
       const wrote =
         facts.outcome === "prd"
           ? `Triage wrote a PRD for ${identifier}.`
           : `Triage reformatted the PRD of ${identifier}.`;
       const next =
-        openQuestions === 0
-          ? "It's ready for a person to start."
-          : `It left ${openQuestions === 1 ? "1 open question" : `${openQuestions} open questions`} for a person to answer.`;
-      return { ...base, size: facts.size, openQuestions, reason: `${wrote} ${next}` };
+        openQuestions > 0
+          ? `It has ${openQuestions === 1 ? "1 open question" : `${openQuestions} open questions`} for a person to answer.`
+          : blockedBy.length > 0
+            ? `It can start once ${blockedBy.join(", ")} ${blockedBy.length === 1 ? "is" : "are"} done.`
+            : "It's ready for a person to start.";
+      return { ...base, size: facts.size, openQuestions, blockedBy, reason: `${wrote} ${next}` };
     }
     case "pr_waiting": {
       const { lane, review } = facts;
@@ -306,6 +319,51 @@ function inboxItem(item: InboxCandidate, context: Context): InboxItem {
   };
 }
 
+/** An organization's Backlog entries by work item URL ID, and the tracker they are from. */
+interface ListedBacklog {
+  tracker: TrackerKind;
+  entries: ReadonlyMap<string, BacklogEntry>;
+}
+
+/**
+ * The Backlog entries of each organization with a ready PRD in `items`, by organization and
+ * work item URL ID, from the Backlog cache (one tracker read per fill). An organization whose
+ * tracker isn't connected or can't be read has none, so its items keep their triage's facts.
+ */
+async function prdBacklogs(
+  db: Database,
+  items: readonly InboxCandidate[],
+): Promise<Map<string, ListedBacklog | null>> {
+  const organizationIds = [
+    ...new Set(items.filter((i) => i.facts.kind === "prd_ready").map((i) => i.organizationId)),
+  ];
+  const backlogs = await Promise.all(
+    organizationIds.map(async (organizationId) => {
+      try {
+        const backlog = await organizationBacklog({
+          db,
+          organizationId,
+          tracker: () => getWorkItemTracker({ db, organizationId }),
+        });
+        // Every row is from the organization's tracker; with none there is nothing to match.
+        const tracker = backlog.entries[0]?.row.tracker;
+        if (!tracker) return [organizationId, null] as const;
+        const entries = new Map(backlog.entries.map((entry) => [entry.row.id, entry]));
+        return [organizationId, { tracker, entries }] as const;
+      } catch (error) {
+        if (!(error instanceof TrackerNotConnectedError)) {
+          console.warn(
+            `Inbox: reading the Backlog of organization ${organizationId} failed`,
+            error,
+          );
+        }
+        return [organizationId, null] as const;
+      }
+    }),
+  );
+  return new Map(backlogs);
+}
+
 export interface InboxScope {
   organizations: readonly ScopedOrganization[];
   userId: string;
@@ -323,9 +381,10 @@ export async function loadInboxFeed(
     tab: TAB_OF_PARAM[tab],
   });
   const runIds = [...new Set(items.flatMap((i) => (i.run ? [i.run.id] : [])))];
-  const [entries, references] = await Promise.all([
+  const [entries, references, backlogs] = await Promise.all([
     getRunIndexEntries(db, runIds).then((found) => loadRunListEntries(db, found)),
     loadInboxReferences(db, items),
+    prdBacklogs(db, items),
   ]);
   const organizationById = new Map(scope.organizations.map((o) => [o.id, o]));
   const entryById = new Map(entries.map((e) => [e.id, e]));
@@ -336,7 +395,8 @@ export async function loadInboxFeed(
     // A run that went away between the queries: nothing to show.
     if (item.run && !entry) return [];
     const row = entry && runRow(entry, organization);
-    return [inboxItem(item, { organization, row, entry, references })];
+    const backlog = backlogs.get(item.organizationId) ?? null;
+    return [inboxItem(item, { organization, row, entry, references, backlog })];
   });
 }
 

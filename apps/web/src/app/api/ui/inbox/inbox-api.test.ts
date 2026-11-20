@@ -34,6 +34,7 @@ import {
 } from "@/lib/api/inbox";
 import { runDetailSchema } from "@/lib/api/runs";
 import { assertRole, type Role } from "@/lib/auth/roles";
+import type * as Backlog from "@/lib/work-items/backlog";
 
 vi.mock("server-only", () => ({}));
 
@@ -42,8 +43,22 @@ const state = vi.hoisted(() => ({
   db: undefined as unknown as Database,
   user: null as TestUser | null,
   orgId: "",
+  /** What the organization's Backlog lists (the tracker's word), by work item URL ID. */
+  backlog: [] as Array<{ id: string; blockers: string[]; openQuestions: number }>,
 }));
 vi.mock("@/lib/db", () => ({ getDb: () => state.db }));
+vi.mock("@/lib/work-items/backlog", async (importOriginal) => ({
+  ...(await importOriginal<typeof Backlog>()),
+  organizationBacklog: async () => ({
+    entries: state.backlog.map(({ id, blockers, openQuestions }) => ({
+      row: { id, tracker: "linear", blockers, blocked: blockers.length > 0 },
+      priority: 0,
+      updatedAt: new Date().toISOString(),
+      openQuestions,
+    })),
+    truncated: false,
+  }),
+}));
 vi.mock("@/lib/auth/session", () => ({
   requireUser: async (role: Role = "member") =>
     assertRole(
@@ -328,6 +343,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       review: null,
       size: null,
       openQuestions: 0,
+      blockedBy: [],
       version: null,
     });
     const prd = (runId: string) => items.find((item) => item.run?.id === runId);
@@ -344,7 +360,7 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       kind: "prd_ready",
       openQuestions: 2,
       reason: expect.stringMatching(
-        /^Triage wrote a PRD for .+\. It left 2 open questions for a person to answer\.$/,
+        /^Triage wrote a PRD for .+\. It has 2 open questions for a person to answer\.$/,
       ),
       actions: ["done", "snooze"],
     });
@@ -361,6 +377,29 @@ describe.skipIf(!databaseAvailable)("/api/ui/inbox", () => {
       },
       actions: ["done", "snooze"],
     });
+  });
+
+  it("takes a ready PRD's open questions and blockers from the Backlog when it lists the work item", async () => {
+    try {
+      // In the tracker now: the PRD is blocked, and the other's questions were answered.
+      state.backlog = [
+        { id: "linear-triage-prd", blockers: ["ENG-7", "ENG-8"], openQuestions: 0 },
+        { id: "linear-triage-questions", blockers: [], openQuestions: 0 },
+      ];
+      const items = await feed();
+      expect(items.find((item) => item.run?.id === ids.prd)).toMatchObject({
+        openQuestions: 0,
+        blockedBy: ["ENG-7", "ENG-8"],
+        reason: expect.stringMatching(/It can start once ENG-7, ENG-8 are done\.$/),
+      });
+      expect(items.find((item) => item.run?.id === ids.questions)).toMatchObject({
+        openQuestions: 0,
+        blockedBy: [],
+        reason: expect.stringMatching(/It's ready for a person to start\.$/),
+      });
+    } finally {
+      state.backlog = [];
+    }
   });
 
   it("lists Problems and Running, without raw job types", async () => {

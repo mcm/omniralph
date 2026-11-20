@@ -41,6 +41,7 @@ export function inboxItem(overrides: Partial<InboxItem> = {}): InboxItem {
     review: null,
     size: null,
     openQuestions: 0,
+    blockedBy: [],
     version: null,
     ...overrides,
   };

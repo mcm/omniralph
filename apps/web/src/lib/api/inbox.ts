@@ -113,8 +113,17 @@ export const inboxItemSchema = z.object({
     .nullable(),
   /** `prd_ready`: the work item's size from its triage's last result; null when it has none. */
   size: z.enum(TRIAGE_SIZES).nullable(),
-  /** `prd_ready`: how many open questions its PRD has left (0: it's ready to start); else 0. */
+  /**
+   * `prd_ready`: how many open questions its PRD has left (0: it's ready to start), from its
+   * description in the tracker when the Backlog lists it, else from its triage's last result;
+   * else 0.
+   */
   openQuestions: z.number(),
+  /**
+   * `prd_ready`: the identifiers of the open work items it is blocked by, from the tracker when
+   * the Backlog lists it (Start epic waits until there are none); else empty.
+   */
+  blockedBy: z.array(z.string()),
   /** `agent_update_failed`: the version the agent couldn't update to. */
   version: z.string().nullable(),
 });

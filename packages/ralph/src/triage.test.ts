@@ -13,6 +13,7 @@ import {
   TRIAGE_SYSTEM_APPEND,
   type TriagePromptInput,
   buildTriagePrompt,
+  countOpenQuestions,
   hasOpenQuestions,
   renderOpenQuestions,
   withoutOpenQuestions,
@@ -184,6 +185,23 @@ describe("hasOpenQuestions", () => {
     expect(hasOpenQuestions(`${EPIC}\n\n## Open Questions\n\n`)).toBe(false);
     expect(hasOpenQuestions(`## Open Questions\n\n## Goals\n\n- One`)).toBe(false);
     expect(hasOpenQuestions("Any open questions? See the comments.")).toBe(false);
+  });
+});
+
+describe("countOpenQuestions", () => {
+  it("counts the section's top-level items, continuation lines included in their item", () => {
+    expect(
+      countOpenQuestions(`${EPIC}\n\n${renderOpenQuestions(["Which label?", "Which\nteam?"])}`),
+    ).toBe(2);
+    expect(countOpenQuestions("## Open Questions\r\n\r\n- One?\r\n- Two?\r\n* Three?")).toBe(3);
+  });
+
+  it("is 1 for a section with text but no list, and 0 wherever hasOpenQuestions is false", () => {
+    expect(countOpenQuestions("## Open Questions\n\nWhich label should it get?")).toBe(1);
+    for (const description of [SINGLE, "", null, undefined, `${EPIC}\n\n## Open Questions\n\n`]) {
+      expect(countOpenQuestions(description)).toBe(0);
+    }
+    expect(countOpenQuestions("## Open Questions\n\n## Goals\n\n1. One")).toBe(0);
   });
 });
 

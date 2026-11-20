@@ -141,8 +141,9 @@ function ctaOf(item: InboxItem, slot: Slot): Unstyled<InboxCta> | null {
       };
     }
     case "start_epic":
-      // A PRD with open questions isn't ready to start: Review PRD is what's next.
-      return item.workItem && item.openQuestions === 0
+      // A PRD with open questions, or with open blockers, isn't ready to start: Review PRD is
+      // what's next (Start epic would refuse a blocked item).
+      return item.workItem && item.openQuestions === 0 && item.blockedBy.length === 0
         ? {
             type: "start",
             step: slot,
@@ -219,7 +220,7 @@ export function inboxCtas(item: InboxItem): InboxCta[] {
   });
   const lead = LEAD_STEP[item.kind];
   let leadIndex = ctas.findIndex((cta) => cta.type !== "decision" && cta.step === lead);
-  // A ready PRD that can't start yet (open questions) leads with Review PRD.
+  // A ready PRD that can't start yet (open questions or blockers) leads with Review PRD.
   if (leadIndex < 0 && item.kind === "prd_ready") {
     leadIndex = ctas.findIndex((cta) => cta.type === "prd");
   }
