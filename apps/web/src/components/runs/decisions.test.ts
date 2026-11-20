@@ -90,6 +90,15 @@ describe("inboxCtas", () => {
     });
   });
 
+  it("a PRD whose work item has open blockers leads with Review PRD and offers no Start epic", () => {
+    expect(ctas(itemOf("prd_ready", { blockedBy: ["TOOL-7"] }))).toEqual([
+      ["Review PRD", "primary"],
+      ["Open work item", "outline", "/backlog/linear-story-42"],
+      ["Dismiss", "ghost"],
+      ["Snooze", "ghost"],
+    ]);
+  });
+
   it("a PRD with open questions leads with Review PRD and offers no Start epic", () => {
     expect(ctas(itemOf("prd_ready", { openQuestions: 2 }))).toEqual([
       ["Review PRD", "primary"],

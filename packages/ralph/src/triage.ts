@@ -30,6 +30,18 @@ export function hasOpenQuestions(description: string | null | undefined): boolea
   return Boolean(section?.[1]?.trim());
 }
 
+/**
+ * How many open questions a description's `## Open Questions` section lists: its top-level
+ * numbered or bulleted items, or 1 when the section has text but no list. 0 without the section
+ * or with an empty one, so it is positive exactly when `hasOpenQuestions` is true.
+ */
+export function countOpenQuestions(description: string | null | undefined): number {
+  if (!description) return 0;
+  const body = OPEN_QUESTIONS_SECTION.exec(description.replace(/\r\n/g, "\n"))?.[1]?.trim();
+  if (!body) return 0;
+  return Math.max(body.match(/^(?:\d+[.)]|[-*+])[ \t]+\S/gm)?.length ?? 0, 1);
+}
+
 /** Whether a description has a `## Open Questions` heading, empty or not. */
 export function hasOpenQuestionsHeading(description: string): boolean {
   return OPEN_QUESTIONS_SECTION.test(description.replace(/\r\n/g, "\n"));

@@ -127,6 +127,8 @@ export type InboxFacts =
   | {
       kind: "prd_ready";
       jobId: string;
+      /** The tracker's ID of the work item triage wrote the PRD for. */
+      trackerIssueId: string;
       outcome: "prd" | "reformat";
       /** The work item's size from its triage's last result; null when it has none. */
       size: TriageSize | null;
@@ -582,6 +584,7 @@ async function readyPrds(db: Queryable, scope: Scope): Promise<InboxCandidate[]>
       jobId: row.job_id ?? row.id,
       outcome: row.outcome,
       openQuestions: Number(row.open_questions),
+      trackerIssueId: row.tracker_issue_id,
       size:
         sizes.get(
           triageIssueKey({

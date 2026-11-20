@@ -633,6 +633,8 @@ describe.skipIf(!databaseAvailable)("inbox", () => {
       jobId: ids.prdJob,
       outcome: "prd",
       openQuestions: 0,
+      // The work item, so the Inbox can find it in the Backlog.
+      trackerIssueId: "triage-prd",
       size: "XL",
     });
     expect(byKind.get(`prd_ready:${ids.prdNoSize}`)?.facts).toMatchObject({

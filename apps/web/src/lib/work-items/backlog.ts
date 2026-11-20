@@ -15,6 +15,7 @@ import {
   type RoutingRule,
   type WorkItemMatchFields,
 } from "@omniralph/db";
+import { countOpenQuestions } from "@omniralph/ralph";
 import { isRoutingGroup, type RoutingQuery } from "@omniralph/shared";
 import type { Backlog, BacklogCounts, BacklogQuery, BacklogUpNext } from "@/lib/api/backlog";
 import { workItemSourceValue, type WorkItemRow } from "@/lib/api/work-items";
@@ -64,6 +65,11 @@ export interface BacklogEntry {
   priority: number;
   /** ISO 8601. */
   updatedAt: string;
+  /**
+   * How many open questions its description's `## Open Questions` section lists now (0 when it
+   * has none). Absent in an entry cached before it was kept.
+   */
+  openQuestions?: number;
 }
 
 /** One organization's Backlog, in list order. */
@@ -286,6 +292,7 @@ export async function loadOrganizationBacklog(deps: {
           },
           priority: item.priority,
           updatedAt: item.updatedAt,
+          openQuestions: countOpenQuestions(item.description),
         };
       }),
     )
