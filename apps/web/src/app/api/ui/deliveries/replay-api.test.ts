@@ -6,6 +6,7 @@ import {
   createRun,
   createTriageRun,
   disconnectRepository,
+  listWebhookEventReplays,
   organizationMembers,
   organizations,
   pruneWebhookEvents,
@@ -91,7 +92,15 @@ const member: TestUser = {
   image: null,
 };
 
-async function replay(id: string, user: TestUser | null = member) {
+const admin: TestUser = {
+  id: "admin-1",
+  role: "admin",
+  name: "Ada Admin",
+  email: null,
+  image: null,
+};
+
+async function replay(id: string, user: TestUser | null = admin) {
   state.user = user;
   const response = await replayRoute.POST(
     new Request(`http://localhost/api/ui/deliveries/${id}/replay`, { method: "POST" }),
@@ -180,12 +189,14 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/deliveries/{id}/replay", () =>
     other = otherOrg!.id;
     state.orgId = acme;
     await db.insert(users).values([
+      { id: admin.id, name: admin.name, email: "ada@acme.io" },
+      { id: "admin-2", name: "Max Admin", email: "max@acme.io" },
       { id: member.id, name: member.name, email: "mia@acme.io" },
-      { id: "member-2", name: "Max Member", email: "max@acme.io" },
     ]);
     await db.insert(organizationMembers).values([
+      { organizationId: acme, userId: admin.id, role: "admin" },
+      { organizationId: acme, userId: "admin-2", role: "admin" },
       { organizationId: acme, userId: member.id, role: "member" },
-      { organizationId: acme, userId: "member-2", role: "member" },
     ]);
     github = (await upsertScmConnection(db, {
       organizationId: acme,
@@ -351,7 +362,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/deliveries/{id}/replay", () =>
       outcome: "started_run",
       run: { id: run!.id, kind: "review" },
       replayOfId: original.event.id,
-      replayedBy: { id: member.id, name: "Mia Member" },
+      replayedBy: { id: admin.id, name: "Ada Admin" },
       payload: original.event.payload,
       replays: [],
     });
@@ -486,7 +497,7 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/deliveries/{id}/replay", () =>
       outcome: "started_run",
       run: { id: started, kind: "epic" },
       replayOfId: original,
-      replayedBy: { id: member.id },
+      replayedBy: { id: admin.id },
     });
   });
 
@@ -542,14 +553,31 @@ describe.skipIf(!databaseAvailable)("POST /api/ui/deliveries/{id}/replay", () =>
       rawBody: JSON.stringify({ padding: "x".repeat(300 * 1024) }),
       outcome: "ignored",
     });
-    const max: TestUser = { ...member, id: "member-2", name: "Max Member" };
+    const max: TestUser = { ...admin, id: "admin-2", name: "Max Admin" };
     for (let i = 0; i < 10; i++) expect((await replay(truncated, max)).status).toBe(400);
     expect(await replay(truncated, max)).toMatchObject({
       status: 429,
       body: { error: expect.stringContaining("That's a lot of replays in a minute.") },
     });
     // Another user's limit is their own.
-    expect((await replay(truncated, member)).status).toBe(400);
+    expect((await replay(truncated, admin)).status).toBe(400);
+  });
+
+  it("requires the admin role: a member is refused with 403 and nothing is replayed", async () => {
+    const delivery = await recordWebhookEvent(db, {
+      organizationId: acme,
+      provider: "github",
+      source: { scmConnectionId: github.id },
+      repositoryId: repoId,
+      event: "pull_request.opened",
+      rawBody: JSON.stringify(opened(1)),
+      outcome: "ignored",
+    });
+    expect(await replay(delivery, member)).toMatchObject({
+      status: 403,
+      body: { error: "This action requires the admin role." },
+    });
+    expect(await listWebhookEventReplays(db, delivery)).toEqual([]);
   });
 
   it("doesn't replay another organization's deliveries, and requires a signed-in user", async () => {

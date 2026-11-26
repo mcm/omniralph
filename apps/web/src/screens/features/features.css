@@ -90,6 +90,12 @@
   gap: 12px;
 }
 
+.or-feature__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
 .or-feature__title {
   margin: 0;
   color: var(--or-text);

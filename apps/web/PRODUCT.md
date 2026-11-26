@@ -34,8 +34,11 @@ record lives.
 
 ## Operating Context
 
-- Organizations own everything; roles are `admin` (changes setup) and `member` (sees everything,
-  can dismiss/restore findings). Sign-in is next-auth, gated by allowed email domains and
+- Organizations own everything. Admins manage the settings and members use the tool: a `member`
+  does everything in Features, Sprints, Backlog, work items, Inbox, runs, jobs and Ask, and an
+  `admin` also configures Omniralph itself (the organization and its members, connections and
+  integrations and their webhook delivery replays, repos and their settings, agents and the
+  fleet, playbooks, routing rules and agent defaults). Sign-in is next-auth, gated by allowed email domains and
   invitations.
 - Main areas (see `src/lib/navigation.ts`): Ralph runs, Reviews, Jobs, Analytics, Repositories
   (and per-repository settings, rules and reviews), Agents, and Settings (organization,

@@ -526,7 +526,18 @@ describe.skipIf(!databaseAvailable)("running a sprint", () => {
     expect([delegated(a), delegated(b)]).toEqual([false, true]);
   });
 
-  it("refuses actions the sprint's status doesn't allow, an empty sprint, and members", async () => {
+  it("lets a member start, pause, resume and cancel a sprint", async () => {
+    state.role = "member";
+    const [a, b] = [epic("ENG-80"), epic("ENG-81")];
+    const id = await sprintOf([a, b]);
+    expect((await accepted("start", id)).status).toBe("running");
+    expect(delegated(a)).toBe(true);
+    expect((await accepted("pause", id)).status).toBe("paused");
+    expect((await accepted("resume", id)).status).toBe("running");
+    expect((await accepted("cancel", id)).status).toBe("canceled");
+  });
+
+  it("refuses actions the sprint's status doesn't allow, and an empty sprint", async () => {
     const id = await sprintOf([epic("ENG-90")]);
     expect(await act("pause", id)).toMatchObject({
       status: 409,
@@ -538,8 +549,6 @@ describe.skipIf(!databaseAvailable)("running a sprint", () => {
     const empty = await sprintOf([]);
     expect(await act("start", empty)).toMatchObject({ status: 400, body: { code: "empty" } });
     expect((await act("start", randomUUID())).status).toBe(404);
-    state.role = "member";
-    expect((await act("start", id)).status).toBe(403);
     expect((await stored(id)).status).toBe("draft");
   });
 

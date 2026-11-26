@@ -185,7 +185,7 @@ async function linkEpic(
 }
 
 /**
- * Files the approved drafts of the feature's sharding as epics (admins) in the team, project
+ * Files the approved drafts of the feature's sharding as epics (members) in the team, project
  * and labels of `repositoryId`'s work item match. 409 unless it waits for review with every
  * draft decided; 400 without an approved draft or a repo that picks up work items. A tracker
  * that fails part way keeps what was filed and sends the sharding back to review with why.

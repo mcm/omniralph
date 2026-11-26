@@ -13,18 +13,18 @@ export const GET = apiHandler<"member", undefined, undefined, Params>(
 );
 
 /**
- * Starts sharding the feature's Plan into epics (admins): 409 when it is archived or being
+ * Starts sharding the feature's Plan into epics (members): 409 when it is archived or being
  * sharded already, 400 when the Plan is empty or has no `##` sections.
  */
-export const POST = apiHandler<"admin", undefined, undefined, Params>(
-  { access: "admin" },
+export const POST = apiHandler<"member", undefined, undefined, Params>(
+  {},
   async ({ user, params }): Promise<FeatureShardView> =>
     startShard(getDb(), getDispatcher(), user, params.id),
 );
 
-/** Discards the feature's sharding while it drafts or waits for review (admins). */
-export const DELETE = apiHandler<"admin", undefined, undefined, Params>(
-  { access: "admin" },
+/** Discards the feature's sharding while it drafts or waits for review (members). */
+export const DELETE = apiHandler<"member", undefined, undefined, Params>(
+  {},
   async ({ user, params }): Promise<FeatureShardView> =>
     discardShard(getDb(), getDispatcher(), user, params.id),
 );

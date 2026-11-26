@@ -199,6 +199,8 @@ describe.skipIf(!databaseAvailable)("sharding a feature's plan into reviewed epi
 
   const start = (featureId: string) =>
     call(shardRoute.POST, `/api/ui/features/${featureId}/shard`, "POST", { id: featureId });
+  const discard = (featureId: string) =>
+    call(shardRoute.DELETE, `/api/ui/features/${featureId}/shard`, "DELETE", { id: featureId });
   const get = async (featureId: string) =>
     view(
       (await call(shardRoute.GET, `/api/ui/features/${featureId}/shard`, "GET", { id: featureId }))
@@ -523,9 +525,28 @@ describe.skipIf(!databaseAvailable)("sharding a feature's plan into reviewed epi
     const id = await feature();
     expect((await start(id)).status).toBe(200);
     expect(await start(id)).toMatchObject({ status: 409, body: { code: "shard_active" } });
+  });
 
+  it("lets a member start and discard a sharding, edit the drafts and file them", async () => {
     state.role = "member";
-    expect((await start(await feature())).status).toBe(403);
+    const discarded = await feature();
+    expect((await start(discarded)).status).toBe(200);
+    const after = await discard(discarded);
+    expect(after.status).toBe(200);
+    expect(view(after.body).shard!.status).toBe("canceled");
+
+    const id = await reviewed();
+    const edited = await patch(id, "E1", { title: "Store features", decision: "approved" });
+    expect(edited.status).toBe(200);
+    expect(view(edited.body).shard!.drafts[0]).toMatchObject({
+      title: "Store features",
+      edited: true,
+      decision: "approved",
+    });
+    expect((await patch(id, "E2", { decision: "approved" })).status).toBe(200);
+    const filed = await file(id);
+    expect(filed.status, JSON.stringify(filed.body)).toBe(200);
+    expect(view(filed.body).shard!.status).toBe("filed");
   });
 
   it("lets the person edit, remove and approve each draft before filing", async () => {
@@ -552,11 +573,6 @@ describe.skipIf(!databaseAvailable)("sharding a feature's plan into reviewed epi
     expect((await patch(id, "E1", { decision: "removed" })).status).toBe(200);
     expect(await patch(id, "E2", {})).toMatchObject({ status: 400 });
 
-    state.role = "member";
-    expect((await patch(id, "E1", { decision: "approved" })).status).toBe(403);
-    expect((await file(id)).status).toBe(403);
-
-    state.role = "admin";
     const decided = (await get(id)).shard!;
     expect(decided.drafts.map((d) => [d.key, d.decision])).toEqual([
       ["E1", "removed"],

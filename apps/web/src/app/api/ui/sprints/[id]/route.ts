@@ -12,19 +12,19 @@ export const GET = apiHandler<"member", undefined, undefined, Params>(
 );
 
 /**
- * Renames a draft sprint, switches merge together, or saves its whole order (admins):
+ * Renames a draft sprint, switches merge together, or saves its whole order (members):
  * `{ name?, mergeTogether?, epics? }`. A started sprint is refused (409), as is an epic
  * already in another active sprint; an item that isn't an open epic or an order that puts an
  * epic before one that blocks it answers 400.
  */
-export const PATCH = apiHandler<"admin", typeof updateSprintBodySchema, undefined, Params>(
-  { access: "admin", body: updateSprintBodySchema },
+export const PATCH = apiHandler<"member", typeof updateSprintBodySchema, undefined, Params>(
+  { body: updateSprintBodySchema },
   async ({ user, params, body }): Promise<SavedSprint> =>
     updateSprint({ db: getDb() }, user, params.id, body),
 );
 
-/** Deletes a draft sprint and its order (admins); a started sprint is refused (409). */
-export const DELETE = apiHandler<"admin", undefined, undefined, Params>(
-  { access: "admin" },
+/** Deletes a draft sprint and its order (members); a started sprint is refused (409). */
+export const DELETE = apiHandler<"member", undefined, undefined, Params>(
+  {},
   async ({ user, params }) => deleteSprint(getDb(), user, params.id),
 );

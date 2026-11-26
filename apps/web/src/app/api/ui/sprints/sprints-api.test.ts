@@ -234,12 +234,17 @@ describe.skipIf(!databaseAvailable)("/api/ui/sprints", () => {
     expect(detail.body).toMatchObject({ id: first.id, name: "First" });
   });
 
-  it("refuses members' writes", async () => {
-    const sprint = await created({});
+  it("lets members create, change and delete a draft sprint", async () => {
     state.role = "member";
-    expect((await create({})).status).toBe(403);
-    expect((await patch(sprint.id, { name: "New" })).status).toBe(403);
-    expect((await remove(sprint.id)).status).toBe(403);
+    const sprint = await created({ epics: [workItemId(issues.a!)] });
+    const renamed = await patch(sprint.id, { name: "New", mergeTogether: true });
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    expect(savedSprintSchema.parse(renamed.body).sprint).toMatchObject({
+      name: "New",
+      mergeTogether: true,
+    });
+    expect((await remove(sprint.id)).status).toBe(200);
+    expect(await db.select().from(sprints)).toHaveLength(0);
   });
 
   it("answers 400 for invalid input", async () => {

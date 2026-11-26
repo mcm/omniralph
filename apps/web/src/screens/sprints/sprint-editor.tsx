@@ -26,7 +26,6 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { useCurrentUser } from "@/components/current-user";
 import { RUN_STATUS_LABELS, RUN_STATUS_TONES } from "@/components/runs/run-status";
 import { ApiError } from "@/lib/api/client";
 import type { SprintEpicPullRequest, SprintEpicRow, SprintRow } from "@/lib/api/sprints";
@@ -54,7 +53,6 @@ export const ORDER_EXPLANATION =
   "Om builds the epics top to bottom. Drag an epic, or focus its handle and press ↑ or ↓, to move it.";
 export const ADD_EXPLANATION =
   "Open work items of this repo that aren't in the sprint. Add an epic to put it at the end.";
-export const READ_ONLY_MEMBER = "Only admins can change sprints.";
 export const READ_ONLY_STARTED = "A started sprint keeps its name, setting and order.";
 export const PAUSED_HINT = "Fix what's in the way, then resume: Om retries the stalled epic first.";
 
@@ -103,11 +101,6 @@ export function moveItem<T>(items: readonly T[], from: number, to: number): T[] 
   const [moved] = next.splice(from, 1);
   next.splice(to, 0, moved!);
   return next;
-}
-
-/** Whether the user may change the active organization's sprints. */
-function useIsAdmin(): boolean {
-  return useCurrentUser().role === "admin";
 }
 
 function SprintDetailSkeleton() {
@@ -226,17 +219,16 @@ export interface SprintEditorProps {
 
 /**
  * A sprint (Design board Sprints): its name, status, repo and branch, the actions its status
- * allows, the name and Merge together settings, and its epics in order. An admin edits a
+ * allows, the name and Merge together settings, and its epics in order. Any member edits a
  * draft: renames it (saved on Enter or leaving the field), switches Merge together, adds
  * epics from the repo's backlog, removes them and reorders them by drag or with ↑/↓ on an
  * epic's handle. Each change saves at once; one the API refuses puts back what was there and
- * shows the API's message where it was made. Members, and everyone once a sprint has started,
- * see it all read-only.
+ * shows the API's message where it was made. Once a sprint has started,
+ * everyone sees it read-only.
  */
 export function SprintEditor({ sprint, onAction }: SprintEditorProps) {
   const router = useRouter();
-  const admin = useIsAdmin();
-  const editable = admin && sprint.status === "draft";
+  const editable = sprint.status === "draft";
   const nameId = useId();
   const mergeHintId = useId();
   const orderHintId = useId();
@@ -381,23 +373,15 @@ export function SprintEditor({ sprint, onAction }: SprintEditorProps) {
               (epic {stoppedOn.position + 1} of {epics.length})
             </p>
           ) : null}
-          {admin ? <p className="or-sprint__hint">{PAUSED_HINT}</p> : null}
+          <p className="or-sprint__hint">{PAUSED_HINT}</p>
         </div>
       ) : null}
 
       {sprint.status === "done" ? <p className="or-sprint__note">{SPRINT_DONE}</p> : null}
 
-      {admin ? (
-        <SprintActions
-          sprint={sprint}
-          onAction={onAction}
-          onDelete={() => setConfirmDelete(true)}
-        />
-      ) : null}
+      <SprintActions sprint={sprint} onAction={onAction} onDelete={() => setConfirmDelete(true)} />
 
-      {!editable ? (
-        <p className="or-sprint__note">{admin ? READ_ONLY_STARTED : READ_ONLY_MEMBER}</p>
-      ) : null}
+      {!editable ? <p className="or-sprint__note">{READ_ONLY_STARTED}</p> : null}
 
       <section className="or-sprint__section" aria-labelledby={`${nameId}-settings`}>
         <h3 id={`${nameId}-settings`} className="or-sr-only">
@@ -540,7 +524,7 @@ export function SprintEditor({ sprint, onAction }: SprintEditorProps) {
         <AddFromBacklog sprint={sprint} onAdd={addEpic} pending={update.isPending} />
       ) : null}
 
-      {sprint.status === "draft" && admin ? (
+      {sprint.status === "draft" ? (
         <ConfirmDialog
           open={confirmDelete}
           onOpenChange={setConfirmDelete}

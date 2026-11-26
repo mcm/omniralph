@@ -14,7 +14,6 @@ import {
 import { IconPlus } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
-import { useCurrentUser } from "@/components/current-user";
 import { NEW_SPRINT, NewSprintSheet } from "./new-sprint-sheet";
 import { useSprintList } from "./queries";
 import { SprintDetailView, type SprintActionHandler } from "./sprint-editor";
@@ -51,15 +50,12 @@ function SprintListSkeleton() {
 }
 
 /**
- * The Sprints screen (Design board Sprints): the list with "Sprints", the + (New sprint,
- * admins) and the active organization's sprints grouped by repo, each with its name, status
+ * The Sprints screen (Design board Sprints): the list with "Sprints", the + (New sprint) and the active organization's sprints grouped by repo, each with its name, status
  * and epic count, beside the open sprint (on `/sprints`, the first one, when both panes fit).
  * The list is a live query.
  */
 export function SprintsView({ sprintId = null, renderDetail, onAction }: SprintsViewProps) {
   const router = useRouter();
-  const user = useCurrentUser();
-  const admin = user.role === "admin";
   const [creating, setCreating] = useState(false);
   const list = useSprintList();
   const sprints = list.data?.sprints;
@@ -75,19 +71,17 @@ export function SprintsView({ sprintId = null, renderDetail, onAction }: Sprints
       <SprintDetailView key={id} sprintId={id} onAction={onAction} />
     );
 
-  const newSprint = admin ? (
+  const newSprint = (
     <Button variant="outline" onClick={() => setCreating(true)}>
       {NEW_SPRINT}
     </Button>
-  ) : undefined;
+  );
 
   const pane = (
     <div className="or-sprints__pane">
       <div className="or-sprints__head or-split__sticky">
         <h1 className="or-sprints__title">Sprints</h1>
-        {admin ? (
-          <IconButton icon={IconPlus} label={NEW_SPRINT} onClick={() => setCreating(true)} />
-        ) : null}
+        <IconButton icon={IconPlus} label={NEW_SPRINT} onClick={() => setCreating(true)} />
       </div>
       <div className="or-sprints__list">
         {list.isError && !sprints ? (

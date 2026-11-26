@@ -14,7 +14,6 @@ import {
 import { IconPlus } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
-import { useCurrentUser } from "@/components/current-user";
 import { FeatureRollupBadge } from "./epic-progress";
 import { FeatureDetailView } from "./feature-page";
 import { epicCount, FEATURE_STATUS, featureHref, FEATURES_PATH } from "./feature-status";
@@ -49,7 +48,7 @@ function FeatureListSkeleton() {
 }
 
 /**
- * The Features screen: the list with "Features", the + (New feature, admins) and the active
+ * The Features screen: the list with "Features", the + (New feature) and the active
  * organization's features newest first, each with its name, status, repo, epic count and
  * roll-up of epics and stories done,
  * beside the open feature (on `/features`, the first one, when both panes fit). Archived
@@ -57,7 +56,6 @@ function FeatureListSkeleton() {
  */
 export function FeaturesView({ featureId = null, renderDetail }: FeaturesViewProps) {
   const router = useRouter();
-  const admin = useCurrentUser().role === "admin";
   const [creating, setCreating] = useState(false);
   const list = useFeatureList();
   const features = list.data?.features;
@@ -78,9 +76,7 @@ export function FeaturesView({ featureId = null, renderDetail }: FeaturesViewPro
     <div className="or-features__pane">
       <div className="or-features__head or-split__sticky">
         <h1 className="or-features__title">Features</h1>
-        {admin ? (
-          <IconButton icon={IconPlus} label={NEW_FEATURE} onClick={() => setCreating(true)} />
-        ) : null}
+        <IconButton icon={IconPlus} label={NEW_FEATURE} onClick={() => setCreating(true)} />
       </div>
       <div className="or-features__list">
         {list.isError && !features ? (
@@ -102,11 +98,9 @@ export function FeaturesView({ featureId = null, renderDetail }: FeaturesViewPro
             title={NO_FEATURES}
             description={NO_FEATURES_DESCRIPTION}
             action={
-              admin ? (
-                <Button variant="outline" onClick={() => setCreating(true)}>
-                  {NEW_FEATURE}
-                </Button>
-              ) : undefined
+              <Button variant="outline" onClick={() => setCreating(true)}>
+                {NEW_FEATURE}
+              </Button>
             }
           />
         ) : (

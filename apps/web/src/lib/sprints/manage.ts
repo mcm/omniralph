@@ -313,7 +313,7 @@ export interface SprintDeps {
   loadTracker?: SprintTrackerLoader;
 }
 
-/** Creates a draft sprint in one of the organization's repos (admins). */
+/** Creates a draft sprint in one of the organization's repos (members). */
 export async function createSprint(
   deps: SprintDeps,
   user: OrgUser,
@@ -345,7 +345,7 @@ export async function createSprint(
   }
 }
 
-/** Renames a draft sprint, switches merge together or saves its order (admins). */
+/** Renames a draft sprint, switches merge together or saves its order (members). */
 export async function updateSprint(
   deps: SprintDeps,
   user: OrgUser,
@@ -381,7 +381,7 @@ export async function updateSprint(
   }
 }
 
-/** Deletes a draft sprint (admins); a started one is refused (409). */
+/** Deletes a draft sprint (members); a started one is refused (409). */
 export async function deleteSprint(db: Database, user: OrgUser, id: string): Promise<{ ok: true }> {
   if (!isUuid(id)) throw ApiRouteError.notFound(SPRINT_NOT_FOUND_MESSAGE);
   const result = await deleteDraftSprint(db, user.organization.id, id);
@@ -422,7 +422,7 @@ function transitioned(result: SprintTransitionResult, action: SprintActionName):
 }
 
 /**
- * Start, Pause, Resume or Cancel (admins). Starting a draft with epics runs it and starts its
+ * Start, Pause, Resume or Cancel (members). Starting a draft with epics runs it and starts its
  * first epic as Start epic does; resuming a paused sprint queues its stalled epic again and
  * starts it. A refused start pauses the sprint with the reason, which the answer shows.
  * Pausing starts no new epic; canceling ends the sprint, leaving running epics alone.

@@ -13,8 +13,8 @@ const NOT_FOUND = "That delivery doesn't exist.";
 /**
  * Replays a stored delivery with today's settings, through the same processing as a live
  * delivery (no signature check or delivery-ID claim), and answers the replay's delivery
- * (`replayOfId`, `replayedBy`, the run it started). Any member of the delivery's
- * organization may; 10 a minute per user (429). 404 once it's pruned, 400 when its payload
+ * (`replayOfId`, `replayedBy`, the run it started). Admins of the delivery's
+ * organization only (403 for a member); 10 a minute per user (429). 404 once it's pruned, 400 when its payload
  * wasn't kept or its connection or repo is gone, 409 while a tracker agent session's run is
  * still active.
  */
@@ -25,6 +25,7 @@ export const POST = apiHandler<"member", undefined, undefined, { id: string }>(
     const db = getDb();
     const event = await getWebhookEvent(db, params.id);
     const organization = await requireOrganizationAccess(user, event?.organizationId ?? null, {
+      role: "admin",
       notFoundMessage: NOT_FOUND,
     });
     await hitReplayLimit(db, user.id);

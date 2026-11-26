@@ -24,9 +24,11 @@ import { useDeliveries } from "./queries";
 import { useReplayDelivery, type DeliveryFilter, type ListedDelivery } from "./replay";
 import "./deliveries.css";
 
-/** Under the table: how long payloads stay and what a replay does. */
-export const DELIVERIES_RETENTION_NOTE =
-  "Payloads are kept for 14 days. Replay runs the event through today's routing and settings.";
+/** Under the table: how long payloads stay. */
+export const DELIVERIES_RETENTION_NOTE = "Payloads are kept for 14 days.";
+
+/** Under the table, for admins: what a replay does. */
+export const REPLAY_NOTE = "Replay runs the event through today's routing and settings.";
 
 /** The empty log, per filter. */
 export const NO_DELIVERIES: Record<DeliveryFilter, string> = {
@@ -63,11 +65,18 @@ function Outcome({ delivery }: { delivery: ListedDelivery }) {
  * A code-host or Linear connection's webhook deliveries (Design board Settings): "All /
  * Failed N / Ignored" (N: the connection's failures not yet replayed, coral above zero),
  * then a table of when each came in, the event and repo in plain words and what it did,
- * linked to its run. Failed rows offer Replay; the other rows show it on hover or keyboard
- * focus, and phone cards only on failed ones. More rows load a page at a time. Live: a
+ * linked to its run. For admins (`canReplay`), failed rows offer Replay; the other rows show
+ * it on hover or keyboard focus, and phone cards only on failed ones. Members don't see it. More rows load a page at a time. Live: a
  * delivery recorded or replayed (`webhook_event`) shows at once, and so does a replay.
  */
-export function WebhookDeliveriesCard({ connection }: { connection: Connection }) {
+export function WebhookDeliveriesCard({
+  connection,
+  canReplay,
+}: {
+  connection: Connection;
+  /** Replay is admin-only, as `POST /api/ui/deliveries/{id}/replay` is. */
+  canReplay: boolean;
+}) {
   const [filter, setFilter] = useState<DeliveryFilter>("all");
   const query = useDeliveries(
     { kind: connection.provider === "linear" ? "linear" : "scm", id: connection.id },
@@ -104,7 +113,9 @@ export function WebhookDeliveriesCard({ connection }: { connection: Connection }
         ) : null,
     },
     { id: "outcome", header: "Outcome", cell: (row) => <Outcome delivery={row} /> },
-    {
+  ];
+  if (canReplay) {
+    columns.push({
       id: "actions",
       header: <span className="or-sr-only">Actions</span>,
       align: "end",
@@ -122,8 +133,8 @@ export function WebhookDeliveriesCard({ connection }: { connection: Connection }
             onClick={() => replay.mutate(row)}
           />
         ),
-    },
-  ];
+    });
+  }
 
   let body: ReactNode;
   if (query.isError && !query.data) {
@@ -187,7 +198,9 @@ export function WebhookDeliveriesCard({ connection }: { connection: Connection }
       }
     >
       {body}
-      <p className="or-deliveries__note">{DELIVERIES_RETENTION_NOTE}</p>
+      <p className="or-deliveries__note">
+        {canReplay ? `${DELIVERIES_RETENTION_NOTE} ${REPLAY_NOTE}` : DELIVERIES_RETENTION_NOTE}
+      </p>
     </Card>
   );
 }

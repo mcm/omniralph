@@ -188,7 +188,7 @@ function serve() {
   });
 }
 
-function renderPanel(user: SessionUser = testUser, editable = user.role === "admin") {
+function renderPanel(user: SessionUser = testUser, editable = true) {
   return render(
     <CurrentUserProvider user={user}>
       <QueryClientProvider client={createTestQueryClient()}>
@@ -298,8 +298,16 @@ describe("the feature's epics", () => {
     expect(screen.getByText(new RegExp(MAPPING_PARENT_ISSUE.slice(0, 40)))).toBeTruthy();
   });
 
-  it("shows members the drafts without review or filing actions", async () => {
+  it("gives members the same review and filing actions", async () => {
     renderPanel(member);
+    const first = await draftCard("E1");
+    expect(within(first).getAllByRole("button").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: DISCARD_ACTION })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^File / })).toBeTruthy();
+  });
+
+  it("shows an archived feature's drafts without review or filing actions", async () => {
+    renderPanel(testUser, false);
     const first = await draftCard("E1");
     expect(within(first).queryByRole("button")).toBeNull();
     expect(screen.queryByRole("button", { name: DISCARD_ACTION })).toBeNull();

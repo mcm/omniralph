@@ -124,7 +124,7 @@ export async function getShardView(
 }
 
 /**
- * Starts sharding the feature's latest Plan (admins): 409 when the feature is archived or a
+ * Starts sharding the feature's latest Plan (members): 409 when the feature is archived or a
  * sharding is active already, 400 when the Plan is empty or has no `##` sections. Its first
  * round's worker job is queued and its agents woken.
  */
@@ -173,7 +173,7 @@ export async function startShard(
 
 /**
  * Edits, removes or approves one draft of the feature's sharding while it waits for review
- * (admins). Editing a title or description marks the draft `edited`; a filed draft can't change.
+ * (members). Editing a title or description marks the draft `edited`; a filed draft can't change.
  */
 export async function updateShardDraft(
   db: Database,
@@ -210,7 +210,7 @@ export async function updateShardDraft(
 }
 
 /**
- * Discards the feature's active sharding (admins): it ends `canceled`, and a round still
+ * Discards the feature's active sharding (members): it ends `canceled`, and a round still
  * drafting has its jobs canceled. Epics already filed stay filed. 409 without one.
  */
 export async function discardShard(

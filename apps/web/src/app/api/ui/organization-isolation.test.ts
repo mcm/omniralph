@@ -1144,8 +1144,12 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
             ).toMatchObject({ status: 404 });
           }
         }
-        // A member replays their own organization's delivery.
+        // Replay is admin-only: a member is refused, an admin replays their own organization's.
         state.userId = own.memberId;
+        expect(
+          await call(deliveryReplay.POST, { params: { id: ownDeliveries.linear }, method: "POST" }),
+        ).toMatchObject({ status: 403 });
+        state.userId = own.adminId;
         const replayed = await call(deliveryReplay.POST, {
           params: { id: ownDeliveries.linear },
           method: "POST",
@@ -1155,7 +1159,7 @@ describe.skipIf(!databaseAvailable)("organization isolation of /api/ui", () => {
           body: {
             replayOfId: ownDeliveries.linear,
             organization: { id: own.orgId },
-            replayedBy: { id: own.memberId },
+            replayedBy: { id: own.adminId },
           },
         });
         expect(
