@@ -236,10 +236,10 @@ summary comment links back to `/reviews/<id>`.
 
 Every verified GitHub, GitLab and Linear delivery is kept for 14 days with what it did, listed
 under **Settings › Connections › _connection_ › Webhook deliveries** (filter to the failed or
-ignored ones; Replay is on each failed row, and on the others' hover)
+ignored ones; for admins, Replay is on each failed row, and on the others' hover)
 (`GET /api/ui/connections/{scm|linear}/{id}/deliveries`, `GET /api/ui/deliveries/{id}`). After
-fixing a setting (a trigger, a switch, a routing rule), any member of the organization can replay
-one with `POST /api/ui/deliveries/{id}/replay`: it runs through the same processing as a live
+fixing a setting (a trigger, a switch, a routing rule), an admin of the organization can replay
+one (members are refused, 403) with `POST /api/ui/deliveries/{id}/replay`: it runs through the same processing as a live
 delivery with today's settings, without the signature check or the delivery-ID dedupe, and is
 logged as a new delivery that links the original and the run it started (the original's detail
 lists its replays). A Linear agent-session event whose run is finished replays in a new agent

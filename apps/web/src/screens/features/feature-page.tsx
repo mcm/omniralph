@@ -1,8 +1,8 @@
 "use client";
 
 import { Button, EmptyState, MetaBadge, StatusText, TabPanel, Tabs } from "@omniralph/ui";
-import { IconArchive, IconArchiveOff } from "@tabler/icons-react";
-import { useCurrentUser } from "@/components/current-user";
+import { IconArchive, IconArchiveOff, IconPencil } from "@tabler/icons-react";
+import { useState } from "react";
 import { ApiError } from "@/lib/api/client";
 import type { FeatureRow } from "@/lib/api/features";
 import { AttachmentsPanel } from "./attachments-panel";
@@ -11,12 +11,12 @@ import { FeatureEpicsPanel } from "./epic-progress";
 import { epicCount, FEATURE_DOCUMENTS, FEATURE_STATUS, FEATURES_PATH } from "./feature-status";
 import { useArchiveFeature } from "./mutations";
 import { useFeature } from "./queries";
+import { RENAME_FEATURE, RenameFeatureSheet } from "./rename-feature-sheet";
 import { ShardPanel } from "./shard-review";
 
 export const FEATURE_NOT_FOUND = "That feature doesn't exist";
 export const FEATURE_LOAD_FAILED = "Couldn't load the feature";
 export const LOADING_FEATURE = "Loading the feature…";
-export const READ_ONLY_MEMBER = "Only admins can change features.";
 export const ARCHIVED_NOTE = "This feature is archived. Restore it to change it.";
 
 function FeatureSkeleton() {
@@ -80,14 +80,14 @@ export function FeatureDetailView({ featureId, autosaveDelay }: FeatureDetailVie
 /**
  * A feature: its name, status, repo and epic count; its epics' progress; its PRFAQ and Plan, one tab each (kept
  * mounted, so an edit survives switching); its attachments; and its epics, sharded from the
- * Plan and reviewed before they are filed (`ShardPanel`). Admins edit everything and
- * archive or restore it; members read. An archived feature reads only until restored.
+ * Plan and reviewed before they are filed (`ShardPanel`). Every member renames it, edits
+ * everything and archives or restores it. An archived feature reads only until restored.
  */
 function FeaturePage({ feature, autosaveDelay }: { feature: FeatureRow; autosaveDelay?: number }) {
-  const admin = useCurrentUser().role === "admin";
   const archive = useArchiveFeature(feature);
+  const [renaming, setRenaming] = useState(false);
   const archived = feature.status === "archived";
-  const editable = admin && !archived;
+  const editable = !archived;
   const status = FEATURE_STATUS[feature.status];
 
   return (
@@ -95,7 +95,17 @@ function FeaturePage({ feature, autosaveDelay }: { feature: FeatureRow; autosave
       <header className="or-feature__head">
         <div className="or-feature__title-row">
           <h2 className="or-feature__title">{feature.name}</h2>
-          {admin ? (
+          <div className="or-feature__actions">
+            {editable ? (
+              <Button
+                variant="outline"
+                size="sm"
+                icon={IconPencil}
+                onClick={() => setRenaming(true)}
+              >
+                {RENAME_FEATURE}
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               size="sm"
@@ -105,7 +115,7 @@ function FeaturePage({ feature, autosaveDelay }: { feature: FeatureRow; autosave
             >
               {archived ? "Restore" : "Archive"}
             </Button>
-          ) : null}
+          </div>
         </div>
         <div className="or-feature__badges">
           <StatusText tone={status.tone}>{status.label}</StatusText>
@@ -114,11 +124,7 @@ function FeaturePage({ feature, autosaveDelay }: { feature: FeatureRow; autosave
         </div>
       </header>
 
-      {archived ? (
-        <p className="or-feature__note">{ARCHIVED_NOTE}</p>
-      ) : !admin ? (
-        <p className="or-feature__note">{READ_ONLY_MEMBER}</p>
-      ) : null}
+      {archived ? <p className="or-feature__note">{ARCHIVED_NOTE}</p> : null}
 
       <FeatureEpicsPanel feature={feature} />
 
@@ -142,6 +148,10 @@ function FeaturePage({ feature, autosaveDelay }: { feature: FeatureRow; autosave
       <AttachmentsPanel featureId={feature.id} editable={editable} />
 
       <ShardPanel feature={feature} editable={editable} />
+
+      {renaming && editable ? (
+        <RenameFeatureSheet feature={feature} onClose={() => setRenaming(false)} />
+      ) : null}
     </article>
   );
 }

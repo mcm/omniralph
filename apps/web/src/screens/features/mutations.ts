@@ -69,6 +69,20 @@ export function useArchiveFeature(feature: FeatureRow) {
   });
 }
 
+/** `PATCH /api/ui/features/{id}` `{name}`: renames the feature. */
+export function useRenameFeature(feature: FeatureRow) {
+  return useApiMutation<SavedFeature, string>({
+    mutationFn: (name, { organizationId }) =>
+      api.patch(`/api/ui/features/${encodeURIComponent(feature.id)}`, savedFeatureSchema, {
+        body: { name },
+        organizationId,
+      }),
+    applyResult: (result, cache) => writeFeature(cache, result.feature),
+    invalidate: (keys) => [featuresKeys(keys).lists, featuresKeys(keys).detail(feature.id)],
+    success: (result) => `Renamed to ${result.feature.name}`,
+  });
+}
+
 export interface SaveDocumentVariables {
   body: string;
   /** The version the edit started from (0 for a document never saved). */

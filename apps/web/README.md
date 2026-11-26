@@ -237,6 +237,29 @@ drives every `/api/ui` endpoint (and the signed-in layout, and the enter-organiz
 trip) against two organizations: add each new endpoint there. `@tanstack/react-query-devtools`
 loads in development only.
 
+## Roles
+
+An organization has two roles, around one rule: **admins manage the settings, and members use the
+tool.** A member does every product action: creating, editing, archiving and restoring features,
+their PRFAQ, Plan and attachments; sharding a Plan into epics, editing the drafts and filing them;
+creating, editing, deleting, starting, pausing, resuming and canceling sprints; and the work in the
+Backlog, work items, Inbox, runs, jobs and Ask. An admin can do all of that, and is the only one who
+configures Omniralph itself. Admin-only:
+
+- the organization, its members, invitations and allowed domains;
+- connections and integrations (code hosts, Linear, chat), their tracker settings, and replaying
+  their webhook deliveries;
+- repos and their settings (reviews, Ask, coding, rules);
+- agents and the fleet (enrollment, installables);
+- playbooks, routing rules and agent defaults.
+
+Every action has exactly one role. The API enforces it (`apiHandler`'s `access`, or
+`requireOrganizationAccess`'s `role` for a resource of another organization), and the UI matches
+it exactly: the UI never hides from a role an action the API allows it, and never shows a role an
+action the API refuses. A screen checks the role with `hasRole` from `src/lib/auth/roles.ts`
+against the same role as the route behind the action; read-only states that aren't about the
+role, such as an archived feature or a started sprint, apply to everyone alike.
+
 ## Fixture data and screenshots
 
 `scripts/fixtures/README.md` covers the fixture database (`fixtures:up` / `fixtures:down`) and

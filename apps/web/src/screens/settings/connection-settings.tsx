@@ -332,7 +332,7 @@ function ConnectionView({
       {connection.provider === "github" ||
       connection.provider === "gitlab" ||
       connection.provider === "linear" ? (
-        <WebhookDeliveriesCard connection={connection} />
+        <WebhookDeliveriesCard connection={connection} canReplay={isAdmin} />
       ) : null}
       {isAdmin && connection.provider === "gitlab" ? (
         <ReplaceTokenSheet connection={connection} open={editing} onOpenChange={setEditing} />

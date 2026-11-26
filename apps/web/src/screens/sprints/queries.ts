@@ -54,7 +54,7 @@ export function useSprint(sprintId: string) {
 
 /**
  * The backlog of one repo of the active organization (`GET /api/ui/backlog?repo=`): what the
- * sprint editor offers to add. Only while `enabled` (an admin editing a draft). A live query.
+ * sprint editor offers to add. Only while `enabled` (while a draft is edited). A live query.
  */
 export function useRepoBacklog(repositoryId: string, enabled: boolean) {
   const keys = useQueryKeys();

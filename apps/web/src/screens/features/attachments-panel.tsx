@@ -34,7 +34,7 @@ export const ATTACHMENTS_TITLE = "Attachments";
 export const NO_ATTACHMENTS = "No attachments yet";
 export const NO_ATTACHMENTS_EDITABLE = "Drop mockups, design boards or specs here.";
 export const NO_ATTACHMENTS_READ_ONLY =
-  "Mockups, design boards and specs an admin attaches show here.";
+  "Restore the feature to attach mockups, design boards or specs.";
 export const ATTACHMENTS_LOAD_FAILED = "Couldn't load the attachments";
 export const DROP_FILES = "Drop files to attach them";
 export const CHOOSE_FILES = "Choose files";
@@ -66,7 +66,7 @@ interface Upload {
 
 export interface AttachmentsPanelProps {
   featureId: string;
-  /** Uploads and removals allowed: an admin, on a feature that isn't archived. */
+  /** Uploads and removals allowed: on a feature that isn't archived. */
   editable: boolean;
 }
 

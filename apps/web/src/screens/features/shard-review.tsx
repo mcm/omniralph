@@ -72,7 +72,7 @@ function roundLabel(number: number, max: number | null): string {
 
 export interface ShardPanelProps {
   feature: FeatureRow;
-  /** Starting, reviewing and filing allowed: an admin, on a feature that isn't archived. */
+  /** Starting, reviewing and filing allowed: on a feature that isn't archived. */
   editable: boolean;
 }
 

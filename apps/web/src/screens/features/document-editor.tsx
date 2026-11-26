@@ -56,8 +56,8 @@ const PLACEHOLDERS: Record<FeatureDocumentKindValue, string> = {
 };
 
 const EMPTY_HINTS: Record<FeatureDocumentKindValue, string> = {
-  prfaq: "An admin writes it here, or drafts it with the PRD plugin's prfaq mode.",
-  plan: "An admin writes it here, or drafts it with the PRD plugin's plan mode.",
+  prfaq: "Restore the feature to write it here, or draft it with the PRD plugin's prfaq mode.",
+  plan: "Restore the feature to write it here, or draft it with the PRD plugin's plan mode.",
 };
 
 const FORMATS: readonly { command: FormatCommand; label: string; icon: ButtonIcon }[] = [
@@ -74,7 +74,7 @@ const FORMATS: readonly { command: FormatCommand; label: string; icon: ButtonIco
 export interface DocumentEditorProps {
   featureId: string;
   kind: FeatureDocumentKindValue;
-  /** Edits allowed: an admin, on a feature that isn't archived. Otherwise it only reads. */
+  /** Edits allowed: on a feature that isn't archived. Otherwise it only reads. */
   editable: boolean;
   /** Overrides `AUTOSAVE_DELAY_MS` (tests). */
   autosaveDelay?: number;

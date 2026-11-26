@@ -29,7 +29,7 @@ import {
   SPRINT_PR_PENDING,
   NAME_EXPLANATION,
   ORDER_EXPLANATION,
-  READ_ONLY_MEMBER,
+  READ_ONLY_STARTED,
   SPRINT_NOT_FOUND,
 } from "./sprint-editor";
 import {
@@ -292,11 +292,11 @@ describe("the Sprints list", () => {
     });
   });
 
-  it("shows members the sprints without New sprint", async () => {
+  it("offers members New sprint too", async () => {
     sprints = [];
     renderView({}, member);
     expect(await screen.findByRole("heading", { name: NO_SPRINTS })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "New sprint" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "New sprint" })).toHaveLength(2);
   });
 });
 
@@ -496,21 +496,15 @@ describe("the sprint editor", () => {
     expect(seen.some((request) => request.method === "DELETE")).toBe(true);
   });
 
-  it("shows a member everything read-only", async () => {
+  it("lets a member edit a draft as an admin does", async () => {
     renderView({ sprintId: SPRINT_ID }, member);
     const pane = await sprintPane();
-    expect(within(pane).getByText(READ_ONLY_MEMBER)).toBeTruthy();
-    await waitFor(() => expect(epicOrder(pane)).toEqual(["SOC-401", "SOC-402", "SOC-403"]));
-    expect(within(pane).getByText("Off")).toBeTruthy();
-    expect(within(pane).getByText(MERGE_TOGETHER_EXPLANATION)).toBeTruthy();
-    expect(within(pane).queryByRole("textbox")).toBeNull();
-    expect(within(pane).queryByRole("switch")).toBeNull();
-    expect(within(pane).queryAllByRole("button")).toEqual([]);
-    expect(within(pane).queryByRole("list", { name: "Backlog" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "New sprint" })).toBeNull();
-    expect(seen.some((request) => request.path === "/api/ui/backlog")).toBe(false);
-    const rows = within(pane).getAllByRole("listitem");
-    expect(rows.some((row) => row.getAttribute("draggable") === "true")).toBe(false);
+    expect(within(pane).queryByText(READ_ONLY_STARTED)).toBeNull();
+    expect(within(pane).getByRole("textbox")).toBeTruthy();
+    expect(within(pane).getByRole("switch")).toBeTruthy();
+    expect(within(pane).getByRole("button", { name: "Start sprint" })).toBeTruthy();
+    expect(await within(pane).findByRole("list", { name: "Backlog" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New sprint" })).toBeTruthy();
   });
 
   it("says when the sprint doesn't exist", async () => {
@@ -687,7 +681,7 @@ describe("the sprint view", () => {
     ).toBeTruthy();
   });
 
-  it("shows a paused sprint's reason and the epic it stopped on, with Resume for admins", async () => {
+  it("shows a paused sprint's reason and the epic it stopped on, with Resume for everyone", async () => {
     const reason = "The code host refused to merge SOC-402's PR into sprint/invoicing: conflicts.";
     const base = runningSprint();
     sprints = [
@@ -717,8 +711,8 @@ describe("the sprint view", () => {
     pane = await sprintPane();
     expect(within(pane).getByText(reason)).toBeTruthy();
     expect(within(pane).getAllByRole("status")[0]!.textContent).toContain("Stopped on SOC-402");
-    expect(within(pane).queryByRole("button", { name: "Resume" })).toBeNull();
-    expect(within(pane).queryByText(PAUSED_HINT)).toBeNull();
+    expect(within(pane).getByRole("button", { name: "Resume" })).toBeTruthy();
+    expect(within(pane).getByText(PAUSED_HINT)).toBeTruthy();
   });
 
   it("shows a done sprint with every epic merged and no actions", async () => {

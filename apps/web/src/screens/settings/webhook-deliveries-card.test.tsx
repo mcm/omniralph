@@ -25,7 +25,22 @@ import type { Connection, ConnectionProvider } from "@/lib/api/connections";
 import type { DeliveryDetail, DeliveryRow } from "@/lib/api/deliveries";
 import { ConnectionSettings } from "./connection-settings";
 import { SettingsLayoutView } from "./settings-layout-view";
-import { DELIVERIES_RETENTION_NOTE, NO_DELIVERIES, REPLAYING } from "./webhook-deliveries-card";
+import {
+  DELIVERIES_RETENTION_NOTE,
+  NO_DELIVERIES,
+  REPLAY_NOTE,
+  REPLAYING,
+} from "./webhook-deliveries-card";
+
+/** The note under the table for an admin, who may replay. */
+const ADMIN_NOTE = `${DELIVERIES_RETENTION_NOTE} ${REPLAY_NOTE}`;
+
+const member: SessionUser = {
+  ...testUser,
+  id: "user-2",
+  role: "member",
+  organizations: [{ id: TEST_ORGANIZATION_ID, name: "Acme", role: "member" }],
+};
 
 const ui = vi.hoisted(() => ({ toast: vi.fn() }));
 vi.mock("@omniralph/ui", async (importOriginal) => ({
@@ -307,7 +322,7 @@ describe("the deliveries section", () => {
       );
       expect(first[3]).toBe(provider === "linear" ? "Epic started" : "Review started");
       expect(deliveryReads(provider)[0]!.query.getAll("outcome")).toEqual([]);
-      expect(within(section).getByText(DELIVERIES_RETENTION_NOTE)).toBeTruthy();
+      expect(within(section).getByText(ADMIN_NOTE)).toBeTruthy();
     },
   );
 
@@ -366,7 +381,7 @@ describe("the deliveries section", () => {
     ).toBeTruthy();
     expect(NO_DELIVERIES.all).toBe("No deliveries in the last 14 days");
     expect(screen.queryByRole("table", { name: "Webhook deliveries" })).toBeNull();
-    expect(within(await card()).getByText(DELIVERIES_RETENTION_NOTE)).toBeTruthy();
+    expect(within(await card()).getByText(ADMIN_NOTE)).toBeTruthy();
   });
 });
 
@@ -425,6 +440,17 @@ describe("pagination", () => {
 });
 
 describe("Replay", () => {
+  it("is hidden from members, who see the log without the Actions column", async () => {
+    renderConnection("github", { user: member });
+    const headers = Array.from((await table()).querySelectorAll("thead th")).map(
+      (th) => th.textContent,
+    );
+    expect(headers).toEqual(["Received", "Event", "Repo", "Outcome"]);
+    expect(within(await rowOf(1)).queryByRole("button", { name: "Replay" })).toBeNull();
+    expect(within(await card()).getByText(DELIVERIES_RETENTION_NOTE)).toBeTruthy();
+    expect(screen.queryByText(new RegExp(REPLAY_NOTE))).toBeNull();
+  });
+
   it("is shown on failed rows and hidden (revealed on hover or focus) on the others", async () => {
     renderConnection("github");
     for (const index of [0, 1, 2, 3]) {

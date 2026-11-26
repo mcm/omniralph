@@ -973,7 +973,7 @@ sub-issue. A gateway without it throws `TrackerCapabilityError` from
 
 ### Sharding a feature into epics
 
-On a feature's page, **Shard into epics** (admins) has Om split the feature's latest Plan into epic
+On a feature's page, **Shard into epics** (any member) has Om split the feature's latest Plan into epic
 drafts, as a loop (ADR 0013, run kind `shard`, a `feature_shards` row). The Plan's `##` sections,
 but `## Epics` and `## Success metrics`, are the sections an epic can cover; a Plan without any is
 refused (400 `no_sections`), and so is an empty one (`no_plan`). Each round:
@@ -991,7 +991,7 @@ refused (400 `no_sections`), and so is an empty one (`no_plan`). Each round:
 The round passes only when both pass; otherwise everything they found is the next round's
 revision, with the previous draft. After the cap (3 rounds) or a pass, the last usable round's
 drafts wait for review (`review`), each with the verifier's notes, and what still failed is listed
-on the page ("Still open after the last round"). Members read the drafts; admins edit a draft's
+on the page ("Still open after the last round"). Any member of the organization edits a draft's
 title and description, remove it or approve it (`PATCH /api/ui/features/{id}/shard/drafts/{key}`),
 and once every draft is decided, **File N epics** (`POST /api/ui/features/{id}/shard/file`,
 `{ repositoryId }`) files the approved ones in the team, project and labels of that repo's work

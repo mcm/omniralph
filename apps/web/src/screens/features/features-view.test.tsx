@@ -23,7 +23,7 @@ import type {
 } from "@/lib/api/features";
 import { portalRow, REPO_PORTAL } from "../repos/test-fixtures";
 import { KEEP_MINE, LOAD_THEIRS, RESTORE_VERSION, STALE_SAVE_TITLE } from "./document-editor";
-import { ARCHIVED_NOTE, FeatureDetailView, READ_ONLY_MEMBER } from "./feature-page";
+import { ARCHIVED_NOTE, FeatureDetailView } from "./feature-page";
 import {
   FEATURES_LOAD_FAILED,
   FeaturesView,
@@ -175,11 +175,13 @@ function serve(
     [`GET /api/ui/features/${FEATURE_ID}`]: () =>
       jsonResponse(features.find((feature) => feature.id === FEATURE_ID)),
     [`PATCH /api/ui/features/${FEATURE_ID}`]: (request) => {
-      const { archived } = request.body as { archived: boolean };
+      const { archived, name } = request.body as { archived?: boolean; name?: string };
       features = features.map((feature) =>
-        feature.id === FEATURE_ID
-          ? { ...feature, status: archived ? "archived" : "planning" }
-          : feature,
+        feature.id !== FEATURE_ID
+          ? feature
+          : name !== undefined
+            ? { ...feature, name }
+            : { ...feature, status: archived ? "archived" : "planning" },
       );
       return jsonResponse({ ok: true, feature: features.find((f) => f.id === FEATURE_ID) });
     },
@@ -310,7 +312,7 @@ describe("the Features list", () => {
     expect(within(links[1]!).getByText("1 epic")).toBeTruthy();
   });
 
-  it("shows a skeleton while loading, then the empty state with New feature for admins", async () => {
+  it("shows a skeleton while loading, then the empty state with New feature", async () => {
     let answer!: (response: Response) => void;
     serve({ "GET /api/ui/features": () => new Promise((resolve) => (answer = resolve)) });
     renderView();
@@ -320,11 +322,11 @@ describe("the Features list", () => {
     expect(screen.getAllByRole("button", { name: "New feature" })).toHaveLength(2);
   });
 
-  it("gives members the empty state without New feature", async () => {
+  it("offers members New feature too", async () => {
     features = [];
     renderView({}, member);
     expect(await screen.findByRole("heading", { name: NO_FEATURES })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "New feature" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "New feature" })).toHaveLength(2);
   });
 
   it("says when the list can't load, and tries again", async () => {
@@ -458,24 +460,51 @@ describe("a feature's PRFAQ and Plan", () => {
     );
   });
 
-  it("shows members the documents read-only, with their history but no restore", async () => {
+  it("lets members edit the documents, restore a version and archive the feature", async () => {
     renderFeature(member);
     const pane = await featurePane();
-    expect(within(pane).getByText(READ_ONLY_MEMBER)).toBeTruthy();
-    expect(await within(pane).findByText("Teams bill customers.")).toBeTruthy();
-    expect(within(pane).queryByRole("textbox")).toBeNull();
-    expect(within(pane).queryByRole("button", { name: "Archive" })).toBeNull();
+    expect(await editor()).toBeTruthy();
     await userEvent.click(within(pane).getAllByRole("button", { name: "History" })[0]!);
     const sheet = await screen.findByRole("dialog", { name: "PRFAQ history" });
     await userEvent.click(await within(sheet).findByRole("button", { name: /Version 1/ }));
-    expect(await within(sheet).findByText("First draft.")).toBeTruthy();
-    expect(within(sheet).queryByRole("button", { name: RESTORE_VERSION })).toBeNull();
+    expect(await within(sheet).findByRole("button", { name: RESTORE_VERSION })).toBeTruthy();
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(within(pane).getByRole("button", { name: "Archive" }));
+    expect(await within(pane).findByText(ARCHIVED_NOTE)).toBeTruthy();
   });
 
-  it("makes an archived feature read-only until an admin restores it", async () => {
-    features = [featureRow({ status: "archived" })];
-    renderFeature();
+  it("lets members rename the feature, and an unchanged name saves nothing", async () => {
+    renderFeature(member);
     const pane = await featurePane();
+    await userEvent.click(within(pane).getByRole("button", { name: "Rename" }));
+    let sheet = await screen.findByRole("dialog", { name: /^Rename / });
+    await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(seen.some((request) => request.method === "PATCH")).toBe(false);
+
+    await userEvent.click(within(pane).getByRole("button", { name: "Rename" }));
+    sheet = await screen.findByRole("dialog", { name: /^Rename / });
+    const name = within(sheet).getByRole("textbox", { name: "Name" });
+    await userEvent.clear(name);
+    await userEvent.type(name, "  Billing  ");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+    expect(await within(pane).findByRole("heading", { name: "Billing" })).toBeTruthy();
+    expect(seen.find((request) => request.method === "PATCH")!.body).toEqual({ name: "Billing" });
+    expect(ui.toast).toHaveBeenCalledWith("Renamed to Billing");
+  });
+
+  it("makes an archived feature read-only for everyone until restored", async () => {
+    features = [featureRow({ status: "archived" })];
+    const { unmount } = renderFeature(member);
+    let pane = await featurePane();
+    expect(within(pane).getByText(ARCHIVED_NOTE)).toBeTruthy();
+    expect(await within(pane).findByText("Teams bill customers.")).toBeTruthy();
+    expect(within(pane).queryByRole("textbox")).toBeNull();
+    expect(within(pane).queryByRole("button", { name: "Rename" })).toBeNull();
+    unmount();
+
+    renderFeature();
+    pane = await featurePane();
     expect(within(pane).getByText(ARCHIVED_NOTE)).toBeTruthy();
     expect(await within(pane).findByText("Teams bill customers.")).toBeTruthy();
     expect(within(pane).queryByRole("textbox")).toBeNull();
@@ -569,11 +598,20 @@ describe("a feature's attachments", () => {
     ]);
   });
 
-  it("lets members preview and download but not upload or remove", async () => {
+  it("lets members upload and remove attachments", async () => {
     renderFeature(member);
     const files = await panel();
     expect(await files.findByRole("button", { name: "Preview checkout.png" })).toBeTruthy();
-    expect(files.getByRole("link", { name: "Download checkout.png" })).toBeTruthy();
+    expect(files.getByRole("button", { name: "Choose files" })).toBeTruthy();
+    expect(files.getAllByRole("button", { name: /Remove/ }).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("attachment-picker")).toBeTruthy();
+  });
+
+  it("offers no upload or removal on an archived feature", async () => {
+    features = [featureRow({ status: "archived" })];
+    renderFeature(member);
+    const files = await panel();
+    expect(await files.findByRole("button", { name: "Preview checkout.png" })).toBeTruthy();
     expect(files.queryByRole("button", { name: "Choose files" })).toBeNull();
     expect(files.queryByRole("button", { name: /Remove/ })).toBeNull();
     expect(screen.queryByTestId("attachment-picker")).toBeNull();
